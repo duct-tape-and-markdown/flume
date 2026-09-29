@@ -462,13 +462,21 @@ export const STATE_ROOT_NAMES = {
 } as const;
 
 /**
- * The instant, in the filesystem-safe form every timestamp-prefixed runtime
- * filename uses (`:` and `.` are not portable in a path component). One
- * writer for the format, so a session capture, a revert note, a friction
- * harvest, and a rendered-prompt record all sort and parse alike.
+ * `at` — now, by default — in the filesystem-safe form every
+ * timestamp-prefixed runtime filename uses (`:` and `.` are not portable in a
+ * path component). One writer for the format, so a session capture, a revert
+ * note, a friction harvest, and a rendered-prompt record all sort and parse
+ * alike.
+ *
+ * The form is fixed-width and ISO-derived, so it sorts chronologically as
+ * plain text. That is what the instant argument is for: a reader bounding a
+ * window over these names renders the window's own edge through this writer
+ * and compares strings, rather than parsing a stamp back out of a filename
+ * (`flume status`'s live-run spend, `src/runSpend.ts`). One spelling of the
+ * format, on both sides of the seam.
  */
-export function fsStamp(): string {
-  return new Date().toISOString().replace(/[:.]/g, "-");
+export function fsStamp(at: Date = new Date()): string {
+  return at.toISOString().replace(/[:.]/g, "-");
 }
 
 /** The baton's awake-flag dir — `<flumeDir>/awake` (`src/Baton.ts`). */
@@ -648,7 +656,24 @@ export function invocationsDir(flumeDir: string): string {
  * `invocations[]` from it.
  */
 export function invocationsPath(flumeDir: string, phase: string): string {
-  return join(invocationsDir(flumeDir), `${phase}.jsonl`);
+  return join(invocationsDir(flumeDir), `${phase}${INVOCATIONS_EXT}`);
+}
+
+/** The suffix {@link invocationsPath} names a phase's rows file with. */
+const INVOCATIONS_EXT = ".jsonl";
+
+/**
+ * The phase whose rows file is named `name`, or `undefined` when `name` is
+ * not one — the inverse of {@link invocationsPath}'s naming, beside it so a
+ * reader enumerating {@link invocationsDir} and the writer that filled it
+ * cannot part over the suffix (`.claude/rules/engineering.md`, *A seam gate
+ * reads what the real writer wrote*). An empty phase name is no phase, so a
+ * bare `.jsonl` reads as not a rows file.
+ */
+export function invocationsPhaseOf(name: string): string | undefined {
+  if (!name.endsWith(INVOCATIONS_EXT)) return undefined;
+  const phase = name.slice(0, -INVOCATIONS_EXT.length);
+  return phase === "" ? undefined : phase;
 }
 
 /**

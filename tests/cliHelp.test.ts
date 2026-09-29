@@ -1525,8 +1525,16 @@ describe("docs/CLI.md's status and log sections against the codes those verbs re
           },
         },
         {
+          // The spend line reads three artifacts — the history log, the
+          // running ticks' rows files, the rendered prompts its in-flight
+          // count is drawn from — so the verb names the subject and the
+          // cause names the artifact and its path. The evidence reads both
+          // halves, or an arm that refused over a different one of the three
+          // would agree with this row.
           arm: "a tick-verdicts.jsonl the live run's spend line cannot read",
-          evidence: "tick-verdicts.jsonl failed to read",
+          evidence:
+            "the live run's spend failed to read: " +
+            "[flume] tick verdict history log is unreadable",
           run: () => {
             denyFile(tickVerdictsLogPath(flumeDir));
             return runCli(root, ["status"]);

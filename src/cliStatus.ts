@@ -18,14 +18,10 @@ import type { FlumePaths } from "./flumeApi.js";
 import { frictionCountLine } from "./friction.js";
 import { existsLoudUnder } from "./fsProbe.js";
 import { currentRefPath, gitCommonDir, liveTipClaim, tipClaimPath } from "./git.js";
-import { loopLockPath, resolvePendingDir, STATE_ROOT_NAMES, stopFlagPath } from "./paths.js";
+import { loopLockPath, resolvePendingDir, stopFlagPath } from "./paths.js";
 import { readPendingLoose } from "./pendingLedger.js";
 import { liveLoopClaim, statedStateRoot, type PidClaim } from "./pidClaim.js";
-import {
-  readTickVerdicts,
-  totalAgentUsageByPhase,
-  type TickVerdict,
-} from "./tickVerdict.js";
+import { readRunSpend, type RunSpend } from "./runSpend.js";
 
 export async function statusVerb(paths: FlumePaths): Promise<number> {
   const { repoRoot, flumeDir } = paths;
@@ -218,18 +214,11 @@ export async function statusVerb(paths: FlumePaths): Promise<number> {
   // run has spent so far, where the operator already looks. No live
   // supervisor, nothing extra — there is no run for a total to be about.
   //
-  // The rows are the run's own by the date each carries (`TickVerdict.at`):
-  // at or after the instant the supervisor claimed the lock. A row this
-  // window excludes is one a previous run — or a bare `flume tick` before
-  // this one started — paid for, and totalling it here would answer a
-  // question about the live run with another run's money. `readTickVerdicts`
-  // already skips what it cannot parse, and a row whose `at` does not parse
-  // dates itself into no run's window.
-  //
-  // The grouping is `totalAgentUsageByPhase`'s (`src/tickVerdict.ts`) and
-  // the line is `agentUsageLine`'s (`src/cliVerdict.ts`) — the same two the
-  // loop-end summary prints from, so the run's cost reads alike wherever it
-  // is read.
+  // The window is the instant the supervisor stated on the lock's second
+  // line (spec/loop.md, "The loop lock and the tip claim"), read from the
+  // claim above rather than from the file's mtime, which no writer contracts
+  // and which a restore, a backup tool, or a stray `touch` moves under a
+  // running loop.
   //
   // A lock stating no instant — written by a flume before 0.17, or rolled
   // by hand — bounds nothing, and this line is withheld rather than
@@ -247,25 +236,39 @@ export async function statusVerb(paths: FlumePaths): Promise<number> {
     );
   }
   if (startedAtMs !== undefined) {
+    // Which rows the window holds, and how many agents have not left one, are
+    // `readRunSpend`'s (`src/runSpend.ts`) — this verb prints facts and
+    // derives none of them. The grouping it folds through and the line
+    // `agentUsageLine` (`src/cliVerdict.ts`) renders are the loop-end
+    // summary's own, so a run's cost reads alike wherever it is read.
+    //
     // spec/cli.md "Subcommand surface", `status`: the one thing this verb
-    // exits non-zero on is a file it must read being present and
-    // unreadable. `readTickVerdicts` (src/tickVerdict.ts) refuses that
-    // rather than answering "no history", so withholding the spend line
-    // here would print an unread log as a run that spent nothing.
-    let runVerdicts: TickVerdict[];
+    // exits non-zero on is a file it must read being present and unreadable.
+    // Every read behind that call refuses rather than answering "nothing
+    // spent", so withholding the line here would print an unread artifact as
+    // a run that paid for nothing.
+    let spend: RunSpend;
     try {
-      runVerdicts = await readTickVerdicts(flumeDir);
+      spend = await readRunSpend(flumeDir, startedAtMs);
     } catch (err) {
       console.error(
-        `[flume] status: ${STATE_ROOT_NAMES.tickVerdictsLog} failed to read: ${err instanceof Error ? err.message : String(err)}`,
+        `[flume] status: the live run's spend failed to read: ${err instanceof Error ? err.message : String(err)}`,
       );
       return EX_IOERR;
     }
-    const spend = totalAgentUsageByPhase(
-      runVerdicts.filter((v) => Date.parse(v.at) >= startedAtMs),
-    );
-    const line = agentUsageLine("agent usage this run", spend);
-    if (line) console.log(line);
+    const totals = agentUsageLine("agent usage this run", spend.byPhase);
+    // A run that has started nothing yet prints nothing, the same silence a
+    // run with no agents has always printed. Anything else prints the count
+    // of agents still out — zero included, because "this total is complete"
+    // and "this total is two hours behind" are the whole question an operator
+    // reads a live number to answer, and they render identically without it.
+    if (totals !== undefined || spend.inFlight > 0) {
+      console.log(
+        `${totals ?? "agent usage this run: nothing returned yet"} — ` +
+          `${spend.inFlight} ${spend.inFlight === 1 ? "agent" : "agents"} ` +
+          "still in flight",
+      );
+    }
   }
   return 0;
 }

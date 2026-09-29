@@ -51,7 +51,9 @@ import {
   awakeDir,
   computeStateRootRel,
   DEFAULT_PENDING_REL,
+  fsStamp,
   loopLockPath,
+  renderedPromptsDir,
   resolvePendingDir,
   STATE_ROOT_DIRNAME,
   STATE_ROOT_NAMES,
@@ -66,6 +68,8 @@ import {
 } from "../src/pidClaim.ts";
 import { DEFAULT_KILL_GRACE_MS } from "../src/processTree.ts";
 import {
+  appendInvocationRow,
+  readInvocationRows,
   tickVerdictPath,
   tickVerdictsLogPath,
   writeTickVerdict,
@@ -2598,6 +2602,173 @@ describe("flume status — the live run's spend (spec/cli.md \"flume status owes
    */
   const spendLines = (out: string): string[] =>
     out.split("\n").filter((l) => l.startsWith("agent usage this run:"));
+
+  /**
+   * The name a rendered prompt written at `at` carries, through the engine's
+   * own stamp writer rather than a second spelling of the format here — the
+   * window the verb bounds by is a comparison against exactly this
+   * (`fsStamp`, `src/paths.ts`).
+   */
+  const promptName = (at: number, key: string): string =>
+    `${fsStamp(new Date(at))}-${key}.md`;
+
+  /** That name as a usage row spells it: state-root-relative, forward slashes. */
+  const promptRel = (name: string): string =>
+    `${STATE_ROOT_NAMES.renderedPrompts}/${name}`;
+
+  /**
+   * The rendered prompt an invocation persists before its agent runs
+   * (spec/prompt.md, *The rendered prompt is persisted before the agent
+   * runs*) — the record that says an agent was started, whose row says it
+   * came back.
+   */
+  async function renderedPrompt(flumeDir: string, name: string): Promise<void> {
+    const dir = renderedPromptsDir(flumeDir);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, name), "# a prompt\n", "utf8");
+  }
+
+  /**
+   * One agent of `phase`'s still-running tick returning: its prompt on disk
+   * and its row appended through the engine's own appender, in the order the
+   * tick writes them (`appendInvocationRow`, `src/tickVerdict.ts`).
+   */
+  async function returned(
+    flumeDir: string,
+    phase: string,
+    name: string,
+    usage: Partial<TickVerdictInvocation>,
+  ): Promise<void> {
+    await renderedPrompt(flumeDir, name);
+    await appendInvocationRow(
+      flumeDir,
+      phase,
+      invocation({ promptPath: promptRel(name), ...usage }),
+    );
+  }
+
+  /**
+   * The rows of a tick that is still running reach the total, because they
+   * reach disk when their agent returns rather than when the tick settles
+   * (spec/loop.md, *Every agent invocation leaves a usage row*). Reading the
+   * verdict log alone reports a four-hour wave as its last *finished* tick —
+   * a live number two orders of magnitude under what the run has paid.
+   *
+   * Three readings are separated here at once: a running tick's rows are
+   * added, a settled tick's rows are not added twice (they sit in the log
+   * *and* in the rows file, which is cleared only when that phase next
+   * ticks), and a rows file a tick that died before this run left behind is
+   * another run's money.
+   */
+  it("flume status totals the usage rows written since the lock's start instant", async () => {
+    const { dir, runStart } = await fixture(
+      "flume-status-spend-running-",
+      process.pid,
+    );
+    const flumeDir = join(dir, ".flume");
+    try {
+      // `build`'s tick is still running: two agents back, no verdict written.
+      for (const [i, key] of ["first", "second"].entries()) {
+        await returned(flumeDir, "build", promptName(runStart + 3_000 + i, key), {
+          turns: 7,
+          durationMs: 2_000,
+          inputTokens: 100,
+          outputTokens: 200,
+          cacheCreationInputTokens: 300,
+          cacheReadInputTokens: 400,
+          costUsd: 4,
+        });
+      }
+      // `plan`'s tick settled: its row is in the log and still in its rows
+      // file, under the promptPath the log names it by.
+      await appendInvocationRow(flumeDir, "plan", invocation({ turns: 4 }));
+      // And a tick that died before this run started, never carried by any
+      // verdict, still holding its rows.
+      await returned(
+        flumeDir,
+        "previous-run",
+        promptName(runStart - 30_000, "stale"),
+        { turns: 777, costUsd: 77 },
+      );
+
+      // Non-vacuity: the rows this case is about really are on disk before
+      // the verb reads them (`.claude/rules/engineering.md`, *A green verdict
+      // is proven non-vacuous*).
+      expect(await readInvocationRows(flumeDir, "build")).toHaveLength(2);
+      expect(await readInvocationRows(flumeDir, "plan")).toHaveLength(1);
+      expect(await readInvocationRows(flumeDir, "previous-run")).toHaveLength(1);
+
+      const r = await runCli(dir, ["status"]);
+
+      expect(r.code).toBe(0);
+      const lines = spendLines(r.out);
+      expect(lines).toHaveLength(1);
+      const line = lines[0] ?? "";
+      // The settled tick's two rows plus the running tick's two, summed.
+      expect(line).toContain(
+        "build ×4 (20 turns, 5.0s, 210 in / 412 out tokens, " +
+          "614 cache-write / 816 cache-read, $8.2500)",
+      );
+      // Once, not twice: the same row in the log and in the rows file is one
+      // agent's money.
+      expect(line).toContain("plan ×1 (4 turns,");
+      // Dated before the claim: not this run's, wherever its rows sit.
+      expect(line).not.toContain("previous-run");
+      expect(line).not.toContain("777");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, SPAWN_BUDGET_MS);
+
+  /**
+   * What the total does not yet carry, said out loud. Every invocation
+   * persists its prompt before the agent runs and its row when that agent
+   * returns, so the prompts this run wrote that no row names are exactly the
+   * agents whose cost is still outstanding — and without the count, a total
+   * that is complete and a total waiting on four agents print identically.
+   */
+  it("flume status names how many agents are still in flight", async () => {
+    const { dir, runStart } = await fixture(
+      "flume-status-inflight-",
+      process.pid,
+    );
+    const flumeDir = join(dir, ".flume");
+    try {
+      const back = promptName(runStart + 1_000, "back");
+      const out1 = promptName(runStart + 2_000, "outstanding-one");
+      const out2 = promptName(runStart + 3_000, "outstanding-two");
+      const earlier = promptName(runStart - 30_000, "earlier-run");
+      // One agent of the running wave has returned; two have not; and one
+      // prompt belongs to a run that ended before this one claimed the lock.
+      await returned(flumeDir, "build", back, { turns: 2, costUsd: 1 });
+      await renderedPrompt(flumeDir, out1);
+      await renderedPrompt(flumeDir, out2);
+      await renderedPrompt(flumeDir, earlier);
+
+      // Non-vacuity: four prompts on disk, one row against them.
+      expect(readdirSync(renderedPromptsDir(flumeDir))).toHaveLength(4);
+      expect(await readInvocationRows(flumeDir, "build")).toHaveLength(1);
+
+      const waiting = await runCli(dir, ["status"]);
+
+      expect(waiting.code).toBe(0);
+      const line = spendLines(waiting.out)[0] ?? "";
+      // The two started-and-unreported, and not the prompt from before the
+      // claim, which is no longer anyone's flight.
+      expect(line).toContain("2 agents still in flight");
+
+      // One of them comes back. The count is a count of the outstanding set,
+      // not a constant — and it names one agent in the singular.
+      await returned(flumeDir, "build", out1, { turns: 3, costUsd: 2 });
+      const nearly = await runCli(dir, ["status"]);
+
+      expect(nearly.code).toBe(0);
+      const after = spendLines(nearly.out)[0] ?? "";
+      expect(after).toContain("1 agent still in flight");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, SPAWN_BUDGET_MS);
 
   it("flume status totals the live run's agent usage by phase", async () => {
     // The vitest worker itself plays the live supervisor — its own pid is

@@ -19,16 +19,24 @@
  * way and a field decoded for one surface may not be dropped from the next.
  */
 
-import { appendFile, readFile, writeFile, mkdir, rm } from "node:fs/promises";
+import {
+  appendFile,
+  readdir,
+  readFile,
+  writeFile,
+  mkdir,
+  rm,
+} from "node:fs/promises";
 import { readFileSync } from "node:fs";
 
 import type { AgentUsage } from "./Agent.js";
 import { bound } from "./bounds.js";
-import { existsLoud } from "./fsProbe.js";
+import { existsLoud, isDirectoryOrAbsentUnder } from "./fsProbe.js";
 import type { GateResult } from "./Gate.js";
 import {
   invocationsDir,
   invocationsPath,
+  invocationsPhaseOf,
   namespacedJoin,
   tickVerdictDir,
   tickVerdictPath,
@@ -624,25 +632,38 @@ export interface PhaseAgentUsage extends AgentUsageTotals {
 }
 
 /**
- * Fold `verdicts` into one total per phase, in the order each phase first
- * invoked an agent. A phase appears only once a verdict of its own carried a
+ * Some agent rows and the phase that ran them — the whole of what
+ * {@link totalAgentUsageByPhase} reads. A {@link TickVerdict} is one of
+ * these, which is how the supervisor keeps handing the fold its children's
+ * verdicts unchanged; a reader holding rows that have not reached a verdict
+ * yet — `flume status` over a tick still running (`src/runSpend.ts`) — has
+ * the same two facts and needs no verdict built around them.
+ */
+export interface PhaseInvocations {
+  readonly phaseName: string;
+  readonly invocations: readonly TickVerdictInvocation[];
+}
+
+/**
+ * Fold `spans` into one total per phase, in the order each phase first
+ * invoked an agent. A phase appears only once a span of its own carried a
  * row, so "nothing was spent" and "nothing ran" read the same because they
- * are, and a span whose ticks invoked nothing totals to an empty list rather
+ * are, and a set whose spans invoked nothing totals to an empty list rather
  * than a roster at zero.
  *
- * One grouping for every span of rows: `superviseLoop`
+ * One grouping for every set of rows: `superviseLoop`
  * (`src/loopSupervisor.ts`) folds the run it just supervised, `flume status`
  * folds what the live run has written so far, and neither respells the
  * grouping beside the other (`.claude/rules/engineering.md`, *The fix lands
- * at the mechanism*). Which rows are in the span is the caller's — the
- * supervisor holds its own children's verdicts, `status` bounds the log by
- * when the run claimed the lock.
+ * at the mechanism*). Which rows are in the set is the caller's — the
+ * supervisor holds its own children's verdicts, `status` bounds the rows on
+ * disk by when the run claimed the lock.
  */
 export function totalAgentUsageByPhase(
-  verdicts: readonly TickVerdict[],
+  spans: readonly PhaseInvocations[],
 ): PhaseAgentUsage[] {
   const byPhase = new Map<string, AgentUsageTotals>();
-  for (const verdict of verdicts) {
+  for (const verdict of spans) {
     // Guarded on a non-empty row list rather than folded unconditionally:
     // `totalAgentUsage` over zero rows is a no-op on the numbers, but seeding
     // the map would put a phase that invoked nothing into the result at zero
@@ -1233,6 +1254,48 @@ function isInvocationRow(rec: unknown): rec is TickVerdictInvocation {
   if (!rec || typeof rec !== "object") return false;
   const r = rec as Partial<TickVerdictInvocation>;
   return typeof r.promptPath === "string" && Array.isArray(r.uncommittedTracked);
+}
+
+/**
+ * Every phase's in-progress usage rows, one span per phase whose rows file
+ * holds any, phase-name order. The cross-phase face of
+ * {@link readInvocationRows} above, for a reader that wants what the state
+ * root is paying for right now without knowing which phases a chain
+ * declares — `flume status` under a live supervisor (`src/runSpend.ts`),
+ * which must report a running tick's spend whether or not its chain loaded.
+ *
+ * The phase each file names comes back through `invocationsPhaseOf`
+ * (`src/paths.ts`), the inverse of the naming {@link appendInvocationRow}
+ * wrote it under, so the enumeration and the writer share one spelling of the
+ * suffix. A name that is not a rows file is skipped.
+ *
+ * Absent reads as no rows, and is **proven** the same way every other read of
+ * this artifact proves it: `isDirectoryOrAbsentUnder` (`src/fsProbe.ts`)
+ * descends from the state root, so a plain file standing anywhere above the
+ * rows dir refuses rather than answering the listing `ENOENT` on win32
+ * (`.claude/rules/platform-facts.md`, *win32 reports a path through a
+ * non-directory as not found*) and reporting a paying run as one that has
+ * spent nothing (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
+export async function readAllInvocationRows(
+  flumeDir: string,
+): Promise<PhaseInvocations[]> {
+  const dir = invocationsDir(flumeDir);
+  if (!isDirectoryOrAbsentUnder("tick usage rows", flumeDir, dir)) return [];
+  let names: string[];
+  try {
+    names = await readdir(namespacedJoin(dir));
+  } catch (err) {
+    throw unreadable("tick usage rows", dir, err);
+  }
+  const spans: PhaseInvocations[] = [];
+  for (const name of [...names].sort()) {
+    const phaseName = invocationsPhaseOf(name);
+    if (phaseName === undefined) continue;
+    const invocations = await readInvocationRows(flumeDir, phaseName);
+    if (invocations.length > 0) spans.push({ phaseName, invocations });
+  }
+  return spans;
 }
 
 /**
