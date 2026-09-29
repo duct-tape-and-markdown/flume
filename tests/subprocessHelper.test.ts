@@ -13,9 +13,10 @@
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { rm, writeFile } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import ts from "typescript";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
@@ -30,7 +31,13 @@ import {
   runCli,
   runNodeStreams,
 } from "./helpers/subprocess.ts";
-import { REPO_ROOT, filesUnder, relPath } from "./helpers/repoProgram.ts";
+import {
+  REPO_ROOT,
+  filesUnder,
+  parseScopeless,
+  relPath,
+} from "./helpers/repoProgram.ts";
+import { WAIT_TIMEOUT_MS } from "./helpers/waitFor.ts";
 import {
   formatPromisifiedSpawnSite,
   formatSyncSpawnSite,
@@ -46,6 +53,7 @@ import {
   harnessSpawnExports,
   helperSpawnExports,
   laneMode,
+  laneRule,
   budgetDefect,
   reduceLaneGlobs,
   scanSpawns,
@@ -1404,4 +1412,216 @@ it("the timer scan reports an awaited timer in a spawning fixture case", async (
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+// ---------- the wait helper's ceiling, against the budget above
+// (`.claude/rules/engineering.md`, *Derived state is computed, never restated
+// beside its source*) ----------
+
+/** The sync-point helper the scans below read, as a path on disk. */
+const WAIT_HELPER = join(REPO_ROOT, "tests", "helpers", "waitFor.ts");
+
+/** Any run of digits, as prose spells a figure — `30s`, `10_000`, `120`. */
+const FIGURE = /\d[\d_]*/g;
+
+/**
+ * The comment hanging above a position, stripped of its JSDoc decoration:
+ * position zero is the module header, a statement's own position is the
+ * warrant above that statement.
+ */
+function docAbove(src: ts.SourceFile, pos: number): string {
+  return (ts.getLeadingCommentRanges(src.text, pos) ?? [])
+    .map((range) => src.text.slice(range.pos, range.end))
+    .join("\n")
+    .replace(/^\s*\/\*\*?|\*\/\s*$/g, "")
+    .replace(/^[ \t]*\*[ \t]?/gm, "")
+    .trim();
+}
+
+/** The top-level statement declaring a const, by the name it declares. */
+function declarationOf(src: ts.SourceFile, name: string): ts.Statement {
+  const found = src.statements.find(
+    (stmt) =>
+      ts.isVariableStatement(stmt) &&
+      stmt.declarationList.declarations.some(
+        (decl) => ts.isIdentifier(decl.name) && decl.name.text === name,
+      ),
+  );
+  if (!found)
+    throw new Error(
+      `${relPath(REPO_ROOT, src.fileName)} declares no ${name}; the wait ` +
+        `ceiling's warrant cannot be read`,
+    );
+  return found;
+}
+
+/** A passage's first sentence, whitespace folded to one line. */
+const leadSentence = (prose: string): string => {
+  const folded = prose.replace(/\s+/g, " ").trim();
+  return /^[\s\S]*?\.(?:\s|$)/.exec(folded)?.[0].trim() ?? folded;
+};
+
+/**
+ * Which lanes a passage names as lanes — `integration lane`, `default-lane`,
+ * and the spec's own "default test lane". Off {@link LANES} rather than a
+ * list here, so a lane added to the config is a lane this reads.
+ */
+const lanesNamedIn = (prose: string): Lane[] =>
+  LANES.filter((lane) =>
+    new RegExp(`\\b${lane}(?:[- ]test)?[- ]lane\\b`, "i").test(prose),
+  );
+
+/**
+ * Which files in each lane import a module — the real import declarations, so
+ * a specifier quoted inside a fixture string is not a caller.
+ */
+async function lanesImporting(path: string): Promise<Map<Lane, string[]>> {
+  const name = basename(path);
+  const out = new Map<Lane, string[]>();
+  for (const lane of LANES) {
+    const rule = await laneRule(lane);
+    const importers: string[] = [];
+    for (const file of filesUnder(rule)) {
+      // A cheap read first: an importer spells the module's own filename in
+      // the specifier, so a file without that text cannot be one, and the
+      // parse below is paid only by the files that could be.
+      if (!readFileSync(file, "utf8").includes(name)) continue;
+      const imports = parseScopeless(file).statements.some(
+        (stmt) =>
+          ts.isImportDeclaration(stmt) &&
+          ts.isStringLiteral(stmt.moduleSpecifier) &&
+          resolve(dirname(file), stmt.moduleSpecifier.text) === path,
+      );
+      if (imports) importers.push(relPath(REPO_ROOT, file));
+    }
+    out.set(lane, importers);
+  }
+  return out;
+}
+
+/**
+ * The wait ceiling's warrant against the number it is sized against.
+ *
+ * The warrant is the only place a reader learns whether `WAIT_TIMEOUT_MS` sits
+ * inside the budget a case runs under, so a figure spelled there is the lane's
+ * number restated — and it spelled a budget no spawning site had declared for
+ * as long as anyone can date, while the one they do declare is
+ * `SPAWN_BUDGET_MS`. The stale copy read as authoritative: a ceiling raised
+ * past the retired figure would have looked like a defect against a budget
+ * that had no such bound.
+ *
+ * So the warrant carries no figure at all. It names the constant, the
+ * constant's own home carries the number, and the relation between the two is
+ * the pin below rather than a sentence.
+ */
+it("the wait ceiling's warrant restates no per-case budget literal", () => {
+  const src = parseScopeless(WAIT_HELPER);
+  const warrant = docAbove(src, declarationOf(src, "WAIT_TIMEOUT_MS").pos);
+
+  // Non-vacuity, on this verdict's own subject: the warrant was found, and it
+  // points at the constant that owns the budget. A warrant that named no
+  // owner would clear the refusal below by saying nothing about the budget at
+  // all, and the name is read against the wrapper module's own exported
+  // numbers, so the pointer resolves rather than merely looking like one.
+  expect(warrant.length).toBeGreaterThan(0);
+  expect(
+    [...harnessBudgets().keys()].filter((name) => warrant.includes(name)),
+    "the ceiling's warrant names no budget the wrapper module exports, so " +
+      "`states no figure` would be green over a warrant that never sized " +
+      "itself against one",
+  ).toEqual(["SPAWN_BUDGET_MS"]);
+
+  expect(
+    warrant.match(FIGURE) ?? [],
+    "the ceiling's warrant states a figure of its own: the per-case budget " +
+      "has one home (`SPAWN_BUDGET_MS`, tests/helpers/subprocess.ts), and a " +
+      "second copy here goes stale the moment that one moves, while still " +
+      "reading as the warrant for this ceiling",
+  ).toEqual([]);
+
+  // Sensitivity: the needle over the sentence this warrant retired, which is
+  // the shape it exists to catch.
+  expect(
+    "well inside the 30s per-case budget the lane's spawning sites declare".match(
+      FIGURE,
+    ),
+  ).toEqual(["30"]);
+});
+
+/**
+ * That ceiling against that budget, as a relation rather than a sentence.
+ *
+ * "Inside the budget" is what the warrant claims and what the callers lean
+ * on: a wait that outlives its case's ceiling reds as the runner's timeout,
+ * which names no awaited thing, instead of as the wait's own refusal. One
+ * number moving is all it takes, and neither constant's file can see the
+ * other's — so the claim is checked here, where both are in scope.
+ */
+it("the wait ceiling refuses before the spawn budget its callers declare", () => {
+  // The budget as the scan reads it and as this file imports it are the same
+  // number, so the relation below is over the constant the lane declares.
+  expect(harnessBudgets().get("SPAWN_BUDGET_MS")).toBe(SPAWN_BUDGET_MS);
+  expect(WAIT_TIMEOUT_MS).toBeGreaterThan(0);
+  expect(WAIT_TIMEOUT_MS).toBeLessThan(SPAWN_BUDGET_MS);
+});
+
+/**
+ * The helper's header against the lanes that actually call it.
+ *
+ * A header opening with the lane a helper was born in is read by every caller
+ * outside that lane as a ceiling measured for somebody else's run, and the
+ * default lane's CLI suites call this one. The claim is decidable: the opening
+ * sentence says what the module is, so a lane named there and a caller in
+ * another lane cannot both be right.
+ *
+ * The lead is the bound. A lane named further down the header is describing
+ * where the helper came from or which lane its cover runs in — history, not
+ * scope — which is why the second half reads the whole header for *presence*
+ * rather than absence: every lane that calls it is named somewhere.
+ */
+it("the wait helper's header does not scope it to the integration lane alone", async () => {
+  const header = docAbove(parseScopeless(WAIT_HELPER), 0);
+  const importers = await lanesImporting(WAIT_HELPER);
+
+  // Non-vacuity: the header was found, and both lanes really do call the
+  // helper. A scope claim is wrong only because a caller outside the named
+  // lane exists, so an empty lane here would clear the verdict below without
+  // judging anything.
+  expect(header.length).toBeGreaterThan(0);
+  for (const lane of LANES) {
+    expect(
+      (importers.get(lane) ?? []).length,
+      `${lane} lane: no file imports the wait helper`,
+    ).toBeGreaterThan(0);
+  }
+  const served = LANES.filter((lane) => (importers.get(lane) ?? []).length > 0);
+
+  const lead = lanesNamedIn(leadSentence(header));
+  expect(
+    lead.length === served.length ? [] : lead,
+    `the wait helper's opening sentence claims it for the ${lead.join(", ")} ` +
+      `lane, while the ${served.join(" and ")} lanes both import it: a ` +
+      `caller outside the named lane reads the ceiling below as sized for a ` +
+      `run it is not in`,
+  ).toEqual([]);
+
+  expect(
+    served.filter((lane) => !lanesNamedIn(header).includes(lane)),
+    "the header never names these lanes, which call the helper: a header " +
+      "that states the lanes it serves is what keeps the ceiling's warrant " +
+      "readable from either one",
+  ).toEqual([]);
+
+  // Sensitivity: the lead this header retired, read the same way — the scope
+  // claim is green over an empty set by design, so a needle that stopped
+  // matching would read exactly like a header in order.
+  expect(
+    lanesNamedIn(
+      leadSentence(
+        "The integration lane's one sync point between spawning a process " +
+          "and asserting on something that process does. A fixed sleep " +
+          "guesses how long the spawn takes.",
+      ),
+    ),
+  ).toEqual(["integration"]);
 });

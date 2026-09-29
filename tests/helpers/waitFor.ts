@@ -1,6 +1,12 @@
 /**
- * The integration lane's one sync point between spawning a process and
- * asserting on something that process does.
+ * Either lane's one sync point between spawning a process and asserting on
+ * something that process does.
+ *
+ * The integration lane is where it was written; the default-lane suites that
+ * spawn a CLI and then read what it wrote call it too, and the ceiling below
+ * is sized for both. A helper scoped in its own header to the lane it was
+ * born in reads, to every caller outside that lane, as a ceiling somebody
+ * measured somewhere else.
  *
  * A fixed sleep guesses how long the spawn takes, and the guess is calibrated
  * on a host running one file: under whole-lane contention the same guess goes
@@ -24,10 +30,17 @@ import { parsePidClaim, type PidClaim } from "../../src/pidClaim.ts";
 
 /**
  * How long a wait may run before it refuses. Sized as a ceiling over the
- * slowest thing this lane waits on — a `node`+`tsx` startup reaching its first
- * disk write — with room for a host slower than the one that measured it, and
- * well inside the 30s per-case budget the lane's spawning sites declare, so a
- * blown wait reds with its own message rather than the runner's timeout.
+ * slowest thing either lane waits on — a `node`+`tsx` startup reaching its
+ * first disk write — with room for a host slower than the one that measured
+ * it, and inside `SPAWN_BUDGET_MS` (`tests/helpers/subprocess.ts`), the
+ * per-case budget every spawning file declares, so a blown wait reds with its
+ * own message rather than the runner's timeout.
+ *
+ * No figure of that budget is restated here. It has one home, this ceiling is
+ * sized against it, and `tests/subprocessHelper.test.ts` holds the relation,
+ * so a budget moved under this ceiling reds there rather than leaving a
+ * warrant that still reads true (`.claude/rules/engineering.md`, "Derived
+ * state is computed, never restated beside its source").
  */
 export const WAIT_TIMEOUT_MS = 10_000;
 
