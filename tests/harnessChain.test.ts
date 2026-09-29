@@ -1181,25 +1181,32 @@ it("the package's judge runs after a consumer's declared gates at the same when"
   );
 
   // And the discipline gates still lead every phase's set, the
-  // consumer's declaration notwithstanding.
-  const DISCIPLINE = [
+  // consumer's declaration notwithstanding — one roster per phase, since the
+  // band a filed entry ranks at is a fact about the slice that filed it and
+  // build files none (`harness/gates.ts`).
+  const DISCIPLINE = (name: string): string[] => [
     "records",
     "clean-tree",
     "pending-gate",
     "per cites resolve",
+    ...(name === BUILD_PHASE ? [] : ["filing band"]),
     "slice-state",
   ];
   expect(chain.phases.length).toBeGreaterThan(0);
   for (const phase of chain.phases) {
+    const discipline = DISCIPLINE(phase.name);
     expect([
       phase.name,
-      phase.gates.slice(0, DISCIPLINE.length).map((gate) => gate.name),
-    ]).toEqual([phase.name, DISCIPLINE]);
+      phase.gates.slice(0, discipline.length).map((gate) => gate.name),
+    ]).toEqual([phase.name, discipline]);
   }
   // Nothing of the package's trails into the consumer's own point either:
   // build's afterCommit set is the discipline set, then the declared
   // typecheck, and the judge hangs on afterMerge alone.
-  expect(at("afterCommit")).toEqual([...DISCIPLINE, declared.afterCommit]);
+  expect(at("afterCommit")).toEqual([
+    ...DISCIPLINE(BUILD_PHASE),
+    declared.afterCommit,
+  ]);
 });
 
 it("a declared agents inheritUserMcp reaches the phase's claudeCode options", () => {

@@ -1,9 +1,10 @@
 /**
  * The gates the package's discipline needs (`spec/harness.md`, *The gates the
  * discipline needs*) — the `per` gate, the records gate, the clean-tree gate,
- * the engine's pending gate wired to the consumer's fence, and the cursor
- * gate over every cursor a plan commit moves — as one ordered set per phase,
- * always ahead of whatever gates the consumer declared.
+ * the engine's pending gate wired to the consumer's fence, the filing-band
+ * gate over the entries a plan commit added, and the cursor gate over every
+ * cursor a plan commit moves — as one ordered set per phase, always ahead of
+ * whatever gates the consumer declared.
  *
  * **Always first is mechanism here, not a promise.** {@link harnessGates}
  * returns the package's own and then the consumer's, so a declaration
@@ -13,16 +14,23 @@
  * about *any* commit the package's chain produces, and the ones whose subject
  * a given phase never writes cost a handful of at-ref reads to say so.
  *
- * The one member that is not uniform is the pending gate's **merged-tree**
- * placement, which carries the claim check (`spec/pending.md`, *Claims — an
- * entry in flight is left alone*) and is wired to the plan slices alone. Not
- * a table of where a gate applies, but the same reasoning read the other way:
- * that gate's cost is a full queue parse rather than a handful of reads, and
- * build's fence admits no entry file, so on build it would buy a re-parse and
- * a verdict that could only ever be green. The claim check has to be there
- * and not at the producer's own commit, because a build tick can stake a
- * claim between that commit and its cherry-pick — a pre-merge read answers
- * about a tree the collision is not in.
+ * Two members are not uniform, and neither is a table of where a gate
+ * applies — each is the same reasoning read the other way, that build's fence
+ * admits no entry file.
+ *
+ * The pending gate's **merged-tree** placement carries the claim check
+ * (`spec/pending.md`, *Claims — an entry in flight is left alone*) and is
+ * wired to the plan slices alone: that gate's cost is a full queue parse
+ * rather than a handful of reads, so on build it would buy a re-parse and a
+ * verdict that could only ever be green. The claim check has to be there and
+ * not at the producer's own commit, because a build tick can stake a claim
+ * between that commit and its cherry-pick — a pre-merge read answers about a
+ * tree the collision is not in.
+ *
+ * The **filing-band** gate is the other, and its subject is narrower still:
+ * the band an entry ranks at is a fact about the slice that filed it, so the
+ * gate is built from that slice and there is no band to hold build's commit
+ * to.
  *
  * The order they run in is dependency order, not the spec's listing
  * order: the dispatcher stops at the first refusal, so the pending gate —
@@ -54,13 +62,23 @@ import type { PendingGateOptions } from "../src/builtinGates.js";
 import type { Gate, GateContext, GateResult } from "../src/Gate.js";
 import type { GitStatusRecord } from "../src/git.js";
 import { matchesAny } from "../src/paths.js";
-import type { GatedQueue } from "../src/pendingLedger.js";
-import type { EntryExtension } from "../src/PendingSchema.js";
+import type { GatedQueue, GatedQueueContext } from "../src/pendingLedger.js";
+import type {
+  EntryExtension,
+  ParseResult,
+  QueueFile,
+} from "../src/PendingSchema.js";
 import type { Phase } from "../src/Phase.js";
 
 import { resolveCite, type AtRefReader, type CiteLocus } from "./citeResolver.js";
-import { BUILD_PHASE, PLAN_SLICES, type Declaration } from "./declaration.js";
+import {
+  BUILD_PHASE,
+  PLAN_SLICES,
+  type Declaration,
+  type PlanSlice,
+} from "./declaration.js";
 import { entryExtension, PerSchema } from "./entryExtension.js";
+import { inFilingBand, spelledBand } from "./filingBands.js";
 import {
   continuingNotePath,
   notePaths,
@@ -84,14 +102,35 @@ export interface GateEngine {
   /** The engine's `pendingGate` builtin — queue schema plus fence pre-check. */
   readonly pendingGate: (options: PendingGateOptions) => Gate;
   /**
-   * The queue the gated commit holds — its directory's name, its
-   * repo-relative spelling, and every entry file already read out of that
-   * commit's tree; `files` is `null` when no queue was readable at all. The
-   * engine's own (`FlumeApi.readGatedQueue`), so the gate below judges
-   * exactly the listing `pendingGate` ahead of it parsed, over an offset
-   * neither of them composed.
+   * The queue a commit holds — its directory's name, its repo-relative
+   * spelling, and every entry file already read out of that commit's tree;
+   * `files` is `null` when no queue was readable at all. The engine's own
+   * (`FlumeApi.readGatedQueue`), so the gates below judge exactly the listing
+   * `pendingGate` ahead of them parsed, over an offset none of them composed.
+   *
+   * Taken at the ref its context names, which is the gated commit for every
+   * caller here but one: the filing-band gate reads the same listing at
+   * `ctx.baseSha` to learn which entry files this span added, and a second
+   * spelling of "the queue at a ref" for that leg is the divergence this
+   * field exists to prevent.
    */
-  readonly readGatedQueue: (ctx: GateContext) => Promise<GatedQueue>;
+  readonly readGatedQueue: (ctx: GatedQueueContext) => Promise<GatedQueue>;
+  /**
+   * The engine's own queue parse (`FlumeApi.parsePendingQueue`) — core plus
+   * the chain's declared extension, with every default the schema states
+   * already folded in.
+   *
+   * A gate reading a field the engine gives a default wants this rather than
+   * its own `JSON.parse` and a fallback beside it: `priority`'s default is the
+   * engine's to state, and a second spelling of it is a gate ruling on a rank
+   * no producer wrote and the engine never used
+   * (`.claude/rules/engineering.md`, *Derived state is computed, never
+   * restated beside its source*).
+   */
+  readonly parsePendingQueue: (
+    files: readonly QueueFile[],
+    extension?: EntryExtension,
+  ) => ParseResult;
   /** The read-only git helpers the gates read a commit through. */
   readonly git: {
     /**
@@ -258,6 +297,117 @@ function perGate(declaration: Declaration, engine: GateEngine): Gate {
         );
       }
       return { ok: true, message: `${queued.length} per cite(s) resolve` };
+    },
+  };
+}
+
+/**
+ * Every entry a plan slice **added** in this span ranks inside the band that
+ * slice files at (`spec/harness.md`, *The phases*) — the rung above the prose
+ * each slice's prompt carries (`.claude/rules/engineering.md`, *Narration is
+ * the ladder's bottom rung*).
+ *
+ * Without it a rank set by provenance is held by a prompt paragraph alone: an
+ * entry filed at the schema's default is served behind every insurance
+ * finding whose tag sorts first, and nothing downstream can tell that from a
+ * queue the sweep filled. The band and the number a refusal names come off
+ * the package's one table (`filingBands.ts`), so a prompt cannot ask for a
+ * rank this gate refuses.
+ *
+ * **Added, not touched.** A rank is a fact about where the work came from, so
+ * only the entry this commit *filed* is its filer's to answer for: an entry
+ * the commit amended — a widened `files`, a re-rank the drain made on a
+ * ruling — keeps the band it was filed at, and reading it here would refuse
+ * every drain that touches a sibling slice's entry. Added is decidable at the
+ * seam the `per` gate already reads the queue through: the engine's own
+ * listing at the gated commit against its own listing at `ctx.baseSha`, the
+ * tick's branch point, so nothing here diffs a tree or composes an entry
+ * file's path.
+ *
+ * Wired to the queue's producers alone, which is where the band is a fact at
+ * all: build's fence admits no entry file, so the slice this gate is built
+ * for is the slice whose commit it reads.
+ *
+ * A relocated state root is skipped out loud: the engine reads that queue off
+ * the disk on both legs, where the base and the commit are one listing and
+ * nothing can read as added (`.claude/rules/engineering.md`, *Loud or
+ * nothing*).
+ */
+function filingBandGate(
+  slice: PlanSlice,
+  engine: GateEngine,
+  extension: EntryExtension,
+): Gate {
+  const band = spelledBand(slice);
+  return {
+    name: "filing band",
+    when: "afterCommit",
+    async run(ctx) {
+      if (ctx.stateRootRel === undefined) {
+        return {
+          ok: true,
+          message: "the state root is outside the repository",
+          skipped:
+            "the queue under a relocated state root is read off the disk at both ends, so no entry file can read as added",
+        };
+      }
+      const queue = await engine.readGatedQueue(ctx);
+      if (queue.files === null) {
+        return {
+          ok: false,
+          message: `${queue.rel} missing at ${short(ctx.commitSha)}`,
+        };
+      }
+      // The base's own listing, through the same engine read: absent from it
+      // is added by this commit, and a base with no queue at all — the first
+      // commit to file one — makes every entry added.
+      const before = await engine.readGatedQueue({
+        ...ctx,
+        commitSha: ctx.baseSha,
+      });
+      const held = new Set((before.files ?? []).map((file) => file.file));
+      const added = queue.files.filter((file) => !held.has(file.file));
+      if (added.length === 0) {
+        // Spelled, never inherited: a commit that amended the queue or left it
+        // alone files at no band, and reporting that as a judged green is the
+        // false pass that hides longest (`.claude/rules/engineering.md`, *A
+        // green verdict is proven non-vacuous*).
+        return {
+          ok: true,
+          message: `the commit adds no entry to ${queue.rel}, so it files at no band`,
+          skipped: "no entry file added in the gated span",
+        };
+      }
+      // The engine's parse over the added files alone, for the defaults it
+      // folds in: an entry declaring no `priority` carries the schema's, which
+      // is the rank the engine will order it by.
+      const parsed = engine.parsePendingQueue(added, extension);
+      if (!parsed.ok) {
+        return refuse(
+          `${parsed.errors.length} added entry file(s) do not parse at ${short(ctx.commitSha)}`,
+          parsed.errors.map(
+            (error) =>
+              `${error.file}: ${error.path === "" ? "" : `${error.path}: `}${error.message}`,
+          ),
+        );
+      }
+      const outside = parsed.entries.flatMap((entry) =>
+        inFilingBand(slice, entry.priority)
+          ? []
+          : [
+              `${entry.tag}: filed at \`${entry.priority}\`, outside ${slice}'s band of ${band}`,
+            ],
+      );
+      if (outside.length > 0) {
+        return refuse(
+          `${outside.length} entry file(s) this commit added rank outside ${slice}'s band of ${band}; the queue's one ordering is that number, so a rank off its source is served in the wrong place on every tick after`,
+          outside,
+        );
+      }
+      return {
+        ok: true,
+        message: `${added.length} entry file(s) added, each within ${slice}'s band of ${band}`,
+      };
     },
   };
 }
@@ -669,16 +819,19 @@ function buildFence(
 }
 
 /**
- * Whether this phase is one of the queue's producers — the plan slices, which
- * are every phase the package ships but build (`PLAN_SLICES`,
- * `declaration.ts`).
+ * The slice this phase is, if it is one of the queue's producers — the plan
+ * slices, which are every phase the package ships but build (`PLAN_SLICES`,
+ * `declaration.ts`); `undefined` for build, which files no entry.
  *
  * Read off the package's own roster rather than off a fence or a commit: which
  * phases write the queue is a fact the package states when it declares them,
- * so a sixth slice joins this predicate by joining that list.
+ * so a sixth slice joins this predicate by joining that list. It answers with
+ * the slice rather than with a boolean because one member of the set is built
+ * from the slice itself — the band its own filed entries carry — and a second
+ * narrowing beside this one is a name the two could disagree about.
  */
-function producesQueue(name: string): boolean {
-  return (PLAN_SLICES as readonly string[]).includes(name);
+function queueProducer(name: string): PlanSlice | undefined {
+  return PLAN_SLICES.find((slice) => slice === name);
 }
 
 /**
@@ -687,19 +840,22 @@ function producesQueue(name: string): boolean {
  * These are the discipline's, and they run in dependency order: records
  * and the clean tree are facts about the commit itself; the pending gate
  * proves the queue parses and every entry's declared files survive build's
- * fence; the `per` gate then reads cites out of a queue already known to
- * parse. The slice-state gate trails them because its probe spawns git where
- * the others read. The dispatcher stops at the first refusal, so that order is
- * what decides which message a tick is handed back.
+ * fence; the `per` gate and the filing-band gate then read cites and ranks
+ * out of a queue already known to parse. The slice-state gate trails them
+ * because its probe spawns git where the others read. The dispatcher stops at
+ * the first refusal, so that order is what decides which message a tick is
+ * handed back.
  *
- * The merged-tree pending gate behind them is the one member the set does not
- * carry for every phase, and the module doc above says why: its subject is
- * the queue a commit rewrote, and build's fence admits no entry file, so on
- * build it would re-parse the whole queue to say nothing.
+ * The filing-band gate and the merged-tree pending gate behind them are the
+ * members the set does not carry for every phase, and the module doc above
+ * says why: the queue a commit rewrote is the subject of both, and build's
+ * fence admits no entry file.
  */
 export function harnessGates(options: HarnessGatesOptions): Gate[] {
   const { phase, declaration, engine, putDown, entryFields, declared = [] } =
     options;
+  /** The slice this set is for, or `undefined` on build (`queueProducer`). */
+  const slice = queueProducer(phase.name);
   const queue = {
     extension: entryExtension(entryFields),
     targetFence: buildFence(declaration),
@@ -715,7 +871,7 @@ export function harnessGates(options: HarnessGatesOptions): Gate[] {
     // the spec names is a drain's — a plan slice deleting or folding a note
     // whose entry is in flight — and a drain is a producer
     // (`spec/pending.md`, *A claim covers the entry's records*).
-    ...(producesQueue(phase.name)
+    ...(slice !== undefined
       ? { entryRecords: (tag: string, root: string) => notePaths(root, tag) }
       : {}),
   };
@@ -724,8 +880,11 @@ export function harnessGates(options: HarnessGatesOptions): Gate[] {
     cleanTreeGate(phase.writablePaths, engine),
     engine.pendingGate(queue),
     perGate(declaration, engine),
+    ...(slice !== undefined
+      ? [filingBandGate(slice, engine, queue.extension)]
+      : []),
     sliceStateGate(engine),
-    ...(producesQueue(phase.name)
+    ...(slice !== undefined
       ? [engine.pendingGate({ ...queue, when: "afterMerge" as const })]
       : []),
     ...declared,

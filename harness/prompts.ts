@@ -71,6 +71,7 @@ import {
   type PlanSlice,
 } from "./declaration.js";
 import { PerSchema } from "./entryExtension.js";
+import { FILING_BANDS } from "./filingBands.js";
 import {
   continuingNotePath,
   notePath,
@@ -158,32 +159,28 @@ function putDownStatement(phase: HarnessPhase): string {
 }
 
 /**
- * Where each plan slice's own filed entries sit in the queue's one ordering
- * (`spec/harness.md`, *The phases*) — one clause per slice, beside the
- * sentence that frames them, so the thresholds and the reason are stated once
- * and only the band varies ({@link PUT_DOWN_ACTS} is the same shape for the
- * same reason).
+ * What each plan slice's own filed entries rank at, in the words that slice's
+ * prompt reads — one clause per slice, beside the sentence that frames them,
+ * so the framing and the reason are stated once and only the clause varies
+ * ({@link PUT_DOWN_ACTS} is the same shape for the same reason).
  *
- * **One table, because a number spelled per prompt is three numbers.** The
- * engine's tie-break is the tag, so an entry filed with no `priority` takes
- * the schema's default of `0` and the queue is served alphabetically whatever
- * the work is; the band is what keeps a downstream report ahead of an
- * insurance finding. A prompt that spelled its own number would be a copy no
- * gate reads (`.claude/rules/engineering.md`, *Derived state is computed,
- * never restated beside its source*).
+ * **The numbers are not here.** Each clause takes its band off the package's
+ * one table ({@link FILING_BANDS}, `filingBands.ts`), which the gate that
+ * refuses an out-of-band entry reads too: a prompt spelling its own number
+ * would be a copy that asks for exactly the rank the gate refuses
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
+ * beside its source*). What stays here is the pairing of a band with the
+ * source it is the band *of*, which is the half a number carries none of.
  *
  * **Keyed on where the record came from, never on what it says.** The inbox
  * slice carries two bands because it drains two kinds of queue, and which
  * kind a record is, is its directory — the fact that slice's prompt already
  * reads paths for, rather than a judgement about the prose inside.
  */
-const FILING_BANDS: Record<PlanSlice, string> = {
-  "plan-inbox":
-    "a record from the inbox queue or the friction channel, and a failing title you took out of a red lane, answers a downstream report or an operator's ruling, and files at `30`; a record from the notes queue is a build note, and files at `20`; and you are the drain, so an entry already in the queue is re-ranked here and nowhere else, only on a ruling that its source was misread",
-  "plan-derive":
-    "an entry derived from a spec commit files at `10`, under anything a report or a build note asked for and over the insurance the sweep files",
-  "plan-sweep":
-    "an entry the sweep files carries `0`, under every band a report, a note, or the spec locus files at — insurance is served after the product",
+const FILING_BAND_CLAUSES: Record<PlanSlice, string> = {
+  "plan-inbox": `a record from the inbox queue or the friction channel, and a failing title you took out of a red lane, answers a downstream report or an operator's ruling, and files at \`${FILING_BANDS.report}\`; a record from the notes queue is a build note, and files at \`${FILING_BANDS.note}\`; and you are the drain, so an entry already in the queue is re-ranked here and nowhere else, only on a ruling that its source was misread`,
+  "plan-derive": `an entry derived from a spec commit files at \`${FILING_BANDS.spec}\`, under anything a report or a build note asked for and over the insurance the sweep files`,
+  "plan-sweep": `an entry the sweep files carries \`${FILING_BANDS.sweep}\`, under every band a report, a note, or the spec locus files at — insurance is served after the product`,
 };
 
 /**
@@ -196,9 +193,14 @@ const FILING_BANDS: Record<PlanSlice, string> = {
  * rank is provenance, `blockedBy` inherits none — lives on the discipline
  * page the slices already open, and this statement points at it rather than
  * carrying a third copy into each tick.
+ *
+ * It names the refusal too, because there is one: the band a slice files at is
+ * held at that slice's own commit (`filingBandGate`, `harness/gates.ts`), and
+ * a prompt that asked for a rank without saying so would leave the tick to
+ * learn its own band from a reverted commit.
  */
 function filingBandStatement(slice: PlanSlice): string {
-  return `**Every entry you file carries a \`priority\`, and its band is where the work came from.** The queue's one ordering is that number descending, ties on the tag, so an entry filed without one takes the default and is served alphabetically whatever it is about. Yours: ${FILING_BANDS[slice]}. A rank is a fact rather than a lever — *A rank is provenance* in the discipline file has the rest.`;
+  return `**Every entry you file carries a \`priority\`, and its band is where the work came from.** The queue's one ordering is that number descending, ties on the tag, so an entry filed without one takes the default and is served alphabetically whatever it is about. Yours: ${FILING_BAND_CLAUSES[slice]}. An entry you file outside that band is refused at your own commit, naming the tag and the rank. A rank is a fact rather than a lever — *A rank is provenance* in the discipline file has the rest.`;
 }
 
 /**
@@ -400,7 +402,7 @@ export type PlanSliceSpanArg = (typeof PLAN_SLICE_PROMPT_SPAN_KEYS)[number];
  * (`sliceWindow.ts`). The band is here for the same reason the path is: the
  * queue is one queue, but what a slice's own entries rank at is a fact about
  * that slice, and one shared value would be one provenance handed to all
- * three ({@link FILING_BANDS}). The claimed set is here for the mirror of
+ * three ({@link FILING_BAND_CLAUSES}). The claimed set is here for the mirror of
  * that reason:
  * it is a fact the engine already reported on the tick, not a scan either
  * ({@link claimedBlock}).
@@ -427,7 +429,7 @@ export function planSlicePromptArgs(
     PLAN_STATE: planStateBlock(stateRoot, slice),
     PLAN_STATE_SHAPE: planStateShapeBlock(slice),
     ARTIFACTS: artifactsBlock(stateRoot, slice),
-    /** The band this slice's own filed entries carry ({@link FILING_BANDS}). */
+    /** The band this slice's own filed entries carry ({@link FILING_BAND_CLAUSES}). */
     FILING_BAND: filingBandStatement(slice),
     CLAIMED_ENTRIES: claimedBlock(claimed),
   };
