@@ -62,8 +62,10 @@ import {
 } from "./tickVerdict.js";
 import {
   closeWaveMerge,
+  foldAttemptFacts,
   mergeAttempt,
   openWaveMerge,
+  waveMergeError,
   type EntryAttempt,
 } from "./waveMerge.js";
 import { createWorktree, teardownWorktreeInstance } from "./worktrees.js";
@@ -202,8 +204,9 @@ export async function runFanout(
   // threw. The mode folds to one tick-level `noCommit` a shipping sibling
   // erases, so the record under the tag is the only per-entry trace
   // (`RenderFailure`, `src/tickVerdict.ts`). Filled as each attempt returns
-  // below, and read by the merge stage's own refusal verdict, which holds this
-  // same array.
+  // below, and read by the merge stage's own refusal verdict — which holds
+  // this same array and is built where the wave has settled, so a refusal
+  // reports the refusals raised behind it as well as before it.
   const renderFailures: RenderFailure[] = [];
 
   // Carry each entry's span onto trunk as that entry's own agent finishes:
@@ -233,10 +236,11 @@ export async function runFanout(
   // A throw there is the same wall it has always been — it stops the wave
   // carrying any further span — but the siblings still running have to settle
   // before this leg can leave, or their worktrees are torn down under them by
-  // nothing. A `WaveLedgerRefusal` rides this holder like any other: the
-  // rewrite is inside the pick's own hold now, so the refusal happens
-  // mid-wave, and the picks it already landed are named by the verdict it
-  // carries (`src/waveMerge.ts`).
+  // nothing. A refused ledger rewrite rides this holder like any other cause:
+  // the rewrite is inside the pick's own hold now, so the refusal happens
+  // mid-wave, and the verdict naming every pick it landed — and everything the
+  // siblings behind it went on to observe — is built at the throw below, where
+  // the wave has settled (`waveMergeError`, `src/waveMerge.ts`).
   let mergeError: unknown;
 
   // `git worktree add`/`remove` mutate the shared `.git/worktrees/` metadata
@@ -406,8 +410,14 @@ export async function runFanout(
     );
     perEntry.push(r);
     if (r.renderFailure) renderFailures.push(r.renderFailure);
+    // A walled wave carries no further span onto trunk — but what this
+    // attempt observed away from trunk is still a fact of this tick, and the
+    // verdict below is built where every slot has finished, so the facts half
+    // of the merge runs either way (`foldAttemptFacts`, `src/waveMerge.ts`).
     const queued = mergeTail.then(() =>
-      mergeError === undefined ? mergeAttempt(merge, r) : undefined,
+      mergeError === undefined
+        ? mergeAttempt(merge, r)
+        : foldAttemptFacts(merge, r),
     );
     // The tail itself never rejects: a merge that threw must not take the
     // queue down with it, or every sibling behind it would reject with the
@@ -536,14 +546,17 @@ export async function runFanout(
   // the append happens in the slot promise's own `finally`.
   for (let i = 0; i < slots.length; i++) await slots[i]!;
   if (slotError !== undefined) throw slotError;
-  // A `WaveLedgerRefusal` held here propagates past the worktree cleanup
-  // below, straight to `tick()`'s catch: the spans the wave already landed are
-  // on trunk, and the verdict naming them rides the error. Surviving worktrees
-  // are the accepted cost of refusing rather than proceeding; the next
-  // `pruneWorktrees` call reclaims their metadata once a human has cleared the
-  // refusal, and the claims below stay staked for the same reason — the
-  // reclaim needs no repair.
-  if (mergeError !== undefined) throw mergeError;
+  // A refused ledger rewrite becomes its `WaveLedgerRefusal` here and not at
+  // the pick that hit it: every slot has finished behind this line, so the
+  // verdict the error carries names the whole wave — the spans already landed
+  // on trunk, and the decline or render refusal a sibling settled after the
+  // refusal (`waveMergeError`, `src/waveMerge.ts`). From here it propagates
+  // past the worktree cleanup below, straight to `tick()`'s catch. Surviving
+  // worktrees are the accepted cost of refusing rather than proceeding; the
+  // next `pruneWorktrees` call reclaims their metadata once a human has
+  // cleared the refusal, and the claims below stay staked for the same
+  // reason — the reclaim needs no repair.
+  if (mergeError !== undefined) throw await waveMergeError(merge, mergeError);
 
   // Close the stage: the fold over what the picks observed. Each of them
   // already landed its own ledger commit inside its own ship-lock hold, so

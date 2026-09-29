@@ -9360,10 +9360,11 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
     // wave now carries a second, declined entry (the shouldRun seam)
     // alongside the shipping one — the shape spec/loop.md "The tick verdict
     // — one facts artifact" drift (b) actually describes: the declined flag
-    // `mergeAttempt` sets as it carries each attempt, before
-    // `commitPendingUpdate` runs, must survive onto `WaveLedgerRefusal`'s
-    // carried verdict exactly like `shippedTags` does, not just the trivial
-    // single-entry case.
+    // the merge stage folds per attempt must survive onto
+    // `WaveLedgerRefusal`'s carried verdict exactly like `shippedTags` does,
+    // not just the trivial single-entry case. Which side of the refusing pick
+    // the decline lands on is left to the wave here; the two cases below
+    // order it on purpose.
     const corrupt = "{ corrupted mid-wave, not json";
     const invoked: string[] = [];
     const agent = fanoutAgent({
@@ -9417,6 +9418,201 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
     expect(outcome.verdict?.tags).toHaveLength(2);
     expect(outcome.verdict?.declined).toBe(true);
     expect(outcome.verdict?.phaseName).toBe("build");
+  });
+
+  /**
+   * The refusing pick's whole ship-lock span, as a wait a sibling slot can
+   * hold on: the lock file appears when `mergeAttempt` takes it and is gone
+   * when that span ends — past the ledger
+   * rewrite that refused inside it, and so past the point a verdict built at
+   * the refusing pick was frozen (spec/loop.md "The ship lock and the
+   * worktree lock — sibling ticks take turns at git").
+   *
+   * Event-based rather than a sleep, so the ordering the two cases below
+   * claim is the engine's own passage and not a guess at what a merge costs
+   * (`tests/helpers/waitFor.ts`).
+   */
+  async function refusingPickSettled(lockPath: string): Promise<void> {
+    await waitFor(`the refusing pick's ship-lock hold at ${lockPath}`, () =>
+      existsSync(lockPath) ? true : undefined,
+    );
+    await waitFor(
+      `the refusing pick's ship-lock span to end at ${lockPath}`,
+      () => (existsSync(lockPath) ? undefined : true),
+    );
+  }
+
+  it("the ledger-refusal verdict names a decline folded after the refusing pick", async () => {
+    await writePending(fx.repo, [
+      makeEntry("SHIP-A", ["src/a.ts"]),
+      makeEntry("DECLINE-B", ["src/b.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const corruptEntry = join(queueDirOf(fx.repo), entryFileName("CORRUPT"));
+    const corrupt = "{ corrupted mid-wave, not json";
+    const shipLock = join(fx.repo, ".git", "flume", "ship.lock");
+
+    // The sibling suites above race the two slots and read whichever landed
+    // first; this one orders them. DECLINE-B's slot is held in its
+    // `setupWorktree` until SHIP-A's merge span has ended, so `shouldRun`
+    // declines it strictly *behind* the pick whose ledger rewrite refused.
+    // The wait's own refusal is captured rather than thrown into the engine's
+    // provisioning-failure arm, where a blown wait would read as an entry
+    // that was never offered at all.
+    let heldWait: string | undefined;
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [],
+      shouldRun: (ctx) => ctx.assignedEntry?.tag !== "DECLINE-B",
+      setupWorktree: async (ctx: WorktreeSetupContext) => {
+        if (ctx.worktreeKey !== "DECLINE-B") return undefined;
+        try {
+          await refusingPickSettled(shipLock);
+        } catch (err) {
+          heldWait = (err as Error).message;
+        }
+        return undefined;
+      },
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "ship-a": async (cwd) => {
+          await commitEntryFile(fx.repo, entryFileName("CORRUPT"), corrupt);
+          await writeAndCommit(
+            cwd,
+            "src/a.ts",
+            "from-A\n",
+            "build(SHIP-A): ship",
+          );
+        },
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // The ordering this case turns on happened, rather than the wait giving
+    // up and leaving the decline where it was already covered.
+    expect(heldWait).toBeUndefined();
+
+    // The refusal itself, unchanged from the siblings above: exit-69-worthy
+    // failure, ledger left corrupt rather than overwritten from a parse it
+    // never trusted.
+    expect(outcome.failed).toBe(true);
+    expect(outcome.ledgerRefusal).toBe("parse-failure");
+    expect(tickExitCode(outcome)).toBe(EX_MOUNT_DEAD);
+    expect(await readFile(corruptEntry, "utf8")).toBe(corrupt);
+
+    const verdict = outcome.verdict;
+    expect(verdict).toBeDefined();
+    // Vacuity, and the refusal site's own leg: only `WaveLedgerRefusal`
+    // summarizes a wave this way, and both halves of the wave reached it —
+    // SHIP-A shipped, DECLINE-B was provisioned a worktree.
+    expect(verdict?.summary).toContain("pending-ledger rewrite refused");
+    expect(verdict?.shippedTags).toEqual(["SHIP-A"]);
+    expect([...(verdict?.tags ?? [])].sort()).toEqual(["DECLINE-B", "SHIP-A"]);
+
+    // The defect: the decline is folded behind the refusing pick, so a
+    // verdict built at that pick names a wave the decline had not joined.
+    expect(verdict?.declined).toBe(true);
+  });
+
+  it("the ledger-refusal verdict names a render refusal raised after the refusing pick", async () => {
+    await writePending(fx.repo, [
+      makeEntry("SHIP-A", ["src/a.ts"]),
+      makeEntry("REFUSE-C", ["src/c.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const corruptEntry = join(queueDirOf(fx.repo), entryFileName("CORRUPT"));
+    const corrupt = "{ corrupted mid-wave, not json";
+    const shipLock = join(fx.repo, ".git", "flume", "ship.lock");
+
+    // One shared span, one arg: `CMD` is what makes exactly one entry's
+    // render refuse while its sibling's resolves and ships.
+    await writeFile(
+      join(fx.configDir, "prompt.md"),
+      "digest: !`{{CMD}}`\n",
+      "utf8",
+    );
+    const failingSpan = "echo span-detail 1>&2; exit 3";
+
+    // Same ordering as the decline case above: REFUSE-C's slot is held until
+    // SHIP-A's merge span has ended, so the span that will not resolve runs —
+    // and the refusal it raises is recorded — behind the refusing pick.
+    let heldWait: string | undefined;
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [],
+      promptArgs: (ctx) => ({
+        CMD: ctx.assignedEntry?.tag === "REFUSE-C" ? failingSpan : "exit 0",
+      }),
+      setupWorktree: async (ctx: WorktreeSetupContext) => {
+        if (ctx.worktreeKey !== "REFUSE-C") return undefined;
+        try {
+          await refusingPickSettled(shipLock);
+        } catch (err) {
+          heldWait = (err as Error).message;
+        }
+        return undefined;
+      },
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      // REFUSE-C is registered nowhere: its render aborts before an
+      // invocation, and an accidental one throws.
+      agent: fanoutAgent({
+        "ship-a": async (cwd) => {
+          await commitEntryFile(fx.repo, entryFileName("CORRUPT"), corrupt);
+          await writeAndCommit(
+            cwd,
+            "src/a.ts",
+            "from-A\n",
+            "build(SHIP-A): ship",
+          );
+        },
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(heldWait).toBeUndefined();
+
+    // The refusal itself, unchanged.
+    expect(outcome.failed).toBe(true);
+    expect(outcome.ledgerRefusal).toBe("parse-failure");
+    expect(await readFile(corruptEntry, "utf8")).toBe(corrupt);
+
+    const verdict = outcome.verdict;
+    expect(verdict).toBeDefined();
+    // Vacuity and the refusal site, as above: the shipping half really
+    // shipped and the refusing half really was provisioned.
+    expect(verdict?.summary).toContain("pending-ledger rewrite refused");
+    expect(verdict?.shippedTags).toEqual(["SHIP-A"]);
+    expect([...(verdict?.tags ?? [])].sort()).toEqual(["REFUSE-C", "SHIP-A"]);
+
+    // The defect: the render refusal is raised behind the refusing pick, into
+    // the live array a verdict built at that pick had already copied.
+    const reported = verdict?.renderFailures ?? [];
+    expect(reported).toHaveLength(1);
+    expect(reported[0]!.tag).toBe("REFUSE-C");
+    expect(reported[0]!.signature).toBe(failingSpan);
+    expect(reported[0]!.message).toContain("span-detail");
   });
 
   it("a ledger-rewrite refusal over a wave that shipped nothing carries the wave's gate-revert cause on its verdict", async () => {

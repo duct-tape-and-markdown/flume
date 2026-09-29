@@ -723,7 +723,10 @@ function ledgerRewriteFailureChainSrc(phaseName: string): string {
  * subprocess (`Dispatcher.tick()` alone never writes the file). The wave
  * here also mixes a shipped entry with a declined one, so both facts must
  * survive onto the on-disk artifact, not just the shipped tag the existing
- * single-entry suite already covers.
+ * single-entry suite already covers. Which slot settles first is the wave's
+ * own business: the refusal's verdict is built where every slot has finished,
+ * so the `declined` read below does not turn on it
+ * (`tests/Dispatcher.test.ts`, the same block's two ordered cases).
  */
 describe("flume tick — the tick verdict on disk after a ledger-rewrite PendingParseFailure (LOOP-WAVE-VERDICT-MULTIENTRY-COVERAGE)", () => {
   it(

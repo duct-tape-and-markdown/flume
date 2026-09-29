@@ -118,8 +118,11 @@ export type EntryAttempt = AttemptOutcome & {
 
 /**
  * Thrown in place of whatever `commitPendingUpdate` (`src/pendingLedger.ts`)
- * refused a pick's ledger rewrite with, from inside {@link mergeAttempt}'s own
- * ship-lock hold. By this point that pick and every pick before it have
+ * refused a pick's ledger rewrite with — thrown at the wave leg's own throw
+ * site, once every slot the wave opened has finished
+ * ({@link waveMergeError}), which is why the cause travels there from the
+ * refusing pick and the verdict is built at the far end. By that point that
+ * pick and every pick before it have
  * landed on trunk through their cherry-picks and afterMerge gates, so the
  * verdict recording them must survive the throw rather than vanish with it (`spec/loop.md`, "The tick
  * verdict — one facts artifact") — and *which* refusal it was never changes
@@ -346,6 +349,17 @@ interface WaveMerge {
   checkpointAttempted: boolean;
   /** The checkpoint staked over the operator's uncommitted work, when one was taken. */
   bystanderCheckpointSha: string | undefined;
+  /**
+   * The cause a pick's ledger rewrite refused with, boxed so that "refused"
+   * is readable whatever the cause is; `undefined` while none has.
+   *
+   * Held on the stage rather than carried out by the throw alone because the
+   * verdict naming this refusal is built where the wave has *settled* — every
+   * slot finished ({@link waveMergeError}) — and a re-thrown cause is
+   * indistinguishable there from any other merge throw
+   * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+   */
+  refusal: { readonly cause: unknown } | undefined;
 }
 
 /**
@@ -401,6 +415,7 @@ export function openWaveMerge(setup: WaveMergeSetup): WaveMerge {
     declined: false,
     checkpointAttempted: false,
     bystanderCheckpointSha: undefined,
+    refusal: undefined,
   };
 }
 
@@ -433,12 +448,17 @@ export async function mergeAttempt(
   r: EntryAttempt,
 ): Promise<void> {
   const { leg } = w.setup;
-  w.attempts.push(r);
-  w.attemptGateResults.push(...r.gateResults);
-  // This entry's afterCommit rows, in front of the merge rows below: the
-  // wave's timings are one run order across stages, so an entry's attempt
-  // time lands before the merge time it preceded.
-  w.timings.push(...r.timings);
+  // Where this attempt's own records begin. The stage's arrays are
+  // wave-cumulative and the rewrite below is per-entry, so the slice is what
+  // separates what *this* pick landed from what a sibling landed before it.
+  // Taken ahead of the fold, which contributes this pick's own first record
+  // when its attempt was reverted in its worktree with a footprint to land.
+  const shippedStart = w.shipped.length;
+  const outcomesStart = w.mergeOutcomes.length;
+  // Everything this attempt observed away from trunk, through the one fold a
+  // walled wave's uncarried attempt also takes ({@link foldAttemptFacts}), so
+  // an attempt's facts have one spelling whether or not its span is carried.
+  await foldAttemptFacts(w, r);
 
   // spec/loop.md "The ship lock and the worktree lock — sibling ticks take
   // turns at git": one merge span at a time across this run's sibling ticks.
@@ -459,11 +479,6 @@ export async function mergeAttempt(
   const mergeElapsed = startTiming();
   const shipLock = await git.acquireShipLock(leg.repoRoot, leg.log);
   try {
-    // Where this attempt's own records begin. The stage's arrays are
-    // wave-cumulative and the rewrite below is per-entry, so the slice is what
-    // separates what *this* pick landed from what a sibling landed before it.
-    const shippedStart = w.shipped.length;
-    const outcomesStart = w.mergeOutcomes.length;
     let staked: string | undefined;
     try {
       staked = await carrySpan(w, r);
@@ -502,23 +517,30 @@ export async function mergeAttempt(
 }
 
 /**
- * The trunk half of one finished attempt, inside {@link mergeAttempt}'s ship
- * lock: the merge marker it stakes, the cherry-pick, the `afterMerge` gates
- * on the merged tip, the per-entry revert when one turns red, and the
- * `shipped` consult. Everything it observed it records on the stage.
+ * Everything one finished attempt observed away from trunk, folded onto the
+ * stage: the rows its own afterCommit stage produced, the usage row its agent
+ * left, the ancestry refusal that dropped its span, a decline, and the
+ * footprint and gate failure an in-worktree revert captured. Nothing here
+ * reaches trunk, so it is the whole of what an attempt whose span will never
+ * be carried still has to say.
  *
- * Answers with the merge-marker slug it staked, or `undefined` when it
- * refused before ever reaching the pick — the one fact the caller needs to
- * know whether a marker is standing for this entry once the rewrite beside it
- * has closed that marker's hazard.
+ * Two callers, one spelling (`.claude/rules/engineering.md`, *The fix lands at
+ * the mechanism*): {@link mergeAttempt}, ahead of the ship lock its pick
+ * needs, and the wave leg for an attempt a walled wave will not carry
+ * (`src/waveTick.ts`) — a decline folded or a render refusal raised behind a
+ * refusing pick is a fact of this tick, and the verdict built where the wave
+ * settles names it ({@link waveMergeError}).
  */
-async function carrySpan(
+export async function foldAttemptFacts(
   w: WaveMerge,
   r: EntryAttempt,
-): Promise<string | undefined> {
-  const { leg, phase } = w.setup;
-  const repoRoot = leg.repoRoot;
-  const afterMergeGates = phase.gates.filter((g) => g.when === "afterMerge");
+): Promise<void> {
+  w.attempts.push(r);
+  w.attemptGateResults.push(...r.gateResults);
+  // This entry's afterCommit rows, in front of the merge rows a carried span
+  // adds after them: the wave's timings are one run order across stages, so an
+  // entry's attempt time lands before the merge time it preceded.
+  w.timings.push(...r.timings);
   if (r.termination) {
     w.invocations.push({
       entryTag: r.entry.tag,
@@ -527,7 +549,7 @@ async function carrySpan(
       // spec/loop.md "Tip verify — one writer per branch, absorption
       // at the merge": this entry's worktree is done being written —
       // its agent, its tip-verify soft reset and its afterCommit
-      // revert all ran inside `runAttempt`, and the pick below touches
+      // revert all ran inside `runAttempt`, and the pick touches
       // trunk alone — but teardown is still a whole wave away, so the
       // set is readable here.
       uncommittedTracked: await git.trackedModifications(r.worktreePath),
@@ -540,8 +562,8 @@ async function carrySpan(
     // fact, not silence a partial ship summary would otherwise paper
     // over (spec/loop.md "Tip verify — one writer per branch, absorption
     // at the merge"). Distinct from the wave-level `tip-moved` outcome
-    // pushed below, which is the shared trunk racing during this wave's
-    // own merge step.
+    // `carrySpan` pushes, which is the shared trunk racing during this
+    // wave's own merge step.
     w.mergeOutcomes.push({
       entryTag: r.entry.tag,
       outcome: "dropped-work",
@@ -566,8 +588,32 @@ async function carrySpan(
       });
     }
     if (r.gateFailure) w.gateFailures.push(r.gateFailure);
-    return undefined;
   }
+}
+
+/**
+ * The trunk half of one finished attempt, inside {@link mergeAttempt}'s ship
+ * lock: the merge marker it stakes, the cherry-pick, the `afterMerge` gates
+ * on the merged tip, the per-entry revert when one turns red, and the
+ * `shipped` consult. Everything it observed there it records on the stage;
+ * what the attempt observed before it is {@link foldAttemptFacts}'s.
+ *
+ * Answers with the merge-marker slug it staked, or `undefined` when it had
+ * nothing to carry or refused before ever reaching the pick — the one fact
+ * the caller needs to know whether a marker is standing for this entry once
+ * the rewrite beside it has closed that marker's hazard.
+ */
+async function carrySpan(
+  w: WaveMerge,
+  r: EntryAttempt,
+): Promise<string | undefined> {
+  // Nothing to carry: the attempt left no span on its branch — declined,
+  // render-refused, reverted in its worktree. What it observed is already
+  // folded ({@link foldAttemptFacts}).
+  if (!r.committed) return undefined;
+  const { leg, phase } = w.setup;
+  const repoRoot = leg.repoRoot;
+  const afterMergeGates = phase.gates.filter((g) => g.when === "afterMerge");
 
   // spec/loop.md "Tip verify — one writer per branch, absorption at the
   // merge", "Harness-driven commits carry no expected-tip bookkeeping —
@@ -949,10 +995,11 @@ function waveCommitted(w: WaveMerge): boolean {
  * runs (`spec/worktrees.md`, *Fanout and worktrees — provisioning, isolation,
  * teardown*).
  *
- * Throws {@link WaveLedgerRefusal} when the rewrite refuses: this pick and
- * every pick before it are already on trunk, so the facts naming them ride the
- * error rather than vanishing with it. The wave leg holds that throw where it
- * holds any merge throw — siblings settle, then it propagates
+ * Records the refusal on the stage and re-throws the cause when the rewrite
+ * refuses: this pick and every pick before it are already on trunk, so the
+ * facts naming them ride the error out of the leg rather than vanishing with
+ * it — built once the siblings the wave is still carrying have settled
+ * ({@link waveMergeError}), which is the wave leg's own throw site
  * (`src/waveTick.ts`).
  */
 async function commitAttemptLedger(
@@ -999,7 +1046,14 @@ async function commitAttemptLedger(
       partitionIgnore,
     );
   } catch (err) {
-    throw await ledgerRefusal(w, err);
+    // The verdict for this refusal is built where the wave has settled, not
+    // here (`waveMergeError`): a slot still running can fold a decline or
+    // raise a render refusal behind this pick, and a verdict built at this
+    // point names neither (spec/loop.md "The tick verdict — one facts
+    // artifact"). The cause goes on the stage and travels bare, since the
+    // wave leg holds it beside throws that are not refusals at all.
+    w.refusal = { cause: err };
+    throw err;
   }
   if (update.sha !== preUpdate) w.chorSha = update.sha;
   if (update.tipMoved) {
@@ -1031,9 +1085,30 @@ async function commitAttemptLedger(
 }
 
 /**
+ * The error this wave leaves with, at the point every slot it opened has
+ * finished: a ledger rewrite that refused becomes the
+ * {@link WaveLedgerRefusal} carrying this wave's facts as they *settled*, and
+ * any other merge throw passes through untouched.
+ *
+ * Called from the wave leg's own throw site rather than from the refusing pick
+ * (`src/waveTick.ts`): the refusal stops the wave carrying any further span,
+ * but the siblings already running still settle behind it, and a decline
+ * folded or a render refusal raised in that window is a fact of this tick. A
+ * verdict built at the pick names whichever of them happened to have landed
+ * first (spec/loop.md "The tick verdict — one facts artifact").
+ */
+export async function waveMergeError(
+  w: WaveMerge,
+  err: unknown,
+): Promise<unknown> {
+  if (w.refusal === undefined) return err;
+  return ledgerRefusal(w, w.refusal.cause);
+}
+
+/**
  * The {@link WaveLedgerRefusal} for a rewrite that refused, built from the
- * wave facts as they stand at the refusal (spec/loop.md "The tick verdict —
- * one facts artifact"). This wave's shipped tags are already real —
+ * wave facts as they stand when its last slot has finished (spec/loop.md "The
+ * tick verdict — one facts artifact"). This wave's shipped tags are already real —
  * cherry-picked and afterMerge-gated onto trunk — and only the ledger rewrite
  * refused; a thrown error is the only channel left once `commitPendingUpdate`
  * never returns, so the verdict rides it instead of being discarded the way a
