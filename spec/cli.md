@@ -153,7 +153,9 @@ In printed order:
    totalled by phase from the usage rows written since the instant the lock
    states it started — each agent's row lands when that agent returns, so a
    tick still running is counted up to its last returned agent, and the line
-   names how many agents are still in flight; absent a
+   names how many agents have started in this run with no usage row yet —
+   spend this total does not carry, which is a fact about the total, never a
+   claim that those agents are live; absent a
    live supervisor, nothing extra. The number that decides whether a loop
    keeps running is read where the operator looks first.
 

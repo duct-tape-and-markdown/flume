@@ -175,9 +175,12 @@ a gate receives*).
 - **A write failure refuses the tick before the agent runs** (`.claude/rules/engineering.md`,
   *Loud or nothing*): a tick whose record cannot be kept does not spend an invocation
   that would leave no trace of its input.
-- **Retention is the operator's.** The directory is runtime-owned and gitignored, and
-  grows unbounded like a session-capture dir; `rm` is the policy, and a relocated state
-  root carries it along.
+- **A prompt lives as long as something names it.** The directory is runtime-owned and
+  gitignored; a rendered prompt is kept while a retained verdict row names it as
+  `promptPath`, and never trimmed inside a live run's window, where a prompt no row names
+  yet is spend the run's total does not carry (`spec/cli.md`, *`flume status` owes
+  exactly this*). The bound is the verdict history's own, never a second retention
+  setting beside it; a relocated state root carries the directory along.
 
 ## Inline-exec spans reach `sh` through stdin, never argv
 
