@@ -1413,10 +1413,10 @@ describe("flume status — names the missing capability on a requiresCapability 
 });
 
 /**
- * A chain.ts whose factory throws — the load failure `status` must report
- * rather than absorb. Throwing from the factory (not a syntax error) keeps
- * the failure the operator's own, with a message this suite can name
- * verbatim.
+ * A chain.ts whose factory throws — the load failure the best-effort leg
+ * must report rather than absorb, and the refusing leg must exit on.
+ * Throwing from the factory (not a syntax error) keeps the failure the
+ * operator's own, with a message this suite can name verbatim.
  */
 const THROWING_CHAIN_SRC =
   `export default () => {\n  throw new Error("chain factory exploded");\n};\n`;
@@ -1591,6 +1591,156 @@ describe("flume wake/sleep — a chain that fails to load (WAKE-SLEEP-CHAIN-LOAD
     },
     SPAWN_BUDGET_MS,
   );
+});
+
+/**
+ * THE-REFUSING-LOADS-REPORT-IS-PINNED-AT-BOTH-VERBS — the other leg of the
+ * shared chain load. `check` and `friction` can do no work at all without a
+ * chain, so each takes `loadChainOrRefuse` (`src/cliChainLoad.ts`) before any
+ * work of its own and owns an exit code over what comes back. Both arms that
+ * leg states are read at both verbs (spec/cli.md, *A CJS-context host is
+ * refused, never relayed*): the CJS-context refusal at exit 2, ahead of the
+ * verb's own operational branches, and `EX_MOUNT_DEAD` under the failure
+ * headline for every other load failure.
+ *
+ * The best-effort leg above is pinned on stream and text at all three of its
+ * surfaces; this leg was pinned at neither of its own, so a change to the one
+ * home either arm lives in shipped green over two unpinned verbs. Driven
+ * through the real CLI over a real chain that fails to load, both arms and
+ * both verbs, because the exit code is the whole product of these verbs on
+ * this path.
+ */
+describe("flume check/friction — the refusing chain load", () => {
+  /**
+   * A CJS-context host, materialized as the section's own first sentence
+   * spells it: the repo's own `package.json` lacks `"type": "module"`. The
+   * chain carries a top-level await, which esbuild refuses under the `cjs`
+   * output format tsx picks from that manifest
+   * (`.claude/rules/platform-facts.md`, *tsx decides a module's interop shape
+   * from the nearest `package.json` `type`*) — a chain that is otherwise
+   * valid, so nothing downstream of the loader is what refuses.
+   *
+   * That signature rather than the import-statement one, which is the arm
+   * `tests/Dispatcher.test.ts` drives at the loader: this lane spawns the CLI
+   * *under* tsx's own registered loader (`TSX_CLI`,
+   * `tests/helpers/subprocess.ts`), and a chain resolved through that loader
+   * parses as a module whatever the manifest says — measured, tsx 4.21 under
+   * node 22, where the import-statement chain loads clean and reaches the
+   * factory-shape check instead. The transform arm reads the manifest itself,
+   * so it refuses through a real verb the way it refuses in production.
+   */
+  const CJS_CONTEXT_CHAIN_SRC =
+    `const awaited = await Promise.resolve(1);\n` +
+    `export default () => ({ chain: { phases: [], humanOnly: [], awaited } });\n`;
+
+  async function writeCjsContextHost(root: string): Promise<void> {
+    await writeFile(
+      join(root, "package.json"),
+      JSON.stringify({ name: "cjs-context-host" }),
+      "utf8",
+    );
+    await writeRepoConfig(root, CJS_CONTEXT_CHAIN_SRC);
+  }
+
+  it("flume check exits 69 and names the chain-load failure on stderr", async () => {
+    const repo = await makeScratchRepo("flume-cli-repo-", "main");
+    try {
+      await writeRepoConfig(repo.dir, THROWING_CHAIN_SRC);
+
+      const check = await runCliStreams(repo.dir, ["check"]);
+
+      // EX_MOUNT_DEAD — 69, the code this verb owes for a load failure that
+      // is not the CJS-context one.
+      expect(check.code).toBe(EX_MOUNT_DEAD);
+      expect(check.stderr).toContain("check: chain failed to load");
+      // Non-vacuity: the chain this fixture wrote is what refused — its
+      // factory ran and threw, so the verb reached a chain.ts rather than
+      // reporting an absent one under the same code.
+      expect(check.stderr).toContain("chain factory exploded");
+      // The verb did none of its own work: the queue report it prints over a
+      // chain that loads never reached stdout.
+      expect(check.stdout).toBe("");
+    } finally {
+      await repo.cleanup();
+    }
+  }, SPAWN_BUDGET_MS);
+
+  it("flume friction exits 69 and names the chain-load failure on stderr", async () => {
+    const repo = await makeScratchRepo("flume-cli-repo-", "main");
+    try {
+      await writeRepoConfig(repo.dir, THROWING_CHAIN_SRC);
+
+      const friction = await runCliStreams(repo.dir, ["friction"]);
+
+      expect(friction.code).toBe(EX_MOUNT_DEAD);
+      // The verb names itself in the report, which is the only thing that
+      // differs between the two callers of the one load.
+      expect(friction.stderr).toContain("friction: chain failed to load");
+      expect(friction.stderr).toContain("chain factory exploded");
+      expect(friction.stdout).toBe("");
+    } finally {
+      await repo.cleanup();
+    }
+  }, SPAWN_BUDGET_MS);
+
+  it("flume check refuses a CJS-context host at exit 2 rather than the mount-dead code", async () => {
+    const repo = await makeScratchRepo("flume-cli-repo-", "main");
+    try {
+      await writeCjsContextHost(repo.dir);
+      // An entry the queue parse would refuse with EX_DATAERR, on the default
+      // queue path this verb reads once a chain loads. The refusal below is
+      // ahead of that branch, so exit 2 is not a code reached by parsing it.
+      await mkdir(join(repo.dir, ".flume", "plan", "pending"), {
+        recursive: true,
+      });
+      await writeFile(
+        join(repo.dir, ".flume", "plan", "pending", "BAD.json"),
+        JSON.stringify({ tag: "BAD" }),
+        "utf8",
+      );
+
+      const check = await runCliStreams(repo.dir, ["check"]);
+
+      expect(check.code).toBe(2);
+      // The headline is the fix, and the raw loader shape rides behind it as
+      // debugging detail — both on this stderr, in that order.
+      const fix = check.stderr.indexOf('add "type": "module"');
+      const raw = check.stderr.indexOf('the "cjs" output format');
+      expect(fix).toBeGreaterThanOrEqual(0);
+      expect(raw).toBeGreaterThan(fix);
+      // Not the mount-dead leg: that arm's headline is absent, so exit 2 came
+      // from the refusal rather than from a second report over the same load.
+      expect(check.stderr).not.toContain("check: chain failed to load");
+      // Nor from the queue: the entry planted above was never parsed.
+      expect(check.stderr).not.toContain("schema violation");
+    } finally {
+      await repo.cleanup();
+    }
+  }, SPAWN_BUDGET_MS);
+
+  it("flume friction refuses a CJS-context host at exit 2 rather than the mount-dead code", async () => {
+    const repo = await makeScratchRepo("flume-cli-repo-", "main");
+    try {
+      await writeCjsContextHost(repo.dir);
+
+      const friction = await runCliStreams(repo.dir, ["friction"]);
+
+      expect(friction.code).toBe(2);
+      const fix = friction.stderr.indexOf('add "type": "module"');
+      const raw = friction.stderr.indexOf('the "cjs" output format');
+      expect(fix).toBeGreaterThanOrEqual(0);
+      expect(raw).toBeGreaterThan(fix);
+      expect(friction.stderr).not.toContain("friction: chain failed to load");
+      // This verb owns a second exit-2 refusal of its own, for a chain that
+      // declares no `Chain.friction` — the undeclared-channel message. The
+      // refusal is ahead of it, so the code is not that branch's: the chain
+      // above declares no friction either, and a verb that proceeded over a
+      // chain it never loaded would report it.
+      expect(friction.stderr).not.toContain("does not declare Chain.friction");
+    } finally {
+      await repo.cleanup();
+    }
+  }, SPAWN_BUDGET_MS);
 });
 
 /**
