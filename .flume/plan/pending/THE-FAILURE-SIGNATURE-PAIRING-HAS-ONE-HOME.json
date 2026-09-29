@@ -1,6 +1,8 @@
 {
   "tag": "THE-FAILURE-SIGNATURE-PAIRING-HAS-ONE-HOME",
-  "gate": { "kind": "open" },
+  "gate": {
+    "kind": "open"
+  },
   "priority": 0,
   "files": {
     "new": [],
@@ -20,15 +22,19 @@
       {
         "path": "src/waveMerge.ts",
         "description": "two sites — the cherry-pick conflict and the foreign-tip revert refusal"
+      },
+      {
+        "path": "src/tickAttempt.ts",
+        "description": "one site — the platform preempt's class, landed with the platform stage; the two variants beside it stay as declared"
       }
     ],
     "retire": []
   },
-  "summary": "bound(<msg>.trim(), MAX_FAILURE_SIGNATURE) is spelled at ten sites across three legs while src/tickVerdict.ts names a constructor for the gate stage's signature alone",
+  "summary": "bound(<msg>.trim(), MAX_FAILURE_SIGNATURE) is spelled at eleven sites across four legs while src/tickVerdict.ts names a constructor for the gate stage's signature alone",
   "per": {
     "path": ".claude/rules/posture-sweep.md",
     "section": "Routing"
   },
-  "acceptance": "one exported constructor beside `gateFailureSignature` returning `{ signature, message }` from a message, called at all ten sites; every signature and message byte-identical to today's, so the typecheck and the standing suite hold the move with no test changed.",
-  "notes": "Third note of the family *a failure-signature-from-a-message pairing spelled per module* — d54d8f9f named it at nine sites, 243af6b5 re-noted it and named this target shape. Counted on disk this tick: `src/singletonTick.ts:185`,`:197`,`:224`,`:396`,`:504`; `src/waveTick.ts:184`,`:379`,`:410`; `src/waveMerge.ts:755`,`:917`. `src/tickAttempt.ts:919`/`:960` stay out — declared and cited variants, d54d8f9f's standing ruling."
+  "acceptance": "one exported constructor beside `gateFailureSignature` returning `{ signature, message }` from a message, called at all eleven sites; every signature and message byte-identical to today's, so the typecheck and the standing suite hold the move with no test changed.",
+  "notes": "Third note of the family *a failure-signature-from-a-message pairing spelled per module* (d54d8f9f, 243af6b5). Re-counted past cb20a56a, which added an eleventh: `src/singletonTick.ts:185`,`:197`,`:224`,`:431`,`:539`; `src/waveTick.ts:185`,`:388`,`:419`; `src/waveMerge.ts:763`,`:925`; `src/tickAttempt.ts:879`. `:941`/`:982` stay out — declared and cited variants, d54d8f9f's ruling. Shares `src/tickAttempt.ts` with A-SPLAYED-SIGNATURE, `src/waveTick.ts` with two standing entries."
 }
