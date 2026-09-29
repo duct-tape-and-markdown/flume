@@ -1,0 +1,33 @@
+{
+  "tag": "THE-RENDERED-PROMPT-PATH-SEAM-READS-THE-REAL-WRITER",
+  "gate": { "kind": "open" },
+  "priority": 0,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/tickAttempt.ts",
+        "description": "`recordRenderedPrompt`'s return, which composes the row's prefix from `STATE_ROOT_NAMES` a second time"
+      },
+      {
+        "path": "src/renderedPrompts.ts",
+        "description": "`RENDERED_PROMPT_PREFIX`, declared as that writer's prefix and taken by all three readers — the seam"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the trim and window cases and the real-tick row assertions, each hand-spelling `rendered-prompts/` between the two sides"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "recordRenderedPrompt composes promptPath's prefix itself where RENDERED_PROMPT_PREFIX is declared as its home, and every suite site hand-spells the prefix between the two",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A seam gate reads what the real writer wrote"
+  },
+  "acceptance": "the `promptPath` prefix has one home — the writer composes it from `RENDERED_PROMPT_PREFIX` rather than from `STATE_ROOT_NAMES` a second time — and a pin drives a real tick's own verdict row through the reader that resolves it, so a one-sided change to either side reds instead of trimming every prompt no live window holds. Every path written and every prompt kept reads as today; typecheck and the standing suite stay green.",
+  "pins": [
+    "a real tick's verdict row names a rendered prompt the retention reader resolves"
+  ],
+  "notes": "Verified this tick: `src/tickAttempt.ts:883` composes `${STATE_ROOT_NAMES.renderedPrompts}/` while `src/renderedPrompts.ts:40` declares `RENDERED_PROMPT_PREFIX` as that writer's prefix, and `renderedPromptName`, `trimRenderedPrompts` and `readRunSpend` all read through it. Nothing drives the two together: `tests/Dispatcher.test.ts:14402`, `:15423`, `:15478` each hand-spell `rendered-prompts/`."
+}
