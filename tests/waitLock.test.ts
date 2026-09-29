@@ -248,6 +248,7 @@ describe("the ship lock and the worktree lock — sibling ticks take turns at gi
       ["prune", () => pruneWorktrees(repo, log)],
     ];
 
+    const blocked: string[] = [];
     for (const [name, run] of commands) {
       await plantLiveHolder(lockPath);
       log.lines.length = 0;
@@ -272,10 +273,20 @@ describe("the ship lock and the worktree lock — sibling ticks take turns at gi
         existsSync(lockPath),
         `git worktree ${name} left the worktree lock behind`,
       ).toBe(false);
+      blocked.push(name);
     }
 
-    // Vacuity: all three commands really ran, so "each blocked" is three
-    // verdicts and not a loop that fell through.
+    // Vacuity: the verdicts above were reached once per command the title
+    // names, in that order. Recorded as the loop ran, because nothing else
+    // here counts it: the wait line names the lock and its holder, never the
+    // command, so three fall-through iterations and three blocked ones leave
+    // the same disk and the same log. Spelled as the literal the title reads
+    // rather than mapped off `commands`, so a list that lost an arm is red
+    // here instead of agreeing with itself.
+    expect(blocked).toEqual(["add", "remove", "prune"]);
+    // And the ordering the list was built for held: `add` planted the tree
+    // `remove` took away, which is a claim only now that the pin above says
+    // `add` ran at all.
     expect(existsSync(wt)).toBe(false);
   });
 });
