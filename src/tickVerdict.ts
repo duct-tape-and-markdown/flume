@@ -920,6 +920,17 @@ export { tickVerdictDir, tickVerdictPath, tickVerdictsLogPath };
 /** Bound on {@link tickVerdictsLogPath}'s file — a rolling window, not an unbounded log. */
 const MAX_TICK_VERDICTS = 200;
 
+/**
+ * Engine default for how much of that window `flume log` prints when the
+ * operator names no `-n` — a tail of the same history {@link
+ * MAX_TICK_VERDICTS} bounds, so the two live together. One home: the verb
+ * reads it and `src/cliHelp.ts` interpolates it into every page that states
+ * it, rather than each spelling the number again
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
+ * beside its source*).
+ */
+export const DEFAULT_LOG_VERDICTS = 10;
+
 /** Structural check a parsed JSON value is shaped like a {@link TickVerdict} — corrupt or partial input degrades to "not a verdict", never a thrown parse error surfacing as a tick failure. */
 function isTickVerdict(rec: unknown): rec is TickVerdict {
   if (!rec || typeof rec !== "object") return false;

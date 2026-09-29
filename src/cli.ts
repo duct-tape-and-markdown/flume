@@ -60,6 +60,7 @@ import {
 import { readMergingMarkers } from "./mergingMarkers.js";
 import {
   clearTickVerdict,
+  DEFAULT_LOG_VERDICTS,
   readTickVerdicts,
   totalAgentUsageByPhase,
   VerdictHistoryUnreadableError,
@@ -72,7 +73,11 @@ import {
 } from "./friction.js";
 import { existsLoudUnder, statLoud } from "./fsProbe.js";
 import { DEFAULT_KILL_GRACE_MS } from "./processTree.js";
-import { superviseLoop, type SuperviseResult } from "./loopSupervisor.js";
+import {
+  DEFAULT_TICK_BUDGET,
+  superviseLoop,
+  type SuperviseResult,
+} from "./loopSupervisor.js";
 import { stampedLogger } from "./cliLog.js";
 import { readPackageVersion } from "./selfPackage.js";
 import { claudeCode } from "./claudeCode.js";
@@ -821,7 +826,7 @@ async function dispatch(): Promise<number> {
       jsonMode = true;
       words.splice(jsonIdx, 1);
     }
-    let n = 10;
+    let n = DEFAULT_LOG_VERDICTS;
     const nIdx = words.indexOf("-n");
     if (nIdx >= 0) {
       const parsed = parseMaxValue(words[nIdx + 1]);
@@ -1413,7 +1418,7 @@ async function dispatch(): Promise<number> {
 
   if (cmd === "loop") {
     const maxIdx = rest.indexOf("--max");
-    let max = 50;
+    let max = DEFAULT_TICK_BUDGET;
     const words = [...rest];
     if (maxIdx >= 0) {
       const value = rest[maxIdx + 1];

@@ -12,6 +12,7 @@ import {
   DEFAULT_TICK_BUDGET,
 } from "./loopSupervisor.js";
 import { STATE_ROOT_DIRNAME } from "./paths.js";
+import { DEFAULT_LOG_VERDICTS } from "./tickVerdict.js";
 
 const SUBCOMMANDS = [
   "status",
@@ -332,7 +333,7 @@ Commands:
   tick [--phase <name>]
                       Run one tick of whichever phase is awake, or of the
                       named phase, awake or not.
-  loop [--max N]      Run ticks until hibernation (default cap 50).
+  loop [--max N]      Run ticks until hibernation (default cap ${DEFAULT_TICK_BUDGET}).
   wake <phase>        Mark <phase> awake (touch .flume/awake/<phase>).
   sleep <phase>       Mark <phase> hibernating (remove .flume/awake/<phase>).
   stop                Write .flume/stop and print what happens next: a live
@@ -340,7 +341,7 @@ Commands:
                       run; the next loop refuses to start until the flag is
                       removed. Idempotent. No unstop/resume verb —
                       removing the flag is the operator's own acknowledgement.
-  log [-n N] [--json] Print the last N tick verdicts (default 10) from
+  log [-n N] [--json] Print the last N tick verdicts (default ${DEFAULT_LOG_VERDICTS}) from
                       tick-verdicts.jsonl, oldest first — a human table by
                       default, or --json for the records verbatim as JSONL.
   check               Validate the working tree's plan/pending/ — parse
@@ -538,7 +539,7 @@ ${sharedRootRow(6)}
 `,
   log: `Usage: flume log [-n N] [--json]
 
-Print the last N tick verdicts (default 10) from tick-verdicts.jsonl, oldest
+Print the last N tick verdicts (default ${DEFAULT_LOG_VERDICTS}) from tick-verdicts.jsonl, oldest
 first. The human form is one fixed-format line per verdict, carrying only
 fields the record already holds: phase, committed, gate results, shipped
 tags, merge outcomes — facts only, never reclassified (park/bail vocabulary

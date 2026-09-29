@@ -6,10 +6,12 @@ import { expect, it } from "vitest";
 import {
   DEFAULT_ABORT_THRESHOLD,
   DEFAULT_QUARANTINE_SCOPE,
+  DEFAULT_TICK_BUDGET,
   FAILURE_STAGES,
 } from "../src/loopSupervisor.ts";
 import type { FailureStage } from "../src/loopSupervisor.ts";
 import { DEFAULT_KILL_GRACE_MS } from "../src/processTree.ts";
+import { DEFAULT_LOG_VERDICTS } from "../src/tickVerdict.ts";
 import { expectNoChainVocabulary } from "./helpers/chainVocabulary.ts";
 import { commentProse } from "./helpers/commentCitations.ts";
 import {
@@ -199,6 +201,81 @@ it("the shipped `abortThreshold` doc comment restates no DEFAULT_ABORT_THRESHOLD
   expect(doc).toContain("aborts the run");
 
   expect(doc).not.toContain(String(DEFAULT_ABORT_THRESHOLD));
+});
+
+/**
+ * The single source line matching `pattern`, asserted unique before it is
+ * read. A literal scan over a whole module — or a whole rendered page — turns
+ * on whatever else that text happens to spell rather than on the default the
+ * case is about (`.claude/rules/posture-sweep.md`, *A negative assertion over
+ * a whole rendered artifact*), so each absence below reads exactly the line
+ * that states the number.
+ */
+function soleLineMatching(text: string, pattern: RegExp, what: string): string {
+  const hits = text.split("\n").filter((line) => pattern.test(line));
+  expect(hits, `${what}: expected exactly one line`).toHaveLength(1);
+  return hits[0] as string;
+}
+
+/**
+ * `DEFAULT_TICK_BUDGET` (`src/loopSupervisor.ts`) is the one home for the
+ * `flume loop` cap. The verb's own `--max` default reads it and the top-level
+ * usage table interpolates it, so bumping the constant moves the behavior and
+ * every page stating it together (`.claude/rules/engineering.md` § Derived
+ * state is computed, never restated beside its source). Read against the real
+ * constant: a literal that happens to equal today's value still reds this
+ * pin the moment the default moves, and a verb spelling its own number makes
+ * the constant decide nothing.
+ */
+it("the loop verb and the top-level help page restate no DEFAULT_TICK_BUDGET literal", () => {
+  const cap = String(DEFAULT_TICK_BUDGET);
+
+  const verbDefault = soleLineMatching(
+    srcText("cli.ts"),
+    /let max =/,
+    "the `loop` verb's `--max` default",
+  );
+  // Vacuity guard: this is the initializer it claims to be, and it names the
+  // home, before the absence is asserted over it — an absence over a line
+  // that no longer sets the default is a false green.
+  expect(verbDefault).toContain("DEFAULT_TICK_BUDGET");
+  expect(verbDefault).not.toContain(cap);
+
+  const topRow = soleLineMatching(
+    srcText("cliHelp.ts"),
+    /^ {2}loop \[--max N\]/,
+    "`HELP_TOP`'s `loop` row",
+  );
+  // Same guard: the row still states a default cap at all.
+  expect(topRow).toContain("default cap");
+  expect(topRow).toContain("DEFAULT_TICK_BUDGET");
+  expect(topRow).not.toContain(cap);
+});
+
+/**
+ * `DEFAULT_LOG_VERDICTS` (`src/tickVerdict.ts`) is the one home for how much
+ * of the verdict history `flume log` prints without `-n`; both pages that
+ * state it interpolate that constant rather than spelling the count again
+ * (`.claude/rules/engineering.md` § Derived state is computed, never restated
+ * beside its source). Every page is judged, not one: the count is stated in
+ * the top-level command table and again on the verb's own page, and a pin
+ * over either alone leaves the other free to go stale.
+ */
+it("no help page in src/cliHelp.ts spells the flume log default count as a literal", () => {
+  const count = String(DEFAULT_LOG_VERDICTS);
+  const rows = srcText("cliHelp.ts")
+    .split("\n")
+    .filter((line) => /tick verdicts \(default/.test(line));
+
+  // Vacuity guard: both stating sites are in hand — the top-level table's
+  // `log` row and the `flume log` page's own opening. A pin over one row, or
+  // over none, passes while the other drifts.
+  expect(rows).toHaveLength(2);
+
+  for (const row of rows) {
+    expect(row).toContain("DEFAULT_LOG_VERDICTS");
+    expect(row).not.toContain(count);
+  }
 });
 
 /**
