@@ -14,13 +14,7 @@
  */
 
 import { resolve, join, basename, dirname, toNamespacedPath } from "node:path";
-import {
-  mkdirSync,
-  readFileSync,
-  realpathSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Stats } from "node:fs";
 
@@ -88,7 +82,6 @@ import {
   loopLockPath,
   mergingDir,
   namespacedJoin,
-  plainPath,
   queueFenceViolations,
   resolvePendingDir,
   STATE_ROOT_NAMES,
@@ -99,6 +92,7 @@ import {
   resolveStateDirs,
   StateRootResolutionError,
 } from "./cliStateDirs.js";
+import { canonicalDir, onDiskIdentity } from "./pathIdentity.js";
 import {
   agentUsageLine,
   tickExitCode,
@@ -199,30 +193,6 @@ function gitFloorWarning(version: GitVersion): string | undefined {
     `reads at: ${degrades}. The run continues; git ${floor} or newer ends ` +
     `the warning.`
   );
-}
-
-/**
- * A directory in the one spelling both sides of the comparison below can be
- * held to: the name the OS itself reports for it, absolutized. `realpathSync`
- * in its native form, for the reason `tests/helpers/fixtureRoot.ts` gives —
- * only the libuv binding asks the OS for the name it holds, which is the name
- * git reports; node's JS walk leaves win32's 8.3 alias exactly as it found it.
- * `resolve` after it folds git's forward slashes onto the host separator, so
- * `C:/r` and `C:\r` are one directory rather than two. The argument goes in
- * composed and the answer comes back through `plainPath`, the fold every
- * spent path in this file takes (`.claude/rules/platform-facts.md`, *Windows
- * MAX_PATH (~260 chars) breaks fs calls with no long component*).
- *
- * A path that will not resolve falls back to its absolutized spelling: the
- * comparison it feeds refuses on disagreement, and the fallback can only make
- * two names that are the same directory look different — never the reverse.
- */
-function canonicalDir(path: string): string {
-  try {
-    return resolve(plainPath(realpathSync.native(toNamespacedPath(path))));
-  } catch {
-    return resolve(path);
-  }
 }
 
 /**
@@ -1664,54 +1634,6 @@ async function main(): Promise<number> {
   console.error(`unknown command: ${cmd}`);
   console.error("Run `flume --help` for usage.");
   return 2;
-}
-
-/**
- * One file's on-disk identity, for the comparison below, beside the error
- * the resolving leg threw when it is the degraded leg that answered. The
- * resolving leg throws on a path that is not on disk — an argv[1] naming a
- * file that was never there — and the raw path is the honest answer then: a
- * file that is absent is not this module either way, and the import must not
- * crash over it.
- *
- * That leg is libuv's `realpathSync.native`, never node's JS `realpathSync`:
- * the fold below hands it a namespaced path, and that is the argument the JS
- * form does not take on a node `engines` admits
- * (`.claude/rules/platform-facts.md`, "realpathSync keeps the \\?\ prefix
- * only where nothing resolved"). The choice is pinned rather than
- * remembered — the namespaced-fs scan (`tests/namespacedFsPaths.test.ts`)
- * reds a composed path spelled at the JS head anywhere in `src/` or
- * `harness/`.
- *
- * Both legs still fold through `plainPath` (`src/paths.ts`), the resolving
- * one and the throwing one alike, so the comparison below is made in one
- * alphabet whatever either side resolved.
- *
- * The degraded leg is declared here, per `.claude/rules/engineering.md`
- * *Loud or nothing*: nothing downstream refuses on it, because a path that
- * names no file is a legitimate argv[1] and a throw out of the module-level
- * call below would take the import with it. What bounds it instead is that
- * the answer is never handed back to an fs call — it is only ever compared —
- * and that it carries what sent it there, so a comparison decided by an
- * unresolved side reds naming the error rather than a second spelling of one
- * file.
- */
-type OnDiskIdentity = {
-  /** The folded path the comparison is made on, resolved or not. */
-  readonly identity: string;
-  /**
-   * What the resolving leg threw, when the degraded leg is the one that
-   * answered. Absent exactly when the path resolved.
-   */
-  readonly unresolved?: Error;
-};
-
-export function onDiskIdentity(path: string): OnDiskIdentity {
-  try {
-    return { identity: plainPath(realpathSync.native(toNamespacedPath(path))) };
-  } catch (err) {
-    return { identity: plainPath(path), unresolved: err as Error };
-  }
 }
 
 /**

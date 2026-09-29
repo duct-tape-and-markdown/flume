@@ -243,7 +243,7 @@ describe("the scan's reading of one call", () => {
 });
 
 /**
- * The shape `src/cli.ts` carries: a fold spent at libuv's
+ * The shape `src/pathIdentity.ts` carries: a fold spent at libuv's
  * `realpathSync.native`, whose answer is spent again at `plainPath`
  * (`src/paths.ts`) — the fold that ends win32's namespaced alphabet.
  *
@@ -269,8 +269,8 @@ export function entryIdentity(argv1: string): string {
 `;
 
 /**
- * The shape `src/cli.ts` carried until the windows lane read it: the same
- * fold and the same native call, whose answer is handed straight to
+ * The shape the CLI's entry check carried until the windows lane read it:
+ * the same fold and the same native call, whose answer is handed straight to
  * `pathToFileURL`. On win32 that answer is `\\?\C:\…`, which the URL builder
  * reads as a UNC host, so the entry check answered "not the entry" for every
  * junction- or symlink-based install (pnpm's linked store) and `flume` ran
@@ -521,9 +521,9 @@ describe("a namespaced path never leaves its fs call", () => {
     ]);
 
     // And the package under that same reader. The accepted shape is not
-    // re-authored here: `src/cli.ts` spends its own answer at `plainPath`
-    // before the comparison it derives both sides through, and is one of the
-    // calls counted below.
+    // re-authored here: `src/pathIdentity.ts` spends its own answer at
+    // `plainPath` before the comparison it derives both sides through, and is
+    // one of the calls counted below.
     const scans = [...scanTree("src"), ...scanTree("harness")];
     const answered = scans.reduce((n, scan) => n + scan.answered, 0);
     expect(answered, "path-answering fs calls on a composed path").toBeGreaterThan(0);
@@ -650,11 +650,11 @@ describe("a composed path reaches only the head that takes it", () => {
   });
 
   it("no src/ or harness/ call hands a composed path to node's JS realpathSync", () => {
-    // The package under the same reader. `src/cli.ts` resolves its entry
-    // check through `realpathSync.native` and is the call counted here; a
-    // tree that stopped reaching that call site would leave the verdict below
-    // green over nothing (`.claude/rules/engineering.md`, *A green verdict is
-    // proven non-vacuous*).
+    // The package under the same reader. `src/pathIdentity.ts` resolves the
+    // CLI's entry check through `realpathSync.native` and is the call counted
+    // here; a tree that stopped reaching that call site would leave the
+    // verdict below green over nothing (`.claude/rules/engineering.md`, *A
+    // green verdict is proven non-vacuous*).
     const scans = [...scanTree("src"), ...scanTree("harness")];
     const nativeOnly = scans.reduce((n, scan) => n + scan.nativeOnly, 0);
     expect(nativeOnly, "composed paths at a symbol only .native resolves").toBeGreaterThan(0);

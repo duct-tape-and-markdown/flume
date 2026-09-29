@@ -39,8 +39,8 @@ export function namespacedJoin(...paths: string[]): string {
 /**
  * The idiom's inverse: one path out of win32's namespaced alphabet and into
  * its plain one. This is where a fold is *spent* when the answer it rode out
- * on is compared rather than handed back to an fs call — the CLI's entry
- * check (`onDiskIdentity`, `src/cli.ts`) is the comparison that spends it.
+ * on is compared rather than handed back to an fs call — `onDiskIdentity`
+ * (`src/pathIdentity.ts`) is where every such comparison spends it.
  *
  * Why an fs answer needs folding at all, and why the fold is unconditional
  * rather than gated on the platform: `.claude/rules/platform-facts.md`,

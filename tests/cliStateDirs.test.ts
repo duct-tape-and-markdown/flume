@@ -10,7 +10,7 @@
  * variable it rode on retargets nothing and is written back nowhere.
  */
 
-import { existsSync, lstatSync, readdirSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, realpathSync } from "node:fs";
 import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
@@ -744,6 +744,69 @@ describe("resolveStateDirs — the second state root in one checkout", () => {
       expect(configDir).toBe(own);
       expect(env.FLUME_DIR_RESOLVED_FOR).toBe(resolve(checkout));
     } finally {
+      await rm(checkout, { recursive: true, force: true });
+    }
+  });
+
+  it("a FLUME_DIR naming the checkout's own state root through a symlink resolves rather than refusing as a second root", async () => {
+    const checkout = await checkoutHoldingState();
+    try {
+      const own = join(checkout, ".flume");
+      // A second on-disk spelling of the bay this run is already using —
+      // what an operator produces by pointing FLUME_DIR at a link rather
+      // than at the directory. One directory, two names, and the refusal is
+      // about two directories.
+      const alias = join(checkout, "bay-link");
+      await symlink(own, alias, "dir");
+      // Non-vacuity, in the direction the title claims: the two names really
+      // are distinct spellings, they really are one directory, and the bay
+      // really does hold the state that would otherwise make this a second
+      // root.
+      expect(alias).not.toBe(own);
+      expect(realpathSync.native(alias)).toBe(own);
+      expect(readdirSync(own)).toEqual([STATE_ROOT_NAMES.awake]);
+
+      const env: NodeJS.ProcessEnv = { FLUME_DIR: alias };
+      const { flumeDir, configDir } = resolveStateDirs(env, checkout);
+
+      // Published in the spelling the operator typed: the fold decides
+      // identity, not what a child inherits.
+      expect(flumeDir).toBe(alias);
+      expect(configDir).toBe(own);
+      expect(env.FLUME_DIR_RESOLVED_FOR).toBe(resolve(checkout));
+    } finally {
+      await rm(checkout, { recursive: true, force: true });
+    }
+  });
+
+  it("a checkout reached through a symlinked path resolves its own bay rather than refusing it as a second root", async () => {
+    const checkout = await checkoutHoldingState();
+    // The link sits outside the checkout, because it stands in for the
+    // checkout itself — the shape a cwd reached through a linked path gives
+    // bay discovery.
+    const holder = await mkTempDir("flume-second-root-link-");
+    try {
+      const linked = join(holder, "checkout");
+      await symlink(checkout, linked, "dir");
+      const own = join(checkout, ".flume");
+      // Non-vacuity: the link resolves to the checkout, and the bay it
+      // reaches is the one holding this run's state.
+      expect(linked).not.toBe(checkout);
+      expect(realpathSync.native(linked)).toBe(checkout);
+      expect(readdirSync(join(linked, ".flume"))).toEqual([
+        STATE_ROOT_NAMES.awake,
+      ]);
+
+      // The bay in the checkout's own spelling, resolved against the linked
+      // one: the run's own state root under a second name, not a second root.
+      const env: NodeJS.ProcessEnv = { FLUME_DIR: own };
+      const { flumeDir, configDir } = resolveStateDirs(env, linked);
+
+      expect(flumeDir).toBe(own);
+      expect(configDir).toBe(join(linked, ".flume"));
+      expect(env.FLUME_DIR_RESOLVED_FOR).toBe(resolve(linked));
+    } finally {
+      await rm(holder, { recursive: true, force: true });
       await rm(checkout, { recursive: true, force: true });
     }
   });

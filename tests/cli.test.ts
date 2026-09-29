@@ -28,11 +28,8 @@ import { fileURLToPath } from "node:url";
 
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
-import {
-  CLI_MODULE_IDENTITY,
-  isInvokedDirectly,
-  onDiskIdentity,
-} from "../src/cli.ts";
+import { CLI_MODULE_IDENTITY, isInvokedDirectly } from "../src/cli.ts";
+import { onDiskIdentity } from "../src/pathIdentity.ts";
 import { buildFlumeApi } from "../src/flumeApi.ts";
 // Barrel-export pin (.claude/rules/engineering.md "An export earns its
 // consumer"): stopFlagPath is the chain-facing rule for `<flumeDir>/stop`,

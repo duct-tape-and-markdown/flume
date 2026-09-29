@@ -13,6 +13,7 @@ import { readdirSync } from "node:fs";
 import { resolve, dirname, basename } from "node:path";
 
 import { existsLoud, statLoud } from "./fsProbe.js";
+import { canonicalDir } from "./pathIdentity.js";
 import {
   defaultStateRoot,
   namespacedJoin,
@@ -181,10 +182,22 @@ function checkoutStateRootArtifact(repoRoot: string): string | undefined {
  * ({@link checkoutStateRootArtifact}), throws {@link SecondStateRootError} —
  * before the write-back, so neither root is published and nothing downstream
  * is provisioned under either (`spec/jobs.md`, *The checkout is the unit of
- * isolation*). This is the one disk read the arithmetic makes, and the one
- * place it needs one: relocating state alone while the chain stays in the bay
- * is the documented split, so the bay's presence decides nothing here and its
- * contents decide everything.
+ * isolation*).
+ *
+ * *Not the checkout's own* is decided through `canonicalDir`
+ * (`src/pathIdentity.ts`) rather than by comparing the two absolutized
+ * strings: a `FLUME_DIR` typed through a symlink, or a checkout reached
+ * through one, names the bay the run is already using in a second spelling,
+ * and refusing that as a second root hands the operator a message naming one
+ * directory twice. The fold is the one the bay-root comparison already
+ * spends, shared rather than spelled again beside it
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ *
+ * That leaves two disk reads in the arithmetic, the fold's and
+ * {@link checkoutStateRootArtifact}'s, and each earns its own: two names for
+ * one directory is a question only the OS can answer, and relocating state
+ * alone while the chain stays in the bay is the documented split, so the
+ * bay's presence decides nothing here and its contents decide everything.
  */
 export function resolveStateDirs(
   env: NodeJS.ProcessEnv,
@@ -215,7 +228,11 @@ export function resolveStateDirs(
   const own = defaultStateRoot(repoRoot);
   const flumeDir = env.FLUME_DIR ? resolve(env.FLUME_DIR) : own;
   const configDir = env.FLUME_CONFIG_DIR ? resolve(env.FLUME_CONFIG_DIR) : own;
-  if (resolve(flumeDir) !== resolve(own)) {
+  // Folded on both sides, never compared raw: the refusal is about two
+  // directories, and the env carries whichever spelling the operator typed.
+  // What is published below stays that spelling — the fold decides identity,
+  // not what a child inherits.
+  if (canonicalDir(flumeDir) !== canonicalDir(own)) {
     const artifact = checkoutStateRootArtifact(repoRoot);
     if (artifact !== undefined)
       throw new SecondStateRootError(
