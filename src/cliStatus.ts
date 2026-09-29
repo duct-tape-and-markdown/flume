@@ -260,14 +260,18 @@ export async function statusVerb(paths: FlumePaths): Promise<number> {
     const totals = agentUsageLine("agent usage this run", spend.byPhase);
     // A run that has started nothing yet prints nothing, the same silence a
     // run with no agents has always printed. Anything else prints the count
-    // of agents still out — zero included, because "this total is complete"
-    // and "this total is two hours behind" are the whole question an operator
-    // reads a live number to answer, and they render identically without it.
+    // of agents whose row this total does not hold — zero included, because
+    // "this total is complete" and "this total is two hours behind" are the
+    // whole question an operator reads a live number to answer, and they
+    // render identically without it. The clause words that count as what it
+    // is counted from — prompts rendered against rows returned — and claims
+    // nothing about whether those agents are still running, which neither
+    // artifact states (spec/cli.md, "`flume status` owes exactly this").
     if (totals !== undefined || spend.inFlight > 0) {
       console.log(
         `${totals ?? "agent usage this run: nothing returned yet"} — ` +
           `${spend.inFlight} ${spend.inFlight === 1 ? "agent" : "agents"} ` +
-          "still in flight",
+          "started with no usage row yet, spend this total does not carry",
       );
     }
   }

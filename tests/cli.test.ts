@@ -2730,10 +2730,17 @@ describe("flume status — the live run's spend (spec/cli.md \"flume status owes
    * returns, so the prompts this run wrote that no row names are exactly the
    * agents whose cost is still outstanding — and without the count, a total
    * that is complete and a total waiting on four agents print identically.
+   *
+   * The wording is the claim: the two artifacts behind the number state that
+   * an agent started and that no row for it has landed, and neither states
+   * that its process is alive (spec/cli.md, "`flume status` owes exactly
+   * this", line 7). A prompt whose agent was killed counts here for as long
+   * as the run holds the lock, so a line reading "still in flight" would be
+   * printing liveness the verb never read.
    */
-  it("flume status names how many agents are still in flight", async () => {
+  it("flume status's spend line names how many agents started with no usage row yet rather than how many are live", async () => {
     const { dir, runStart } = await fixture(
-      "flume-status-inflight-",
+      "flume-status-no-row-yet-",
       process.pid,
     );
     const flumeDir = join(dir, ".flume");
@@ -2758,17 +2765,25 @@ describe("flume status — the live run's spend (spec/cli.md \"flume status owes
       expect(waiting.code).toBe(0);
       const line = spendLines(waiting.out)[0] ?? "";
       // The two started-and-unreported, and not the prompt from before the
-      // claim, which is no longer anyone's flight.
-      expect(line).toContain("2 agents still in flight");
+      // claim, whose spend this run's total was never going to carry.
+      expect(line).toContain(
+        "2 agents started with no usage row yet, spend this total does not carry",
+      );
+      // Not a word about whether those two are running: the verb read a
+      // prompts listing and a set of rows, and neither states a process.
+      expect(line).not.toContain("in flight");
+      expect(line).not.toContain("live");
 
-      // One of them comes back. The count is a count of the outstanding set,
+      // One of them comes back. The count is a count of the unrowed set,
       // not a constant — and it names one agent in the singular.
       await returned(flumeDir, "build", out1, { turns: 3, costUsd: 2 });
       const nearly = await runCli(dir, ["status"]);
 
       expect(nearly.code).toBe(0);
       const after = spendLines(nearly.out)[0] ?? "";
-      expect(after).toContain("1 agent still in flight");
+      expect(after).toContain(
+        "1 agent started with no usage row yet, spend this total does not carry",
+      );
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
