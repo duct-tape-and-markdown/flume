@@ -151,12 +151,14 @@ export {
   type PriorAttemptRef,
 } from "./priorAttempts.js";
 
+// The render seam crosses this boundary as types alone. Both halves — the
+// loader that turns a phase's `promptPath` into bytes and the renderer that
+// takes those bytes — ride `FlumeApi` (`api.readPhaseTemplate`,
+// `api.renderPrompt`), where a chain already holds the paths and the fence
+// they read, and `flume render` is the standalone surface for a caller
+// holding neither. What a root import needs of that seam is the names for
+// what it passes in and catches coming out, which is what follows.
 export {
-  renderPrompt,
-  // The bytes half of the render seam: `renderPrompt` takes a template, not
-  // an address, so the loader that turns a phase's `promptPath` into one is
-  // public beside it.
-  readPhaseTemplate,
   NO_COMMIT_MODES,
   PRIOR_ATTEMPT_MODES,
   // The value rides `FlumeApi.InlineExecRenderError`; only the shape of its
@@ -168,7 +170,7 @@ export {
   // consumer can reach must resolve to an exported name.
   type RenderRefusal,
   // Likewise for `FlumeApi.PromptTemplateUnreadableError`: the one refusal
-  // `readPhaseTemplate` above raises, named here because that loader's hover
+  // `api.readPhaseTemplate` raises, named here because that loader's hover
   // text links it and a chain holding the caught wall in a variable — to
   // report its `promptPath` and `resolvedPath` — needs the name from this
   // entry point.
