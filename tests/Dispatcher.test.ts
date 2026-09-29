@@ -6592,6 +6592,82 @@ describe("Dispatcher fanout — the ledger commit lands with its own merge", () 
     // And the one-sha field still answers, as the last of that set.
     expect(outcome.result?.commitSha).toBe(onTrunk[1]);
   });
+
+  it("a fanout wave that shipped nothing and recorded a footprint reports committed false and names the ledger commit it landed", async () => {
+    // The pair a chain author reads off `TickResult` when a wave lands no ship
+    // but does land a queue rewrite: `committed` answers the ship, `commitSha`
+    // answers the tip. Same entry-fence overreach as the default-message case
+    // — the whole in-worktree commit reverts, and the footprint rides
+    // `commitPendingUpdate`'s shippedTags=[] branch onto trunk anyway.
+    await writePending(fx.repo, [makeEntry("FOOT-PAIR", ["src/a.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [
+          makePhase({
+            name: "build",
+            concurrency: "fanout",
+            writablePaths: ["src/**"],
+            scopeWritesToEntry: true,
+          }),
+        ],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "foot-pair": async (cwd) => {
+          await writeFile(join(cwd, "src", "a.ts"), "a\n");
+          await writeFile(join(cwd, "src", "stray.ts"), "stray\n");
+          await exec("git", ["add", "."], { cwd });
+          await exec(
+            "git",
+            ["commit", "-q", "-m", "build(FOOT-PAIR): overreach"],
+            { cwd },
+          );
+        },
+      }),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Vacuity, for both halves of the title: the wave shipped nothing, and the
+    // footprint it recorded is non-empty. A wave that recorded no footprint
+    // lands no ledger commit, and the pair below would read as absent rather
+    // than as disagreeing.
+    expect(outcome.result?.shippedTags).toEqual([]);
+    const mo = outcome.verdict?.mergeOutcomes.find(
+      (m) => m.entryTag === "FOOT-PAIR",
+    );
+    expect(mo?.footprint).toEqual(
+      expect.arrayContaining(["src/a.ts", "src/stray.ts"]),
+    );
+
+    // The footprint commit as trunk holds it — read out of git, not out of the
+    // fields under test.
+    const { stdout } = await exec(
+      "git",
+      ["log", "--format=%H%x09%s", "-n", "20"],
+      { cwd: fx.repo },
+    );
+    const footprintShas = stdout
+      .trim()
+      .split("\n")
+      .map((line) => line.split("\t"))
+      .filter(([, subject]) =>
+        subject?.startsWith("chore(flume): record merge-failure footprints"),
+      )
+      .map(([sha]) => sha);
+    expect(footprintShas).toEqual([expect.any(String)]);
+
+    // The pair, asserted together: no ship, and the tip contribution the wave
+    // made regardless.
+    expect(outcome.result?.committed).toBe(false);
+    expect(outcome.result?.ledgerCommitShas).toEqual(footprintShas);
+    expect(outcome.result?.commitSha).toBe(footprintShas[0]);
+  });
 });
 
 describe("Dispatcher fanout — the merge-stage crash marker", () => {

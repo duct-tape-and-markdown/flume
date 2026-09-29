@@ -332,7 +332,21 @@ export interface QuarantinedTag {
 export interface TickResult {
   /** Phase that produced this result. */
   phaseName: string;
-  /** True if the tick produced a commit. False on a clean exit or no-op. */
+  /**
+   * Whether this tick **landed work** on trunk: under `singleton` its span
+   * survived the cherry-pick and every `afterMerge` gate; under `fanout` at
+   * least one of the wave's picks shipped — the set
+   * {@link TickResult.shippedTags} names per tag.
+   *
+   * False is therefore "nothing shipped", never "the tip stands where this
+   * tick found it". A clean exit or a no-op left trunk alone, but a wave whose
+   * every pick was reverted still commits the queue rewrite recording each
+   * failed merge's footprint — so `committed: false` beside a
+   * {@link TickResult.commitSha} naming a real tip contribution is one
+   * consistent report rather than a contradiction. A `handoff` routing on
+   * whether the tick made progress reads this; one routing on whether the tip
+   * moved reads `commitSha` / {@link TickResult.ledgerCommitShas}.
+   */
   committed: boolean;
   /**
    * The tip contribution this tick made, when it made one — and which commit
