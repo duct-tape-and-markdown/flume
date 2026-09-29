@@ -71,6 +71,12 @@ import {
   documentedExitCodeRows,
   documentedExitCodes,
 } from "./helpers/cliHelpRows.ts";
+import { parseMaxValue } from "../src/cliArgs.ts";
+import {
+  COUNT_FLAG_CLASS_LEAD,
+  COUNT_FLAG_REFUSAL_PHRASES,
+  NOT_A_DECIMAL_INTEGER,
+} from "./helpers/countFlagClass.ts";
 import { denyDirectory, denyFile } from "./helpers/denial.ts";
 import { hermeticEnv } from "./helpers/gitEnv.ts";
 import { minimalChainSrc, writeRepoConfig } from "./helpers/repoChain.ts";
@@ -1363,6 +1369,88 @@ describe("the state-root resolution refusals, per verb (THE-VERB-PAGES-NAME-THE-
       elsewhere.length,
       "the per-code read handed back the whole section",
     ).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * THE-COUNT-FLAG-REFUSAL-CLASS-IS-PINNED-AGAINST-ITS-PARSE — the class
+ * `flume loop`'s `--max` and `flume log`'s `-n` refuse is hand-stated four
+ * times: once in each verb's `--help` usage row, once in each verb's
+ * `docs/CLI.md` section. `parseMaxValue` (`src/cliArgs.ts`) is what really
+ * decides it, and nothing drove the parse over the class the four rows
+ * enumerate — so a row naming a value the parse takes, or a parse widened
+ * past what a row names, shipped green
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ *
+ * The producer decides both sides. The rows are read off the shipped help
+ * output and off `docs/CLI.md` as the working tree holds them, never
+ * restated here; each arm's witness goes to the real parse rather than to a
+ * copy of its regex. What this file holds is the join — the span each arm is
+ * named under beside a value of it — which is the hand-authored input a
+ * refusal case takes by that section's own scope, since no parse can produce
+ * the class it rejects.
+ *
+ * Scoped by the rows that state the class rather than by a verb list here:
+ * the lead is read off every shipped page, so a third verb taking a count
+ * flag is pinned the tick its row states one.
+ */
+describe("the count flags' documented refusal class against the parse that decides it (THE-COUNT-FLAG-REFUSAL-CLASS-IS-PINNED-AGAINST-ITS-PARSE)", () => {
+  /** Every `--help` exit-code row, on any page, that opens the class. */
+  const statingRows = (): { verb: string; code: number; row: string }[] =>
+    topLevelCommandNames().flatMap((verb) => {
+      const page = helpPageFor(verb);
+      if (page === undefined) return [];
+      return [...documentedExitCodeRows(page)]
+        .map(([code, row]) => ({ verb, code, row: asStated(row) }))
+        .filter(({ row }) => row.includes(asStated(COUNT_FLAG_CLASS_LEAD)));
+    });
+
+  it("every count-flag refusal row names a value parseMaxValue refuses", async () => {
+    const rows = statingRows();
+    // Vacuity, and the direction the title claims: the class is copied per
+    // verb, so a scope that collapsed to one page — or to none — would hold
+    // every read below over a row it never compared.
+    expect(rows.length, "no shipped --help row states the count-flag class").toBeGreaterThan(1);
+    // Seven arms, as every surface stating the class enumerates them. A
+    // table that lost one leaves the rows read over six and still green.
+    expect(COUNT_FLAG_REFUSAL_PHRASES).toHaveLength(7);
+
+    // The producer's side first: each arm's witness is refused where the
+    // refusal is really decided, so a parse widened past a row reds here
+    // before any prose is read.
+    for (const { label, value } of NOT_A_DECIMAL_INTEGER) {
+      expect(
+        parseMaxValue(value),
+        `parseMaxValue takes ${label}, which every count-flag row says it refuses`,
+      ).toBeNull();
+    }
+    // And the parse still takes what the same rows say it takes, so the
+    // refusals above are the class and not a parse that answers null for
+    // everything.
+    expect(parseMaxValue("50"), "parseMaxValue refuses a decimal integer").toBe(50);
+
+    const doc = await readCliDoc();
+    for (const { verb, code, row } of rows) {
+      const section = sectionOf(doc, new RegExp(`^## \`flume ${verb}\\b`));
+      expect(section.length, `docs/CLI.md has no \`flume ${verb}\` section`).toBeGreaterThan(0);
+      const window = asStated(sentencesNamingExitCode(section, code).join("\n"));
+      expect(
+        window.length,
+        `docs/CLI.md's flume ${verb} section spends no sentence on ${code}`,
+      ).toBeGreaterThan(0);
+
+      for (const phrase of COUNT_FLAG_REFUSAL_PHRASES) {
+        expect(
+          row,
+          `flume ${verb} --help's ${code} row names no arm under "${phrase}"`,
+        ).toContain(asStated(phrase));
+        expect(
+          window,
+          `docs/CLI.md's flume ${verb} section states no ${code} cause under "${phrase}"`,
+        ).toContain(asStated(phrase));
+      }
+    }
   });
 });
 

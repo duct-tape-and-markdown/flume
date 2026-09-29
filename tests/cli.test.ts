@@ -83,6 +83,7 @@ import { fileWithContent, pidClaimIn, waitFor } from "./helpers/waitFor.ts";
 import { mkFixtureRoot, mkTempDir } from "./helpers/fixtureRoot.ts";
 import { HERMETIC_ENV_STRIP_KEYS, hermeticEnv } from "./helpers/gitEnv.ts";
 import { helpExitCodeRow } from "./helpers/cliHelpRows.ts";
+import { NOT_A_DECIMAL_INTEGER } from "./helpers/countFlagClass.ts";
 import {
   minimalChainSrc,
   markerAgentChainSrc,
@@ -5477,20 +5478,11 @@ describe("flume loop refuses a stray positional past --max/<value> (spec/cli.md 
  * line, the same one `abc` already reaches. The refusal resolves before the
  * bay, the lock and the first child, so `loop` needs no repo — like the
  * `--max abc` rows above it.
+ *
+ * The class itself is `NOT_A_DECIMAL_INTEGER` (`tests/helpers/countFlagClass.ts`),
+ * shared with the suite that reads the prose rows enumerating it against the
+ * same parse.
  */
-const NOT_A_DECIMAL_INTEGER: readonly { readonly label: string; readonly value: string }[] = [
-  { label: "the empty string", value: "" },
-  { label: "a space", value: " " },
-  { label: "a tab", value: "\t" },
-  { label: "a signed zero", value: "-0" },
-  { label: "a fraction", value: "2.5" },
-  { label: "a hex literal", value: "0x10" },
-  { label: "an exponent literal", value: "1e3" },
-  // Digits alone, past what a finite number holds: `Number` reads it as
-  // Infinity, which as a budget is a run with no bound.
-  { label: "an overlong digit run", value: "9".repeat(400) },
-];
-
 describe("the count flags take a decimal integer or refuse (parseMaxValue, src/cliArgs.ts)", () => {
   it("flume loop refuses a --max value that is not a decimal integer", async () => {
     expect(NOT_A_DECIMAL_INTEGER.length).toBeGreaterThan(0);
