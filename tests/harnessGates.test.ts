@@ -550,6 +550,43 @@ it("the filing-band gate holds each plan slice to its own band, and build's set 
   expect(gates().map((g) => g.name)).not.toContain("filing band");
 });
 
+it("the filing-band gate skips a state root resolved outside the repository", async () => {
+  const gate = bandGate("plan-derive");
+
+  // A commit that genuinely files an entry: read against the repo's own state
+  // root, the same span is judged.
+  await writeQueue([queueEntry("DERIVED", { priority: FILING_BANDS.spec })]);
+  const span = commitAll("plan: file an entry beside a relocated state root");
+  expect(span.touchedPaths).toContain(
+    `${STATE_ROOT}/plan/pending/${entryFileName("DERIVED")}`,
+  );
+  const judged = await gate.run(ctxFor(span, { phaseName: "plan-derive" }));
+  expect(judged).toMatchObject({ ok: true });
+  expect(judged.skipped).toBeUndefined();
+  expect(judged.message).toContain("1 entry file(s) added");
+
+  // The offset the engine reports for a state root outside the repo: absent,
+  // because no path in a commit's tree can address it.
+  const relocated = { segments: ["..", "elsewhere", ".flume"] };
+  expect(
+    computeStateRootRel(repo, join(repo, ...relocated.segments)),
+  ).toBeUndefined();
+
+  const skipped = await gate.run(
+    ctxFor(span, { phaseName: "plan-derive", stateRoot: relocated }),
+  );
+
+  // Same span, same added entry file in it, and still no judgement — the skip
+  // is the reported offset's, spelled on the verdict. A band the gate went on
+  // enforcing here would rule off a queue read at one offset on both legs,
+  // where nothing can read as added.
+  expect(skipped.ok).toBe(true);
+  expect(skipped.skipped).toBe(
+    "the queue under a relocated state root is read off the disk at both ends, so no entry file can read as added",
+  );
+  expect(skipped.message).toBe("the state root is outside the repository");
+});
+
 it("the records gate refuses a record written outside the tick's own tag", async () => {
   const entry = assigned("MINE");
 
@@ -1264,6 +1301,41 @@ it("a plan commit touching no judged slice's state file is skipped by the slice-
   );
   expect(elsewhere.ok).toBe(true);
   expect(elsewhere.skipped).toBeUndefined();
+});
+
+it("the slice-state gate skips a state root resolved outside the repository", async () => {
+  // A commit that genuinely carries a judged slice's state: read against the
+  // repo's own state root, the same span is judged.
+  writeState(git(repo, ["rev-parse", "HEAD"]));
+  const span = commitAll("plan: stamp the cursor beside a relocated state root");
+  expect(span.touchedPaths).toContain(STATE_PATH);
+  const judged = await sliceState().run(
+    ctxFor(span, { phaseName: "plan-derive" }),
+  );
+  expect(judged).toMatchObject({ ok: true });
+  expect(judged.skipped).toBeUndefined();
+  expect(judged.message).toContain("derivedThrough");
+
+  // The offset the engine reports for a state root outside the repo: absent,
+  // because no path in a commit's tree can address it.
+  const relocated = { segments: ["..", "elsewhere", ".flume"] };
+  expect(
+    computeStateRootRel(repo, join(repo, ...relocated.segments)),
+  ).toBeUndefined();
+
+  const skipped = await sliceState().run(
+    ctxFor(span, { phaseName: "plan-derive", stateRoot: relocated }),
+  );
+
+  // Same span, same cursor file in it, and still no judgement — the skip is
+  // the reported offset's, spelled on the verdict. No path this commit
+  // carries can address the state the gate holds, so there is no cursor here
+  // to rule on.
+  expect(skipped.ok).toBe(true);
+  expect(skipped.skipped).toBe(
+    "no commit can carry the plan state under a relocated state root",
+  );
+  expect(skipped.message).toBe("the state root is outside the repository");
 });
 
 /**
