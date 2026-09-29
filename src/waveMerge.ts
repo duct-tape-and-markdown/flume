@@ -118,45 +118,62 @@ export type EntryAttempt = AttemptOutcome & {
 };
 
 /**
- * Thrown in place of whatever a pending-ledger read or write refused this
- * wave with — `commitPendingUpdate`'s rewrite behind a pick
- * ({@link waveMergeError}), or the decide re-read a freed slot takes over a
- * queue this phase's fence cannot rewrite ({@link waveReadRefusal},
- * `refillRead` in `src/waveTick.ts`). Both are thrown at the wave leg's own
- * throw site, once every slot the wave opened has finished, which is why the
- * cause travels there from the refusing site and the verdict is built at the
- * far end. By that point the refusing pick and every pick before it have
- * landed on trunk through their cherry-picks and afterMerge gates, so the
- * verdict recording them must survive the throw rather than vanish with it (`spec/loop.md`, "The tick
- * verdict — one facts artifact") — and *which* refusal it was never changes
- * that. The rewrite read that would not parse is one of them; so is the
- * `git commit --only` that fatals on a partial commit under a paused merge
- * or cherry-pick, a named path git finds unchanged, a disk error, a lost
- * `index.lock`. The carry is widened to the call rather than keyed on a
- * cause, because every cause leaves the same tags on trunk.
+ * Thrown in place of whatever tore this wave down, once every slot it opened
+ * has finished — a ledger read or write that refused, and equally an agent
+ * that exploded, a hook that threw, a render that did not resolve. Every one
+ * of them leaves the same thing behind: the picks before it have landed on
+ * trunk through their cherry-picks and afterMerge gates, and every agent that
+ * ran has left a usage row. A bare re-throw discards all of it, so the throw
+ * carries the wave's verdict as it *settled* (`spec/loop.md`, "The tick
+ * verdict — one facts artifact") and `tick()` reports it instead of
+ * propagating.
  *
- * `refusalClass` is that classification, stated here from the `cause` in hand
- * rather than re-read downstream off the refusal's own prose
- * (`.claude/rules/engine-boundary.md`, *Told, not inferred*). `cause` stays on
- * the error for its message and for anything after the underlying throw
- * itself. `verdict` is what this class exists to carry. A plain
- * `PendingParseFailure` reaches `tick()` unwrapped only from the *opening*
- * decide-read, where no agent ran and nothing shipped — a wave's own mid-wave
- * re-read has spans behind it and leaves wrapped.
+ * The cause stays on the error for its message and for anything reading past
+ * the carry. What this class deliberately does *not* hold is a ledger
+ * classification: a slot leg that threw outside any ledger read refused no
+ * ledger, and naming one for it would be a verdict invented at the carry
+ * ({@link WaveLedgerRefusal} is the subclass for the causes that really are
+ * one).
  *
  * The class is exported no further than `tick()`'s own catch: unlike
  * `PendingParseFailure` itself (part of the gate-authoring API surface,
  * `src/flumeApi.ts`) this is the wave's one internal leg, absent from
  * `src/index.ts` and never something a chain's gate needs to distinguish.
- * {@link LedgerRefusalClass} does ship — it is what the tick outcome reports.
  */
-export class WaveLedgerRefusal extends Error {
+export class WaveCarriedThrow extends Error {
   readonly verdict: TickVerdict;
-  readonly refusalClass: LedgerRefusalClass;
   constructor(cause: unknown, verdict: TickVerdict) {
     super(refusalMessage(cause), { cause });
-    this.name = "WaveLedgerRefusal";
+    this.name = "WaveCarriedThrow";
     this.verdict = verdict;
+  }
+}
+
+/**
+ * The carry for the causes that *are* a pending-ledger refusal —
+ * `commitPendingUpdate`'s rewrite behind a pick ({@link waveMergeError}), or
+ * the decide re-read a freed slot takes over a queue this phase's fence
+ * cannot rewrite ({@link waveSlotThrow}, `refillRead` in `src/waveTick.ts`).
+ * The rewrite read that would not parse is one of them; so is the
+ * `git commit --only` that fatals on a partial commit under a paused merge
+ * or cherry-pick, a named path git finds unchanged, a disk error, a lost
+ * `index.lock`. The rewrite's carry is widened to the call rather than keyed
+ * on a cause, because every cause leaves the same tags on trunk.
+ *
+ * `refusalClass` is the one thing it adds to its base: stated here from the
+ * `cause` in hand rather than re-read downstream off the refusal's own prose
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*). A plain
+ * `PendingParseFailure` reaches `tick()` unwrapped only from the *opening*
+ * decide-read, where no agent ran and nothing shipped — a wave's own mid-wave
+ * re-read has spans behind it and leaves wrapped.
+ *
+ * {@link LedgerRefusalClass} does ship — it is what the tick outcome reports.
+ */
+export class WaveLedgerRefusal extends WaveCarriedThrow {
+  readonly refusalClass: LedgerRefusalClass;
+  constructor(cause: unknown, verdict: TickVerdict) {
+    super(cause, verdict);
+    this.name = "WaveLedgerRefusal";
     this.refusalClass =
       cause instanceof PendingParseFailure ? "parse-failure" : "commit-refusal";
   }
@@ -1205,58 +1222,70 @@ export async function waveMergeError(
   err: unknown,
 ): Promise<unknown> {
   if (w.refusal === undefined) return err;
-  return ledgerRefusal(w, w.refusal.cause, "pending-ledger rewrite");
+  return new WaveLedgerRefusal(
+    w.refusal.cause,
+    await settledWaveVerdict(w, w.refusal.cause, "pending-ledger rewrite refused"),
+  );
 }
 
 /**
- * The error a wave walled by its own queue re-read leaves with, at the same
- * point and for the same reason as {@link waveMergeError}: a freed slot's
- * decide-read over a queue this phase's fence does not admit refuses with a
- * `PendingParseFailure` (`readPendingForDecision`, `src/pendingLedger.ts`),
- * and the spans the wave carried before that slot freed are already on trunk.
- * Unwrapped, that refusal is indistinguishable at `tick()` from the opening
- * decide-read's — a queue that refused before any agent ran — and the wave's
- * facts go with it.
+ * The error a wave torn down by one of its own slots leaves with, at the same
+ * point and for the same reason as {@link waveMergeError}: whatever the slot
+ * leg threw, the spans the wave carried before it are already on trunk and
+ * every agent that ran has already left a usage row. Unwrapped, all of that
+ * goes with the throw — the carry is what keeps it
+ * (`spec/loop.md`, "The tick verdict — one facts artifact").
  *
- * Keyed on the cause here, unlike the rewrite's sibling: this site holds the
- * first throw out of *any* slot's own leg — an agent that exploded, a
- * provisioning error, a hook that threw — and only the ledger read is a ledger
- * refusal. Everything else passes through as the ordinary throw it is.
+ * Every cause leaves wrapped, because every cause leaves the same facts
+ * behind. What the cause decides is only *which* carry: a freed slot's
+ * decide-read over a queue this phase's fence does not admit refuses with a
+ * `PendingParseFailure` (`readPendingForDecision`, `src/pendingLedger.ts`)
+ * and is a ledger refusal, which `tick()` classifies; an agent that exploded,
+ * a hook that threw, a render that did not resolve refused no ledger, and
+ * takes the base carry — reported as no ledger refusal at all rather than
+ * assigned one this site would have to invent.
  */
-export async function waveReadRefusal(
+export async function waveSlotThrow(
   w: WaveMerge,
   err: unknown,
-): Promise<unknown> {
-  if (!(err instanceof PendingParseFailure)) return err;
-  return ledgerRefusal(w, err, "mid-wave queue re-read");
+): Promise<WaveCarriedThrow> {
+  const ledger = err instanceof PendingParseFailure;
+  const verdict = await settledWaveVerdict(
+    w,
+    err,
+    ledger ? "mid-wave queue re-read refused" : "a slot leg threw",
+  );
+  return ledger
+    ? new WaveLedgerRefusal(err, verdict)
+    : new WaveCarriedThrow(err, verdict);
 }
 
 /**
- * The {@link WaveLedgerRefusal} for a rewrite that refused, built from the
- * wave facts as they stand when its last slot has finished (spec/loop.md "The
- * tick verdict — one facts artifact"). This wave's shipped tags are already real —
- * cherry-picked and afterMerge-gated onto trunk — and only the ledger rewrite
- * refused; a thrown error is the only channel left once `commitPendingUpdate`
+ * The verdict a torn-down wave carries out, built from the wave facts as they
+ * stand when its last slot has finished (spec/loop.md "The tick verdict — one
+ * facts artifact"). This wave's shipped tags are already real — cherry-picked
+ * and afterMerge-gated onto trunk — and every agent that ran has already left
+ * its usage row; a thrown error is the only channel left once the wave leg
  * never returns, so the verdict rides it instead of being discarded the way a
  * plain re-throw would.
  *
- * Built for every throw out of that call, never the parse failure alone: the
- * tags on trunk are the same facts whichever refusal happened, and keying the
- * carry on a cause is how a `git commit --only` fatal — or a disk error, or an
- * `index.lock` — came to lose a verdict the parse failure's sibling arm kept.
- * `WaveLedgerRefusal` carries the cause for `tick()` to classify.
+ * Built for every throw out of a wave, never the parse failure alone: the
+ * tags on trunk are the same facts whichever cause tore it down, and keying
+ * the carry on a cause is how a `git commit --only` fatal — or a disk error,
+ * or an `index.lock`, or an agent that exploded — came to lose a verdict the
+ * parse failure's sibling arm kept. Which cause it was travels on the error
+ * that carries this, for `tick()` to classify.
  *
- * `site` is which read or write refused, in the operator's words, for the one
- * summary line the verdict carries: the two callers are the rewrite behind a
- * pick ({@link waveMergeError}) and a freed slot's queue re-read
- * ({@link waveReadRefusal}), and an operator reading the verdict has different
- * repairs for them.
+ * `event` is what happened, in the operator's words, for the one summary line
+ * the verdict carries: the callers are the rewrite behind a pick
+ * ({@link waveMergeError}) and a slot leg that threw ({@link waveSlotThrow}),
+ * and an operator reading the verdict has different repairs for them.
  */
-async function ledgerRefusal(
+async function settledWaveVerdict(
   w: WaveMerge,
   cause: unknown,
-  site: string,
-): Promise<WaveLedgerRefusal> {
+  event: string,
+): Promise<TickVerdict> {
   const {
     leg,
     phase,
@@ -1269,7 +1298,7 @@ async function ledgerRefusal(
   const why = refusalMessage(cause);
   const shippedTags = w.shipped.map((s) => s.tag);
   const committed = waveCommitted(w);
-  const verdict = buildTickVerdict({
+  return buildTickVerdict({
     phaseName: phase.name,
     tags: provisioned.map((e) => e.tag),
     committed,
@@ -1293,15 +1322,14 @@ async function ledgerRefusal(
     clearedPriorAttempts,
     summary:
       shippedTags.length > 0
-        ? `${phase.name} shipped ${shippedTags.join(", ")} — ${site} refused (${why})`
-        : `${phase.name}: ${site} refused (${why})`,
-    // headSha: the refusing read or write never reached a commit of its own,
+        ? `${phase.name} shipped ${shippedTags.join(", ")} — ${event} (${why})`
+        : `${phase.name}: ${event} (${why})`,
+    // headSha: nothing that tore this wave down reached a commit of its own,
     // so the tip has not moved past what this wave's picks already landed — a
-    // fresh read rather than the pre-refusal sha the caller holds, so this
+    // fresh read rather than the pre-throw sha the caller holds, so this
     // stays correct if a future revision moves the read point.
     headSha: await git.revParse(leg.repoRoot),
   });
-  return new WaveLedgerRefusal(cause, verdict);
 }
 
 /**

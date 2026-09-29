@@ -84,6 +84,7 @@ import {
 } from "./tickVerdict.js";
 import * as git from "./git.js";
 import {
+  WaveCarriedThrow,
   WaveLedgerRefusal,
   type LedgerRefusalClass,
 } from "./waveMerge.js";
@@ -326,8 +327,10 @@ export interface TickOutcome {
    * On a `failed` tick whose failure was the pending ledger refusing, which
    * way it refused ({@link LedgerRefusalClass}) — stated by the site that
    * refused, never re-read here off the message. Absent on every other
-   * `failed` tick, where nothing narrows the mount-dead class: chain
-   * resolution, an invalid declaration, a missing state root.
+   * `failed` tick: chain resolution, an invalid declaration, a missing state
+   * root, and a wave torn down by a throw that refused no ledger at all — an
+   * agent that exploded, a hook that threw, a render that did not resolve.
+   * Those last carry {@link verdict} instead, which is what narrows them.
    *
    * The engine reader is `tickExitCode` (`src/cliVerdict.ts`), which exits 1
    * over `"commit-refusal"` instead of `EX_MOUNT_DEAD`
@@ -461,12 +464,14 @@ export interface TickOutcome {
    * This tick's unified facts artifact, present iff a phase
    * actually ran (same condition as `result`) — absent on `hibernated`,
    * `usageError`, or `terminal`. One exception on `failed`: a fanout wave
-   * whose `commitPendingUpdate` refused — for any reason, the rewrite read
-   * that would not parse and the `git commit --only` that fatals alike
-   * (`WaveLedgerRefusal`, `src/waveMerge.ts`) — still ran a phase and shipped
-   * tags onto trunk before that refusal, so `failed: true` carries `verdict`
-   * too in that one case — every other `failed` path (chain resolution, a
-   * decide-read parse failure with no agent run) carries none. The CLI's
+   * torn down after its picks landed — the `commitPendingUpdate` that refused
+   * for any reason, a mid-wave queue re-read, and equally an agent that
+   * exploded, a hook that threw or a render that did not resolve
+   * (`WaveCarriedThrow`, `src/waveMerge.ts`) — still ran a phase, shipped
+   * tags onto trunk and spent agents before it, so `failed: true` carries
+   * `verdict` too in that one case — every other `failed` path (chain
+   * resolution, a decide-read parse failure with no agent run) carries none.
+   * The CLI's
    * `tick` command persists this via `writeTickVerdict`; `Dispatcher.tick()`
    * never writes the verdict itself, so a plain unit test calling it directly
    * gains no verdict file (the tick's own records — prior attempts, rendered
@@ -957,39 +962,47 @@ export class Dispatcher {
       // repair is a tick of the phase that *does* declare the queue writable,
       // which the decide-read's carve-out lets run over exactly this file
       // (spec/pending.md, "Queue reads are strict"). The claim that no agent
-      // ran is this arm's because a wave's own mid-wave re-read arrives
-      // wrapped: a freed slot that refuses over the same fence leaves as a
-      // `WaveLedgerRefusal` carrying the spans already on trunk
-      // (`waveReadRefusal`, `src/waveMerge.ts`). That is the other throw — a
-      // wave whose shipped work landed and whose pending-ledger read or write
-      // then refused: the rewrite read that would not parse, a freed slot's
-      // re-read, a `git commit --only` fatal under a paused merge, a disk
-      // error; its `cause` says which, and the tags it carries are the same
-      // in every case, which is why the rewrite's carry is not keyed on one
-      // of them.
+      // ran is this arm's because a wave's own throws arrive wrapped: a wave
+      // torn down after its picks landed leaves as a `WaveCarriedThrow`
+      // carrying the spans already on trunk and a usage row per agent that
+      // ran (`waveSlotThrow`, `src/waveMerge.ts`). That is the other throw —
+      // a ledger read or write that refused, and equally an agent that
+      // exploded, a hook that threw, a render that did not resolve; the
+      // `cause` says which, and the facts it carries are the same in every
+      // case, which is why the carry is not keyed on one of them.
       //
       // Everything else is an ordinary throw and keeps propagating. Both arms
       // are `failed: true` and neither is softened — but they are not one
-      // exit class: `ledgerRefusal` carries the refusing site's own
-      // classification out to `tickExitCode`, so a queue nothing can parse
-      // stays mount-dead while a ledger commit git refused is the ordinary
-      // harness error it is. A bare `PendingParseFailure` is a parse failure
-      // by its own type; the wave's is whichever the refusal stated.
+      // exit class, and the narrowing is read off the carry rather than
+      // guessed here: `WaveLedgerRefusal` is the subclass whose cause really
+      // was a pending-ledger refusal and states its own classification out to
+      // `tickExitCode`, so a queue nothing can parse stays mount-dead while a
+      // ledger commit git refused is the ordinary harness error it is. A
+      // carry that is no ledger refusal reports none, and `tickExitCode`
+      // reads its verdict instead (`src/cliVerdict.ts`) — the harness error a
+      // bare re-throw out of this call already exited with. A bare
+      // `PendingParseFailure` is a parse failure by its own type.
       if (
         !(err instanceof PendingParseFailure) &&
-        !(err instanceof WaveLedgerRefusal)
+        !(err instanceof WaveCarriedThrow)
       ) {
         throw err;
       }
       this.log.error(`[flume] ${err.message}`);
+      const carried = err instanceof WaveCarriedThrow ? err : undefined;
+      const ledgerRefusal: LedgerRefusalClass | undefined =
+        carried === undefined
+          ? "parse-failure"
+          : carried instanceof WaveLedgerRefusal
+            ? carried.refusalClass
+            : undefined;
       return {
         hibernated: false,
         failed: true,
         awakeAfter: this.baton.awake(),
         summary: err.message,
-        ledgerRefusal:
-          err instanceof WaveLedgerRefusal ? err.refusalClass : "parse-failure",
-        ...(err instanceof WaveLedgerRefusal ? { verdict: err.verdict } : {}),
+        ...(ledgerRefusal !== undefined ? { ledgerRefusal } : {}),
+        ...(carried !== undefined ? { verdict: carried.verdict } : {}),
       };
     }
     const {

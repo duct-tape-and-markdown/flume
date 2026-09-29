@@ -105,6 +105,31 @@ const TICK_EXIT_ARMS: readonly TickExitArm[] = [
       "the refusal and re-run; the queue still names what has not shipped.",
     when: (outcome) => outcome.ledgerRefusal === "commit-refusal",
   },
+  {
+    // The other failure that says nothing about the mount, and the last arm
+    // because it is the widest: a wave that ran, landed what it landed, and
+    // was then torn down by a throw out of one of its own slot legs — an
+    // agent that exploded, a hook that threw, a render that did not resolve.
+    // The carry is what makes it visible here at all (`WaveCarriedThrow`,
+    // `src/waveMerge.ts`): a bare re-throw took the verdict with it and left
+    // `main()` to exit 1 off an uncaught stack. So this arm returns that same
+    // 1 — the supervisor-child contract does not move because the tick
+    // started reporting what it already knew. Read after the ledger arms
+    // above, which carry a verdict too and state their own class over it.
+    code: 1,
+    opening: "A wave that ran and was then torn down by ",
+    phrase: "a throw out of one of its own slot legs",
+    rest:
+      " — an agent that exploded, a hook that threw, a render that did not " +
+      "resolve: the spans that merged and gated before it are on trunk, and " +
+      "this tick's verdict names them with a usage row per agent that ran. " +
+      "The chain mounted fine, so a fresh process has every reason to get " +
+      "further; read the verdict, clear the cause and re-run.",
+    when: (outcome) =>
+      outcome.failed === true &&
+      outcome.verdict !== undefined &&
+      outcome.ledgerRefusal === undefined,
+  },
 ];
 
 /**

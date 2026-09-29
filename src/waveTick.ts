@@ -67,7 +67,7 @@ import {
   mergeAttempt,
   openWaveMerge,
   waveMergeError,
-  waveReadRefusal,
+  waveSlotThrow,
   type EntryAttempt,
 } from "./waveMerge.js";
 import { createWorktree, teardownWorktreeInstance } from "./worktrees.js";
@@ -307,7 +307,7 @@ export async function runFanout(
   //
   // This is the arm the phase's own fence admits, so the read handed the
   // failure back; the arm it does not admit throws instead, and leaves this
-  // wave past the settled merge stage carrying its verdict (`waveReadRefusal`
+  // wave past the settled merge stage carrying its verdict (`waveSlotThrow`
   // (`src/waveMerge.ts`)).
   let refillParseFailure: QueueParseFailure | undefined;
   // One promise per slot this wave opened, appended to as freed slots refill.
@@ -571,13 +571,16 @@ export async function runFanout(
   // awaiting a slot is what guarantees its own refill is already appended:
   // the append happens in the slot promise's own `finally`.
   for (let i = 0; i < slots.length; i++) await slots[i]!;
-  // A queue re-read this phase's fence cannot rewrite refused inside a freed
-  // slot's continuation, and leaves here rather than bare: every slot has
-  // finished behind this line, so the spans this wave already carried onto
-  // trunk are facts a verdict has to record — the same reason its `mergeError`
-  // sibling below carries one (`waveReadRefusal`, `src/waveMerge.ts`). Any
-  // other throw out of a slot's own leg passes through untouched.
-  if (slotError !== undefined) throw await waveReadRefusal(merge, slotError);
+  // A throw out of a slot's own leg leaves here rather than bare, whatever
+  // threw it: every slot has finished behind this line, so the spans this wave
+  // already carried onto trunk and the usage row every agent that ran left
+  // behind are facts a verdict has to record — the same reason its
+  // `mergeError` sibling below carries one (`waveSlotThrow`,
+  // `src/waveMerge.ts`). A queue re-read this phase's fence cannot rewrite is
+  // one such throw and leaves classified as the ledger refusal it is; an agent
+  // that exploded, a hook that threw or a render that did not resolve leaves
+  // carrying the same verdict and no ledger class at all.
+  if (slotError !== undefined) throw await waveSlotThrow(merge, slotError);
   // A refused ledger rewrite becomes its `WaveLedgerRefusal` here and not at
   // the pick that hit it: every slot has finished behind this line, so the
   // verdict the error carries names the whole wave — the spans already landed
@@ -640,9 +643,9 @@ export async function runFanout(
   // out of the wave leaves an entry claimed by a tick that has stopped
   // carrying it; a death anywhere above leaves files naming a pid that is
   // gone, and the next selection reclaims them by its liveness probe
-  // (spec/loop.md, *Crash equals stop*). A `WaveLedgerRefusal` thrown past
+  // (spec/loop.md, *Crash equals stop*). A `WaveCarriedThrow` thrown past
   // this line leaves them standing for the same reason it leaves worktrees:
-  // the refusal is the operator's to clear, and the reclaim needs no repair.
+  // the wall is the operator's to clear, and the reclaim needs no repair.
   for (const claim of staked) claim.release();
 
   leg.log.info(

@@ -23075,3 +23075,123 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
     }
   });
 });
+
+/**
+ * A two-entry wave where one slot's own leg throws outside any ledger read.
+ *
+ * The arming is the render: `substitutePlaceholders` (`src/Prompt.ts`) throws
+ * a plain `Error` for a `{{KEY}}` the phase's `promptArgs` did not supply, and
+ * that throw is not the `InlineExecRenderError` `runAttempt` catches — it
+ * leaves `runFanoutEntry` whole and lands in the wave's `slotError`. Which is
+ * the shape the field hit: an agent that explodes, a hook that throws, a
+ * render that does not resolve. SHIP-A's args are complete, so its span
+ * cherry-picks, gates and lands on trunk while BOOM-B's leg is tearing the
+ * wave down beside it.
+ *
+ * Returns the tick settled either way — outcome or throw — because whether it
+ * throws at all is one of the properties under test.
+ */
+async function waveTornDownByASlotLeg(): Promise<{
+  outcome: Awaited<ReturnType<Dispatcher["tick"]>> | undefined;
+  thrown: unknown;
+}> {
+  await writePending(fx.repo, [
+    makeEntry("SHIP-A", ["src/a.ts"]),
+    makeEntry("BOOM-B", ["src/b.ts"]),
+  ]);
+  new Baton(join(fx.repo, ".flume")).wake("build");
+  await writeFile(join(fx.configDir, "prompt.md"), "task: {{TASK}}\n", "utf8");
+
+  const phase = makePhase({
+    name: "build",
+    concurrency: "fanout",
+    writablePaths: ["src/**"],
+    promptArgs: (ctx: TickContext) =>
+      ctx.assignedEntry?.tag === "BOOM-B" ? {} : { TASK: "ship it" },
+  });
+
+  const dispatcher = new Dispatcher({
+    chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+    repoRoot: fx.repo,
+    configDir: fx.configDir,
+    agent: fanoutAgent({
+      "ship-a": (cwd) =>
+        writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(SHIP-A): ship"),
+    }),
+    log: silent,
+    maxParallel: 2,
+  });
+
+  let thrown: unknown;
+  const outcome = await dispatcher.tick().catch((err: unknown) => {
+    thrown = err;
+    return undefined;
+  });
+  return { outcome, thrown };
+}
+
+it("a wave whose slot leg throws outside a ledger read still writes the settled wave's verdict", async () => {
+  const { outcome, thrown } = await waveTornDownByASlotLeg();
+
+  // Vacuity pins for the arm this case exists to judge: the tick really was
+  // torn down, and by a throw that is no ledger refusal — without the second
+  // the assertions below would hold over the `WaveLedgerRefusal` arm the
+  // suites above already cover.
+  expect(outcome?.failed).toBe(true);
+  expect(outcome?.summary).toMatch(/prompt references missing args: TASK/);
+  expect(outcome?.ledgerRefusal).toBeUndefined();
+
+  // The claim, in three parts. `tick()` returns rather than re-throwing…
+  expect(thrown).toBeUndefined();
+  // …the verdict rides the outcome the CLI persists…
+  expect(outcome?.verdict).toBeDefined();
+  // …and the real writer really lands it under the state root, where the
+  // supervisor and the next tick read it (`spec/loop.md`, *The tick verdict —
+  // one facts artifact*).
+  const flumeDir = join(fx.repo, ".flume");
+  await writeTickVerdict(flumeDir, outcome!.verdict!);
+  const onDisk = await readTickVerdict(flumeDir, "build");
+  expect(onDisk?.phaseName).toBe("build");
+  expect(onDisk?.summary).toContain("a slot leg threw");
+  // The tick's whole agent spend, which is what went unwritten: one row for
+  // the agent that ran, none for the entry whose render never reached one.
+  expect(onDisk?.invocations.map((i) => i.entryTag)).toEqual(["SHIP-A"]);
+
+  // And the exit class does not move: the chain mounted, the wave ran, so
+  // this is the ordinary harness error a bare re-throw already exited with —
+  // never the mount-dead fail-fast that would burn the rest of a `flume loop`
+  // run against a wall that is not there.
+  expect(tickExitCode(outcome!)).toBe(1);
+  expect(tickExitCode(outcome!)).not.toBe(EX_MOUNT_DEAD);
+});
+
+it("the verdict a wave writes after a slot leg throws names every span it landed on trunk", async () => {
+  const { outcome, thrown } = await waveTornDownByASlotLeg();
+
+  // Same vacuity pins, plus the one this case turns on: the wave really did
+  // carry a span onto trunk before it was torn down, so "names every span"
+  // is a claim over a non-empty set.
+  expect(thrown).toBeUndefined();
+  expect(outcome?.failed).toBe(true);
+  expect(outcome?.ledgerRefusal).toBeUndefined();
+  expect(existsSync(join(fx.repo, "src", "a.ts"))).toBe(true);
+  expect(existsSync(join(fx.repo, "src", "b.ts"))).toBe(false);
+
+  const verdict = outcome?.verdict;
+  expect(verdict).toBeDefined();
+  expect(verdict?.tags).toContain("SHIP-A");
+  expect(verdict?.shippedTags).toEqual(["SHIP-A"]);
+  expect(verdict?.committed).toBe(true);
+  // The recovery handle the spec calls the point of the record: the landed
+  // span's base and head, so it is re-cherry-pickable from the verdict alone.
+  expect(verdict?.mergeOutcomes).toEqual([
+    {
+      entryTag: "SHIP-A",
+      outcome: "merged",
+      baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+      headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+    },
+  ]);
+  // The entry the throw came from is named too — provisioned, never shipped.
+  expect(verdict?.tags).toContain("BOOM-B");
+});
