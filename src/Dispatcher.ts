@@ -42,8 +42,7 @@ import { Baton } from "./Baton.js";
 import {
   CjsContextLoadError,
   diskChainLoader,
-  resolveWorktreesBaseDeclaration,
-  type ChainModule,
+  type LoadedChain,
 } from "./chainLoad.js";
 import { EntryClaimStore } from "./entryClaims.js";
 import type { FlumePaths } from "./flumeApi.js";
@@ -166,7 +165,7 @@ export interface DispatcherOptions {
    * of `<configDir>/chain.ts` per process). Override for in-process test
    * injection only (no subprocess).
    */
-  chainLoader?: () => Promise<ChainModule>;
+  chainLoader?: () => Promise<LoadedChain>;
   /**
    * Foundations governor. Given the repo root, returns a predicate
    * answering "is this fork slug resolved?". Consulted once per tick;
@@ -582,15 +581,17 @@ export class Dispatcher {
   /** The roots this dispatcher resolved, as the chain factory receives them. */
   private readonly paths: FlumePaths;
   /**
-   * `Chain.worktreesBase` evaluated, for the chain this dispatcher last
-   * loaded — `undefined` until one is loaded, and whenever the chain
-   * declares none. Held rather than re-evaluated per worktree, which is what
-   * "evaluated at load" buys (spec/worktrees.md, *Placement — the worktree
-   * base*).
+   * The worktree base the chain this dispatcher last loaded declared, as the
+   * load reported it (`LoadedChain.worktreesBase`) — `undefined` until one is
+   * loaded, and whenever the chain declares none. Taken from the load rather
+   * than computed here, which is what "evaluated at load" buys
+   * (spec/worktrees.md, *Placement — the worktree base*): the declaration is
+   * chain code, and a dispatcher that ran it again would be a second
+   * evaluation of it per process.
    */
   private chainWorktreesBase: string | undefined;
   private pendingDir: string;
-  private readonly chainLoader: () => Promise<ChainModule>;
+  private readonly chainLoader: () => Promise<LoadedChain>;
   /** Set when tick() loads the chain; composes pending parses. */
   private entryExtension: EntryExtension | undefined;
   /**
@@ -825,19 +826,16 @@ export class Dispatcher {
     // aborts the run on first occurrence rather than proceeding — a
     // mount-dead chain is exactly as dead next tick as this one, so it does
     // not burn the remaining `--max` ticks re-hitting the same wall.
-    let chainModule: ChainModule;
+    let chainModule: LoadedChain;
     try {
       chainModule = await this.chainLoader();
       // spec/worktrees.md "Placement — the worktree base": the declared base
-      // is evaluated here, at the one point per process where a chain is in
-      // hand, and every worktree this tick touches reads it off
-      // `worktreeCtx`. A declaration that cannot be evaluated is a chain
-      // that cannot be run, so it lands in the refusal below rather than
-      // surfacing as a worktree at a path nothing sweeps.
-      this.chainWorktreesBase = resolveWorktreesBaseDeclaration(
-        chainModule.chain,
-        this.paths,
-      );
+      // was evaluated by the load, once, and every worktree this tick touches
+      // reads that answer off `worktreeCtx`. A declaration that cannot be
+      // evaluated never returns a module at all — the load throws, so it
+      // lands in the refusal below rather than surfacing as a worktree at a
+      // path nothing sweeps.
+      this.chainWorktreesBase = chainModule.worktreesBase;
     } catch (err) {
       if (err instanceof CjsContextLoadError) {
         // A nameable usage fix, not a dead chain — `flume tick` exits 2
@@ -1322,24 +1320,21 @@ export class Dispatcher {
     // where creation put them
     // (spec/worktrees.md, *Placement — the worktree base*: the base is
     // resolved once). Hence the load here rather than a value the caller
-    // passes: the declaration is the engine's to evaluate, at one spelling
-    // shared with `tick`.
+    // passes: the base is the load's answer, read off the loaded module at
+    // the one spelling `tick` reads it at.
     //
     // Declared degradation (`.claude/rules/engineering.md`, *Loud or
-    // nothing*): a chain that will not load — or whose `worktreesBase`
-    // refuses — leaves the engine's own base swept, silently. The refusal
-    // that bounds it is `tick`'s: the very next thing this run does is load
-    // the same chain through the same spelling, and it names the failure and
-    // does no work. A chain that cannot run creates no worktree under any
+    // nothing*): a chain that will not load — including one the load refuses
+    // over its `worktreesBase` — leaves the engine's own base swept, silently.
+    // The refusal that bounds it is `tick`'s: the very next thing this run
+    // does is load the same chain through the same spelling, and it names the
+    // failure and does no work. A chain that cannot run creates no worktree under any
     // base, so there is nothing at the declared one for this sweep to have
     // missed — and a second copy of that message here would break the one
     // thing an operator reads this sweep's output for, which is silence when
     // there was no residue.
     try {
-      this.chainWorktreesBase = resolveWorktreesBaseDeclaration(
-        (await this.chainLoader()).chain,
-        this.paths,
-      );
+      this.chainWorktreesBase = (await this.chainLoader()).worktreesBase;
     } catch {
       // bounded above
     }

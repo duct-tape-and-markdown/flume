@@ -30,7 +30,7 @@ import { tsImport } from "tsx/esm/api";
 import {
   CjsContextLoadError,
   loadChainModule,
-  type ChainModule,
+  type LoadedChain,
 } from "../src/chainLoad.ts";
 import { Dispatcher, type DispatcherOptions } from "../src/Dispatcher.ts";
 import { tickExitCode } from "../src/cliVerdict.ts";
@@ -205,9 +205,55 @@ const entryRef = (tag: string): PriorAttemptRef =>
  * Inject a fixed chain as the per-tick resolver — the `chainLoader` test
  * seam (DispatcherOptions no longer takes a prebuilt `Chain`). Returns the
  * same chain every tick unless the test mutates a closed-over reference.
+ *
+ * `worktreesBase` is a second argument rather than a chain field because it is
+ * the load's answer, not the chain's: a real load evaluates
+ * `Chain.worktreesBase` and reports the string it got (`LoadedChain`,
+ * `src/chainLoad.ts`), so a seam standing in for one says what that evaluation
+ * found. Omitted is "the chain declared none" — which is why a placement test
+ * passes the base here instead of declaring a callback this seam never runs.
  */
-function staticLoader(chain: Chain): () => Promise<ChainModule> {
-  return () => Promise.resolve({ chain });
+function staticLoader(
+  chain: Chain,
+  worktreesBase?: string,
+): () => Promise<LoadedChain> {
+  return () => Promise.resolve({ chain, worktreesBase });
+}
+
+/**
+ * A real `chain.ts` in the fixture's own config dir, declaring
+ * `worktreesBase` as the function the field is. The three cases below drive
+ * the disk load rather than `staticLoader` for the reason the seam's
+ * docstring gives: the declaration is evaluated by `loadChainModule`, which
+ * reports the string it got (`LoadedChain`, `src/chainLoad.ts`), so a test
+ * handing the dispatcher a pre-made module would be asserting on a base
+ * nothing computed. `chain.ts` lands beside the prompt file the
+ * fixture already wrote, outside the repo, so the tick's tree stays clean.
+ */
+async function declareWorktreesBase(body: string): Promise<void> {
+  await writeFile(
+    join(fx.configDir, "chain.ts"),
+    `import { appendFileSync } from "node:fs";\n` +
+      `export default () => ({ chain: { phases: [{ name: "build", ` +
+      `description: "", promptPath: "prompt.md", concurrency: "fanout", ` +
+      `writablePaths: ["**"], gates: [], handoff: () => [] }], ` +
+      `humanOnly: [], worktreesBase: ${body} } });\n`,
+    "utf8",
+  );
+}
+
+/**
+ * Every roots object the declaration above was called with, in order — one
+ * NDJSON line per call, so the *count* survives as well as the value. A
+ * declaration the load never ran leaves no file, which reads as the empty
+ * list rather than as a missing fixture.
+ */
+async function rootsSeen(sink: string): Promise<FlumePaths[]> {
+  if (!existsSync(sink)) return [];
+  return (await readFile(sink, "utf8"))
+    .split("\n")
+    .filter((line) => line !== "")
+    .map((line) => JSON.parse(line) as FlumePaths);
 }
 
 // ---------- temp-repo fixture ----------
@@ -495,8 +541,10 @@ function probedFanoutAgent(
  * Fixture roots for a bare `loadChainModule` unit. The temp config dir is
  * standing in for a whole checkout, so all three roots are the same
  * directory — the load path only needs them to build the `FlumeApi` it hands
- * the factory, and these chains never read `api.paths`. The suite below
- * that *does* assert on `api.paths` drives the real Dispatcher instead.
+ * the factory, which these chains read only where the declaration under test
+ * is itself a function of the roots (`Chain.worktreesBase`). The suite
+ * asserting what a *tick* resolves those roots to drives the real Dispatcher
+ * instead.
  */
 function chainPaths(cfg: string): FlumePaths {
   return { repoRoot: cfg, configDir: cfg, flumeDir: cfg };
@@ -4248,33 +4296,28 @@ describe("Dispatcher fanout — worktree base resolution", () => {
   // spec/worktrees.md "Placement — the worktree base":
   // the third input to the same resolution — a chain declaring *how* to
   // compute its base, evaluated once at chain load against the roots the
-  // runtime resolved. Driven through the real dispatcher with a real
-  // declaration rather than by calling `worktreesBase` with a string: what
-  // the entry buys is that a chain can move placement with no environment
-  // variable set before the engine's own module loads, and only the tick
-  // path proves that.
+  // runtime resolved. Driven end to end through the real disk load: what the
+  // entry buys is that a chain can move placement with no environment
+  // variable set before the engine's own module loads, and only a tick over a
+  // real `chain.ts` proves the whole path — the load evaluates, the loaded
+  // module carries, the wave plants there.
   it("a chain-declared worktreesBase places the tick's worktree", async () => {
     delete process.env.FLUME_WORKTREES_DIR;
     const container = await mkTempDir("flume-wt-declared-");
     try {
       const flumeDir = join(fx.repo, ".flume");
       // A function of the roots, not a committed path literal: the chain
-      // composes the base from what it was handed at load.
+      // composes the base from what it was handed at load, and records each
+      // call so "once per load" is asserted rather than assumed.
       const base = join(container, "declared-base");
-      const rootsSeen: FlumePaths[] = [];
+      const sink = join(container, "roots.ndjson");
+      await declareWorktreesBase(
+        `(paths) => { appendFileSync(${JSON.stringify(sink)}, ` +
+          `JSON.stringify(paths) + "\\n"); return ${JSON.stringify(base)}; }`,
+      );
 
       await writePending(fx.repo, [makeEntry("WT-DECL", ["src/wt-decl.ts"])]);
       new Baton(flumeDir).wake("build");
-
-      const phase = makePhase({ name: "build", concurrency: "fanout" });
-      const chain: Chain = {
-        phases: [phase],
-        humanOnly: [],
-        worktreesBase: (paths) => {
-          rootsSeen.push(paths);
-          return base;
-        },
-      };
 
       let observedCwd: string | undefined;
       const agent = fanoutAgent({
@@ -4285,7 +4328,8 @@ describe("Dispatcher fanout — worktree base resolution", () => {
       });
 
       const dispatcher = new Dispatcher({
-        chainLoader: staticLoader(chain),
+        // No chainLoader: `diskChainLoader` runs `loadChainModule`, which is
+        // what evaluates the declaration.
         repoRoot: fx.repo,
         configDir: fx.configDir,
         agent,
@@ -4299,8 +4343,9 @@ describe("Dispatcher fanout — worktree base resolution", () => {
       // The agent ran inside `<declared>/<slug>` …
       expect(observedCwd).toBe(join(base, "wt-decl"));
       // … the declaration was called with the runtime's own resolved roots,
-      // once for the tick's one chain load — not once per worktree …
-      expect(rootsSeen).toEqual([
+      // once for the tick's one chain load — not once per worktree, and not a
+      // second time by a reader of the base …
+      expect(await rootsSeen(sink)).toEqual([
         { repoRoot: fx.repo, configDir: fx.configDir, flumeDir },
       ]);
       // … the default `<flumeDir>/worktrees` base never materialized …
@@ -4319,16 +4364,10 @@ describe("Dispatcher fanout — worktree base resolution", () => {
       const override = join(container, "operator-base");
       const declared = join(container, "chain-base");
       process.env.FLUME_WORKTREES_DIR = override;
+      await declareWorktreesBase(`() => ${JSON.stringify(declared)}`);
 
       await writePending(fx.repo, [makeEntry("WT-RANK", ["src/wt-rank.ts"])]);
       new Baton(join(fx.repo, ".flume")).wake("build");
-
-      const phase = makePhase({ name: "build", concurrency: "fanout" });
-      const chain: Chain = {
-        phases: [phase],
-        humanOnly: [],
-        worktreesBase: () => declared,
-      };
 
       let observedCwd: string | undefined;
       const agent = fanoutAgent({
@@ -4339,7 +4378,6 @@ describe("Dispatcher fanout — worktree base resolution", () => {
       });
 
       const dispatcher = new Dispatcher({
-        chainLoader: staticLoader(chain),
         repoRoot: fx.repo,
         configDir: fx.configDir,
         agent,
@@ -4359,17 +4397,13 @@ describe("Dispatcher fanout — worktree base resolution", () => {
 
   it("a chain whose worktreesBase returns a relative path is refused, and no tick work happens", async () => {
     delete process.env.FLUME_WORKTREES_DIR;
+    // Relative reads as "under whatever the cwd happens to be", which is the
+    // repo root for a tick and a worktree for a gate. The refusal is the
+    // load's (`loadChainModule`), so the tick never gets a chain at all —
+    // this is the outcome that refusal reaches.
+    await declareWorktreesBase(`() => ${JSON.stringify(join("..", "wt-base"))}`);
     await writePending(fx.repo, [makeEntry("WT-REL", ["src/wt-rel.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
-
-    const phase = makePhase({ name: "build", concurrency: "fanout" });
-    const chain: Chain = {
-      phases: [phase],
-      humanOnly: [],
-      // Relative reads as "under whatever the cwd happens to be", which is
-      // the repo root for a tick and a worktree for a gate.
-      worktreesBase: () => join("..", "wt-base"),
-    };
 
     let agentRan = false;
     const agent = fanoutAgent({
@@ -4379,7 +4413,6 @@ describe("Dispatcher fanout — worktree base resolution", () => {
     });
 
     const dispatcher = new Dispatcher({
-      chainLoader: staticLoader(chain),
       repoRoot: fx.repo,
       configDir: fx.configDir,
       agent,
@@ -5193,13 +5226,11 @@ describe('Dispatcher — startup sweep (spec/worktrees.md "Startup sweep — a d
       expect(await registeredWorktrees()).toEqual([resolve(orphan)]);
       expect(existsSync(join(fx.repo, ".flume", "worktrees"))).toBe(false);
 
-      const chain: Chain = {
-        phases: [makePhase({ name: "build", concurrency: "fanout" })],
-        humanOnly: [],
-        worktreesBase: () => base,
-      };
+      // The declaration is the load's to evaluate, and the sweep's own load
+      // is the one that reports it (`LoadedChain`, `src/chainLoad.ts`) — so
+      // the base reaches this sweep only if a real `chain.ts` declares it.
+      await declareWorktreesBase(`() => ${JSON.stringify(base)}`);
       const dispatcher = new Dispatcher({
-        chainLoader: staticLoader(chain),
         repoRoot: fx.repo,
         configDir: fx.configDir,
         agent: singleAgent(async () => {}),
@@ -11303,8 +11334,12 @@ describe("Dispatcher fanout — chain.ts forkResolver export gates selection", (
 
     // The chain module supplies its own resolver — the stock-CLI adoption
     // path. It marks nothing resolved, so the only entry is fork-blocked.
-    const loader = (): Promise<ChainModule> =>
-      Promise.resolve({ chain, forkResolver: () => () => false });
+    const loader = (): Promise<LoadedChain> =>
+      Promise.resolve({
+        chain,
+        forkResolver: () => () => false,
+        worktreesBase: undefined,
+      });
 
     const dispatcher = new Dispatcher({
       chainLoader: loader,
@@ -11410,8 +11445,8 @@ describe("Dispatcher — per-phase agent resolution", () => {
     const silentPhase = makePhase({ name: "review" });
     const chain: Chain = { phases: [withOwn, silentPhase], humanOnly: [] };
 
-    const loader = (): Promise<ChainModule> =>
-      Promise.resolve({ chain, agent: chainAgent });
+    const loader = (): Promise<LoadedChain> =>
+      Promise.resolve({ chain, agent: chainAgent, worktreesBase: undefined });
 
     const dispatcher = new Dispatcher({
       chainLoader: loader,
@@ -18331,6 +18366,89 @@ describe("Dispatcher — Chain.supervisorPolicy.maxTicks load-time validation (s
       expect(
         (await loadChainModule(chainPaths(undeclaredCfg))).chain
           .supervisorPolicy?.maxTicks,
+      ).toBeUndefined();
+    } finally {
+      await rm(declared, { recursive: true, force: true });
+      await rm(undeclaredCfg, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * `Chain.worktreesBase` is the one declaration whose check is also its answer:
+ * a chain declares how to *compute* a base, so running the function is both
+ * the refusal and the string every reader takes the base from
+ * (spec/worktrees.md, *Placement — the worktree base*). Pinned at the load
+ * because the load is where `chainLoadGate` validates — a commit rewriting
+ * `chain.ts` to answer a path no tick can mount reds its own gate here,
+ * instead of clearing it and killing the next tick on a base nothing could
+ * resolve (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
+describe("Dispatcher — Chain.worktreesBase load-time evaluation (spec/worktrees.md 'Placement — the worktree base')", () => {
+  async function chainDeclaring(slug: string, body: string): Promise<string> {
+    const cfg = await mkTempDir(`flume-cfg-wtbase-${slug}-`);
+    await mkdir(cfg, { recursive: true });
+    await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
+    await writeFile(
+      join(cfg, "chain.ts"),
+      `import { join } from "node:path";\n` +
+        `export default () => ({ chain: { phases: [{ name: "build", ` +
+        `description: "", promptPath: "prompt.md", concurrency: "fanout", ` +
+        `writablePaths: ["**"], gates: [], handoff: () => [] }], ` +
+        `humanOnly: [], worktreesBase: ${body} } });\n`,
+      "utf8",
+    );
+    return cfg;
+  }
+
+  it("the chain load refuses a worktreesBase that answers a relative path", async () => {
+    // Nothing resolves a relative base: a tick runs at the repo root and a
+    // gate inside a worktree, so the same value names two places.
+    const cfg = await chainDeclaring("relative", `() => "relative/not/absolute"`);
+    try {
+      await expect(loadChainModule(chainPaths(cfg))).rejects.toThrow(
+        /worktreesBase\(paths\) returned the relative path 'relative\/not\/absolute'/,
+      );
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  });
+
+  it("the chain load refuses a worktreesBase that answers an empty string", async () => {
+    // Empty is not "declared nothing": `resolve("")` is the cwd, and a base
+    // there scatters worktrees across the checkout (`worktreesBase`,
+    // `src/paths.ts`).
+    const cfg = await chainDeclaring("empty", `() => ""`);
+    try {
+      await expect(loadChainModule(chainPaths(cfg))).rejects.toThrow(
+        /worktreesBase\(paths\) returned ""[\s\S]*non-empty absolute directory path/,
+      );
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  });
+
+  it("the chain load carries the evaluated base, and leaves an undeclared one undefined", async () => {
+    // The accepting leg of the two refusals above, and the one that pins what
+    // they buy: the load runs the declaration against the roots it hands the
+    // factory and reports the answer, so every reader takes the base off the
+    // loaded module rather than running chain code again.
+    const declared = await chainDeclaring(
+      "carried",
+      `(paths) => join(paths.flumeDir, "declared-worktrees")`,
+    );
+    const undeclaredCfg = await mkTempDir("flume-cfg-wtbase-undeclared-");
+    try {
+      await writeMinimalChain(undeclaredCfg);
+
+      expect((await loadChainModule(chainPaths(declared))).worktreesBase).toBe(
+        join(declared, "declared-worktrees"),
+      );
+      // Undeclared stays undeclared: the engine's own `<flumeDir>/worktrees`
+      // default lives at the one resolution (`worktreesBase`, `src/paths.ts`),
+      // and a value substituted here would be a second home for it.
+      expect(
+        (await loadChainModule(chainPaths(undeclaredCfg))).worktreesBase,
       ).toBeUndefined();
     } finally {
       await rm(declared, { recursive: true, force: true });

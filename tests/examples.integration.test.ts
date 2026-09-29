@@ -144,7 +144,7 @@ describe("second reference chain (backlog-groomer-chain.ts)", () => {
         const dispatcher = new Dispatcher({
           ...paths,
           agent: neverAgent,
-          chainLoader: async () => ({ chain }),
+          chainLoader: async () => ({ chain, worktreesBase: undefined }),
         });
 
         const outcome = await dispatcher.tick();
@@ -221,7 +221,7 @@ describe("second reference chain (backlog-groomer-chain.ts)", () => {
       const dispatcher = new Dispatcher({
         ...paths,
         agent: neverAgent,
-        chainLoader: async () => ({ chain }),
+        chainLoader: async () => ({ chain, worktreesBase: undefined }),
       });
 
       const outcome = await dispatcher.tick();
@@ -268,7 +268,7 @@ describe("second reference chain (backlog-groomer-chain.ts)", () => {
       const dispatcher = new Dispatcher({
         ...paths,
         agent: neverAgent,
-        chainLoader: async () => ({ chain }),
+        chainLoader: async () => ({ chain, worktreesBase: undefined }),
       });
 
       const outcome = await dispatcher.tick();

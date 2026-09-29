@@ -884,7 +884,7 @@ describe("pendingGate — real afterCommit shape (GATE-CONTEXT-STATE-ROOT-REL, .
     expect(beforeTick.files.edit[0]?.path).toBe("src/foo.ts");
 
     const dispatcher = new Dispatcher({
-      chainLoader: () => Promise.resolve({ chain }),
+      chainLoader: () => Promise.resolve({ chain, worktreesBase: undefined }),
       repoRoot: fx.repo,
       configDir: fx.configDir,
       agent,
@@ -1376,7 +1376,7 @@ describe("writablePathsGate — the fence seam, both sides real", () => {
     };
 
     const dispatcher = new Dispatcher({
-      chainLoader: () => Promise.resolve({ chain }),
+      chainLoader: () => Promise.resolve({ chain, worktreesBase: undefined }),
       repoRoot: fx.repo,
       configDir: fx.configDir,
       agent,

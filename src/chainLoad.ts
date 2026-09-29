@@ -1,6 +1,6 @@
 /**
  * Chain loading — resolving `<configDir>/chain.ts` into a validated
- * `ChainModule`: the factory shape, the declaration validations a load
+ * `LoadedChain`: the factory shape, the declaration validations a load
  * refuses on, the CJS-context host refusal, and the default per-tick
  * resolver built over them.
  *
@@ -58,6 +58,23 @@ export interface ChainModule {
 }
 
 /**
+ * What a *load* answers: the factory's return plus the declarations the load
+ * evaluated on the way through. A chain declares how to compute a worktree
+ * base, not a base, so the string is the load's answer and no factory can
+ * supply it — hence a type of its own rather than an optional field on
+ * `ChainModule`, which a factory could fill and have dropped.
+ *
+ * `worktreesBase` is required and nullable, not optional: the field is the
+ * load's report of what the chain declared, so a loader that never evaluated
+ * the declaration cannot typecheck as one that found none (spec/worktrees.md,
+ * *Placement — the worktree base*).
+ */
+export interface LoadedChain extends ChainModule {
+  /** `Chain.worktreesBase` evaluated, or `undefined` where none is declared. */
+  worktreesBase: string | undefined;
+}
+
+/**
  * What `.flume/chain.ts` default-exports: a factory the
  * engine calls with its own surface. The chain imports no engine *value*, so
  * a second physical engine in one process is unreachable rather than merely
@@ -95,8 +112,13 @@ function validatePendingDirDeclaration(chain: Chain): void {
  * (`.claude/rules/engineering.md`, *Loud or nothing*): nothing resolves a
  * relative base, because a tick runs at the repo root and a gate runs inside
  * a worktree, so the same relative value would name two different places.
+ *
+ * Reached from `loadChainModule` and nowhere else, so the refusal lands where
+ * every other declaration's does: `chainLoadGate` validates through that same
+ * load, so the commit that declares an unusable base reds its own gate
+ * instead of leaving the next tick to mount nothing.
  */
-export function resolveWorktreesBaseDeclaration(
+function resolveWorktreesBaseDeclaration(
   chain: Chain,
   paths: FlumePaths,
 ): string | undefined {
@@ -280,7 +302,7 @@ function isCjsContextLoadFailure(err: unknown): err is Error {
  */
 export async function loadChainModule(
   paths: FlumePaths,
-): Promise<ChainModule> {
+): Promise<LoadedChain> {
   // The chain lives at `<configDir>/chain.ts` and nowhere else (spec/chain.md
   // "Chain residency — one chain per `.flume`"), so the file to load is
   // computed from the roots the factory will receive rather than passed
@@ -367,7 +389,15 @@ export async function loadChainModule(
   validatePendingDirDeclaration(chain);
   validateSupervisorPolicyDeclaration(chain);
   validateNoDeadDeclarations(chain);
-  const result: ChainModule = { chain };
+  // The fifth declaration this load decides, and the only one whose check is
+  // also its answer: evaluating `Chain.worktreesBase` is what refuses an
+  // unusable base, so the value rides the loaded module from here and no
+  // reader runs chain code a second time to get it (spec/worktrees.md,
+  // *Placement — the worktree base*: the base is resolved once).
+  const result: LoadedChain = {
+    chain,
+    worktreesBase: resolveWorktreesBaseDeclaration(chain, paths),
+  };
   if (module.agent) result.agent = module.agent;
   if (module.forkResolver) result.forkResolver = module.forkResolver;
   return result;
@@ -385,6 +415,6 @@ export async function loadChainModule(
  */
 export function diskChainLoader(
   paths: FlumePaths,
-): () => Promise<ChainModule> {
+): () => Promise<LoadedChain> {
   return () => loadChainModule(paths);
 }

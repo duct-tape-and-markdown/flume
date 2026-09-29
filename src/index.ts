@@ -193,7 +193,11 @@ export {
 // stays internal — it never crosses this boundary.
 export { type LedgerRefusalClass } from "./waveMerge.js";
 
-export { type ChainModule, type ChainFactory } from "./chainLoad.js";
+export {
+  type ChainModule,
+  type LoadedChain,
+  type ChainFactory,
+} from "./chainLoad.js";
 
 export { consoleLogger, type Logger } from "./log.js";
 

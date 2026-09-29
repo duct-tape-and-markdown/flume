@@ -1457,7 +1457,7 @@ describe("cascade-chain.ts — the plan ladder over a real tick", () => {
               return { exitCode: 0, stdout: "", stderr: "" };
             },
           },
-          chainLoader: async () => ({ chain }),
+          chainLoader: async () => ({ chain, worktreesBase: undefined }),
           log: silent,
         }).tick();
         // Vacuity pin: a declined, hibernated or failed tick answers with a
@@ -2644,7 +2644,7 @@ describe("backlog-groomer-chain.ts — where the session capture lands", () => {
           throw new Error("Phase.agent should have taken precedence");
         },
       },
-      chainLoader: async () => ({ chain }),
+      chainLoader: async () => ({ chain, worktreesBase: undefined }),
       log: silent,
     }).tick();
     // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
