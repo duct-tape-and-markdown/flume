@@ -573,6 +573,60 @@ describe("worktrees — an occupied path is judged by git's registry", () => {
     expect(await stampAt(wt.path)).toBe(resolve(alias));
   });
 
+  it("provisioning over a worktree registered under a second spelling of the base removes it rather than refusing", async () => {
+    const { ctx } = contextFor(silent);
+    // A crashed run's tree at the path this tag computes, registered and
+    // stamped by the real writer.
+    const stale = await createWorktree("build", await head(), ctx);
+    await writeFile(join(stale.path, "crashed.txt"), "residue\n");
+
+    // The next tick reaching the same state root under a second on-disk name
+    // and declaring no base of its own: it composes
+    // `<alias>/worktrees/<dirName>`, which is the very directory the stale
+    // tree occupies under a name git never printed — git records a worktree
+    // by the name the OS holds for it, whatever spelling the add reached it
+    // through.
+    const alias = join(fx.repo, ".flume-alias");
+    await symlink(ctx.flumeDir, alias, "dir");
+    const aliased: WorktreeContext = {
+      repoRoot: ctx.repoRoot,
+      flumeDir: alias,
+      stateRootRel: ".flume-alias",
+      log: silent,
+    };
+    const aliasedPath = join(
+      worktreesBase(alias),
+      worktreeDirName("build"),
+    );
+
+    // Vacuity pin (`.claude/rules/engineering.md`, *A green verdict is proven
+    // non-vacuous*), in the direction the title claims: the path this tick
+    // computes is one directory with the occupied one, that directory holds a
+    // registered self-stamped tree, and the registry names it by the base's
+    // other spelling alone — so the removal below is the fold's, not a path
+    // that already matched.
+    expect(resolve(aliasedPath)).not.toBe(resolve(stale.path));
+    expect(realpathSync.native(aliasedPath)).toBe(resolve(stale.path));
+    expect(existsSync(join(aliasedPath, "crashed.txt"))).toBe(true);
+    const before = await registeredWorktrees(fx.repo);
+    expect(before).toContain(stale.path);
+    expect(before).not.toContain(resolve(aliasedPath));
+    expect(await stampAt(stale.path)).toBe(resolve(ctx.flumeDir));
+
+    const wt = await createWorktree("build", await head(), aliased);
+
+    // Its own residue, reclaimed rather than refused as a directory git
+    // disclaims: the crashed run's file is gone, git registers the directory
+    // again, and only this call's branch stands.
+    expect(wt.path).toBe(aliasedPath);
+    expect(existsSync(join(stale.path, "crashed.txt"))).toBe(false);
+    expect(await registeredWorktrees(fx.repo)).toContain(resolve(stale.path));
+    expect(await flumeBranches(fx.repo)).toEqual([wt.branch]);
+    // Stamped in the spelling this run was declared with: the fold decides
+    // identity, never what goes on disk.
+    expect(await stampAt(wt.path)).toBe(resolve(alias));
+  });
+
   it("createWorktree refuses an occupied worktree path git registers but this state root did not stamp", async () => {
     const { ctx, base } = contextFor(silent);
     // The collision *Placement* names: a second checkout's live worktree,
@@ -874,6 +928,68 @@ describe("worktrees — git's registry on the API a chain factory receives", () 
     if (!after.read) throw new Error("unreachable: asserted above");
     expect(after.worktrees.has(resolve(one.path))).toBe(false);
     expect(after.worktrees.has(resolve(two.path))).toBe(true);
+  });
+
+  /**
+   * The membership question itself, which is what every caller of this probe
+   * actually has — the engine's two destroying callers and a chain reclaiming
+   * a per-worktree resource alike. A caller matching a key it composed
+   * against the reported map answers it a second way, and one directory has
+   * many names: the spelling git recorded need not be the spelling the asking
+   * side was handed (`.claude/rules/engineering.md`, *The fix lands at the
+   * mechanism*).
+   */
+  it("the worktree registry names a path reached under a second on-disk spelling as a worktree of this repo", async () => {
+    const api = apiFor();
+    const ctx = contextFor();
+    // The real writer, so the spelling the read has to fold is the one git
+    // actually records rather than one this test chose.
+    const wt = await createWorktree("SECOND-SPELLING", await head(), ctx);
+
+    // The same tree reached under a second name for the state root — a
+    // `FLUME_DIR` typed through a link, a linked checkout. A chain holding
+    // the registry composes its worktree paths from the root it was handed,
+    // so this is the path it asks about.
+    const alias = join(fx.repo, ".flume-alias");
+    await symlink(ctx.flumeDir, alias, "dir");
+    const aliasPath = join(
+      worktreesBase(alias),
+      worktreeDirName("SECOND-SPELLING"),
+    );
+    // And a directory under that same base git disclaims: an operator's own
+    // tree, or residue whose registration git already pruned.
+    const disclaimed = join(worktreesBase(alias), "not-a-worktree");
+    await mkdir(disclaimed, { recursive: true });
+
+    const registry = await api.git.readWorktreeRegistry(fx.repo);
+    expect(registry.read).toBe(true);
+    if (!registry.read) throw new Error("unreachable: asserted above");
+
+    // Vacuity pin (`.claude/rules/engineering.md`, *A green verdict is proven
+    // non-vacuous*), in the direction the title claims: git named the tree
+    // under the root's other spelling, the two spellings are one directory,
+    // and the reported map — git's list, not the verdict — holds only git's.
+    expect(await registeredWorktrees(fx.repo)).toContain(wt.path);
+    expect(resolve(aliasPath)).not.toBe(resolve(wt.path));
+    expect(realpathSync.native(aliasPath)).toBe(resolve(wt.path));
+    expect(registry.worktrees.has(resolve(aliasPath))).toBe(false);
+
+    // One verdict for either spelling, carrying the branch git paired with
+    // the path it printed.
+    expect(registry.worktreeAt(aliasPath)).toEqual({
+      registered: true,
+      branch: wt.branch,
+    });
+    expect(registry.worktreeAt(wt.path)).toEqual({
+      registered: true,
+      branch: wt.branch,
+    });
+    // The fold decides identity, never membership: a directory git disclaims
+    // is still not a worktree, by either name.
+    expect(registry.worktreeAt(disclaimed)).toEqual({ registered: false });
+    expect(registry.worktreeAt(join(alias, "worktrees-elsewhere"))).toEqual({
+      registered: false,
+    });
   });
 
   it("an unreadable worktree registry reports the failure rather than an empty set", async () => {
@@ -1452,5 +1568,47 @@ describe("worktrees — the startup sweep removes on the stamp provisioning mint
     expect(await registeredWorktrees(fx.repo)).not.toContain(ours.path);
     expect(await flumeBranches(fx.repo)).toEqual([]);
     expect(log.warnings.filter((w) => w.includes(ours.path))).toEqual([]);
+  });
+  it("the startup sweep reclaims a worktree whose base was composed from a second spelling of the state root", async () => {
+    const log = collectingLogger();
+    const { own, base } = twoRoots(log);
+    // This root's abandoned residue: provisioned by the real writer, then
+    // never torn down. git registered it under the state root's own directory
+    // name, which is the name the OS holds for it.
+    const ours = await createWorktree("SWEEP-ALIASED-BASE", await head(), own);
+
+    // The next start reaching that same root under a second on-disk name and
+    // declaring no base: it composes `<alias>/worktrees` and lists the one
+    // directory holding the residue, so every path it reads there is a
+    // spelling git never printed.
+    const alias = join(fx.repo, ".flume-alias");
+    await symlink(own.flumeDir, alias, "dir");
+    const aliased: WorktreeContext = {
+      repoRoot: own.repoRoot,
+      flumeDir: alias,
+      stateRootRel: ".flume-alias",
+      log,
+    };
+    const sweepBase = worktreesBase(aliased.flumeDir);
+
+    // Vacuity pin (`.claude/rules/engineering.md`, *A green verdict is proven
+    // non-vacuous*), in the direction the title claims: the base this sweep
+    // composes is the one holding the residue under a different name, the
+    // tree is registered, and its stamp names the root's other spelling.
+    expect(resolve(sweepBase)).not.toBe(resolve(base));
+    expect(realpathSync.native(sweepBase)).toBe(resolve(base));
+    expect(await readdir(sweepBase)).toContain(worktreeDirName("SWEEP-ALIASED-BASE"));
+    expect(await registeredWorktrees(fx.repo)).toContain(ours.path);
+    expect(await stampAt(ours.path)).toBe(resolve(own.flumeDir));
+
+    await sweepStaleWorktrees(aliased);
+
+    // Reclaimed, directory and branch alike: the membership question folded
+    // the composed path onto the one git registered instead of walking past a
+    // directory git appeared to disclaim.
+    expect(existsSync(ours.path)).toBe(false);
+    expect(await registeredWorktrees(fx.repo)).not.toContain(ours.path);
+    expect(await flumeBranches(fx.repo)).toEqual([]);
+    expect(log.warnings.filter((w) => w.includes(worktreeDirName("SWEEP-ALIASED-BASE")))).toEqual([]);
   });
 });

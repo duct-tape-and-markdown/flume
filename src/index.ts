@@ -61,8 +61,13 @@ export {
 export { setupWorktree } from "./setupWorktree.js";
 
 // The value rides `FlumeApi.git.readWorktreeRegistry`; only the result
-// type is named here, for a chain that holds one in a variable.
-export { type WorktreeRegistry } from "./worktrees.js";
+// type is named here, for a chain that holds one in a variable — and its
+// membership verdict beside it, for one that holds the answer about a single
+// path rather than branching on it where it is asked.
+export {
+  type WorktreeMembership,
+  type WorktreeRegistry,
+} from "./worktrees.js";
 
 // Likewise for `FlumeApi.git.statusRecords`: the decoded record shape, for a
 // chain that filters the list into a named variable.

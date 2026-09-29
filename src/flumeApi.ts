@@ -354,11 +354,19 @@ export interface FlumeApi {
      */
     statusRecords: typeof statusRecords;
     /**
-     * Every path git currently registers as a worktree of `repoRoot`, or the
-     * reason the registry could not be read — the same probe the harness
-     * judges an occupied worktree path on.
+     * Git's worktree registry for `repoRoot`, or the reason it could not be
+     * read — the same probe the harness judges an occupied worktree path on.
      *
-     * What a chain reclaiming per-worktree resources reads instead of listing
+     * It answers *is this path a worktree of this repo, and on what branch?*
+     * itself: `worktreeAt(path)` takes whatever spelling the chain holds and
+     * folds it against git's own before deciding, so a worktree path the
+     * chain composed from a directory reached through a link still names the
+     * tree git registered under the directory's other name. A chain matching
+     * a key of its own against the reported map is answering that question a
+     * second way, and the two disagree exactly where one path has two
+     * spellings.
+     *
+     * What a chain reclaiming per-worktree resources asks instead of listing
      * the worktree base itself: a scratch database, a lease, an issued
      * credential allocated in `setupWorktree` outlives a killed tick whose
      * `teardownWorktree` never ran, and the directory listing cannot say
@@ -368,8 +376,8 @@ export interface FlumeApi {
      * registry stays distinguishable from an empty one, so a reaper never
      * frees a live arm's handle on the strength of a failed `git` call.
      *
-     * The list is git's, so it names the primary checkout too; which paths
-     * are the chain's to reap is the chain's to decide.
+     * The registry is git's, so it names the primary checkout too; which
+     * paths are the chain's to reap is the chain's to decide.
      */
     readWorktreeRegistry: typeof readWorktreeRegistry;
     /**

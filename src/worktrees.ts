@@ -101,14 +101,27 @@ export function worktreeDirName(tag: string): string {
  * to destroy a directory on the strength of an absence has to be able to tell
  * the two apart.
  *
- * `worktrees` keys every registered path — membership is `has`, as it was
- * when this carried a set — and values the branch that path is checked out
- * on, `undefined` for a detached one ({@link checkoutAt}'s gate tree is the
- * engine's own). One container rather than a path set beside a branch map:
- * the pairing is what git printed, and two copies of one record is the
- * restatement a caller reconciles by hand
- * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
- * beside its source*).
+ * The `worktreeAt` arm is the question every caller actually has — *is this
+ * path one git calls a worktree of this repo, and on what branch?* —
+ * answered here rather than beside each caller, with both sides
+ * folded through `canonicalDir` (`src/pathIdentity.ts`) exactly as
+ * `stampVerdict` folds the stamp it reads a line later. A caller matching a
+ * key it composed itself is instead asking whether git's spelling of a
+ * directory is the engine's, and one state root reached under a second
+ * on-disk spelling — a `FLUME_DIR` typed through a link, a linked checkout —
+ * makes every path that run composes a directory git disclaims: provisioning
+ * refuses its own residue and the sweep walks past it, each of them one fold
+ * short of the stamp read that would have agreed
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ *
+ * `worktrees` is the *report*: every path git named, in git's own spelling
+ * absolutized, valued by the branch that path is checked out on, `undefined`
+ * for a detached one ({@link checkoutAt}'s gate tree is the engine's own).
+ * One container rather than a path set beside a branch map: the pairing is
+ * what git printed, and two copies of one record is the restatement a caller
+ * reconciles by hand (`.claude/rules/engineering.md`, *Derived state is
+ * computed, never restated beside its source*). What it is not is the
+ * membership test — a `has` against it is the composed key above.
  *
  * The branch is named in the short spelling every other branch on this
  * surface is — `flume/<checkout>/<slug>`, what {@link createWorktree} returns and what
@@ -116,8 +129,32 @@ export function worktreeDirName(tag: string): string {
  * prints it as.
  */
 export type WorktreeRegistry =
-  | { read: true; worktrees: ReadonlyMap<string, string | undefined> }
+  | {
+      read: true;
+      worktrees: ReadonlyMap<string, string | undefined>;
+      /**
+       * Whether git registers `path` as a worktree of the repo this registry
+       * was read for, and the branch it paired with it — the one membership
+       * verdict for the engine's two destroying callers and for a chain
+       * reclaiming what it allocated per worktree.
+       */
+      worktreeAt: (path: string) => WorktreeMembership;
+    }
   | { read: false; reason: string };
+
+/**
+ * {@link readWorktreeRegistry}'s answer about one path: whether git calls it
+ * a worktree of the repo, and — on that arm alone — the branch git named
+ * beside it.
+ *
+ * The branch hangs off the positive arm rather than sitting `undefined`
+ * beside `registered: false`, so "git names no branch here", which is what a
+ * detached tree reports, cannot be read out of "git does not name this path"
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
+export type WorktreeMembership =
+  | { registered: true; branch: string | undefined }
+  | { registered: false };
 
 /** The porcelain field naming a record's worktree path. */
 const WORKTREE_FIELD = "worktree ";
@@ -259,17 +296,25 @@ async function stampVerdict(
  * directories it removed, and it reads the pairing here rather than reaping
  * by branch name, which would name a sibling checkout's live branch too.
  *
- * Paths are resolved absolute before they enter the map: git prints its own
- * absolute spelling, which need not match a caller's character for character.
+ * Paths are resolved absolute before they enter the reported map, and folded
+ * once more through `canonicalDir` (`src/pathIdentity.ts`) for the index the
+ * membership verdict is read out of: git prints its own absolute spelling,
+ * which need not match a caller's character for character, and need not be
+ * the name the OS holds for that directory either. Both are written in the
+ * one pass that decodes a record, off the one field — the spelling this
+ * reports and the identity it decides in cannot drift apart, because neither
+ * is kept by hand. The fold costs one `realpath` per registered worktree per
+ * read and one per question asked of it, which is what the stamp read the
+ * verdict gates is already spending at the same two callers.
  *
  * `-z` is the form that can carry those paths: `--porcelain` alone separates
  * its fields by newline and never escapes the path, so a worktree whose path
  * holds a newline arrives split across two records and a trailing-space path
  * arrives trimmed — each a *different* path silently entering the map in
  * place of the one git named (`.claude/rules/engineering.md`, *Loud or
- * nothing*), and every caller here judges membership by exact match: an
- * occupied path the mangled spelling misses is refused as a directory git
- * does not own, and residue the sweep would have removed is left standing.
+ * nothing*), and the fold above is identity, not repair: an occupied path the
+ * mangled spelling names a prefix of is still refused as a directory git does
+ * not own, and residue the sweep would have removed is still left standing.
  * Under `-z` every field is NUL-terminated instead, so the path is whatever
  * lies between the `worktree ` prefix and the next NUL, verbatim.
  */
@@ -283,20 +328,38 @@ export async function readWorktreeRegistry(
     return { read: false, reason: (err as Error).message };
   }
   const worktrees = new Map<string, string | undefined>();
+  // The same records keyed by the directory's on-disk identity rather than by
+  // git's spelling of it — what a membership question is answered from, since
+  // the asking side composes its path from a state root it may have been
+  // handed under a second name.
+  const byIdentity = new Map<string, string | undefined>();
   // One record per worktree, `worktree <path>` first and its remaining
   // fields after, so the path most recently seen is the one a `branch` field
   // belongs to. A `branch` field ahead of any record is a shape git does not
   // print and pairs with nothing.
-  let current: string | undefined;
+  let current: { key: string; identity: string } | undefined;
   for (const field of stdout.split("\0")) {
     if (field.startsWith(WORKTREE_FIELD)) {
-      current = resolve(field.slice(WORKTREE_FIELD.length));
-      worktrees.set(current, undefined);
+      const printed = field.slice(WORKTREE_FIELD.length);
+      current = { key: resolve(printed), identity: canonicalDir(printed) };
+      worktrees.set(current.key, undefined);
+      byIdentity.set(current.identity, undefined);
     } else if (current !== undefined && field.startsWith(BRANCH_FIELD)) {
-      worktrees.set(current, field.slice(BRANCH_FIELD.length));
+      const branch = field.slice(BRANCH_FIELD.length);
+      worktrees.set(current.key, branch);
+      byIdentity.set(current.identity, branch);
     }
   }
-  return { read: true, worktrees };
+  return {
+    read: true,
+    worktrees,
+    worktreeAt: (path) => {
+      const identity = canonicalDir(path);
+      return byIdentity.has(identity)
+        ? { registered: true, branch: byIdentity.get(identity) }
+        : { registered: false };
+    },
+  };
 }
 
 /**
@@ -525,14 +588,17 @@ export async function createWorktree(
     //
     // First git's registry: a directory git disclaims is as easily an
     // operator's own tree, or residue whose registration git has already
-    // pruned.
+    // pruned. The registry answers that about *this path*, folding its own
+    // spelling and the composed one together — a state root reached under a
+    // second on-disk name composes a base git never printed, and a key
+    // matched here by hand would refuse this root's own residue forever.
     const registry = await readWorktreeRegistry(ctx.repoRoot);
     if (!registry.read) {
       throw new Error(
         `worktree path is occupied and the git worktree registry could not be read (${registry.reason}); refusing to remove a directory git may not own: ${path}`,
       );
     }
-    if (!registry.worktrees.has(resolve(path))) {
+    if (!registry.worktreeAt(path).registered) {
       throw new Error(
         `worktree path is occupied by a directory git does not register as a worktree of ${ctx.repoRoot}; refusing to remove it — clear it by hand if it is flume residue: ${path}`,
       );
@@ -783,8 +849,13 @@ export async function sweepStaleWorktrees(
   if (registry.read) {
     for (const name of entries) {
       const path = join(sweepBase, name);
-      const resolved = resolve(path);
-      if (!registry.worktrees.has(resolved)) {
+      // One question, one verdict: whether git calls this directory a
+      // worktree of the repo and, where it does, the branch it paired with
+      // it — both through the registry's own fold, which is what lets a base
+      // composed from a second spelling of this state root still name the
+      // trees git registered under the first.
+      const member = registry.worktreeAt(path);
+      if (!member.registered) {
         // Not a worktree git knows about — an operator's own tree, or
         // residue whose registration was already pruned. Not this run's to
         // remove; leave it untouched.
@@ -800,10 +871,9 @@ export async function sweepStaleWorktrees(
         unstamped.push(path);
         continue;
       }
-      const branch = registry.worktrees.get(resolved);
       try {
         await git.removeWorktree(repoRoot, path, ctx.log);
-        if (branch !== undefined) reapable.push(branch);
+        if (member.branch !== undefined) reapable.push(member.branch);
       } catch {
         // The directory stands, and the branch is still checked out in it:
         // neither is this sweep's to reclaim now.
