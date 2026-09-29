@@ -55,6 +55,7 @@ import {
   gateFailureSignature,
   MAX_FAILURE_SIGNATURE,
   reportedGateRow,
+  stageFailureFacts,
   throwFacts,
   type GateFailure,
   type PlatformFailure,
@@ -879,10 +880,7 @@ async function classifyNoCommit(
   await ctx.attempts.write(ref, buildPlatformPreempt(failureClass));
   return {
     mode: "platform-preempt",
-    platformFailure: {
-      signature: bound(failureClass.trim(), MAX_FAILURE_SIGNATURE),
-      message: failureClass,
-    },
+    platformFailure: stageFailureFacts(failureClass),
   };
 }
 

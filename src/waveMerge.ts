@@ -30,7 +30,6 @@
 
 import { mkdir, rm, writeFile } from "node:fs/promises";
 
-import { bound } from "./bounds.js";
 import { runGate } from "./gateRun.js";
 import * as git from "./git.js";
 import type { MergingMarker } from "./mergingMarkers.js";
@@ -61,9 +60,9 @@ import {
   buildTickVerdict,
   appendInvocationRow,
   gateFailureSignature,
-  MAX_FAILURE_SIGNATURE,
   readInvocationRows,
   reportedGateRow,
+  stageFailureFacts,
   startTiming,
   throwFacts,
   unrevertableMergeFailure,
@@ -768,11 +767,7 @@ async function carrySpan(
     // A merge-stage failure — always entry-scoped, so
     // superviseLoop's quarantine leg can isolate it exactly like a
     // tagged provisioning failure.
-    w.mergeFailures.push({
-      ...blamedOn(r.entry),
-      signature: bound(message.trim(), MAX_FAILURE_SIGNATURE),
-      message,
-    });
+    w.mergeFailures.push({ ...blamedOn(r.entry), ...stageFailureFacts(message) });
     return slug;
   }
   const mergedSha = await git.revParse(repoRoot);
@@ -930,11 +925,7 @@ async function carrySpan(
       preCherry,
       mergedSha,
     );
-    if (foreignTip)
-      return refuseRevert({
-        signature: bound(foreignTip.trim(), MAX_FAILURE_SIGNATURE),
-        message: foreignTip,
-      });
+    if (foreignTip) return refuseRevert(stageFailureFacts(foreignTip));
     try {
       await git.resetKeepTo(repoRoot, preCherry);
     } catch (err) {
@@ -1035,11 +1026,7 @@ async function carrySpan(
     // there, and a hook broken for one entry is exactly what the per-entry
     // leg exists to isolate.
     if (shipThrew !== undefined)
-      w.shipFailures.push({
-        ...blamedOn(r.entry),
-        signature: bound(shipThrew.trim(), MAX_FAILURE_SIGNATURE),
-        message: shipThrew,
-      });
+      w.shipFailures.push({ ...blamedOn(r.entry), ...stageFailureFacts(shipThrew) });
     return slug;
   }
 

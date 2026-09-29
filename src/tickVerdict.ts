@@ -329,6 +329,31 @@ export function gateFailureSignature(failure: {
 }
 
 /**
+ * The two facts a stage failure reports: the message the wall raised, and the
+ * comparison key derived from it ({@link ProvisionFailure.signature}). Every
+ * stage that records one — provision, merge, gate, ship, platform — carries
+ * this pairing, so the derivation has one home rather than one spelling per
+ * leg, where a rewording of either half would diverge silently
+ * (`.claude/rules/engineering.md`, *A module is one job*).
+ *
+ * The key is the trimmed message bounded to {@link MAX_FAILURE_SIGNATURE}: the
+ * same deterministic wall yields the same key tick over tick, and a
+ * transcript-long message is truncated for comparison while `message` keeps
+ * the words the log lines print.
+ *
+ * A stage whose key is *not* its own message builds the pairing from the key
+ * it does have and says so at the site — a gate folds in the gate's name
+ * ({@link gateFailureSignature}), a render refusal reads the wall its class
+ * already names (`RenderRefusal.signature`, `src/Prompt.ts`).
+ */
+export function stageFailureFacts(message: string): {
+  signature: string;
+  message: string;
+} {
+  return { signature: bound(message.trim(), MAX_FAILURE_SIGNATURE), message };
+}
+
+/**
  * The {@link GateFailure} an afterMerge revert leaves behind when the reset
  * back to the pre-cherry-pick tip is itself refused (`ResetKeepRefusedError`,
  * `src/git.ts`): the gate condemned the commit, and now the commit cannot be
@@ -356,7 +381,7 @@ export function unrevertableMergeFailure(facts: {
   preCherry: string;
 }): { signature: string; message: string } {
   const message = `${facts.refusal} — afterMerge-failed commit ${facts.mergedSha} stays on trunk, unrevertable to ${facts.preCherry}`;
-  return { signature: bound(message.trim(), MAX_FAILURE_SIGNATURE), message };
+  return stageFailureFacts(message);
 }
 
 /**

@@ -18,7 +18,6 @@
  */
 
 import type { Agent } from "./Agent.js";
-import { bound } from "./bounds.js";
 import { runGate } from "./gateRun.js";
 import * as git from "./git.js";
 import {
@@ -35,8 +34,8 @@ import { checkMergedTipUnmoved, liveForeignClaimPid } from "./tipVerify.js";
 import {
   appendInvocationRow,
   gateFailureSignature,
-  MAX_FAILURE_SIGNATURE,
   reportedGateRow,
+  stageFailureFacts,
   startTiming,
   unrevertableMergeFailure,
   type GateFailure,
@@ -181,11 +180,10 @@ export async function runSingleton(
   try {
     await git.pruneWorktrees(repoRoot, leg.log);
   } catch (err) {
-    const message = (err as Error).message;
-    const signature = bound(message.trim(), MAX_FAILURE_SIGNATURE);
-    provisionFailures.push({ signature, message });
+    const failure = stageFailureFacts((err as Error).message);
+    provisionFailures.push(failure);
     leg.log.warn(
-      `[flume] ${phase.name}: worktree prune failed (${signature}); continuing — worktree creation may still fail`,
+      `[flume] ${phase.name}: worktree prune failed (${failure.signature}); continuing — worktree creation may still fail`,
     );
   }
 
@@ -193,16 +191,15 @@ export async function runSingleton(
   try {
     wt = await createWorktree(phase.name, preHead, leg.worktreeCtx);
   } catch (err) {
-    const message = (err as Error).message;
-    const signature = bound(message.trim(), MAX_FAILURE_SIGNATURE);
+    const failure = stageFailureFacts((err as Error).message);
     leg.log.warn(
-      `[flume] ${phase.name}: worktree provisioning failed (${signature}); no tick this cycle`,
+      `[flume] ${phase.name}: worktree provisioning failed (${failure.signature}); no tick this cycle`,
     );
     // Same record on both surfaces: the outcome envelope feeds the verdict
     // and the quarantine accounting, `result` feeds `handoff` — a singleton
     // whose worktree never existed is otherwise indistinguishable there
     // from one that ran and did nothing.
-    provisionFailures.push({ signature, message });
+    provisionFailures.push(failure);
     const failures = [...provisionFailures];
     return {
       result: { ...(await noRunResult()), provisionFailures: failures },
@@ -220,10 +217,9 @@ export async function runSingleton(
       });
       if (r && r.extraEnv) extraEnv = r.extraEnv;
     } catch (err) {
-      const message = (err as Error).message;
-      const signature = bound(message.trim(), MAX_FAILURE_SIGNATURE);
+      const failure = stageFailureFacts((err as Error).message);
       leg.log.warn(
-        `[flume] ${phase.name}: setupWorktree hook failed (${signature}); no tick this cycle`,
+        `[flume] ${phase.name}: setupWorktree hook failed (${failure.signature}); no tick this cycle`,
       );
       await teardownWorktreeInstance(
     phase,
@@ -232,7 +228,7 @@ export async function runSingleton(
     phase.name,
     leg.worktreeCtx,
   );
-      provisionFailures.push({ signature, message });
+      provisionFailures.push(failure);
       const failures = [...provisionFailures];
       return {
         result: { ...(await noRunResult()), provisionFailures: failures },
@@ -427,10 +423,7 @@ export async function runSingleton(
             `[flume] cherry-pick failed for ${phase.name}: ${message}; commit stays on the worktree branch, retried next tick`,
           );
           await git.cherryPickAbort(repoRoot);
-          mergeFailure = {
-            signature: bound(message.trim(), MAX_FAILURE_SIGNATURE),
-            message,
-          };
+          mergeFailure = stageFailureFacts(message);
           mergeOutcomes.push({
             outcome: "cherry-pick-conflict",
             baseSha: spanBase,
@@ -535,10 +528,7 @@ export async function runSingleton(
                 `[flume] ${phase.name}: revert of ${mergedSha.slice(0, 8)} refused (${foreignTip}); commit stays on trunk, left for the operator`,
               );
               mergeFate = "afterMerge-revert-refused";
-              gateFailures.push({
-                signature: bound(foreignTip.trim(), MAX_FAILURE_SIGNATURE),
-                message: foreignTip,
-              });
+              gateFailures.push(stageFailureFacts(foreignTip));
             } else {
               try {
                 await git.resetKeepTo(repoRoot, preCherry);

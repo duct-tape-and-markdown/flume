@@ -30,7 +30,6 @@
  */
 
 import type { Agent } from "./Agent.js";
-import { bound } from "./bounds.js";
 import { existsLoudUnder } from "./fsProbe.js";
 import * as git from "./git.js";
 import { stopFlagPath } from "./paths.js";
@@ -56,7 +55,7 @@ import { blamedOn, byQueueOrder, nextDisjointPick } from "./selection.js";
 import { consultShouldRun, runAttempt } from "./tickAttempt.js";
 import type { PhaseTickOutcome, TickLegContext } from "./tickLeg.js";
 import {
-  MAX_FAILURE_SIGNATURE,
+  stageFailureFacts,
   type PlatformFailure,
   type ProvisionFailure,
   type RenderFailure,
@@ -195,11 +194,10 @@ export async function runFanout(
     // during validation.
     await git.pruneWorktrees(repoRoot, leg.log);
   } catch (err) {
-    const message = (err as Error).message;
-    const signature = bound(message.trim(), MAX_FAILURE_SIGNATURE);
-    provisionFailures.push({ signature, message });
+    const failure = stageFailureFacts((err as Error).message);
+    provisionFailures.push(failure);
     leg.log.warn(
-      `[flume] ${phase.name}: worktree prune failed (${signature}); continuing — per-entry provisioning may still fail`,
+      `[flume] ${phase.name}: worktree prune failed (${failure.signature}); continuing — per-entry provisioning may still fail`,
     );
   }
 
@@ -384,11 +382,10 @@ export async function runFanout(
         wt = await createWorktree(entry.tag, from, leg.worktreeCtx);
         provisioned.push(entry);
       } catch (err) {
-        const message = (err as Error).message;
-        const signature = bound(message.trim(), MAX_FAILURE_SIGNATURE);
-        provisionFailures.push({ ...blamedOn(entry), signature, message });
+        const failure = stageFailureFacts((err as Error).message);
+        provisionFailures.push({ ...blamedOn(entry), ...failure });
         leg.log.warn(
-          `[flume] ${phase.name}: worktree provisioning failed for ${entry.tag} (${signature}); entry stays pending, continuing with the remaining batch`,
+          `[flume] ${phase.name}: worktree provisioning failed for ${entry.tag} (${failure.signature}); entry stays pending, continuing with the remaining batch`,
         );
       }
     });
@@ -415,11 +412,10 @@ export async function runFanout(
         });
         if (setup && setup.extraEnv) extraEnv = setup.extraEnv;
       } catch (err) {
-        const message = (err as Error).message;
-        const signature = bound(message.trim(), MAX_FAILURE_SIGNATURE);
-        provisionFailures.push({ ...blamedOn(entry), signature, message });
+        const failure = stageFailureFacts((err as Error).message);
+        provisionFailures.push({ ...blamedOn(entry), ...failure });
         leg.log.warn(
-          `[flume] ${phase.name}: setupWorktree hook failed for ${entry.tag} (${signature}); entry stays pending, continuing with the remaining batch`,
+          `[flume] ${phase.name}: setupWorktree hook failed for ${entry.tag} (${failure.signature}); entry stays pending, continuing with the remaining batch`,
         );
         return wt;
       }
