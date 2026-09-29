@@ -43,6 +43,7 @@ import { InlineExecRenderError, renderPrompt } from "../src/Prompt.ts";
 import { Baton } from "../src/Baton.ts";
 import * as builtinGates from "../src/builtinGates.ts";
 import { Dispatcher, type TickOutcome } from "../src/Dispatcher.ts";
+import { FAILURE_STAGES } from "../src/loopSupervisor.ts";
 import { resolvePendingDir } from "../src/paths.ts";
 import {
   buildFlumeApi,
@@ -2328,6 +2329,35 @@ describe("docs/CHAIN-AUTHORING.md — the supervisor-policy walk covers the bloc
         bulletOf(section, `- **\`${knob}\`** —`),
         `docs/CHAIN-AUTHORING.md's \`${knob}\` bullet states its binding time`,
       ).toMatch(/\*\*once per run\*\*|\*\*per tick\*\*/);
+    }
+  });
+
+  /**
+   * The section opens by spelling the stage-tagged roster both legs key on,
+   * and that roster is `FAILURE_STAGES`' (`src/loopSupervisor.ts`) — the one
+   * the supervisor's own fold is exhaustive over by type. The page is read
+   * back against it rather than against a hand-kept list, so a member added
+   * to the roster reds here instead of shipping beside prose that names the
+   * old set (*Derived state is computed, never restated beside its source*).
+   */
+  it("docs/CHAIN-AUTHORING.md's supervisor-policy section names every FAILURE_STAGES member as a quarantine stage", () => {
+    const { section } = docWalk(POLICY);
+
+    // The roster paragraph is the one that keys the two legs, found by the
+    // phrase that names the keying rather than by position: a section whose
+    // opening moved still answers, and one that stopped stating the keying
+    // at all fails here rather than passing an absence over the whole page.
+    const roster = section
+      .split(/\n\s*\n/)
+      .find((para) => para.includes("stage-tagged"));
+    expect(roster, "the section states no stage-tagged keying").toBeDefined();
+    expect(FAILURE_STAGES.length).toBeGreaterThan(1);
+
+    for (const stage of FAILURE_STAGES) {
+      expect(
+        roster!.replace(/\s+/g, " "),
+        `docs/CHAIN-AUTHORING.md's supervisor-policy roster omits \`${stage}\``,
+      ).toContain(`\`${stage}\``);
     }
   });
 });

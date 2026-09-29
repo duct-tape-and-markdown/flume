@@ -169,8 +169,9 @@ interface SuperviseLoopOptions {
   /**
    * Chain-declared override for the run-scoped quarantine (spec/loop.md
    * "Repeated identical failures — quarantine, then abort", which covers the
-   * provision, merge and gate stages alike). `"none"` disables per-entry
-   * quarantine outright — a tagged provision/merge/gate failure is never
+   * provision, render, merge and gate stages alike). `"none"` disables
+   * per-entry quarantine outright — a tagged provision/render/merge/gate
+   * failure is never
    * withheld from later ticks this run — while the
    * consecutive-identical-failure backstop (`abortThreshold` below) still
    * applies. Defaults to {@link DEFAULT_QUARANTINE_SCOPE}, whose hold is
@@ -183,9 +184,9 @@ interface SuperviseLoopOptions {
   quarantineScope?: "run" | "none";
   /**
    * Chain-declared override for the consecutive-identical-failure abort
-   * threshold — the number of consecutive ticks the same *stage-tagged* signature
-   * (provision, merge, or gate) must repeat, with no successful tick between
-   * them, before the run aborts. Defaults to {@link DEFAULT_ABORT_THRESHOLD},
+   * threshold — the number of consecutive ticks the same *stage-tagged*
+   * signature (provision, render, merge, or gate) must repeat, with no
+   * successful tick between them, before the run aborts. Defaults to {@link DEFAULT_ABORT_THRESHOLD},
    * pinned by tests/loopSupervisor.test.ts's "a chain declaring neither
    * supervisor knob gets both defaults: a run-scoped quarantine and a
    * three-tick abort" case, which drives both defaults at once. The CLI
@@ -359,14 +360,16 @@ interface QuarantineHold {
 
 /**
  * The stages whose holds expire with the tip they were placed at (spec/loop.md,
- * *Repeated identical failures — quarantine, then abort*). Each judges one
- * tree: a gate's verdict is over the tree it ran on, a cherry-pick's conflict
- * is against the trunk it picked onto, and a render reads the declaration and
- * the host that trunk holds — a chain's own hook fixed on trunk is a new
- * render — so once trunk is not that tree, none of the three judgments has
- * been re-made. Spelled as a membership set over {@link FAILURE_STAGES} rather
- * than as an inequality against `provision`, so a stage added to the roster
- * keeps the run-scoped default until this line says otherwise.
+ * *Repeated identical failures — quarantine, then abort*). Deliberately a
+ * proper subset of {@link FAILURE_STAGES}: render, merge and gate, never
+ * provision. Each of the three judges one tree — a gate's verdict is over the
+ * tree it ran on, a merge's conflict is against the trunk it picked onto, and
+ * a render reads the declaration and the host that trunk holds (a chain's own
+ * hook fixed on trunk is a new render) — so once trunk is not that tree, none
+ * of those judgments has been re-made, while nothing landing on trunk changes
+ * what a worktree could not provision. Spelled as a membership set over the
+ * roster rather than as an inequality against `provision`, so a stage added
+ * there keeps the run-scoped default until this line says otherwise.
  */
 const LIFTS_ON_A_MOVED_TIP: ReadonlySet<FailureStage> = new Set<FailureStage>([
   "render",
@@ -485,8 +488,8 @@ export async function superviseLoop(
   // what is on the disk the next tick reads.
   let latestTip: string | undefined;
   // spec/loop.md "Repeated identical failures — quarantine, then abort"
-  // generalizes both legs past provisioning to the merge and gate stages,
-  // keyed by *stage-tagged* signature (`${stage}:${signature}`) so a
+  // generalizes both legs past provisioning to the render, merge and gate
+  // stages, keyed by *stage-tagged* signature (`${stage}:${signature}`) so a
   // coincidentally-identical message from a different stage never shares a
   // streak with this one, and never shadows it in the quarantine loop either.
   // Keyed by signature, not "the last one seen" — a tick's failures can carry

@@ -39,9 +39,11 @@ const DECLARED_KEY_HASH_LENGTH = 10;
  * "a hash of its bytes".** That field is the engine's own accretion, not a
  * declaration anyone re-scoped: `commitPendingUpdate` merges a failed
  * attempt's footprint onto the entry in the *same* wave that blames it, so
- * hashing it would have every merge- and gate-stage quarantine mint a fresh
- * key on the next read and lift its own hold — the run re-attempts the wall
- * at full agent price, which is the burn the section exists to prevent.
+ * hashing it would have every quarantine whose failing attempt left a
+ * footprint — the merge- and gate-stage holds, never a provision- or
+ * render-stage one, since neither ran an agent — mint a fresh key on the
+ * next read and lift its own hold: the run re-attempts the wall at full
+ * agent price, which is the burn the section exists to prevent.
  * A key identifying the work as declared cannot be keyed on the engine's
  * notes about it (`.claude/rules/engine-boundary.md`, *Told, not
  * inferred*). Every other write-back is a real state change and re-keys

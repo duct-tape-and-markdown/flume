@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { expect, it } from "vitest";
@@ -6,7 +6,9 @@ import { expect, it } from "vitest";
 import {
   DEFAULT_ABORT_THRESHOLD,
   DEFAULT_QUARANTINE_SCOPE,
+  FAILURE_STAGES,
 } from "../src/loopSupervisor.ts";
+import type { FailureStage } from "../src/loopSupervisor.ts";
 import { DEFAULT_KILL_GRACE_MS } from "../src/processTree.ts";
 import { expectNoChainVocabulary } from "./helpers/chainVocabulary.ts";
 
@@ -356,4 +358,151 @@ it("the src/ entry module's header names every subpath the package's exports map
       subpath,
     );
   }
+});
+
+/**
+ * `FAILURE_STAGES` (`src/loopSupervisor.ts`) is the one home for the stages a
+ * per-entry failure record can come from, and the supervisor's fold is
+ * exhaustive over it by type — so a member added there is a compile error
+ * until its verdict list is named. Prose is the rung the compiler does not
+ * reach: eight comments spelled the roster out by hand, and the member added
+ * for a prompt that refused to render reached none of them — two of the eight
+ * being the shipped `Chain.supervisorPolicy` hover a chain author reads
+ * before turning quarantine off (`.claude/rules/engineering.md` § Derived
+ * state is computed, never restated beside its source).
+ *
+ * A comment that lists the stages is read against the real constant, so the
+ * next member reds here rather than stranding a hand-kept roster. A comment
+ * that deliberately names a subset — the lift set's, whose three holds each
+ * judge a tree — says so at the site, and saying so names the member it
+ * leaves out, which is what this scan reads.
+ */
+
+/** The `src/` modules whose comments the roster scan reads. */
+const srcModules = (): readonly string[] =>
+  readdirSync(fileURLToPath(new URL("../src", import.meta.url)))
+    .filter((name) => name.endsWith(".ts"))
+    .sort();
+
+/**
+ * How a stage's name is spelled in prose: `provision` also appears as the
+ * gerund the worktree leg is named by, and every member may carry the
+ * `-stage`/` stage` suffix the summary line writes, or the bare hyphen an
+ * elided one leaves (`a provision-, render-, merge- or gate-stage wall`).
+ */
+const stageWord = (stage: FailureStage): string =>
+  stage === "provision" ? String.raw`provision(?:ing)?` : stage;
+const stageToken = (): string =>
+  `(?:${FAILURE_STAGES.map(stageWord).join("|")})(?:[-\\s]stages?|-(?=[,\\s]))?`;
+
+/**
+ * A run of stage names joined as a list — `provision, render, merge or gate`,
+ * `merge/gate`, `render and gate`. The separator alphabet carries only
+ * punctuation and the two connectives, never bare whitespace: `after-merge
+ * gate` is two words that happen to be adjacent, not a list.
+ */
+const LIST_SEPARATOR = String.raw`(?:\s*[,/]\s*(?:or\s+|and\s+)?|\s+(?:or|and)\s+)`;
+
+/**
+ * The words that make a list of stage names a *failure-stage* roster rather
+ * than two nouns in a sentence about what a tick cost. Read over the text
+ * immediately around the run, so a run's own neighbourhood decides it.
+ */
+const ROSTER_CONTEXT = /stages?|failures?|quarantin|abort/i;
+const CONTEXT_WINDOW = 120;
+
+/** The list continues past the run into something that is not a stage. */
+const LIST_CONTINUES = new RegExp(String.raw`^${LIST_SEPARATOR}\w`);
+
+/**
+ * Every comment in `source`, flattened to one line each: a block comment with
+ * its leading `*` gutter stripped, and a run of adjacent `//` lines read as
+ * the one comment a reader reads it as. Backticks are dropped so a
+ * backticked stage name reads as the word it is.
+ */
+const commentsIn = (
+  source: string,
+): readonly { readonly text: string; readonly line: number }[] => {
+  const found: { text: string; line: number }[] = [];
+  const at = (index: number): number =>
+    source.slice(0, index).split("\n").length;
+  for (const m of source.matchAll(/\/\*[\s\S]*?\*\//g)) {
+    found.push({ text: m[0], line: at(m.index) });
+  }
+  for (const m of source.matchAll(/(?:^[ \t]*\/\/[^\n]*\n?)+/gm)) {
+    found.push({ text: m[0], line: at(m.index) });
+  }
+  return found.map(({ text, line }) => ({
+    line,
+    text: text.replace(/`/g, "").replace(/\n[ \t]*\*?[ \t]?/g, " "),
+  }));
+};
+
+/** The roster members `text` names anywhere. */
+const stagesNamedIn = (text: string): readonly FailureStage[] =>
+  FAILURE_STAGES.filter((stage) =>
+    new RegExp(String.raw`\b${stageWord(stage)}`, "i").test(text),
+  );
+
+/**
+ * Every stage list in `text` that reads as a roster: two or more distinct
+ * members, no non-member continuing the list on either side (`the
+ * merge/gate/revert stage` is the wave's pipeline, not the supervisor's
+ * roster), and roster vocabulary in the surrounding prose.
+ */
+const rosterListsIn = (text: string): readonly string[] => {
+  const run = new RegExp(
+    `${stageToken()}(?:${LIST_SEPARATOR}${stageToken()})+`,
+    "gi",
+  );
+  const lists: string[] = [];
+  for (const m of text.matchAll(run)) {
+    const [hit] = m;
+    if (stagesNamedIn(hit).length < 2) continue;
+    const before = text.slice(Math.max(0, m.index - CONTEXT_WINDOW), m.index);
+    const after = text.slice(m.index + hit.length, m.index + hit.length + CONTEXT_WINDOW);
+    if (LIST_CONTINUES.test(after)) continue;
+    if (/\w\s*[,/]\s*$/.test(before) || /\w\s+(?:or|and)\s+$/.test(before)) {
+      continue;
+    }
+    if (!ROSTER_CONTEXT.test(before) && !ROSTER_CONTEXT.test(after)) continue;
+    lists.push(hit);
+  }
+  return lists;
+};
+
+it("no comment in src/ names two failure stages in a list without naming every FAILURE_STAGES member", () => {
+  // Vacuity guards: the roster is populated, and the scan is over the real
+  // modules — a scan that read no module, or judged against an empty roster,
+  // passes over nothing (`.claude/rules/engineering.md` § A green verdict is
+  // proven non-vacuous).
+  expect(FAILURE_STAGES.length).toBeGreaterThan(1);
+  const modules = srcModules();
+  expect(modules.length).toBeGreaterThan(0);
+
+  const stale: string[] = [];
+  let rosters = 0;
+  for (const module of modules) {
+    const source = srcText(module);
+    for (const { text, line } of commentsIn(source)) {
+      const lists = rosterListsIn(text);
+      if (lists.length === 0) continue;
+      rosters += lists.length;
+      const missing = FAILURE_STAGES.filter(
+        (stage) => !stagesNamedIn(text).includes(stage),
+      );
+      if (missing.length > 0) {
+        stale.push(
+          `src/${module}:${line} lists "${lists[0]}" and never names ${missing.join(", ")}`,
+        );
+      }
+    }
+  }
+
+  // The scan found the rosters it exists to judge before the verdict over
+  // them is read: an empty scan is the false green here, not a clean tree.
+  expect(rosters, "the scan found no stage roster in any src/ comment").toBeGreaterThan(
+    FAILURE_STAGES.length,
+  );
+  expect(stale, stale.join("\n")).toEqual([]);
 });

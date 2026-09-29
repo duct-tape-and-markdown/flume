@@ -2392,11 +2392,11 @@ const chain: Chain = {
 ```
 
 - **`quarantineScope`** — `"run"` (default): a tagged failure at any of the
-  four stages quarantines that entry for the rest of the run, under the key
+  stages above quarantines that entry for the rest of the run, under the key
   the failing tick reported — its slug plus a hash of its bytes in
   its queue file, so a re-scope on trunk is a new key and lifts the hold.
   A **render**-, **merge**- or **gate**-stage hold carries one expiry beyond
-  the key: the trunk tip the placing tick reported. Each of the three judged
+  the key: the trunk tip the placing tick reported. Each of those judged
   one tree — the prompt render read, the trunk the pick went onto, the tree
   the gate ran over — so once a later tick reports a different tip that
   judgment is gone and the hold lifts on its own. That is what makes a gate,

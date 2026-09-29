@@ -216,8 +216,8 @@ export interface DispatcherOptions {
    * pickable — the queue itself is untouched. The `flume loop`
    * supervisor populates this (via the `tick` command's
    * `FLUME_QUARANTINED_SLUGS` env var, whose name predates the key and
-   * stands) from entries whose provision/merge/gate stage failed earlier in
-   * the run; the exclusion is run-scoped only — a fresh run/process always
+   * stands) from entries whose provision/render/merge/gate stage failed
+   * earlier in the run; the exclusion is run-scoped only — a fresh run/process always
    * starts with nothing quarantined. Because the key covers the entry's
    * bytes, an entry re-scoped on trunk no longer matches the held key and
    * is pickable again without a relaunch. Default: nothing quarantined.

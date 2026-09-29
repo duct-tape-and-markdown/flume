@@ -158,7 +158,7 @@ export async function runSingleton(
       noCommit: "render-refused",
       // Unblamed: a singleton assigns no entry, so there is nothing to
       // quarantine and the record falls to the consecutive-failure backstop
-      // alone — same shape this leg's gate and merge failures already take.
+      // alone — the shape every failure this leg records already takes.
       renderFailures: [consult.failure],
     };
   }

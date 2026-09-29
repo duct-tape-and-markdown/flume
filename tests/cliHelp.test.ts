@@ -1539,6 +1539,31 @@ describe("flume loop --help — the abort backstop's stage vocabulary against lo
     }
     expect(prose).not.toContain("worktree provisioning");
   }, SPAWN_BUDGET_MS);
+
+  /**
+   * The page states the same backstop the help text does, and is the copy an
+   * operator reads first — so it is read back against the same roster rather
+   * than left to a hand-kept list the next member strands
+   * (`.claude/rules/engineering.md`, *Derived state is computed, never
+   * restated beside its source*).
+   */
+  it("docs/CLI.md's flume loop section names every FAILURE_STAGES member as an abort stage", async () => {
+    const section = sectionOf(await readCliDoc(), /^## `flume loop\b/);
+    expect(section.length).toBeGreaterThan(0);
+
+    // Vacuity: the section states the backstop at all, and the roster it is
+    // read against is populated, before any coverage is claimed over either.
+    const prose = section.replace(/\s+/g, " ");
+    expect(prose).toContain("abortThreshold");
+    expect(FAILURE_STAGES.length).toBeGreaterThan(1);
+
+    for (const stage of FAILURE_STAGES) {
+      expect(
+        prose,
+        `docs/CLI.md's \`flume loop\` section names no ${stage}-stage wall`,
+      ).toContain(`${stage}-stage`);
+    }
+  });
 });
 
 /**

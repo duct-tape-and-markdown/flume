@@ -1043,8 +1043,8 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
 
 /**
  * spec/loop.md "Repeated identical failures — quarantine, then abort"
- * generalizes both backstop legs past provisioning to the merge and gate
- * stages — sibling coverage to the provision-only suite above, same `runTick`
+ * generalizes both backstop legs past provisioning to the render, merge and
+ * gate stages — sibling coverage to the provision-only suite above, same `runTick`
  * fixture idiom (a stub writing the verdict file directly, standing in for
  * a real fanout wave/singleton tick whose own mechanism the Dispatcher-level
  * suites above prove).
