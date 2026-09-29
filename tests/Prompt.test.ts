@@ -197,7 +197,7 @@ describe("renderPrompt — <harness> states the effective fence", () => {
     // absence is part of it, so no negative is stated beside it.
   }, SPAWN_BUDGET_MS);
 
-  it("scoped tick (no assignedEntry): byte-identical to a singleton tick's rendering", async () => {
+  it("a phase that declines scopeWritesToEntry renders the same bytes with an assignedEntry as without one", async () => {
     const p = phase({
       name: "build",
       concurrency: "fanout",
@@ -213,12 +213,34 @@ describe("renderPrompt — <harness> states the effective fence", () => {
       },
     });
 
-    const out = await render(p, e);
+    const withEntry = await render(p, e);
+    const withoutEntry = await render(p);
 
-    // The leads the block states, as a total: the unscoped label and the gate
-    // lead, so the scoped pair's absence is this same assertion rather than
-    // two negatives over everything else the render quotes.
-    expect(harnessLeads(out)).toEqual([UNSCOPED_LEAD, GATES_LEAD]);
+    // The claim, byte for byte: the entry reaches the render through
+    // `entryWriteScope` alone, and that returns nothing without the opt-in,
+    // so the two renders are one string.
+    expect(entryWriteScope(p, e)).toBeUndefined();
+    expect(withEntry).toBe(withoutEntry);
+
+    // Non-vacuity, both halves. The block the two agree on is the unscoped
+    // one, populated — its leads as a total, so the scoped pair's absence is
+    // this same assertion rather than a negative over everything else the
+    // render quotes.
+    expect(harnessLeads(withEntry)).toEqual([UNSCOPED_LEAD, GATES_LEAD]);
+    expect(listingUnder(withEntry, UNSCOPED_LEAD)).toEqual([
+      "src/**",
+      "tests/**",
+    ]);
+    // And this entry is one that moves bytes once the phase opts in, so the
+    // identity above is the declined opt-in's doing rather than an inert
+    // entry's.
+    const optedIn = { ...p, scopeWritesToEntry: true };
+    expect(entryWriteScope(optedIn, e)?.length).toBeGreaterThan(0);
+    expect(harnessLeads(await render(optedIn, e))).toEqual([
+      FENCE_LEAD,
+      CEILING_LEAD,
+      GATES_LEAD,
+    ]);
   }, SPAWN_BUDGET_MS);
 
   it("scoped tick with scopeWritesToEntry: true: names entry.files ∪ entryChannelPaths as the effective fence and writablePaths as the outer ceiling", async () => {
