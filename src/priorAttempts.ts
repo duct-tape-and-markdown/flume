@@ -465,10 +465,13 @@ export class PriorAttemptStore {
    * count spec/loop.md "Repeated identical failures — quarantine, then
    * abort" keeps — the same refusal {@link read} makes per file, where the
    * degrade to "no prior" is only ever for a record that was *read* and
-   * found garbled. Per file the refusal is {@link read}'s whole: a record
+   * found garbled. Per file the reading is {@link read}'s whole: a record
    * this listing finds and cannot open escapes here exactly as it does
    * there, because the walk selects by name and leaves the reading to the
-   * reader.
+   * reader. The walk keeps one refusal of its own, for the one failure the
+   * reader cannot see: a stem the record path rule does not compose back to
+   * the file it was found at, which no `read` or `clear` can reach and which
+   * `read` would therefore report as absent.
    *
    * Hence the descent: the state root, then `prior-attempts/`, then each
    * keyspace directory, each proven a directory before the next is probed.
@@ -505,10 +508,35 @@ export class PriorAttemptStore {
       // attempt (`.claude/rules/engineering.md`, *Loud or nothing*).
       const names = await readdir(toNamespacedPath(dir));
       for (const name of names) {
-        // The name is the whole filter, and the only silent skip: something
+        // The name decides twice, and the suffix is the silent half: something
         // not named like a record was never this store's to answer for.
         if (!name.endsWith(".json")) continue;
+        const found = join(dir, name);
         const stem = name.slice(0, -".json".length);
+        // The loud half. A record is located by its stem, and `read` puts
+        // that stem back through the store's own path rule, whose `slugify`
+        // is idempotent on a key already slugged and rewrites every other:
+        // a stem carrying anything outside the slug alphabet re-composes to
+        // a *different* file, where the probe answers absent and a record
+        // this walk enumerated and accepted reads as no prior attempt.
+        //
+        // Such a file is not merely mislaid, it is unreachable: no `read`
+        // finds it, no `clear` removes it, and no retry it was written for
+        // can ever see it. So the failure is stated here, at the one surface
+        // that can see the file at all, rather than degraded into the
+        // reading that resets the repeated-failure count spec/loop.md
+        // "Repeated identical failures — quarantine, then abort" keeps
+        // (`.claude/rules/engineering.md`, *Loud or nothing*). Asked of the
+        // path rule rather than of `slugify` directly, so the round trip is
+        // judged against the composition that actually locates a record and
+        // not against a second spelling of its fold
+        // (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+        // Nothing `write` produces can trip it: every stem it composes is
+        // already this rule's own output.
+        if (priorAttemptPath(this.flumeDir, { key: stem, keyspace }) !== found)
+          throw new Error(
+            `[flume] prior-attempt record sits at a path this store cannot name: ${found} — its stem is not what the record path rule composes for it, so no read, clear or retry reaches it`,
+          );
         const rec = await this.read({ key: stem, keyspace });
         if (rec) out.set(recordAttemptKey(rec), rec);
       }

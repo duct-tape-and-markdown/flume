@@ -16,7 +16,14 @@
  */
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { lstat, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  readFile,
+  rename,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -485,6 +492,92 @@ describe("priorAttempts — an unreachable record is not an absent one", () => {
     const message = await refusalOf(store.readAll());
     expect(message).toContain("prior-attempt record is unreadable");
     expect(message).toContain(p);
+  });
+
+  /**
+   * The third arm, and the one the walk owns alone: the record opens fine,
+   * and the listing loses it by re-composing a path from the stem it had just
+   * enumerated. The record path rule folds its key through `slugify`, which
+   * is idempotent only on a key already slugged, so a stem carrying anything
+   * outside the slug alphabet re-composes to a *different* file — absent, and
+   * read as no prior attempt by the one surface every `shouldRun`,
+   * `TickContext.priorAttempts` and `clearStale` goes through
+   * (`.claude/rules/engineering.md`, *Loud or nothing*). `read` cannot make
+   * this refusal: from its side the file it was pointed at is simply not
+   * there.
+   *
+   * The bytes are the real writer's: `write` stamps the ref's key verbatim as
+   * `keyedAs`, so the record moved below is well-formed and decodable, and
+   * only the path it sits at is under test (*A seam gate reads what the real
+   * writer wrote*).
+   */
+  it("the listing does not report a record file whose stem the path rule rewrites as no prior attempt", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+    const ref: PriorAttemptRef = { key: "Odd Name", keyspace: "phase" };
+    await store.write(ref, buildCleanExit("no commit", UNMOVED_SPAN()));
+    const slugged = priorAttemptPath(flumeDir, ref);
+    const found = join(priorAttemptsDir(flumeDir), "phase", "Odd Name.json");
+    await rename(slugged, found);
+
+    // Vacuity pins (`.claude/rules/engineering.md`, "A green verdict is
+    // proven non-vacuous"): the stem really is one the path rule rewrites, a
+    // well-formed record the store itself wrote really sits at it, the path
+    // the rule composes from that stem really is absent, and `read` really
+    // does report no prior attempt for it — so the refusal below is the
+    // listing's own and there is exactly one file for it to answer for.
+    expect(slugify("Odd Name")).not.toBe("Odd Name");
+    expect(existsSync(found)).toBe(true);
+    expect(existsSync(slugged)).toBe(false);
+    expect(
+      (JSON.parse(readFileSync(found, "utf8")) as PriorAttempt).keyedAs,
+    ).toBe("Odd Name");
+    await expect(store.read(ref)).resolves.toBeUndefined();
+
+    const message = await refusalOf(store.readAll());
+    expect(message).toContain("this store cannot name");
+    expect(message).toContain(found);
+  });
+
+  /**
+   * The refusal above is a wall the store's own output must never meet: every
+   * stem `write` composes is already the path rule's output, so it round-trips
+   * by construction. Driven through the real writer over both keyspaces
+   * rather than asserted of `slugify`, because the round trip the listing
+   * judges is the path rule's and not the fold's.
+   */
+  it("every stem the prior-attempt store writes round-trips through the record path rule", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+    const entry: PendingEntry = {
+      tag: "SHOUTY-TAG",
+      gate: { kind: "open" },
+      dependsOnForks: [],
+      priority: 0,
+      files: { new: [], edit: [], retire: [] },
+    };
+    // A raw phase name the fold rewrites, a phase name it does not, and an
+    // entry tag it lowercases: three keys, one path rule.
+    const refs: PriorAttemptRef[] = [
+      { key: "Odd Name", keyspace: "phase" },
+      priorAttemptRef({ name: "plan" } as Phase),
+      priorAttemptRef({ name: "build" } as Phase, entry),
+    ];
+    for (const ref of refs)
+      await store.write(ref, buildCleanExit("no commit", UNMOVED_SPAN()));
+
+    // Vacuity pin: every ref really did produce a file, so the loop below
+    // judges three written stems and not an empty list.
+    expect(refs.filter((r) => existsSync(priorAttemptPath(flumeDir, r))))
+      .toHaveLength(3);
+    for (const ref of refs) {
+      const stem = basename(priorAttemptPath(flumeDir, ref), ".json");
+      expect(priorAttemptPath(flumeDir, { ...ref, key: stem })).toBe(
+        priorAttemptPath(flumeDir, ref),
+      );
+    }
+    // And the listing that refuses an unnameable stem finds all three.
+    expect((await store.readAll()).size).toBe(3);
   });
 
   it("readAll refuses when a plain file sits at the prior-attempts root", async () => {
