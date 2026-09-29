@@ -369,9 +369,11 @@ const HELP_SUB: Record<Subcommand, string> = {
 Print baton state: awake phases (or "hibernating" if none), then, when
 .flume/loop.pid exists, supervisor liveness ("supervisor pid N live" or
 "loop.pid present, process dead — stale"; no pidfile prints nothing extra),
-then, when HEAD names a ref and a tip claim exists for it, its holder ("tip
-claimed by pid N" or "tip claim present, process dead — stale"; a detached
-HEAD or no claim file prints nothing extra), then the pending entry count
+then, when HEAD names a ref and a tip claim exists for it, its holder and
+the state root that holder took the tip for ("tip claimed by pid N for <state
+root>" — or "a state root it did not state", where the claim names none — or
+"tip claim present, process dead — stale"; a detached HEAD or no claim file
+prints nothing extra), then the pending entry count
 from plan/pending/ ("pending: N"; "pending: 0" if absent; "pending:
 unparsable" if present but malformed), then, when the chain loads, a
 friction count (declared Chain.friction dir holding notes) and one line per

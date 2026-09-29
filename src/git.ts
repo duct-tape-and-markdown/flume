@@ -18,8 +18,10 @@ import { consoleLogger, type Logger } from "./log.js";
 import { boundedName, gitPath, shortHash, slugify } from "./paths.js";
 import {
   livePidClaimAt,
+  type PidClaim,
   stakePidClaim,
   type StakedPidClaim,
+  statedStateRoot,
 } from "./pidClaim.js";
 import { acquireWaitLock, type WaitLock } from "./waitLock.js";
 
@@ -1204,22 +1206,25 @@ async function withWorktreeLock<T>(
 }
 
 /**
- * The pid recorded at a tip-claim path, when it names a live process —
- * `null` for no claim file, an unparsable one, or a dead/not-ours pid
- * (stale; callers reclaim silently). The read itself is every guard's
- * (`livePidClaimAt`, `src/pidClaim.ts`), including what it refuses to read
- * as absent: a claim file that is present but unreadable is not an unclaimed
- * tip, because read as one, `acquireTipClaim`'s EEXIST branch would reclaim
- * a tip another live writer holds. The pid alone here, because the two facts
- * under it answer questions no caller asks of a live tip: the claim instant is
- * `flume status`'s about the loop lock, and the holder's state root is the
- * refusal's ({@link acquireTipClaim}), which reads the whole claim off the
- * stake rather than through this path.
+ * What the claim at a tip-claim path states about its holder, when that
+ * holder names a live process — `null` for no claim file, an unparsable one,
+ * or a dead/not-ours pid (stale; callers reclaim silently). The read itself
+ * is every guard's (`livePidClaimAt`, `src/pidClaim.ts`), including what it
+ * refuses to read as absent: a claim file that is present but unreadable is
+ * not an unclaimed tip, because read as one, `acquireTipClaim`'s EEXIST
+ * branch would reclaim a tip another live writer holds.
+ *
+ * The whole claim, not the pid alone: the tip is the one resource two state
+ * roots in one checkout contend for, so the root on its third line is what
+ * `flume status`'s claim row names beside the holder (`src/cli.ts`, spec/cli.md,
+ * *`flume status` owes exactly this*) — the same fact the refusal names off
+ * the stake ({@link acquireTipClaim}). A caller after liveness alone takes
+ * the pid and drops the rest.
  */
-export async function liveTipClaimPid(
+export async function liveTipClaim(
   claimPath: string,
-): Promise<number | null> {
-  return (await livePidClaimAt(claimPath))?.pid ?? null;
+): Promise<PidClaim | null> {
+  return livePidClaimAt(claimPath);
 }
 
 /**
@@ -1245,7 +1250,7 @@ export class TipClaimHeldError extends Error {
   ) {
     super(
       `tip ${refPath} claimed by pid ${holderPid} for ` +
-        `${holderStateRoot ?? "a state root it did not state"} (${claimPath}); ` +
+        `${statedStateRoot(holderStateRoot)} (${claimPath}); ` +
         `this effort resolved ${stateRoot}`,
     );
   }

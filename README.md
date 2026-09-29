@@ -367,7 +367,8 @@ supervisor's claim and takes none of its own. Both verbs refuse outright
 
 It is advisory, not exclusive against every possible writer — a signal
 plus a fact when the signal is bypassed. `flume status` reports the
-current tip's claim (`tip claimed by pid N`, or stale) alongside
+current tip's claim, and the state root that claim was taken for
+(`tip claimed by pid N for <state root>`, or stale), alongside
 supervisor liveness.
 
 ## Trunk contract: HEAD is truth

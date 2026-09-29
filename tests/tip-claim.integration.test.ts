@@ -20,7 +20,7 @@ import { describe, expect, it } from "vitest";
 
 import { Baton } from "../src/Baton.ts";
 import { currentRefPath, gitCommonDir, tipClaimPath } from "../src/git.ts";
-import { parsePidClaim } from "../src/pidClaim.ts";
+import { parsePidClaim, renderPidClaim } from "../src/pidClaim.ts";
 import { tickVerdictPath } from "../src/tickVerdict.ts";
 import { deadPid } from "./helpers/deadPid.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
@@ -498,12 +498,22 @@ describe("flume loop/tick — tip claim wiring", () => {
       try {
         const claimPath = await headClaimPath(repo.dir);
         await mkdir(dirname(claimPath), { recursive: true });
-        // The vitest worker itself plays the live holder.
-        await writeFile(claimPath, String(process.pid), "utf8");
+        // The vitest worker itself plays the live holder, and the claim states
+        // the root it took the tip for on its third line — a root that is not
+        // the one the status process resolves, so the row cannot be read off
+        // its own resolution (spec/cli.md, "`flume status` owes exactly this").
+        const holderRoot = join(repo.dir, "holder-root");
+        await writeFile(
+          claimPath,
+          renderPidClaim(process.pid, new Date(), holderRoot),
+          "utf8",
+        );
 
         const live = await runCli(repo.dir, ["status"]);
         expect(live.code).toBe(0);
-        expect(live.out).toContain(`tip claimed by pid ${process.pid}`);
+        expect(live.out).toContain(
+          `tip claimed by pid ${process.pid} for ${holderRoot}`,
+        );
 
         await writeFile(claimPath, String(deadPid()), "utf8");
 

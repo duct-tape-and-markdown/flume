@@ -32,7 +32,7 @@
  * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*). Each
  * guard keeps only the path it addresses its own file by: the loop lock's
  * accessor read is {@link liveLoopClaim} below, the tip claim's ref-keyed
- * one is `liveTipClaimPid` (`src/git.ts`), and the two git-common-dir wait
+ * one is `liveTipClaim` (`src/git.ts`), and the two git-common-dir wait
  * locks hand `acquireWaitLock` (`src/waitLock.ts`) theirs.
  *
  * The refuse-and-reclaim *stake* the two exclusive guards take sits here too
@@ -132,6 +132,23 @@ export function parsePidClaim(raw: string): PidClaim | null {
     ...(Number.isFinite(atMs) ? { atMs } : {}),
     ...(stateRoot === "" ? {} : { stateRoot }),
   };
+}
+
+/**
+ * How a reader names the state root a claim's holder stated: the root itself,
+ * or — where the holder stated none — that it stated none. Never the reader's
+ * own root substituted for the holder's, which is the one reading that turns
+ * a fact into a mismatch nobody declared
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * One spelling, because both readers of that third line state the same fact
+ * about it: the tip claim's refusal (`TipClaimHeldError`, `src/git.ts`) and
+ * `flume status`'s claim row (`src/cli.ts`). Takes the field rather than the
+ * whole claim, so a reader holding only the root it decoded — the refusal,
+ * which carries the holder's root as its own field — reaches it too.
+ */
+export function statedStateRoot(stateRoot: string | undefined): string {
+  return stateRoot ?? "a state root it did not state";
 }
 
 /**

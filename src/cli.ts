@@ -24,7 +24,7 @@ import {
   currentRefPath,
   gitCommonDir,
   gitToplevel,
-  liveTipClaimPid,
+  liveTipClaim,
   readGitVersion,
   tipClaimPath,
   TipClaimHeldError,
@@ -36,6 +36,7 @@ import { readPendingLoose, readQueueOnDisk } from "./pendingLedger.js";
 import {
   liveLoopClaim,
   stakePidClaim,
+  statedStateRoot,
   type PidClaim,
   type StakedPidClaim,
 } from "./pidClaim.js";
@@ -611,14 +612,14 @@ async function dispatch(): Promise<number> {
       const commonDir = await gitCommonDir(repoRoot);
       const claimPath = tipClaimPath(commonDir, headRefForStatus.path);
       let claimPresent: boolean;
-      let holder: number | null = null;
+      let holder: PidClaim | null = null;
       try {
         claimPresent = existsLoudUnder("tip claim", commonDir, claimPath);
         // Inside the guard for the same reason as the loop lock's claim read
-        // above: `liveTipClaimPid` throws on any read failure past absent, and
+        // above: `liveTipClaim` throws on any read failure past absent, and
         // a claim file that will not open is a tip whose holder is unknown,
         // never an unclaimed one.
-        if (claimPresent) holder = await liveTipClaimPid(claimPath);
+        if (claimPresent) holder = await liveTipClaim(claimPath);
       } catch (err) {
         console.error(
           `[flume] status: tip claim at ${claimPath} failed to read: ${err instanceof Error ? err.message : String(err)}`,
@@ -626,9 +627,18 @@ async function dispatch(): Promise<number> {
         return EX_IOERR;
       }
       if (claimPresent) {
+        // The root the *claim* states, never the one this process resolved:
+        // two state roots in one checkout contend for one tip, so a claim
+        // held for the other root read as this one's is the whole reason the
+        // row names it (spec/cli.md, "`flume status` owes exactly this").
+        // A fact and not a verdict: status says whose root the holder took
+        // the tip for and leaves the comparison to its reader. A claim that
+        // stated no root says so, rather than borrowing this process's
+        // (`statedStateRoot`, `src/pidClaim.ts`).
         console.log(
           holder !== null
-            ? `tip claimed by pid ${holder}`
+            ? `tip claimed by pid ${holder.pid} for ` +
+                statedStateRoot(holder.stateRoot)
             : "tip claim present, process dead — stale",
         );
       }

@@ -59,7 +59,11 @@ import {
 } from "../src/paths.ts";
 import { entryFileName } from "../src/PendingSchema.ts";
 import { acquireTipClaim, gitCommonDir, tipClaimPath } from "../src/git.ts";
-import { parsePidClaim, renderPidClaim } from "../src/pidClaim.ts";
+import {
+  parsePidClaim,
+  renderPidClaim,
+  stakePidClaim,
+} from "../src/pidClaim.ts";
 import { DEFAULT_KILL_GRACE_MS } from "../src/processTree.ts";
 import {
   tickVerdictPath,
@@ -2161,6 +2165,15 @@ describe("flume status — stop flag line (spec/cli.md \"flume status owes exact
 });
 
 describe("flume status — tip claim line (spec/cli.md \"flume status owes exactly this\", line 4)", () => {
+  /**
+   * The claim row itself, so a case asserts the whole line rather than a
+   * prefix of it: the row names the holder's state root, and a `toContain`
+   * over `tip claimed by pid N` passes whatever follows — including the
+   * reading where the root is missing or is the one this process resolved.
+   */
+  const claimRow = (out: string): string | undefined =>
+    out.split("\n").find((line) => line.startsWith("tip claimed by pid"));
+
   it("`flume status` exits EX_IOERR on a non-ENOENT tip-claim stat, instead of printing no claim line", async () => {
     const repo = await makeScratchRepo("flume-cli-repo-", "main");
     try {
@@ -2203,6 +2216,80 @@ describe("flume status — tip claim line (spec/cli.md \"flume status owes exact
       );
       expect(r.out).not.toContain("tip claimed by pid");
       expect(r.out).not.toContain("tip claim present, process dead");
+    } finally {
+      await repo.cleanup();
+    }
+  }, SPAWN_BUDGET_MS);
+
+  it("flume status names the state root a live tip claim was taken for", async () => {
+    const repo = await makeScratchRepo("flume-cli-repo-", "main");
+    try {
+      // The real writer stakes it, so the third line the row reads back is
+      // the one `acquireTipClaim` writes rather than a fixture's spelling of
+      // the claim (`.claude/rules/engineering.md`, *A seam gate reads what
+      // the real writer wrote*). The vitest worker plays the live holder.
+      const holderRoot = join(repo.dir, "holder-root");
+      const claim = await acquireTipClaim(
+        repo.dir,
+        "refs/heads/main",
+        holderRoot,
+      );
+      try {
+        // Non-vacuity, and the case's whole premise: the root the claim
+        // records is not the root the status process resolves under
+        // `repo.dir` (`.flume`), so a row naming its own root cannot pass.
+        expect(parsePidClaim(readFileSync(claim.path, "utf8"))?.stateRoot).toBe(
+          holderRoot,
+        );
+        expect(holderRoot).not.toBe(join(repo.dir, ".flume"));
+
+        const r = await runCli(repo.dir, ["status"]);
+
+        expect(r.code).toBe(0);
+        expect(claimRow(r.out)).toBe(
+          `tip claimed by pid ${process.pid} for ${holderRoot}`,
+        );
+      } finally {
+        claim.release();
+      }
+    } finally {
+      await repo.cleanup();
+    }
+  }, SPAWN_BUDGET_MS);
+
+  it("flume status over a live tip claim stating no state root says so rather than naming the root it resolved", async () => {
+    const repo = await makeScratchRepo("flume-cli-repo-", "main");
+    try {
+      const claimPath = tipClaimPath(
+        await gitCommonDir(repo.dir),
+        "refs/heads/main",
+      );
+      // A tip claim from before the statement grew its third line: the same
+      // exclusive create every guard takes (`stakePidClaim`,
+      // `src/pidClaim.ts`), told no root, so the two-line file is the real
+      // writer's and not this fixture's.
+      const stake = await stakePidClaim(claimPath);
+      if (stake.kind !== "staked") {
+        throw new Error("the fixture's own tip claim was refused");
+      }
+      try {
+        // Non-vacuity: the claim is live and states no root, which is the one
+        // input this row's withholding arm reads.
+        expect(
+          parsePidClaim(readFileSync(claimPath, "utf8"))?.stateRoot,
+        ).toBeUndefined();
+
+        const r = await runCli(repo.dir, ["status"]);
+
+        expect(r.code).toBe(0);
+        // The whole row: said outright, never the resolved root substituted
+        // for a root the holder never stated.
+        expect(claimRow(r.out)).toBe(
+          `tip claimed by pid ${process.pid} for a state root it did not state`,
+        );
+      } finally {
+        stake.claim.release();
+      }
     } finally {
       await repo.cleanup();
     }

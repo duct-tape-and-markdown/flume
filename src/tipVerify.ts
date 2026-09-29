@@ -58,7 +58,7 @@ export async function liveForeignClaimPid(
   // engine instance holds, which is the one interference nothing downstream
   // catches (`.claude/rules/engineering.md`, *Loud or nothing*).
   if (!existsLoudUnder("tip claim", commonDir, claimPath)) return null;
-  const holder = await git.liveTipClaimPid(claimPath);
+  const holder = (await git.liveTipClaim(claimPath))?.pid ?? null;
   if (holder === null || holder === ownTipClaimPid) return null;
   return holder;
 }

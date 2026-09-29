@@ -114,7 +114,7 @@ import {
   parseGitVersion,
   readGitVersion,
   WORKTREE_LIST_Z_FLOOR,
-  liveTipClaimPid,
+  liveTipClaim,
   pinLongPaths,
   readFileAtRef,
   removeWorktree,
@@ -1508,7 +1508,7 @@ describe("checkoutAddress — the segment a checkout owns", () => {
  * (src/pidClaim.ts) exclusive-create/pid-liveness/reclaim shape but as a sibling
  * primitive — the tip claim guards a ref, not a state root.
  */
-describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim", () => {
+describe("acquireTipClaim / liveTipClaim — advisory per-ref tip claim", () => {
   /**
    * The state root a case hands the claim: the root its caller resolved, which
    * `flume tick` and `flume loop` hand over rather than have the claim derive
@@ -1716,7 +1716,7 @@ describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim", () 
   // dead-pid path and reclaimed a tip a live writer may still hold — the
   // one outcome the refusal exists to rule out
   // (`.claude/rules/engineering.md`, "Loud or nothing").
-  it("liveTipClaimPid throws when the claim path is present but unstattable", async () => {
+  it("liveTipClaim throws when the claim path is present but unstattable", async () => {
     const refPath = await resolveRefPath(repo);
     const claimPath = tipClaimPath(await gitCommonDir(repo), refPath);
     await mkdir(dirname(claimPath), { recursive: true });
@@ -1724,7 +1724,7 @@ describe("acquireTipClaim / liveTipClaimPid — advisory per-ref tip claim", () 
     // would bypass that.
     await symlink(basename(claimPath), claimPath);
 
-    await expect(liveTipClaimPid(claimPath)).rejects.toThrow(/ELOOP/);
+    await expect(liveTipClaim(claimPath)).rejects.toThrow(/ELOOP/);
   });
 
   it("acquireTipClaim refuses an unstattable claim rather than reclaiming the tip", async () => {
@@ -1811,7 +1811,7 @@ describe.runIf(process.platform === "win32")("pinLongPaths", () => {
 // already needed toNamespacedPath for (WORKTREE-WIN32-PATH-TOTAL-LIMIT). A
 // refPath this deep pushes the claim path past win32's ~260-char limit.
 describe.runIf(process.platform === "win32")(
-  "acquireTipClaim / liveTipClaimPid / release — win32 total-path limit (GITTIPCLAIM-WIN32-PATH-TOTAL-LIMIT)",
+  "acquireTipClaim / liveTipClaim / release — win32 total-path limit (GITTIPCLAIM-WIN32-PATH-TOTAL-LIMIT)",
   () => {
     it("round-trips acquire/release when refPath's mirrored directories nest past win32's ~260-char limit", async () => {
       const refPath = [
@@ -1825,10 +1825,10 @@ describe.runIf(process.platform === "win32")(
 
       const claim = await acquireTipClaim(repo, refPath, join(repo, "first"));
       expect(claim.path).toBe(claimPath);
-      expect(await liveTipClaimPid(claimPath)).toBe(process.pid);
+      expect((await liveTipClaim(claimPath))?.pid).toBe(process.pid);
 
       claim.release();
-      expect(await liveTipClaimPid(claimPath)).toBeNull();
+      expect(await liveTipClaim(claimPath)).toBeNull();
     });
   },
 );
