@@ -516,6 +516,26 @@ const factory: ChainFactory = (api) => {
       // rebuilt from the fate). A hook that never reached a verdict is a
       // broken chain, not a park plan can resolve, so the entry it blames is
       // no refusal here and the ladder decides as usual.
+      //
+      // Both `not-shipped` arms are unreachable on this chain's own ticks —
+      // the absence that makes them so is the one `declaredFilesGate`'s
+      // header above already states. The split stays anyway, declared here as
+      // the right depth (`.claude/rules/engineering.md`, *The fix lands at
+      // the mechanism*): this file is opinion shipped by name
+      // (`.claude/rules/engine-boundary.md`, *Opinion ships by name, opted
+      // into*), and the author who copies this handoff and *does* declare a
+      // `shipped` predicate is who the reading is written for. Declaring one
+      // here to make the arms live would ship a park policy the example is
+      // not making; dropping them would hand that author a handoff that
+      // reads a broken hook as a park.
+      //
+      // So the lens on these two is a hand-folded `TickResult` deliberately,
+      // not a cheaper fixture standing in for the real writer
+      // (`.claude/rules/engineering.md`, *A seam gate reads what the real
+      // writer wrote*): no real tick of *this* chain can produce the fate
+      // they turn on, so there is no producer to drive them from, and the
+      // rungs a real tick does reach are walked by `Dispatcher.tick()`
+      // instead.
       const threwOn = new Set((result.shipFailures ?? []).map((f) => f.tag));
       const refused =
         result.noCommit === "clean-exit" ||
