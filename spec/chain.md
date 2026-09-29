@@ -595,6 +595,11 @@ throwing is not `false`: the entry stays pending and the verdict names the
 throw, as it names a declined ship. In every case the verdict is written and
 the merge bookkeeping completes.
 
+The field set is the exported types' own, and their hover text states each
+field. The bullets below rule a field where its meaning is behavior this spec
+must state; a field the type carries and no bullet names is not absent
+(`.claude/rules/spec-writing.md`, *The spec does not restate a sibling*).
+
 - **`TickContext`** (`shouldRun`, `promptArgs`) —
   `cwd`, `flumeDir`, `assignedEntry` (fanout), `pending` (singleton), plus:
   - **`stateRootRel`** — the state root's path relative to the repository

@@ -456,3 +456,35 @@ the wrong one for half its consumers. The fact expires when tsx returns one
 shape regardless of `type`; nothing pins it, since a test asserting the raw
 namespace would pin the external tool, and the sweep's expired-narration
 lens is what retires this section.
+
+## A read that fails after the open names no path
+
+An fs failure node raises after the open succeeded carries the syscall that
+failed on the descriptor, not the path the caller passed: `readFile` or
+`readFileSync` on a directory rejects with `EISDIR: illegal operation on a
+directory, read`, `syscall: "read"`, `err.path` undefined, and no path in the
+message. A failure at the open — `ENOENT`, an `EACCES` the open catches —
+carries `path` and spells it. The split is which syscall failed, not which
+errno came back, so it holds on every host: an `EIO` mid-read drops the path
+the same way. Measured on a directory read, node 22 and node 24.21. So a
+per-file reader that rethrows states the path it read, or the operator is
+handed a bare errno under a state root that may be relocated; and a test
+asserts the reader's own refusal, never the errno, which would pin one host's
+accident. The fact expires when node attaches the path to a post-open failure.
+
+## A registered tsx loader parses a `.ts` module as ESM whatever `type` says
+
+Once tsx's ESM loader is registered process-wide — `node --import tsx`, or
+tsx's own CLI — a `.ts` module it resolves parses as a module whatever the
+nearest `package.json` `type` says; only the esbuild transform reads the
+manifest, to pick its own output format. Measured, tsx 4.21 under node 22: a
+chain under a manifest with no `type` and a real `import` statement loads
+clean, while the same manifest over a top-level await refuses, the transform
+arm. So a CJS-context refusal keyed on an import statement is unreachable
+through any CLI spawned under the registered loader, which is how this repo's
+test lane spawns it, and reachable only where `tsImport` loads the chain under
+plain node, as the published build does: drive that arm at the loader
+directly, and take the top-level-await arm when a verb must be driven. A
+different claim from *tsx decides a module's interop shape from the nearest
+`package.json` `type`*, which is the shape of a load that succeeds; this one
+expires when a registered loader starts honouring `type`.

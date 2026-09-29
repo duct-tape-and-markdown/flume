@@ -17,9 +17,8 @@ chain declarations the CLI reads in `spec/chain.md`.
   detached HEAD, a chain that will not load are reports, not failures — and
   refuses (`EX_IOERR`) only when a file it must read is present and unreadable,
   so no observation is printed as its opposite.
-  It mutates no baton flag and loads no agent; the one filesystem effect is
-  that constructing the baton creates `<flumeDir>/awake/` when absent
-  (`Baton`).
+  It mutates no baton flag and loads no agent, and reading the baton creates
+  nothing (`spec/loop.md`, *Baton — presence wakes, absence hibernates*).
 - `tick [--phase <name>]` — one phase × one tick: the first awake phase in
   declared order, or the named one (`spec/loop.md`, *Baton — presence wakes,
   absence hibernates*).
@@ -127,7 +126,8 @@ In printed order:
    because the ack ritual (`spec/loop.md`, *Graceful stop*) only works if the
    operator who forgot the flag finds it where they look first.
 4. **Tip claim state** — when HEAD names a ref and a claim file exists for it:
-   `tip claimed by pid N`, or `tip claim present, process dead — stale`. A
+   `tip claimed by pid N for <state root>`, naming the root the claim was
+   taken for, or `tip claim present, process dead — stale`. A
    detached HEAD or an absent claim both read as silence.
 5. **Pending entry count** from the chain's declared queue directory (`Chain.pendingDir`)
    when the chain loads, and from the default `<flumeDir>/plan/pending/` when it
@@ -167,6 +167,16 @@ pidfile — one detection, never re-derived per surface.
 The friction count line has one home: `flume status` and the loop-end
 completion summary print the same line from one source. The engine announces that mail exists and
 never reads it; the declaration and its validation are in `spec/chain.md`.
+
+## A log line carries the instant it was written
+
+Every line the CLI's supervisor and its tick children write to the operator
+opens with the instant it was written, as an ISO-8601 UTC timestamp — the
+spelling the tick verdict, the claim file, and record filenames already use,
+so a log lines up against every other artifact of the run. The stamp is the
+CLI's, not the engine's: `consoleLogger` writes the line unstamped, and an
+embedder routing a `Logger` of its own times its lines its own way
+(`.claude/rules/engine-boundary.md`, *Surface, not prescription*).
 
 ## State-root and config-dir resolution
 

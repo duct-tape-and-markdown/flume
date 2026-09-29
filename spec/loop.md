@@ -16,7 +16,9 @@ directory of files: `<flumeDir>/awake/<phase>` (`Baton`). Presence of a
 flag wakes the named phase on the next tick; absence sleeps it; what a flag
 carries is the wake token the handoff bullet below describes. No daemon, no
 database, no in-memory carry. Disk is truth, including the baton. A relocated
-`flumeDir` carries the baton with it.
+`flumeDir` carries the baton with it. The directory is created by the first
+`wake`; until then its absence is the empty baton, so reading the baton creates
+nothing.
 
 - **`wake`/`sleep` are idempotent.** Repeated calls and missing flags are tolerated,
   so concurrent ticks and partial crashes cannot corrupt baton state.
@@ -186,8 +188,7 @@ other.
     ticks to collide with only optimistic verify between them.
 - **Detached HEAD is refused, by both `tick` and `loop`, before any work** (exit 1).
   The tick record's meaning is advancing a named tip, and the claim keys on a ref.
-  The refusal names the state plainly. `tick` refuses even though it takes no claim,
-  so behavior is identical whether or not a loop wraps it.
+  The refusal names the state plainly.
 - **A git working tree is the precondition**, enforced by the same refusal. Both
   commands resolve HEAD through `git.currentRefPath`, which returns a discriminated
   `CurrentRef`: `ref`, `detached`, `not-a-repository`, or `git-unavailable`. All
@@ -436,7 +437,14 @@ stays pending in every case; only the residue differs.
     entry's existing `MergeFailure` outcome — the entry stays pending and retries
     against the tip that now carries the foreign commit, which is itself never
     touched — and a clean pick lands, with semantic compatibility owned by the
-    `afterMerge` gates (below), never by a provenance check. The pending-ledger
+    `afterMerge` gates (below), never by a provenance check. A commit the tip
+    already holds — one that empties against it — is absorbed the same way and
+    is never a conflict: that commit is skipped and the rest of the span lands,
+    and a span the tip holds whole is merged with no commit to add, so the tick
+    reports no commit landed and no merge failure, and a fanout entry's
+    `shipped` predicate is asked as for any merge. The evidence is git's own
+    sequencer state — a pick stopped with nothing staged — never its message.
+    The pending-ledger
     commit absorbs identically — its content derives from the wave's outcomes, not
     from any tip, so it recommits on whatever tip is current.
 - **Absorbing the ledger commit is what closes the queue-behind-tree hazard.**
@@ -534,7 +542,7 @@ engine and never from a copy:
 | mode | meaning |
 | --- | --- |
 | `gate-revert` | a commit was made and a gate reverted it |
-| `clean-exit` | the agent exited cleanly without a usable commit — none at all, or a span whose diff against its base is empty, which dies with the worktree and never reaches the merge stage (an empty pick exits 1 and read as a merge failure, field report, 0.19.0). The engine records that it did, and the tail of its final message; whether that was a refused constraint, a bail, or nothing to do is the chain's reading of the message, never an engine label — an inferred intent is an opinion with no owner (`engine-boundary.md`, *Told, not inferred*) |
+| `clean-exit` | the agent exited cleanly without a usable commit — none at all, or a span whose diff against its base is empty, which dies with the worktree and never reaches the merge stage. The engine records that it did, and the tail of its final message; whether that was a refused constraint, a bail, or nothing to do is the chain's reading of the message, never an engine label — an inferred intent is an opinion with no owner (`engine-boundary.md`, *Told, not inferred*) |
 | `platform-preempt` | the agent process failed for non-work reasons (rate-limit, auth, dispatcher-killed, or a per-tick timeout where one is set — below) — explicitly **not** a defect in the work |
 | `render-refused` | the prompt itself never resolved, so the agent was never invoked (`spec/prompt.md`) |
 
