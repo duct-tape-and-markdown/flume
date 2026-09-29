@@ -843,7 +843,7 @@ declare. `kind` is a union open to future members; each arrives with its own spe
 A deterministic failure repeats identically every tick — the burn shape the mount-dead
 abort exists to prevent: each lap is paid again, at full agent price once the agent is
 invoked, and in a slot a pickable sibling could have had before it.
-The accounting therefore covers **every per-entry failure fact the verdict records**,
+The accounting therefore covers **every failure fact the verdict records**,
 keyed by stage-tagged signature:
 
 - **provision** — a pre-tick worktree provisioning failure (sweep, create, or the
@@ -861,6 +861,10 @@ keyed by stage-tagged signature:
   A retry that genuinely attempts something different produces different output and
   breaks the streak by construction; only byte-identical repetition accumulates, and
   output noise that defeats equality merely makes the brake conservative.
+- **platform** — an agent that failed for non-work reasons (`platform-preempt`, *The
+  no-commit taxonomy*), recorded under the phase with its preempt class as the
+  signature and blamed on no entry, so it feeds the backstop alone: an expired login
+  or a spent cap fails every tick identically, and no retry the run can make moves it.
 
 A clean exit or park never joins the accounting — an agent that committed nothing is
 not evidence anything went wrong. A signature is the bounded,
