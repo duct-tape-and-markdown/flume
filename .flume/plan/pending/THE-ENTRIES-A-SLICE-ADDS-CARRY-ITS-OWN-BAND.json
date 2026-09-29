@@ -43,5 +43,16 @@
     "the band gate skips a plan commit that added no entry"
   ],
   "pins": [],
-  "notes": "The rung above the prose its parent files (`.claude/rules/engineering.md`, *Narration is the ladder's bottom rung*); the gate reads entry JSON, never prompt text, so that section's harness-prose carve-out does not reach it. Added is decidable at the seam the `per` gate already uses: `readGatedQueue` (`harness/gates.ts:216`) for the bytes, `ctx.baseSha` for absent-means-added. The sweep's band is the engine default, so only derive and inbox can red."
+  "notes": "The rung above the prose its parent files (`.claude/rules/engineering.md`, *Narration is the ladder's bottom rung*); the gate reads entry JSON, never prompt text, so that section's harness-prose carve-out does not reach it. Added is decidable at the seam the `per` gate already uses: `readGatedQueue` (`harness/gates.ts:216`) for the bytes, `ctx.baseSha` for absent-means-added. The sweep's band is the engine default, so only derive and inbox can red.",
+  "observedFiles": [
+    ".flume/plan/notes/THE-ENTRIES-A-SLICE-ADDS-CARRY-ITS-OWN-BAND.md",
+    "docs/CHAIN-AUTHORING.md",
+    "harness/chain.ts",
+    "harness/filingBands.ts",
+    "harness/gates.ts",
+    "harness/prompts.ts",
+    "src/PendingSchema.ts",
+    "tests/harnessChain.test.ts",
+    "tests/harnessGates.test.ts"
+  ]
 }
