@@ -53,6 +53,7 @@ import {
   tickVerdictsLogPath,
   gateFailureSignature,
   type ConditionalTickVerdictFact,
+  type RequiredInvocationRowField,
   type RequiredTickVerdictField,
   type TickVerdict,
 } from "../src/tickVerdict.ts";
@@ -15120,6 +15121,78 @@ describe("TickVerdict invocations — usage/cost facts (spec/loop.md 'Every agen
       "COMPOSE-B",
     ]);
     expect(outcome.verdict!.invocations).toEqual(rows);
+  });
+
+  /**
+   * The rows decode's own agreement case — the verdict decode's sibling, one
+   * seam over. `isInvocationRow` (`src/tickVerdict.ts`) is the gate every
+   * line the rows reader hands a consumer passes, and what it requires of a
+   * row is exactly what `appendInvocationRow` writes on every one. Two hands
+   * spelled that set until the guard's roster was keyed off
+   * `TickVerdictInvocation`'s required half; the roster below is the same
+   * half, so a field joining the shape joins both or the typecheck refuses
+   * it.
+   *
+   * Both sides are the shipped ones: a real tick's own row, one field
+   * removed at a time, read back through the real reader
+   * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+   * wrote*). Removal is the only hand-authoring here, and it is the
+   * degradation under test — a real writer cannot emit a row from before a
+   * field existed.
+   */
+  it("the usage-row read declines a real tick's own invocation row with any field appendInvocationRow always writes removed", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+
+    // The real producer. A quiet singleton tick reporting no usage at all is
+    // the point: the fields below are the ones every row carries, whatever
+    // the agent said.
+    new Baton(flumeDir).wake("plan");
+    await new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [makePhase({ name: "plan", concurrency: "singleton" })],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async (cwd) => {
+        await writeAndCommit(cwd, "src/plan-output.ts", "ok\n", "plan: derive");
+      }),
+      log: silent,
+    }).tick();
+
+    const produced = await readInvocationRows(flumeDir, "plan");
+    expect(produced).toHaveLength(1);
+    const row = produced[0]!;
+
+    const alwaysWritten: { [K in RequiredInvocationRowField]: true } = {
+      promptPath: true,
+      uncommittedTracked: true,
+    };
+    const fields = Object.keys(alwaysWritten);
+
+    // Non-vacuity, and the fixture reaching the whole claim: the tick really
+    // wrote every field the roster names, so each removal below takes
+    // something that was there.
+    expect(fields.length).toBeGreaterThan(0);
+    expect(Object.keys(row).sort()).toEqual(
+      expect.arrayContaining([...fields].sort()),
+    );
+
+    const path = invocationsPath(flumeDir, "plan");
+    for (const field of fields) {
+      const short = JSON.parse(JSON.stringify(row)) as Record<string, unknown>;
+      delete short[field];
+      await writeFile(path, JSON.stringify(short) + "\n", "utf8");
+      expect(
+        await readInvocationRows(flumeDir, "plan"),
+        `a row missing ${field} is served`,
+      ).toEqual([]);
+    }
+
+    // …and the same row intact decodes, so the declines above are the missing
+    // field's doing rather than the file's.
+    await writeFile(path, JSON.stringify(row) + "\n", "utf8");
+    expect(await readInvocationRows(flumeDir, "plan")).toEqual([row]);
   });
 
   /**

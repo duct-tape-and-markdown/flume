@@ -1108,11 +1108,17 @@ export function buildTickVerdict(facts: TickVerdictFacts): TickVerdict {
  * over a set narrower than its claim (`.claude/rules/engineering.md`, *A seam
  * gate reads what the real writer wrote*).
  */
-export type ConditionalTickVerdictFact = {
-  [K in keyof TickVerdict]-?: Record<string, never> extends Pick<TickVerdict, K>
-    ? K
-    : never;
-}[keyof TickVerdict];
+export type ConditionalTickVerdictFact = OptionalKey<TickVerdict>;
+
+/**
+ * Every key of `T` the shape declares optional. One spelling of the
+ * detection both rosters in this module key off, rather than the same
+ * conditional re-typed beside each guard
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ */
+type OptionalKey<T> = {
+  [K in keyof T]-?: Record<string, never> extends Pick<T, K> ? K : never;
+}[keyof T];
 
 /**
  * The other half: every field {@link buildTickVerdict} writes on every
@@ -1124,6 +1130,20 @@ export type ConditionalTickVerdictFact = {
 export type RequiredTickVerdictField = Exclude<
   keyof TickVerdict,
   ConditionalTickVerdictFact
+>;
+
+/**
+ * The same half of {@link TickVerdictInvocation}: every field
+ * {@link appendInvocationRow} writes on every usage row, whatever the agent
+ * reported. The rest of the shape is {@link AgentUsage}, which is optional
+ * throughout — a run that reported no model, no turns and no cost still
+ * leaves a row. Read by {@link ROW_ALWAYS_WRITTEN} below, and by the suite's
+ * agreement case, which drives a real tick's own row through the real rows
+ * reader one missing field at a time.
+ */
+export type RequiredInvocationRowField = Exclude<
+  keyof TickVerdictInvocation,
+  OptionalKey<TickVerdictInvocation>
 >;
 
 /**
@@ -1198,7 +1218,7 @@ export const MAX_TICK_VERDICTS = 200;
  */
 export const DEFAULT_LOG_VERDICTS = 10;
 
-/** The check every `string`-typed field of the roster below is read with. */
+/** The check every `string`-typed field of the rosters below is read with. */
 const isString = (value: unknown): boolean => typeof value === "string";
 
 /**
@@ -1233,13 +1253,25 @@ const ALWAYS_WRITTEN: {
   at: isString,
 };
 
-/** Structural check a parsed JSON value is shaped like a {@link TickVerdict} — corrupt or partial input degrades to "not a verdict", never a thrown parse error surfacing as a tick failure. */
-function isTickVerdict(rec: unknown): rec is TickVerdict {
+/**
+ * A parsed JSON value read against one of this module's rosters: an object
+ * whose every rostered field holds the check its declared type earns. The
+ * one spelling both decodes below share, so a line's structural read is the
+ * roster's to state and never a second walk beside it
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ */
+function matchesRoster(
+  rec: unknown,
+  roster: Readonly<Record<string, (value: unknown) => boolean>>,
+): boolean {
   if (!rec || typeof rec !== "object") return false;
   const r = rec as Record<string, unknown>;
-  return Object.entries(ALWAYS_WRITTEN).every(([field, holds]) =>
-    holds(r[field]),
-  );
+  return Object.entries(roster).every(([field, holds]) => holds(r[field]));
+}
+
+/** Structural check a parsed JSON value is shaped like a {@link TickVerdict} — corrupt or partial input degrades to "not a verdict", never a thrown parse error surfacing as a tick failure. */
+function isTickVerdict(rec: unknown): rec is TickVerdict {
+  return matchesRoster(rec, ALWAYS_WRITTEN);
 }
 
 /**
@@ -1518,11 +1550,25 @@ export async function readInvocationRows(
   return rows;
 }
 
-/** Structural check a parsed line is shaped like a {@link TickVerdictInvocation} — the two fields every row carries, whatever the agent reported. */
+/**
+ * What the decode requires of each field {@link appendInvocationRow} always
+ * writes — the {@link RequiredInvocationRowField} half, keyed off the shape
+ * the way {@link ALWAYS_WRITTEN} keys off the verdict's, rather than
+ * hand-listed beside it. A field joining {@link TickVerdictInvocation} as
+ * required joins this roster or the typecheck refuses the mapped type
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ */
+const ROW_ALWAYS_WRITTEN: {
+  [K in RequiredInvocationRowField]: (value: unknown) => boolean;
+} = {
+  promptPath: isString,
+  uncommittedTracked: Array.isArray,
+};
+
+/** Structural check a parsed line is shaped like a {@link TickVerdictInvocation} — the fields every row carries, whatever the agent reported. */
 function isInvocationRow(rec: unknown): rec is TickVerdictInvocation {
-  if (!rec || typeof rec !== "object") return false;
-  const r = rec as Partial<TickVerdictInvocation>;
-  return typeof r.promptPath === "string" && Array.isArray(r.uncommittedTracked);
+  return matchesRoster(rec, ROW_ALWAYS_WRITTEN);
 }
 
 /**
