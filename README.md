@@ -217,7 +217,10 @@ Harness-managed state — every name here is one the runtime spells itself
   scoped by keyspace (`entry/`, `phase/`) so a tag and a phase name that
   slugify alike never share a file.
 - `.flume/rendered-prompts/` — each invocation's fully rendered prompt,
-  persisted before the agent runs.
+  persisted before the agent runs, and kept while a verdict the history log
+  still holds names it. The directory is bounded by that history's own
+  retention and by no second setting, and a prompt inside a live run's window
+  is never trimmed — it is an agent whose row has not landed yet.
 - `.flume/worktrees/<slug>/` — one worktree per tick: the entry's slug under
   fanout, the phase's own under singleton. The base dir is relocatable — by
   the operator via `FLUME_WORKTREES_DIR`, by the chain via

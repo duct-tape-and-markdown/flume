@@ -18,15 +18,13 @@
  * (`.claude/rules/engine-boundary.md`).
  */
 
-import { readdir } from "node:fs/promises";
-
-import { isDirectoryOrAbsentUnder } from "./fsProbe.js";
 import {
-  fsStamp,
-  namespacedJoin,
-  renderedPromptsDir,
-  STATE_ROOT_NAMES,
-} from "./paths.js";
+  RENDERED_PROMPT_PREFIX,
+  renderedPromptName,
+  renderedPromptNames,
+  runWindowStamp,
+  withinRunWindow,
+} from "./renderedPrompts.js";
 import {
   readAllInvocationRows,
   readTickVerdicts,
@@ -54,23 +52,13 @@ export interface RunSpend {
 }
 
 /**
- * The prefix `recordRenderedPrompt` (`src/tickAttempt.ts`) writes onto every
- * row's `promptPath` — state-root-relative, forward slashes, git's alphabet
- * rather than the host's.
- */
-const RENDERED_PROMPT_PREFIX = `${STATE_ROOT_NAMES.renderedPrompts}/`;
-
-/**
  * What the run that claimed the loop lock at `startedAtMs` has spent, and how
  * many of its agents have not reported.
  *
- * The window is one predicate over one alphabet: every invocation's prompt
- * file is named with {@link fsStamp}, which is fixed-width and ISO-derived
- * and so sorts chronologically as plain text, and the window's own edge is
- * rendered through that same writer and compared as a string. Nothing parses
- * a stamp back out of a filename, and nothing reads an mtime — no writer
- * contracts one, and a restore, a backup tool or a stray `touch` moves it
- * under a live run.
+ * The window is one predicate over one alphabet, and it is not spelled here:
+ * {@link runWindowStamp} renders the edge and {@link withinRunWindow} compares
+ * a filename against it, both from `src/renderedPrompts.ts`, where the trim
+ * that bounds that same directory takes them too.
  *
  * Refuses rather than under-reporting: a rows file, the history log or the
  * prompts dir that is present and will not read throws, and the verb that
@@ -82,7 +70,7 @@ export async function readRunSpend(
   flumeDir: string,
   startedAtMs: number,
 ): Promise<RunSpend> {
-  const startStamp = fsStamp(new Date(startedAtMs));
+  const startStamp = runWindowStamp(startedAtMs);
   const log = await readTickVerdicts(flumeDir);
   // Every promptPath the log carries, whatever the verdict's own date: a tick
   // that settled has its rows here *and* still in its phase's rows file,
@@ -116,14 +104,17 @@ export async function readRunSpend(
   }
   const started = await renderedPromptNames(flumeDir);
   const inFlight = started.filter(
-    (name) => name >= startStamp && !counted.has(RENDERED_PROMPT_PREFIX + name),
+    (name) =>
+      withinRunWindow(name, startStamp) &&
+      !counted.has(RENDERED_PROMPT_PREFIX + name),
   ).length;
   return { byPhase: totalAgentUsageByPhase(spans), inFlight };
 }
 
 /**
- * Whether `row`'s invocation began at or after `startStamp` — the string
- * compare the stamp's format is designed for.
+ * Whether `row`'s invocation began at or after `startStamp` — the window's
+ * own compare ({@link withinRunWindow}), over the filename the row's
+ * `promptPath` names.
  *
  * A `promptPath` this engine did not spell counts as the run's rather than
  * being dropped: the two errors are not symmetric. Dropping a real row
@@ -135,37 +126,6 @@ function startedAfter(
   row: { readonly promptPath: string },
   startStamp: string,
 ): boolean {
-  if (!row.promptPath.startsWith(RENDERED_PROMPT_PREFIX)) return true;
-  return row.promptPath.slice(RENDERED_PROMPT_PREFIX.length) >= startStamp;
-}
-
-/**
- * The rendered-prompt files on disk, one per invocation this state root ever
- * started. Absent reads as none and is **proven** from the state root down,
- * the same descent every other read in this file's neighbourhood takes
- * (`isDirectoryOrAbsentUnder`, `src/fsProbe.ts`): a plain file standing above
- * the dir answers the listing `ENOENT` on win32
- * (`.claude/rules/platform-facts.md`, *win32 reports a path through a
- * non-directory as not found*), and an in-flight count of zero over an
- * obstructed root is a live wave printed as a settled one.
- */
-async function renderedPromptNames(flumeDir: string): Promise<string[]> {
-  const dir = renderedPromptsDir(flumeDir);
-  if (!isDirectoryOrAbsentUnder("rendered prompts", flumeDir, dir)) return [];
-  let names: string[];
-  try {
-    names = await readdir(namespacedJoin(dir));
-  } catch (err) {
-    // Named and pathed, the spelling every read of a state-root artifact
-    // refuses in: the verb above states the subject it was reading for, and
-    // the cause states which artifact and where, so an operator under a
-    // relocatable state root is told the path to go fix.
-    throw new Error(
-      `[flume] rendered prompts are unreadable: ${dir} — ${
-        err instanceof Error ? err.message : String(err)
-      }`,
-      { cause: err },
-    );
-  }
-  return names.filter((name) => name.endsWith(".md"));
+  const name = renderedPromptName(row.promptPath);
+  return name === undefined || withinRunWindow(name, startStamp);
 }

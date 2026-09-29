@@ -41,6 +41,7 @@ import { entryDeclaredKey } from "../src/entryKey.ts";
 import type { Logger } from "../src/log.ts";
 import { readMergingMarkers } from "../src/mergingMarkers.ts";
 import {
+  MAX_TICK_VERDICTS,
   writeTickVerdict,
   clearTickVerdict,
   readInvocationRows,
@@ -60,8 +61,11 @@ import {
 } from "../src/worktrees.ts";
 import {
   defaultStateRoot,
+  fsStamp,
   invocationsPath,
+  loopLockPath,
   mergingDir,
+  renderedPromptsDir,
   slugify,
   stopFlagPath,
   worktreesBase,
@@ -14293,6 +14297,94 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
     // And declining stays a statement about what a reader hands a chain: the
     // accessor still serves only the decodable row.
     expect(await readTickVerdicts(flumeDir)).toEqual([v]);
+  });
+
+  /**
+   * spec/prompt.md, *The rendered prompt is persisted before the agent runs*:
+   * a prompt lives as long as a retained verdict row names it as
+   * `promptPath`. The window slice above is the one place a verdict leaves
+   * the retained set, so it is where the directory is bounded — by the
+   * history's own retention, and by no second setting beside it.
+   *
+   * Every verdict here is written by the real writer over the real log, and
+   * the trim reads what that writer left
+   * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+   * wrote*).
+   */
+  it("a rendered prompt no retained verdict names is removed when the history window drops the verdict that named it", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const dir = renderedPromptsDir(flumeDir);
+    await mkdir(dir, { recursive: true });
+    // One more invocation than the window holds lines for. Names are stamped
+    // through `fsStamp`, the way `recordRenderedPrompt` stamps them, so they
+    // sort chronologically as plain text.
+    const names = Array.from(
+      { length: MAX_TICK_VERDICTS + 1 },
+      (_, i) =>
+        `${fsStamp(new Date(Date.UTC(2024, 0, 1) + i * 1_000))}-build.md`,
+    );
+    for (const [i, name] of names.entries()) {
+      await writeFile(join(dir, name), `rendered ${i}`, "utf8");
+      await writeTickVerdict(
+        flumeDir,
+        verdictFixture({
+          summary: `tick ${i}`,
+          invocations: [
+            { promptPath: `rendered-prompts/${name}`, uncommittedTracked: [] },
+          ],
+        }),
+      );
+    }
+
+    // Non-vacuity: the window really did roll, dropping exactly the first
+    // verdict — which is the state the claim below is about, not an empty
+    // log or an untouched one.
+    const history = await readTickVerdicts(flumeDir);
+    expect(history).toHaveLength(MAX_TICK_VERDICTS);
+    expect(history[0]?.summary).toBe("tick 1");
+
+    // The dropped verdict's prompt, and only it, is gone: every other file
+    // is still named by a line the log holds.
+    expect((await readdir(dir)).sort()).toEqual(names.slice(1));
+    expect(existsSync(join(dir, names[0]!))).toBe(false);
+  });
+
+  /**
+   * The other edge. A prompt written inside the live run's window is an agent
+   * the run started whose row has not landed yet — the outstanding spend
+   * `flume status` counts (`src/runSpend.ts`) — so the trim must not take it
+   * for being unnamed. The run's start instant is the lock's own second line,
+   * the same fact that count is bounded by, and a prompt from before it is
+   * no longer anyone's flight.
+   */
+  it("a rendered prompt inside a live run's window is kept though no verdict names it yet", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const dir = renderedPromptsDir(flumeDir);
+    await mkdir(dir, { recursive: true });
+    // This process plays the live supervisor — its own pid is guaranteed
+    // alive for the duration of the test.
+    const runStart = new Date("2024-06-01T12:00:00.000Z");
+    await writeFile(
+      loopLockPath(flumeDir),
+      renderPidClaim(process.pid, runStart),
+      "utf8",
+    );
+    const inWindow = `${fsStamp(new Date(runStart.getTime() + 1_000))}-build.md`;
+    const before = `${fsStamp(new Date(runStart.getTime() - 60_000))}-build.md`;
+    for (const name of [before, inWindow]) {
+      await writeFile(join(dir, name), "rendered", "utf8");
+    }
+
+    // Non-vacuity: both prompts are on disk, and the verdict about to be
+    // written names neither of them.
+    expect((await readdir(dir)).sort()).toEqual([before, inWindow]);
+    const v = verdictFixture({ summary: "tick 0" });
+    expect(v.invocations).toEqual([]);
+
+    await writeTickVerdict(flumeDir, v);
+
+    expect(existsSync(join(dir, inWindow))).toBe(true);
+    expect(existsSync(join(dir, before))).toBe(false);
   });
 
   it("the verdict history read refuses a present-but-unreadable log naming the path it read", async () => {

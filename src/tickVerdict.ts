@@ -43,6 +43,7 @@ import {
   tickVerdictsLogPath,
 } from "./paths.js";
 import type { PidClaim } from "./pidClaim.js";
+import { trimRenderedPrompts } from "./renderedPrompts.js";
 import type { NoCommitMode } from "./Prompt.js";
 
 /**
@@ -1023,9 +1024,20 @@ export {
  * unbounded log. Over the file's *lines*, not over the records this engine
  * version can decode: {@link writeTickVerdict} carries every line forward
  * verbatim, so a row {@link isTickVerdict} declines occupies the window the
- * same way a decodable one does.
+ * same way a decodable one does — and still names its prompts while it does.
+ *
+ * It bounds `<flumeDir>/rendered-prompts/` too, and by itself: a rendered
+ * prompt lives exactly as long as a line still in this window names it as
+ * `promptPath` (spec/prompt.md, *The rendered prompt is persisted before the
+ * agent runs*), so the directory has no retention setting of its own to hold
+ * a second, disagreeing answer.
+ *
+ * Exported for the suite, which drives the window past its own edge rather
+ * than restating the number beside it
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
+ * beside its source*).
  */
-const MAX_TICK_VERDICTS = 200;
+export const MAX_TICK_VERDICTS = 200;
 
 /**
  * Engine default for how much of that window `flume log` prints when the
@@ -1174,6 +1186,52 @@ export async function writeTickVerdict(
     bounded.join("\n") + "\n",
     "utf8",
   );
+  // The slice above is the one place a verdict leaves the retained set, so it
+  // is where the rendered prompts that verdict was the last to name stop
+  // being anyone's. The trim reads the lines just written, never the decoded
+  // set: a line this version declines still names its prompts, and trimming
+  // by what `isTickVerdict` accepts would delete the input record of every
+  // tick that ran under an older shape.
+  const retained = retainedPromptPaths(bounded);
+  if (retained !== undefined) await trimRenderedPrompts(flumeDir, retained);
+}
+
+/**
+ * Every `promptPath` the history's lines name, or `undefined` when a line
+ * would not parse at all.
+ *
+ * Read off the lines rather than the records, for the reason the append
+ * carries lines rather than records: this engine version's structural check
+ * is a statement about what a reader hands a chain, and a row it declines is
+ * still a row whose input file something may want.
+ *
+ * `undefined` rather than a partial set, because the two errors are not
+ * symmetric: an unparsable line names prompts no reader here can enumerate,
+ * and treating it as naming none would delete files it may be the last
+ * holder of. A trim that cannot resolve its retained set keeps everything —
+ * the directory grows until a well-formed append trims it, which is the
+ * failure that costs disk rather than evidence
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
+function retainedPromptPaths(
+  lines: readonly string[],
+): ReadonlySet<string> | undefined {
+  const paths = new Set<string>();
+  for (const line of lines) {
+    let rec: unknown;
+    try {
+      rec = JSON.parse(line);
+    } catch {
+      return undefined;
+    }
+    const rows = (rec as { invocations?: unknown } | null)?.invocations;
+    if (!Array.isArray(rows)) continue;
+    for (const row of rows as readonly unknown[]) {
+      const promptPath = (row as { promptPath?: unknown } | null)?.promptPath;
+      if (typeof promptPath === "string") paths.add(promptPath);
+    }
+  }
+  return paths;
 }
 
 /**
