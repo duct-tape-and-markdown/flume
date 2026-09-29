@@ -1,0 +1,34 @@
+{
+  "tag": "THE-FAILURE-SIGNATURE-PAIRING-HAS-ONE-HOME",
+  "gate": { "kind": "open" },
+  "priority": 0,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/tickVerdict.ts",
+        "description": "the constructor's home, beside `gateFailureSignature` and `unrevertableMergeFailure`"
+      },
+      {
+        "path": "src/singletonTick.ts",
+        "description": "five sites — the prune, create and setupWorktree walls, the cherry-pick conflict, the foreign-tip revert refusal"
+      },
+      {
+        "path": "src/waveTick.ts",
+        "description": "three sites — the wave-level prune wall and the two per-entry provisioning walls"
+      },
+      {
+        "path": "src/waveMerge.ts",
+        "description": "two sites — the cherry-pick conflict and the foreign-tip revert refusal"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "bound(<msg>.trim(), MAX_FAILURE_SIGNATURE) is spelled at ten sites across three legs while src/tickVerdict.ts names a constructor for the gate stage's signature alone",
+  "per": {
+    "path": ".claude/rules/posture-sweep.md",
+    "section": "Routing"
+  },
+  "acceptance": "one exported constructor beside `gateFailureSignature` returning `{ signature, message }` from a message, called at all ten sites; every signature and message byte-identical to today's, so the typecheck and the standing suite hold the move with no test changed.",
+  "notes": "Third note of the family *a failure-signature-from-a-message pairing spelled per module* — d54d8f9f named it at nine sites, 243af6b5 re-noted it and named this target shape. Counted on disk this tick: `src/singletonTick.ts:185`,`:197`,`:224`,`:396`,`:504`; `src/waveTick.ts:184`,`:379`,`:410`; `src/waveMerge.ts:755`,`:917`. `src/tickAttempt.ts:919`/`:960` stay out — declared and cited variants, d54d8f9f's standing ruling."
+}

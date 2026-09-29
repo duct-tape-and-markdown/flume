@@ -1,0 +1,33 @@
+{
+  "tag": "A-SINGLETON-PICK-REFUSES-A-LIVE-FOREIGN-TIP-CLAIM",
+  "gate": { "kind": "open" },
+  "priority": 0,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/singletonTick.ts",
+        "description": "the merge stage's pick, which reaches `checkMergedTipUnmoved` for its revert and no claim check for the pick itself"
+      },
+      {
+        "path": "src/tipVerify.ts",
+        "description": "the header's \"both legs reach them\" and `liveForeignClaimPid`'s own wave-scoped doc, one of which is wrong either way the fix falls"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the singleton arm of the live-foreign-tip-claim describe, beside the fanout one already there"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "A singleton phase's cherry-pick asks no live-foreign-claim question, so two engine instances interleave picks on one ref where the wave's pick refuses",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Loud or nothing"
+  },
+  "acceptance": "a singleton's pick asks the same question the wave's does, at one spelling: a live claim held by another process refuses it — nothing on trunk, the span left on its worktree branch, a `tip-moved` merge row bounding the span, `tipMoved` on result and verdict. No claim reads exactly as today, so every standing singleton merge test stays green, and `src/tipVerify.ts` states which legs reach which check.",
+  "tests": [
+    "singleton: a live foreign tip claim refuses the cherry-pick and leaves the span on its worktree branch"
+  ],
+  "notes": "Verified this tick: `src/singletonTick.ts:34` imports `checkMergedTipUnmoved` alone, and `liveForeignClaimPid` (`src/tipVerify.ts:40`) has two callers — `src/waveMerge.ts:683`, `src/pendingLedger.ts:693`. `src/tipVerify.ts:6` says both legs reach both checks; `TickVerdict.tipMoved` (`src/tickVerdict.ts`) says every harness-driven cherry-pick asks. spec/loop.md's bullet says \"the wave\" and wants a human's sync once this lands. Fanout arm pinned at `tests/Dispatcher.test.ts:13634`."
+}

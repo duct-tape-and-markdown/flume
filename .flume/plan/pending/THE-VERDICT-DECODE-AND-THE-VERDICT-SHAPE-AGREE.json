@@ -1,0 +1,29 @@
+{
+  "tag": "THE-VERDICT-DECODE-AND-THE-VERDICT-SHAPE-AGREE",
+  "gate": { "kind": "open" },
+  "priority": 0,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/tickVerdict.ts",
+        "description": "`isTickVerdict`'s hand-listed required fields, beside the shape it guards and the builder that writes them"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the decode's agreement case, beside the declined-record and unreadable-log cases that section already carries"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "isTickVerdict's required-field roster is hand-listed against TickVerdict, so a field joining the shape without joining the check lets a partial row decode as a verdict",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A seam gate reads what the real writer wrote"
+  },
+  "acceptance": "the field set `buildTickVerdict` always writes and the set `isTickVerdict` checks are held in agreement at the most deterministic rung that can express it — the typecheck where a roster keyed off `TickVerdict`'s required keys reaches, else the pin below — so a field joining the shape without joining the check cannot ship green. Every verdict decoded today decodes the same, and every standing verdict test stays green.",
+  "pins": [
+    "the verdict history read declines a row missing any field buildTickVerdict always writes"
+  ],
+  "notes": "Verified this tick: `isTickVerdict` (`src/tickVerdict.ts:1042`) checks exactly the eleven keys `buildTickVerdict` (`:940`) writes unconditionally, so the property holds — a pin, never a test. Nothing holds it: `tests/Dispatcher.test.ts:14260` deletes `timings` to prove the *append* keeps a row the check declines, and no case reads the two sets against each other. A partial row past the check hands `superviseLoop` and a chain's `shouldRun` a typed field that is `undefined`."
+}
