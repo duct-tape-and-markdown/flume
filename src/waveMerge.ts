@@ -856,13 +856,19 @@ async function carrySpan(
       { base: preCherry, head: mergedSha },
     );
     await leg.attempts.write(priorAttemptRef(phase, r.entry), record);
+    // The gate's own attribution decides the entry-scoped half: a gate
+    // declaring `blamesSpan: false` leaves the failure unblamed, so the
+    // run-scoped quarantine never holds this entry for a wall it was told
+    // the entry did not build (spec/chain.md "What a gate returns"). Read
+    // once, here, for every stage failure this refusal produces — the gate's
+    // own row and either revert-refused row below. A revert only happens
+    // because the gate refused, so a span the gate disowned is not answerable
+    // for the collision its revert then hit either; blaming it there would
+    // quarantine, by the back door, the entry the declaration withheld. The
+    // revert itself still happens either way.
+    const blame = entryFailure.blamesSpan === false ? {} : blamedOn(r.entry);
     w.gateFailures.push({
-      // The gate's own attribution decides the entry-scoped half: a gate
-      // declaring `blamesSpan: false` leaves the failure unblamed, so the
-      // run-scoped quarantine never holds this entry for a wall it was
-      // told the entry did not build (spec/chain.md "What a gate
-      // returns"). The revert below still happens either way.
-      ...(entryFailure.blamesSpan === false ? {} : blamedOn(r.entry)),
+      ...blame,
       signature: gateFailureSignature(entryFailure),
       message: entryFailure.message,
     });
@@ -893,7 +899,7 @@ async function carrySpan(
         headSha: mergedSha,
       });
       w.gateFailures.push({
-        ...blamedOn(r.entry),
+        ...blame,
         signature: bound(foreignTip.trim(), MAX_FAILURE_SIGNATURE),
         message: foreignTip,
       });
@@ -916,7 +922,7 @@ async function carrySpan(
         headSha: mergedSha,
       });
       w.gateFailures.push({
-        ...blamedOn(r.entry),
+        ...blame,
         signature: bound(message.trim(), MAX_FAILURE_SIGNATURE),
         message,
       });

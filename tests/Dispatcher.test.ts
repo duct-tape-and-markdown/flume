@@ -12168,6 +12168,134 @@ describe("Dispatcher — gate-failure feedback to the retrying tick", () => {
     expect(record.failingFiles).toEqual(["outside/d.ts"]);
     expect(record).not.toHaveProperty("blamesSpan");
   });
+
+  // A refused revert is the same refusal still being reported: the reset only
+  // ran because the gate refused, so a span the gate disowned is not
+  // answerable for the collision its revert then hit. Both refusal legs —
+  // resetKeepTo's textual collision and a foreign trunk tip — read the gate's
+  // own attribution at the one site the gate's own row reads it at.
+
+  /** The disowning refusal, delivered at afterMerge so a revert follows. */
+  const disowningMergeGate = (path: string, collide: boolean): Gate => ({
+    name: "suite",
+    when: "afterMerge",
+    async run({ cwd }) {
+      if (!existsSync(join(cwd, path))) return { ok: true, message: "clean" };
+      if (collide) {
+        // A bystander editing the exact path the revert must touch, between
+        // the cherry-pick and this gate's revert: resetKeepTo refuses.
+        await writeFile(join(cwd, path), "bystander collision\n");
+      } else {
+        // An operator committing directly to trunk in the same window: the
+        // tip moved, so the revert refuses rather than reset over it.
+        await writeFile(join(cwd, "src/foreign.ts"), "foreign\n");
+        await exec("git", ["add", "."], { cwd });
+        await exec("git", ["commit", "-q", "-m", "operator: foreign"], { cwd });
+      }
+      return {
+        ok: false,
+        message: "suite red at the base",
+        verdict: "base-red",
+        blamesSpan: false,
+      };
+    },
+  });
+
+  it("a revert refused after a gate declaring blamesSpan false records an unblamed gate failure", async () => {
+    await writePending(fx.repo, [makeEntry("STUCK", ["src/stuck.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const outcome = await fanoutOver(
+      "STUCK",
+      disowningMergeGate("src/stuck.ts", true),
+    ).tick();
+
+    // Non-vacuity: the revert really was refused and the commit really is
+    // still on trunk. Over a clean revert both rows below would be the gate's
+    // own, and the withholding would read green with the leg never taken.
+    const mo = outcome.verdict?.mergeOutcomes.find(
+      (m) => m.entryTag === "STUCK",
+    );
+    expect(mo?.outcome).toBe("afterMerge-revert-refused");
+    expect(existsSync(join(fx.repo, "src/stuck.ts"))).toBe(true);
+
+    // Two stage failures — the gate's refusal and the revert's — and the
+    // second is the one this case exists for.
+    const gf = outcome.verdict?.gateFailures ?? [];
+    expect(gf.length).toBe(2);
+    expect(gf[0]?.message).toBe("suite red at the base");
+    expect(gf[1]?.message).toContain("stays on trunk");
+
+    // Both halves withheld on both rows (`StageFailureEntry`,
+    // src/tickVerdict.ts): the run-scoped quarantine holds no entry for a
+    // bystander collision the gate said its span did not build.
+    for (const row of gf) {
+      expect(row).not.toHaveProperty("tag");
+      expect(row).not.toHaveProperty("quarantineKey");
+    }
+
+    // The entry is still queued, exactly as after any refused revert.
+    expect(readPendingFromDisk(fx.repo).map((e) => e.tag)).toEqual(["STUCK"]);
+  });
+
+  it("a foreign trunk tip refusing a disowning gate's revert leaves the same unblamed failure", async () => {
+    await writePending(fx.repo, [makeEntry("DRIFTED", ["src/drifted.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const outcome = await fanoutOver(
+      "DRIFTED",
+      disowningMergeGate("src/drifted.ts", false),
+    ).tick();
+
+    // Non-vacuity: the tip-moved leg, not the resetKeepTo one — the foreign
+    // commit stands and the refusal names the tip it found.
+    const mo = outcome.verdict?.mergeOutcomes.find(
+      (m) => m.entryTag === "DRIFTED",
+    );
+    expect(mo?.outcome).toBe("afterMerge-revert-refused");
+    expect(existsSync(join(fx.repo, "src/foreign.ts"))).toBe(true);
+
+    const gf = outcome.verdict?.gateFailures ?? [];
+    expect(gf.length).toBe(2);
+    expect(gf[1]?.message).toContain("afterMerge revert refused");
+    for (const row of gf) {
+      expect(row).not.toHaveProperty("tag");
+      expect(row).not.toHaveProperty("quarantineKey");
+    }
+  });
+
+  it("a gate declaring no attribution still blames both halves of a refused revert", async () => {
+    await writePending(fx.repo, [makeEntry("OWNED", ["src/owned.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const silentMergeGate: Gate = {
+      name: "suite",
+      when: "afterMerge",
+      async run({ cwd }) {
+        if (!existsSync(join(cwd, "src/owned.ts"))) {
+          return { ok: true, message: "clean" };
+        }
+        await writeFile(join(cwd, "src/owned.ts"), "bystander collision\n");
+        return { ok: false, message: "suite red" };
+      },
+    };
+
+    const outcome = await fanoutOver("OWNED", silentMergeGate).tick();
+
+    const mo = outcome.verdict?.mergeOutcomes.find(
+      (m) => m.entryTag === "OWNED",
+    );
+    expect(mo?.outcome).toBe("afterMerge-revert-refused");
+
+    // The undeclared arm is unchanged: both rows carry both halves, so the
+    // supervisor quarantines the entry for the run as it always has.
+    const gf = outcome.verdict?.gateFailures ?? [];
+    expect(gf.length).toBe(2);
+    for (const row of gf) {
+      expect(row.tag).toBe("OWNED");
+      expect(row.quarantineKey).toMatch(/^owned@[0-9a-f]{10}$/);
+    }
+  });
 });
 
 // ---------- no-commit outcome taxonomy ----------
