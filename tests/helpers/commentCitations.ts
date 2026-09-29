@@ -1683,10 +1683,19 @@ export interface RenderedCitationScan {
  * the vacuity pin over `pages.scanned` counts the names this package really
  * is the authority for, and what covers the composed path instead is the
  * agreement pin over its writer (`.claude/rules/engineering.md`, *A seam gate
- * reads what the real writer wrote*). The section arm is not narrowed with
- * it: a shipped page names a page the consumer owns but never a section in
- * one (`spec/harness.md`, *Adoption and upgrade*), so there is nothing under
- * that root for it to leave alone.
+ * reads what the real writer wrote*).
+ *
+ * The section arm reads the same root the other way: a **cite** under it is a
+ * finding on its face, because a shipped page names a page the consumer owns
+ * and never a section in one (`spec/harness.md`, *Adoption and upgrade*) — the
+ * consumer edits its copy after init, so any section name is a guess. Neither
+ * verdict may be drawn from a heading read here: this checkout holds the
+ * writer's copy of the page, not the reader's, so resolving the cite would
+ * pass the one spelling the spec calls a guess and dangle for a reader whose
+ * copy has moved on. Reported rather than dropped, which is the difference
+ * from the page half: the page name is the surface talking about the reader's
+ * tree, and the section is the surface claiming to know what is in it
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
  *
  * The surfaces are the caller's to render, from the program that prints them
  * rather than from a copy of their text — a cite read off a hand copy pins the
@@ -1702,27 +1711,40 @@ export const scanRenderedCitations = (
   // taken off the host, and a caller handing the root with one already on it
   // names the same directory.
   const consumerTree = `${request.consumerRoot.replace(/\/+$/, "")}/`;
+  const consumerOwned = (page: string): boolean =>
+    page.startsWith(consumerTree);
   const pages = request.surfaces
     .flatMap((surface) =>
       surfaceLines(surface).flatMap((line) =>
         literalPages({ module: surface.name, line: line.line, text: line.text }),
       ),
     )
-    .filter(
-      (site) => isPageName(site.text) && !site.text.startsWith(consumerTree),
-    );
+    .filter((site) => isPageName(site.text) && !consumerOwned(site.text));
+
+  const cites = request.surfaces.flatMap((surface) =>
+    sectionCitesIn(surface.name, surfaceLines(surface)),
+  );
+  // Only the cites this tree is the authority for reach a heading read; the
+  // rest are findings by their page, and the partition keeps `scanned` whole
+  // so the surface's cites are counted where its reader states them.
+  const dangling = new Set(
+    resolveSectionCites(
+      root,
+      cites.filter((site) => !consumerOwned(site.page)),
+    ).findings,
+  );
 
   return {
     pages: {
       scanned: pages,
       findings: pages.filter((site) => !request.packed.has(site.text)),
     },
-    sections: resolveSectionCites(
-      root,
-      request.surfaces.flatMap((surface) =>
-        sectionCitesIn(surface.name, surfaceLines(surface)),
+    sections: {
+      scanned: cites,
+      findings: cites.filter(
+        (site) => consumerOwned(site.page) || dangling.has(site),
       ),
-    ),
+    },
   };
 };
 

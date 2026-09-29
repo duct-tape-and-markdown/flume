@@ -21,7 +21,7 @@
  * that never imported it.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -38,12 +38,14 @@ import {
   type PageCitationScan,
   type RenderedCitationScan,
   type RenderedSurface,
+  type SectionCitation,
   declaredSweepTrees,
   formatCitation,
   scanCommentCitations,
   scanPageCitations,
   scanRenderedCitations,
 } from "./helpers/commentCitations.ts";
+import { sectionTitles } from "./helpers/docSections.ts";
 import { externalVocabulary } from "./helpers/externalVocabulary.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { INTERFACE_PAGES, pageIdentifiers } from "./helpers/pageAnchors.ts";
@@ -141,6 +143,20 @@ const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
  * Written one array entry per line, so the line numbers the assertions cite
  * are counted rather than guessed.
  */
+/**
+ * The state root the fixture's own reader owns — the directory `probe adopt`
+ * writes into the repository adopting it. Spelled once and interpolated into
+ * both the tree below and the surfaces below that, so the name a page states
+ * and the root the scan is handed cannot drift apart.
+ *
+ * The fixture holds one page under it and not the other, because the two arms
+ * that read the root want opposite trees: the page arm's exemption is shown on
+ * a name this checkout cannot answer, and the section arm's finding on a page
+ * this checkout answers perfectly well — a heading here is the writer's copy,
+ * never the reader's.
+ */
+const FIXTURE_CONSUMER_ROOT = ".probe";
+
 const FIXTURE_FILES: Readonly<Record<string, string>> = {
   // The fixture's own manifest, so the packed set below is read off a real
   // `files` list by the reader the repo claim uses — a directory it packs, a
@@ -165,6 +181,18 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
   }),
   "docs/guide.md": "# a page a comment cites without fencing it\n",
   "docs/paired.md": "# the page a comment closes a name's parenthetical with\n",
+  // The reader's own copy as this checkout holds it — the page `probe adopt`
+  // wrote here once, titling the section a surface below cites. Held on
+  // purpose: the section arm's finding has to be the root and not the heading,
+  // so the heading is here to be found.
+  [`${FIXTURE_CONSUMER_ROOT}/CONVENTIONS.md`]: [
+    "# The conventions the adopting repository edits after init",
+    "",
+    "## Records: one file each",
+    "",
+    "A heading this checkout carries and the reader's own copy may not.",
+    "",
+  ].join("\n"),
   "docs/sections.md": [
     "# The page whose sections a comment cites",
     "",
@@ -494,19 +522,15 @@ const FIXTURE_FILES: Readonly<Record<string, string>> = {
  * carries the two halves of the page arm's one exemption — a page this tree
  * does not hold under the reader's own state root, and a page it does not
  * hold outside one — beside the name that separates the pack from the tree: a
- * page this tree does hold and the fixture manifest subtracts.
+ * page this tree does hold and the fixture manifest subtracts. Last on it is
+ * the same root read the other way round, by the arm that refuses instead of
+ * exempting: a cite into a *section* of a page under that root, whose heading
+ * this tree does hold, so what reds it is the page's owner and not a missing
+ * title.
  *
  * Written one line per rendered line, so the line numbers the assertions cite
  * are counted rather than guessed.
  */
-/**
- * The state root the fixture's own reader owns — the directory `probe adopt`
- * writes into the repository adopting it, which the fixture tree deliberately
- * does not hold. Spelled once and interpolated into the surface below, so the
- * name the page states and the root the scan is handed cannot drift apart.
- */
-const FIXTURE_CONSUMER_ROOT = ".probe";
-
 const FIXTURE_HELP_SURFACES: readonly RenderedSurface[] = [
   {
     name: "probe --help",
@@ -549,6 +573,10 @@ const FIXTURE_HELP_SURFACES: readonly RenderedSurface[] = [
       ``,
       `Beside it, docs/internal-notes.md — a page this tree does hold and the`,
       `manifest subtracts from what it packs, so the install carries neither.`,
+      ``,
+      `Records are one file each (${FIXTURE_CONSUMER_ROOT}/CONVENTIONS.md,`,
+      `*Records: one file each*) — a section of the reader's own copy, named`,
+      `off the copy this checkout happens to hold.`,
       ``,
     ].join("\n"),
   },
@@ -1557,6 +1585,7 @@ it("a section cite in a shipped help literal naming a section its page does not 
     "probe --help:9 Derived state is computed -> docs/sections.md",
     "probe --help:10 Loud or nothing -> docs/absent.md",
     "probe list --help:3 Verbatim copying is the detector -> docs/sections.md",
+    `probe adopt --help:13 Records: one file each -> ${FIXTURE_CONSUMER_ROOT}/CONVENTIONS.md`,
   ]);
 
   // The verdict, and it is the comment arm's verdict: a heading answers a
@@ -1564,9 +1593,13 @@ it("a section cite in a shipped help literal naming a section its page does not 
   // closes to the heading it names rather than being lost the way a broken
   // token is. What reds is the abbreviation and the page the tree does not
   // hold — the same two refusals, read off a literal the package ships.
+  // The third finding is the other arm's, asserted on its own terms in the
+  // case below: a cite whose page the reader owns, which reds on the page's
+  // owner rather than on a title this tree could not find.
   expect(fixtureHelpScan.sections.findings.map(formatCitation)).toEqual([
     "probe --help:9 Derived state is computed",
     "probe --help:10 Loud or nothing",
+    "probe adopt --help:13 Records: one file each",
   ]);
 });
 
@@ -1677,6 +1710,39 @@ it("the rendered page scan reports a page name outside a consumer's state root t
   expect(fixtureHelpScan.pages.findings.map(formatCitation)).toContain(
     "probe adopt --help:7 docs/adopt.md",
   );
+});
+
+it("the rendered section scan reports a section cite whose page sits under a consumer's state root", () => {
+  const page = `${FIXTURE_CONSUMER_ROOT}/CONVENTIONS.md`;
+  const section = "Records: one file each";
+
+  // Vacuity guard, three halves: the surface really states the cite, this tree
+  // really holds a page at that path, and that page really titles the section
+  // — so a scan resolving the cite against this checkout would answer it, and
+  // the verdict below cannot be a title the reader failed to find.
+  expect(adoptSurface().text).toContain(page);
+  expect(adoptSurface().text).toContain(`*${section}*`);
+  expect(`${page} on disk -> ${existsSync(join(fixtureRoot, page))}`).toBe(
+    `${page} on disk -> true`,
+  );
+  expect(
+    sectionTitles(readFileSync(join(fixtureRoot, page), "utf8")),
+  ).toContain(section);
+
+  // The verdict, and it is the page arm's exemption inverted: the cite is
+  // judged rather than left alone, and the page's owner is what reds it. The
+  // consumer edits its copy after init, so the heading found here is the
+  // writer's and the name the surface states is a guess about the reader's
+  // (`spec/harness.md`, *Adoption and upgrade*) — the one cite nothing
+  // reported while the heading read stood in for a verdict.
+  const cited = (sites: readonly SectionCitation[]): string[] =>
+    sites.filter((site) => site.page === page).map(formatCitation);
+  expect(cited(fixtureHelpScan.sections.scanned)).toEqual([
+    `probe adopt --help:13 ${section}`,
+  ]);
+  expect(cited(fixtureHelpScan.sections.findings)).toEqual([
+    `probe adopt --help:13 ${section}`,
+  ]);
 });
 
 // --- the title, which carries the page-name arm alone --------------------
@@ -2329,6 +2395,36 @@ it("every section a shipped help literal cites is a section its page still carri
     repoHelpScan.sections.findings.map(
       (site) => `${formatCitation(site)} -> ${site.page}`,
     ),
+  );
+});
+
+it("no surface the package ships names a section of a page the consumer owns", () => {
+  const consumerTree = `${DEFAULT_STATE_ROOT}/`;
+
+  // Vacuity guard, three halves: the judged set is the surfaces this package
+  // ships, the section arm really drew cites off them, and those surfaces
+  // really do talk about the reader's own state root — so the subject of the
+  // emptiness below is a thing these pages do, and not a root none of them
+  // mentions.
+  expect(shippedProse.map((surface) => surface.name)).toContain(
+    "harness/templates/PROTOCOL.md",
+  );
+  expect(repoHelpScan.sections.scanned.length).toBeGreaterThan(2);
+  expect(
+    shippedProse
+      .filter((surface) => surface.text.includes(consumerTree))
+      .map((surface) => surface.name).length,
+  ).toBeGreaterThan(0);
+
+  // The verdict: a page under that root is the consumer's, edited after init,
+  // so a section of one is a name the package cannot know
+  // (`spec/harness.md`, *Adoption and upgrade*). The pages name those files
+  // freely — that is what the page arm's exemption is for — and stop at the
+  // filename.
+  expectNoFindings(
+    repoHelpScan.sections.scanned
+      .filter((site) => site.page.startsWith(consumerTree))
+      .map((site) => `${formatCitation(site)} -> ${site.page}`),
   );
 });
 
