@@ -18,7 +18,12 @@ import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
-import { fileWithContent, pidClaimIn, waitFor } from "./helpers/waitFor.ts";
+import {
+  BlownWait,
+  fileWithContent,
+  pidClaimIn,
+  waitFor,
+} from "./helpers/waitFor.ts";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -73,7 +78,11 @@ it("the wait helper rejects naming what it waited for when its deadline passes",
   expect(looks).toBeGreaterThan(1);
 
   const err = await caught;
-  expect(err).toBeInstanceOf(Error);
+  // The class, not just `Error`: it is what the refusal is recognized by
+  // where a caller absorbs the throw instead of surfacing it (`runAgentBody`,
+  // `tests/helpers/dispatcherFixture.ts`), so a ceiling that threw a bare
+  // `Error` would leave that caller recording nothing.
+  expect(err).toBeInstanceOf(BlownWait);
   // The refusal *is* the assertion the call site dropped, so it has to say
   // what was awaited and what ceiling it blew.
   expect((err as Error).message).toContain("the tip claim at /tmp/never-written");

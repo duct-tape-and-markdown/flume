@@ -47,6 +47,23 @@ export const WAIT_TIMEOUT_MS = 10_000;
 /** Gap between probes. Short enough that "as soon as" means it. */
 export const WAIT_INTERVAL_MS = 25;
 
+/**
+ * A wait that reached its ceiling, thrown by {@link waitFor} and by nothing
+ * else.
+ *
+ * The refusal is the assertion its call site dropped, so it has to reach that
+ * call site. Awaited directly by a case it does; inside an agent body it does
+ * not, because the engine absorbs whatever an invocation throws and the tick
+ * falls through as an entry that did not commit (`invokeAgent`,
+ * `src/tickAttempt.ts`). That absorption is the engine's own contract, not a
+ * test's to change — so the refusal reaching past a body rests on being
+ * recognizable rather than on the caller rethrowing it, and this class is how
+ * the fake agents' body wrapper tells it from a body's own deliberate throw
+ * and records it where the case reads it (`runAgentBody`,
+ * `tests/helpers/dispatcherFixture.ts`).
+ */
+export class BlownWait extends Error {}
+
 export interface WaitOptions {
   /** Ceiling before the wait refuses. Defaults to {@link WAIT_TIMEOUT_MS}. */
   timeoutMs?: number;
@@ -74,7 +91,7 @@ export async function waitFor<T>(
     if (held !== undefined) return held;
     const waited = Date.now() - started;
     if (waited >= timeoutMs) {
-      throw new Error(
+      throw new BlownWait(
         `flume test harness: waited ${waited}ms for ${what} and it never ` +
           `arrived (ceiling ${timeoutMs}ms)`,
       );

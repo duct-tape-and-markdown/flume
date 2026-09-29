@@ -1,9 +1,11 @@
 /**
- * The temp-repo fixture and the verdict/chain fixtures `Dispatcher.test.ts`
- * and `loopSupervisor.test.ts` both drive. Shared rather than copied when the
- * supervisor suites moved out of `Dispatcher.test.ts` alongside
- * `src/loopSupervisor.ts` — two copies of one fixture is a second thing that
- * can go stale (`.claude/rules/engineering.md`, "Derived state is computed,
+ * One job — *what a suite driving a real tick needs around it*: the temp-repo
+ * fixture and the verdict/chain fixtures `Dispatcher.test.ts` and
+ * `loopSupervisor.test.ts` both drive, and the wrapper a fake agent's body
+ * runs under so a wait blown in there survives the tick's absorption of it.
+ * Shared rather than copied when the supervisor suites moved out of
+ * `Dispatcher.test.ts` alongside `src/loopSupervisor.ts` — two copies of one
+ * fixture is a second thing that can go stale (`.claude/rules/engineering.md`, "Derived state is computed,
  * never restated beside its source").
  *
  * Not *.test.ts, so neither vitest lane collects it as a suite of its own.
@@ -19,6 +21,7 @@ import { tickVerdictPath, type TickVerdict } from "../../src/tickVerdict.ts";
 import { RUNTIME_IGNORES } from "../../src/runtimeIgnores.ts";
 
 import { mkTempDir } from "./fixtureRoot.ts";
+import { BlownWait } from "./waitFor.ts";
 import {
   minimalChainSrc,
   type MinimalChainDeclarations,
@@ -72,6 +75,54 @@ export function childVerdictPath(flumeDir: string, phase: string): string {
   const p = tickVerdictPath(flumeDir, phase);
   mkdirSync(dirname(p), { recursive: true });
   return p;
+}
+
+// ---------- agent bodies ----------
+
+const blownInBodies: string[] = [];
+
+/**
+ * Run a fake agent's body, recording a wait it blew where the case that held
+ * it can read it ({@link blownWaitsInAgentBodies}).
+ *
+ * A tick absorbs whatever an agent invocation throws: the post-invocation
+ * `rev-parse` still runs and the phase falls through with `committed: false`
+ * (`invokeAgent`, `src/tickAttempt.ts`). That is the engine's contract for a
+ * real agent and stays as it is. But a `waitFor` ceiling blown in a fake body
+ * is the assertion the case dropped, and absorbed it reds that case as a
+ * wrong `shippedTags` — an entry that did not commit — with the wait nowhere
+ * in the message (`.claude/rules/engineering.md`, "Loud or nothing"). The
+ * message recorded here survives the absorption, and the case asserts this
+ * list empty before its verdict.
+ *
+ * Only a {@link BlownWait} is recorded. A body that throws on purpose — an
+ * unregistered slug, a case whose arm is a thrown invocation — is that case's
+ * own subject and stays absorbed exactly as it was.
+ */
+export async function runAgentBody<T>(body: () => Promise<T>): Promise<T> {
+  try {
+    return await body();
+  } catch (err) {
+    if (err instanceof BlownWait) blownInBodies.push(err.message);
+    throw err;
+  }
+}
+
+/**
+ * Every wait blown inside an agent body since the last
+ * {@link forgetBlownWaits}, oldest first.
+ */
+export function blownWaitsInAgentBodies(): readonly string[] {
+  return [...blownInBodies];
+}
+
+/**
+ * Drop the record. Module state outlives a case, so a suite driving agent
+ * bodies calls this per case — a refusal one case left behind would otherwise
+ * red the next one, naming a wait that case never held.
+ */
+export function forgetBlownWaits(): void {
+  blownInBodies.length = 0;
 }
 
 // ---------- temp-repo fixture ----------

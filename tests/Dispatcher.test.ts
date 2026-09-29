@@ -173,7 +173,10 @@ import {
 import { deadPid } from "./helpers/deadPid.ts";
 import { denyDirectory, denyFile } from "./helpers/denial.ts";
 import {
+  blownWaitsInAgentBodies,
+  forgetBlownWaits,
   makeFixture,
+  runAgentBody,
   silent,
   verdictFixture,
   writeMinimalChain,
@@ -181,6 +184,12 @@ import {
 } from "./helpers/dispatcherFixture.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { priorAttemptBlock } from "./helpers/priorAttemptBlock.ts";
+// The doubling chai's 40-char truncation forces, taken from its one home
+// rather than spelled again here (`.claude/rules/platform-facts.md`, *chai
+// truncates an inspected value in an assertion message at 40 characters*):
+// a blown wait asserted as `toEqual([])` would red with its own message
+// elided, which is the whole thing the record exists to carry.
+import { expectNoFindings } from "./helpers/repoProgram.ts";
 import { SPAWN_BUDGET_MS, exec } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
@@ -262,6 +271,9 @@ let fx: Fixture;
 
 beforeEach(async () => {
   fx = await makeFixture();
+  // The recorder is module state, so it outlives a case
+  // (`forgetBlownWaits`, tests/helpers/dispatcherFixture.ts).
+  forgetBlownWaits();
 });
 
 afterEach(async () => {
@@ -458,7 +470,7 @@ function singleAgent(action: (cwd: string) => Promise<void>): Agent {
   return {
     name: "fake-singleton",
     async invoke(inv) {
-      await action(inv.cwd);
+      await runAgentBody(() => action(inv.cwd));
       return { exitCode: 0, stdout: "", stderr: "" };
     },
   };
@@ -481,7 +493,11 @@ function fanoutAgent(
       if (!action) {
         throw new Error(`fanoutAgent: no action registered for slug '${slug}'`);
       }
-      await action(inv.cwd);
+      // Through the body wrapper, because a tick absorbs whatever an
+      // invocation throws: a wait blown in here would otherwise reach the
+      // case only as an entry that did not commit (`runAgentBody`,
+      // tests/helpers/dispatcherFixture.ts).
+      await runAgentBody(() => action(inv.cwd));
       return { exitCode: 0, stdout: "", stderr: "" };
     },
   };
@@ -7130,6 +7146,71 @@ describe("Dispatcher — the ship lock and the worktree lock (SIBLING-TICKS-TAKE
 });
 
 /**
+ * A-BLOWN-WAIT-INSIDE-AN-AGENT-BODY-REACHES-THE-TEST — every case below that
+ * orders a wave does it by holding a `waitFor` inside one entry's agent body,
+ * and a tick absorbs whatever an invocation throws: the post-invocation
+ * `rev-parse` runs anyway and the entry falls through as one that did not
+ * commit (`invokeAgent`, `src/tickAttempt.ts`). The ceiling those waits are
+ * bounded by therefore reaches its case by being recorded, never by being
+ * rethrown (`runAgentBody`, `tests/helpers/dispatcherFixture.ts`).
+ */
+describe("Dispatcher fanout — a wait blown inside an agent body", () => {
+  it("a wait blown inside a fanout agent body reds the case that held it rather than surfacing as an entry that did not commit", async () => {
+    await writePending(fx.repo, [makeEntry("BLOWN-WAIT", ["src/blown.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    // A wait on an event nothing in this wave produces — it has one entry —
+    // under a ceiling of its own, so the case pays milliseconds rather than
+    // the helper's default ten seconds for a refusal it is asking for.
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [makePhase({ name: "build", concurrency: "fanout" })],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "blown-wait": async (cwd) => {
+          await waitFor("a sibling span that never lands", () => undefined, {
+            timeoutMs: 50,
+            intervalMs: 10,
+          });
+          await writeAndCommit(cwd, "src/blown.ts", "x\n", "build: BLOWN-WAIT");
+        },
+      }),
+      log: silent,
+      maxParallel: 4,
+    }).tick();
+
+    // What the engine makes of it, which this entry does not change: the body
+    // threw before its commit, so the wave ships nothing and the entry stays
+    // queued. Every field a case reads its verdict off says "did not commit"
+    // and none of them says what was waited for.
+    expect(outcome.result?.shippedTags).toEqual([]);
+    expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual([
+      "BLOWN-WAIT",
+    ]);
+
+    // What reaches the case: the refusal itself, naming the wait and the
+    // ceiling it blew. Non-vacuity for the line below — the list holds
+    // exactly this wave's one blown wait, not some earlier case's residue.
+    const blown = blownWaitsInAgentBodies();
+    expect(blown).toHaveLength(1);
+    // Everything but the elapsed figure, which is what the host spent
+    // reaching the ceiling and not a claim this case makes.
+    expect(blown[0]).toMatch(
+      /^flume test harness: waited \d+ms for a sibling span that never lands and it never arrived \(ceiling 50ms\)$/,
+    );
+
+    // And the guard the ordering cases above hold reds on it, in the wait's
+    // own words rather than as a wrong `shippedTags`.
+    expect(() => expectNoFindings(blownWaitsInAgentBodies())).toThrow(
+      /a sibling span that never lands/,
+    );
+  });
+});
+
+/**
  * THE-WAVE-MERGES-EACH-ENTRY-AS-ITS-AGENT-FINISHES — a wave carries each
  * entry's span onto the trunk as that entry's own agent finishes, under the
  * ship lock, from the tip as it then stands (spec/worktrees.md, "Fanout and
@@ -7174,6 +7255,10 @@ describe("Dispatcher fanout — a wave merges each entry as its agent finishes",
 
     const outcome = await dispatcher.tick();
 
+    // Before the verdict: the wait this case's agent body held ended on
+    // its event rather than its ceiling (`runAgentBody`,
+    // `tests/helpers/dispatcherFixture.ts`).
+    expectNoFindings(blownWaitsInAgentBodies());
     // The ordering the entry buys: the fast span was already on trunk while
     // the slow agent was still writing its own worktree.
     expect(slowSawFastOnTrunk).toBe(true);
@@ -7237,6 +7322,10 @@ describe("Dispatcher fanout — the ledger commit lands with its own merge", () 
 
     const outcome = await dispatcher.tick();
 
+    // Before the verdict: the wait this case's agent body held ended on
+    // its event rather than its ceiling (`runAgentBody`,
+    // `tests/helpers/dispatcherFixture.ts`).
+    expectNoFindings(blownWaitsInAgentBodies());
     // The queue the still-running sibling read: its own entry and nothing
     // else. Populated, so the read is not a vacuous empty (the wave had two
     // entries and one of them was still in flight).
@@ -7288,6 +7377,10 @@ describe("Dispatcher fanout — the ledger commit lands with its own merge", () 
 
     const outcome = await dispatcher.tick();
 
+    // Before the verdict: the wait this case's agent body held ended on
+    // its event rather than its ceiling (`runAgentBody`,
+    // `tests/helpers/dispatcherFixture.ts`).
+    expectNoFindings(blownWaitsInAgentBodies());
     expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
       "LEDGER-A",
       "LEDGER-B",
@@ -7354,6 +7447,10 @@ describe("Dispatcher fanout — the ledger commit lands with its own merge", () 
 
     const outcome = await dispatcher.tick();
 
+    // Before the verdict: the wait this case's agent body held ended on
+    // its event rather than its ceiling (`runAgentBody`,
+    // `tests/helpers/dispatcherFixture.ts`).
+    expectNoFindings(blownWaitsInAgentBodies());
     // Vacuity: "both ledger commits" means nothing over a wave that shipped
     // one entry, so the two-entry ship is asserted before the set is.
     expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
@@ -7563,6 +7660,10 @@ describe("Dispatcher fanout — the merge-stage crash marker", () => {
 
     const outcome = await dispatcher.tick();
 
+    // Before the verdict: the wait this case's agent body held ended on
+    // its event rather than its ceiling (`runAgentBody`,
+    // `tests/helpers/dispatcherFixture.ts`).
+    expectNoFindings(blownWaitsInAgentBodies());
     // The fates this pin depends on: all three agents committed under their
     // own gates, B's pick then conflicted (so B never reached the probe), A
     // and C picked clean (so the probe ran exactly twice).
@@ -8603,6 +8704,10 @@ describe("Dispatcher — a resetKeepTo collision at the primary-checkout afterMe
     // refused revert lets the loop reach `commitPendingUpdate` at all.
     const outcome = await dispatcher.tick();
 
+    // Before the verdict: the wait this case's agent body held ended on
+    // its event rather than its ceiling (`runAgentBody`,
+    // `tests/helpers/dispatcherFixture.ts`).
+    expectNoFindings(blownWaitsInAgentBodies());
     expect(outcome.result?.committed).toBe(true);
     expect(outcome.result?.shippedTags).toEqual(["SHIP-CLEAN"]);
     expect(await readFile(join(fx.repo, "src/clean.ts"), "utf8")).toBe(
@@ -15838,6 +15943,10 @@ describe("TickResult.pickableAfter / entries — dispatcher-computed facts a han
       maxParallel: 4,
     }).tick();
 
+    // Before the verdict: the wait this case's agent body held ended on
+    // its event rather than its ceiling (`runAgentBody`,
+    // `tests/helpers/dispatcherFixture.ts`).
+    expectNoFindings(blownWaitsInAgentBodies());
     // Non-vacuity: the conflict leg really ran — one entry landed, the other
     // stayed queued because its pick aborted.
     expect(outcome.result?.shippedTags).toEqual(["PICKS-CLEAN"]);
