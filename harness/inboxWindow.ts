@@ -156,12 +156,7 @@ export function inboxWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
       !queueResolved(inputs) ||
       recordsPending(tip, inputs.claimed ?? []) ||
       frictionPending(inputs.flumeDir, friction) ||
-      standingRefusals(
-        options.stateRootRel,
-        inputs.pending,
-        inputs.priorAttempts,
-        inputs.claimed,
-      ).length > 0 ||
+      standingRefusals(options.stateRootRel, inputs).length > 0 ||
       lanes.live(inputs.flumeDir),
     args: (ctx): SliceArgs<typeof INBOX_PHASE> => ({
       QUEUE_PARSE_FAILURE: renderQueueParseFailure(ctx),
@@ -453,9 +448,7 @@ function renderBuildRecords(stateRoot: string, ctx: WindowContext): string {
   // By reference: `standingRefusals` filters the same record objects this
   // list holds, so identity is the marking test and no second key spelling
   // can drift from it.
-  const standing = new Set<PriorAttempt>(
-    standingRefusals(stateRoot, ctx.pending, ctx.priorAttempts, ctx.claimed),
-  );
+  const standing = new Set<PriorAttempt>(standingRefusals(stateRoot, ctx));
   const lines = [`=== ${records.length} standing prior-attempt record(s) ===`];
   for (const record of records) {
     const mark = standing.has(record)

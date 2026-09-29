@@ -253,13 +253,7 @@ function slice(
 const refusalReader = (): HandoffSlice & { asked: SliceWindow[] } =>
   slice(
     INBOX_PHASE,
-    (window) =>
-      standingRefusals(
-        STATE_ROOT_REL,
-        window.pending,
-        window.priorAttempts,
-        window.claimed,
-      ).length > 0,
+    (window) => standingRefusals(STATE_ROOT_REL, window).length > 0,
   );
 
 /** The package's three slices in order, each dead unless a case revives it. */
@@ -1009,12 +1003,11 @@ it("a not-shipped record whose commit wrote a continuing note is not a standing 
   ).toBeDefined();
 
   expect({
-    standing: standingRefusals(
-      STATE_ROOT_REL,
-      continued.pendingAfter,
-      continued.priorAttempts,
-      continued.claimedTags,
-    ),
+    standing: standingRefusals(STATE_ROOT_REL, {
+      pending: continued.pendingAfter,
+      priorAttempts: continued.priorAttempts,
+      claimed: continued.claimedTags,
+    }),
     // Build carries the entry on from here — its span is on the trunk and the
     // queue still holds it — and the drain is woken by nothing, because a
     // continuation states nothing plan can reconcile.
@@ -1048,12 +1041,11 @@ it("a not-shipped record whose commit wrote a park note is a standing refusal", 
   expect(parked.priorAttempts.size).toBe(1);
 
   expect({
-    standing: standingRefusals(
-      STATE_ROOT_REL,
-      parked.pendingAfter,
-      parked.priorAttempts,
-      parked.claimedTags,
-    ),
+    standing: standingRefusals(STATE_ROOT_REL, {
+      pending: parked.pendingAfter,
+      priorAttempts: parked.priorAttempts,
+      claimed: parked.claimedTags,
+    }),
     // The drain joins the set, and build stays in it: the walled entry is
     // held back per entry and the queue's other work is still the wave's.
     woke: handoff(parked),
@@ -1126,12 +1118,11 @@ it("a not-shipped record whose touchedPaths was elided stays a standing refusal"
   );
 
   expect({
-    standing: standingRefusals(
-      STATE_ROOT_REL,
-      wide.pendingAfter,
-      wide.priorAttempts,
-      wide.claimedTags,
-    ),
+    standing: standingRefusals(STATE_ROOT_REL, {
+      pending: wide.pendingAfter,
+      priorAttempts: wide.priorAttempts,
+      claimed: wide.claimedTags,
+    }),
     // Plan's to resolve: the drain is woken, and what it reads is the record
     // whole, `omittedPaths` included, so the elision is visible to the only
     // phase that can act on it.

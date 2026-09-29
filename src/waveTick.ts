@@ -73,6 +73,20 @@ import {
 } from "./waveMerge.js";
 import { createWorktree, teardownWorktreeInstance } from "./worktrees.js";
 
+/**
+ * The world one slot's entry was pulled from, as `TickContext` spells it:
+ * `pickable`, `claimed` and `priorAttempts` together, never splayed. The three
+ * move as one because a leg handed one world's queue beside another world's
+ * records is the half-stale shape the live re-reads below exist to prevent,
+ * and a signature taking them positionally is where two of them come apart
+ * without a typecheck to say so.
+ */
+interface OfferedFacts {
+  readonly pickable: readonly PendingEntry[];
+  readonly claimed: readonly string[];
+  readonly priorAttempts: ReadonlyMap<string, PriorAttempt>;
+}
+
 export async function runFanout(
   leg: TickLegContext,
   phase: Phase,
@@ -295,8 +309,7 @@ export async function runFanout(
   // over, not the wave's opening ones — an entry filed mid-wave is absent
   // from those entirely, and a record a sibling's merge wrote a moment ago is
   // missing from that map (`spec/chain.md`, *What a hook receives*). The three
-  // move together: a slot handed one world's queue and another world's records
-  // is the half-stale shape this triple exists to prevent.
+  // move together, which is the property {@link OfferedFacts} holds.
   let livePickable: readonly PendingEntry[] = pickable;
   let liveClaimedTags: readonly string[] = claimedTags;
   let livePriorAttempts: ReadonlyMap<string, PriorAttempt> = priorAttempts;
@@ -355,11 +368,7 @@ export async function runFanout(
   const carrySlot = async (
     entry: PendingEntry,
     baseRef: () => Promise<string>,
-    offered: {
-      pickable: readonly PendingEntry[];
-      claimed: readonly string[];
-      priorAttempts: ReadonlyMap<string, PriorAttempt>;
-    },
+    offered: OfferedFacts,
   ): Promise<{ path: string; branch: string } | undefined> => {
     // A provisioning failure (base read, create, or the chain's hook) is
     // isolated to the entry whose slot hit it — a held/EBUSY worktree dir on
@@ -416,18 +425,15 @@ export async function runFanout(
       }
     }
 
-    const r = await runFanoutEntry(
-      leg,
+    const r = await runFanoutEntry(leg, {
       phase,
       entry,
       wt,
       agent,
       chain,
       extraEnv,
-      offered.pickable,
-      offered.claimed,
-      offered.priorAttempts,
-    );
+      offered,
+    });
     perEntry.push(r);
     if (r.renderFailure) renderFailures.push(r.renderFailure);
     if (r.platformFailure) platformFailures.push(r.platformFailure);
@@ -526,11 +532,7 @@ export async function runFanout(
   const runSlot = async (
     entry: PendingEntry,
     baseRef: () => Promise<string>,
-    offered: {
-      pickable: readonly PendingEntry[];
-      claimed: readonly string[];
-      priorAttempts: ReadonlyMap<string, PriorAttempt>;
-    },
+    offered: OfferedFacts,
   ): Promise<void> => {
     // Staked *before* the worktree exists, which is the whole point of the
     // ordering: from here until this wave lets go, the entry is this tick's
@@ -872,16 +874,20 @@ export async function runFanout(
  */
 async function runFanoutEntry(
   leg: TickLegContext,
-  phase: Phase,
-  entry: PendingEntry,
-  wt: { path: string; branch: string },
-  agent: Agent,
-  chain: Chain,
-  extraEnv: Record<string, string> | undefined,
-  pickable: readonly PendingEntry[],
-  claimed: readonly string[],
-  priorAttempts: ReadonlyMap<string, PriorAttempt>,
+  opts: {
+    phase: Phase;
+    entry: PendingEntry;
+    /** The worktree this entry's slot provisioned and set up. */
+    wt: { path: string; branch: string };
+    agent: Agent;
+    chain: Chain;
+    /** What the chain's `setupWorktree` hook layered onto this entry's env. */
+    extraEnv?: Record<string, string> | undefined;
+    /** Handed to the `TickContext` below whole, the one bundle the slot holds. */
+    offered: OfferedFacts;
+  },
 ): Promise<EntryAttempt> {
+  const { phase, entry, wt, agent, chain, extraEnv, offered } = opts;
   // The prior-attempt record lives at the repo root (not this fresh
   // worktree), keyed by the entry tag — so a reverted attempt's record
   // survives into the next tick's brand-new worktree.
@@ -893,9 +899,9 @@ async function runFanoutEntry(
     flumeDir: leg.flumeDir,
     stateRootRel: leg.stateRootRel,
     assignedEntry: entry,
-    pickable,
-    claimed,
-    priorAttempts,
+    // The bundle through, not unpacked: these are the three fields
+    // {@link OfferedFacts} is named off, so a spread is the whole hand-over.
+    ...offered,
   };
 
   // Same seam as the singleton callsite, scoped to this entry — sees the

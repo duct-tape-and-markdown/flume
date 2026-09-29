@@ -321,16 +321,15 @@ export async function runAttempt(
   // Fresh read, not the tip the worktree was provisioned from: the two
   // agree unless `setupWorktree` itself committed something.
   const spanBase = await git.revParse(wt.path);
-  const termination = await invokeAgent(
-    ctx,
+  const termination = await invokeAgent(ctx, {
     phase,
-    ref.key,
-    wt.path,
+    key: ref.key,
+    cwd: wt.path,
     prompt,
     agent,
-    opts.extraEnv,
-    entry?.tag,
-  );
+    extraEnv: opts.extraEnv,
+    entryTag: entry?.tag,
+  });
   const headSha = await git.revParse(wt.path);
 
   // Two shapes of "no usable commit", one arm: the ref never moved, or it
@@ -534,19 +533,24 @@ async function checkTipMovedPerEntry(
 
 async function invokeAgent(
   ctx: AttemptContext,
-  phase: Phase,
-  key: string,
-  cwd: string,
-  prompt: string,
-  agent: Agent,
-  extraEnv?: Record<string, string>,
-  /**
-   * The provisioned entry's tag under fanout; omitted by the singleton
-   * caller, which has no entry — the same rule the `TickVerdictInvocation`
-   * (`src/tickVerdict.ts`) row this call produces already follows.
-   */
-  entryTag?: string,
+  opts: {
+    phase: Phase;
+    /** What the rendered prompt is recorded under — {@link runAttempt}'s `ref.key`. */
+    key: string;
+    /** The worktree the agent runs in — {@link runAttempt}'s `wt.path`. */
+    cwd: string;
+    prompt: string;
+    agent: Agent;
+    extraEnv?: Record<string, string> | undefined;
+    /**
+     * The provisioned entry's tag under fanout; omitted by the singleton
+     * caller, which has no entry — the same rule the `TickVerdictInvocation`
+     * (`src/tickVerdict.ts`) row this call produces already follows.
+     */
+    entryTag?: string | undefined;
+  },
 ): Promise<AgentTermination> {
+  const { phase, key, cwd, prompt, agent, extraEnv, entryTag } = opts;
   // Before the try: a record that cannot be written refuses the run
   // outright rather than reading as a platform-preempt of a run that
   // never started (.claude/rules/engineering.md "Loud or nothing").

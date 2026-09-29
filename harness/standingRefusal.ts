@@ -44,6 +44,7 @@ import type { PendingEntry } from "../src/PendingSchema.js";
 import { entryAttemptKey } from "../src/priorAttempts.js";
 import type { PriorAttempt } from "../src/Prompt.js";
 
+import type { SliceWindow } from "./handoff.js";
 import { declaredPutDown } from "./putDown.js";
 
 /**
@@ -172,14 +173,16 @@ export function isStandingRefusal(
  * path has no safe default for where that note lives and a guess would
  * misclassify every consumer whose state root is not the guessed one.
  *
- * Every input past the state root is optional because each is optional
- * wherever a reader is handed it — `SliceWindow` at the liveness leg
- * (`handoff.ts`), `WindowContext` at the render (`sliceWindow.ts`). Absent, a
- * queue or a store makes the answer the empty set — "no standing refusal" —
- * which is what a reader that was handed no store can truthfully say, and an
- * absent `claimed` reads as nothing in flight, the answer that withholds
- * nothing. Every dispatcher-built surface carries all three, so no live tick
- * takes those arms.
+ * The three facts past it arrive as the surface each reader already holds,
+ * never splayed beside it: `SliceWindow` at the liveness leg (`handoff.ts`)
+ * and `WindowContext` at the render (`sliceWindow.ts`) both carry exactly this
+ * `Pick`, so each caller passes its window whole and a transposed or forgotten
+ * arm is unspellable rather than merely typed. Each is optional because each
+ * is optional on those surfaces. Absent, a queue or a store makes the answer
+ * the empty set — "no standing refusal" — which is what a reader that was
+ * handed no store can truthfully say, and an absent `claimed` reads as nothing
+ * in flight, the answer that withholds nothing. Every dispatcher-built surface
+ * carries all three, so no live tick takes those arms.
  *
  * **A claimed entry's refusal is withheld, and left standing.** `claimed` is
  * the tags a tick read off the claims directory before it selected
@@ -208,10 +211,9 @@ export function isStandingRefusal(
  */
 export function standingRefusals(
   stateRoot: string,
-  pending: readonly PendingEntry[] | undefined,
-  priorAttempts: ReadonlyMap<string, PriorAttempt> | undefined,
-  claimed: readonly string[] | undefined,
+  window: Pick<SliceWindow, "pending" | "priorAttempts" | "claimed">,
 ): PriorAttempt[] {
+  const { pending, priorAttempts, claimed } = window;
   if (pending === undefined || priorAttempts === undefined) return [];
   const held = new Set(claimed ?? []);
   return pending.flatMap((entry) => {
