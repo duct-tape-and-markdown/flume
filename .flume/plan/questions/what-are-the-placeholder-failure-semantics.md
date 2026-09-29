@@ -12,6 +12,14 @@ throws a plain `Error` naming every missing key, and the render's catch in
 `runAttempt` (`src/tickAttempt.ts`) rethrows anything that is not
 `InlineExecRenderError`.
 
+Since then, THE-WAVES-VERDICT-SURVIVES-EVERY-SLOT-THROW shipped and uses this
+throw as the arming for its own cases, so the path is now pinned as
+**reachable** — never as correct. The asymmetry the ruling has to settle is
+therefore live and load-bearing in the suite: a missing `promptArgs` key tears
+the whole wave down through `waveSlotThrow`, while an unresolved inline-exec
+span in the same render is a per-entry `render-refused`. Two render failures of
+one class with opposite blast radii, and a test now depends on the wider one.
+
 ## What it cost
 
 Field-measured, loop of 2026-09-28T22:59Z: `prompt references missing args:
