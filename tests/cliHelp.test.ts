@@ -21,6 +21,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { EX_IOERR, EX_TERMINAL_MISCONFIG } from "../src/exitCodes.ts";
 import {
   SHARED_ROOT_ONLY_LEAD,
+  ROOT_RESOLUTION_USAGE_PHRASES,
   ROOT_WRITE_PHRASE,
   SHARED_ROOT_RESOLUTION_PHRASES,
   TICK_TIP_CLAIM_HELD_PHRASE,
@@ -60,6 +61,7 @@ import {
   documentedExitCodes,
 } from "./helpers/cliHelpRows.ts";
 import { denyDirectory, denyFile } from "./helpers/denial.ts";
+import { hermeticEnv } from "./helpers/gitEnv.ts";
 import { minimalChainSrc, writeRepoConfig } from "./helpers/repoChain.ts";
 import {
   namedExitCodes,
@@ -886,6 +888,31 @@ describe("docs/CLI.md's per-verb copies of the shared state-root cause (CLI-DOC-
 });
 
 /**
+ * The argv that carries each verb past its usage checks and into its own
+ * work — the phase names are the fixture chain's one declared phase, since an
+ * undeclared name is refused ahead of the work and would read as a verb that
+ * cannot take the refusal under test.
+ *
+ * One table for the two describes that drive every verb over one deliberately
+ * broken fixture — the write refusal below, and the resolution refusals past
+ * it (`.claude/rules/engineering.md`, *A module is one job*). Both assert it
+ * against the shipped command listing, so a verb the CLI gains and this table
+ * has not reds rather than being skipped.
+ */
+const VERB_ARGV: Record<string, readonly string[]> = {
+  status: ["status"],
+  tick: ["tick"],
+  loop: ["loop", "--max", "1"],
+  wake: ["wake", "probe"],
+  sleep: ["sleep", "probe"],
+  stop: ["stop"],
+  log: ["log"],
+  check: ["check"],
+  render: ["render", "probe"],
+  friction: ["friction"],
+};
+
+/**
  * CLI-VERB-PAGES-NAME-THE-STATE-ROOT-WRITE-REFUSAL — the cause the resolution
  * causes above cannot cover: a root that stats as a directory, so every check
  * the resolution makes lets it through, and still admits nothing made under
@@ -921,25 +948,6 @@ describe("docs/CLI.md's per-verb copies of the shared state-root cause (CLI-DOC-
  * that never reach an agent, no verb run twice.
  */
 describe("the state-root write refusal, per verb (CLI-VERB-PAGES-NAME-THE-STATE-ROOT-WRITE-REFUSAL)", () => {
-  /**
-   * The argv that carries each verb past its usage checks and into its own
-   * work — the phase names are the fixture chain's one declared phase, since
-   * an undeclared name is refused ahead of the first write and would read as
-   * a verb that cannot take this refusal.
-   */
-  const VERB_ARGV: Record<string, readonly string[]> = {
-    status: ["status"],
-    tick: ["tick"],
-    loop: ["loop", "--max", "1"],
-    wake: ["wake", "probe"],
-    sleep: ["sleep", "probe"],
-    stop: ["stop"],
-    log: ["log"],
-    check: ["check"],
-    render: ["render", "probe"],
-    friction: ["friction"],
-  };
-
   /** What the CLI prints when a write under the resolved root refused. */
   const writeRefusalOf = (stateRoot: string): string =>
     `state root at ${stateRoot} cannot be written`;
@@ -1098,6 +1106,236 @@ describe("the state-root write refusal, per verb (CLI-VERB-PAGES-NAME-THE-STATE-
 });
 
 /**
+ * THE-VERB-PAGES-NAME-THE-ROOT-RESOLUTION-REFUSAL — the two refusals
+ * state-root *resolution* takes, which are neither of the classes above: the
+ * roots resolve fine and are the wrong pair, so the code is `2` rather than
+ * `EX_IOERR`. Both are raised where the roots resolve
+ * (`StateRootResolutionError`, `src/cliStateDirs.ts`) and classified at one
+ * arm of the CLI's dispatch, ahead of every verb's own argument checks — and
+ * no verb's page named either, while `flume status` documented no `2` row at
+ * all and so stated a narrower range than its own process returns
+ * (`spec/loop.md`, *Exit codes — the run never lies to CI*).
+ *
+ * **Driven, never listed**: every verb the top-level page names is run over
+ * one repository against each refusal, and the code its real process returned
+ * is what the rows below are read for (`.claude/rules/engineering.md`, *A
+ * seam gate reads what the real writer wrote*). Nothing here spells `2`: a
+ * code re-routed between two arms moves the rows this reads with it.
+ *
+ * Each run carries the refusal's own sentence as its non-vacuity, so a verb
+ * that failed for some other reason cannot be read as having taken it, and a
+ * clean run over the same repository is the witness that this is not a
+ * fixture refusing whatever it is handed. The refusals are environment-borne
+ * and land before anything is published, so no run can change what a later
+ * one sees.
+ */
+describe("the state-root resolution refusals, per verb (THE-VERB-PAGES-NAME-THE-ROOT-RESOLUTION-REFUSAL)", () => {
+  /**
+   * One refusal the resolution takes: what the inherited environment has to
+   * carry for a verb to reach it, and the substring the CLI's own sentence
+   * prints iff that refusal is the one it took.
+   */
+  interface RootResolutionRefusal {
+    /** The refusal, named for a failure message. */
+    readonly named: string;
+    /** A substring the run prints iff it took this refusal and no other. */
+    readonly evidence: string;
+    /** What the run inherits, over the hermetic environment. */
+    readonly env: (elsewhere: string) => NodeJS.ProcessEnv;
+  }
+
+  const ROOT_RESOLUTION_REFUSALS: readonly RootResolutionRefusal[] = [
+    {
+      named: "an inherited cross-repo FLUME_DIR_RESOLVED_FOR stamp",
+      evidence: "refusing to write there",
+      env: (elsewhere) => ({ FLUME_DIR_RESOLVED_FOR: elsewhere }),
+    },
+    {
+      named: "a second state root in the checkout",
+      evidence: "already holds flume state of its own",
+      env: (elsewhere) => ({ FLUME_DIR: elsewhere }),
+    },
+  ];
+
+  /** The codes each verb's real process returned, one per refusal, in order. */
+  let took: Map<string, number[]>;
+  /** What a verb over the same repository returns with neither refusal armed. */
+  let clean: number;
+  let names: string[];
+
+  beforeAll(async () => {
+    names = topLevelCommandNames();
+    expect(
+      Object.keys(VERB_ARGV).sort(),
+      "the argv table and the shipped command list disagree",
+    ).toEqual([...names].sort());
+
+    const repo = await makeScratchRepo("flume-root-resolution-refusal-", "main");
+    const elsewhere = await mkFixtureRoot("flume-root-resolution-elsewhere-");
+    try {
+      // `Chain.friction` declared, because a chain without it refuses that
+      // verb at usage — and usage runs *after* the resolution, so a verb
+      // refused there would still be reading this refusal's evidence. It is
+      // declared anyway, so the clean run below is a clean run for every verb.
+      await writeRepoConfig(repo.dir, minimalChainSrc({ friction: "friction" }));
+      // The checkout holds flume state of its own, which is what the second
+      // refusal collides with: a verdict log is a file, and presence is the
+      // whole of what it carries (`checkoutStateRootArtifact`,
+      // `src/cliStateDirs.ts`). An empty one leaves every verb's own reads
+      // exactly as they were.
+      await writeFile(
+        tickVerdictsLogPath(join(repo.dir, STATE_ROOT_DIRNAME)),
+        "",
+        "utf8",
+      );
+
+      const observed = new Map<string, number[]>();
+      for (const name of names) {
+        const codes: number[] = [];
+        for (const refusal of ROOT_RESOLUTION_REFUSALS) {
+          const run = await runCli(repo.dir, [...VERB_ARGV[name]!], {
+            ...hermeticEnv(),
+            ...refusal.env(elsewhere),
+          });
+          // The arm, before its code counts: a verb that died on something
+          // else exits some plausible status and would agree with a row
+          // naming almost anything.
+          expect(
+            run.out,
+            `flume ${name} under ${refusal.named} did not take that refusal`,
+          ).toContain(refusal.evidence);
+          // And it reached the operator as a sentence, not through the
+          // raw-stack arm — which is the exit this row may not be.
+          expect(run.out).not.toContain("    at ");
+          codes.push(run.code);
+        }
+        observed.set(name, codes);
+      }
+      took = observed;
+
+      // The fixture is live: the same repository, with neither refusal
+      // armed, answers.
+      const ordinary = await runCli(repo.dir, ["status"], hermeticEnv());
+      expect(ordinary.out).toContain("pending:");
+      clean = ordinary.code;
+    } finally {
+      await rm(elsewhere, { recursive: true, force: true });
+      await repo.cleanup();
+    }
+  });
+
+  /** The row a verb's shipped page spends on `code`, as a phrase read sees it. */
+  const rowOf = (name: string, code: number): string => {
+    const page = helpPageFor(name);
+    expect(page, `the help table answers no page for \`${name}\``).toBeDefined();
+    const row = documentedExitCodeRows(page!).get(code);
+    expect(row, `flume ${name} --help lists no ${code} row`).toBeDefined();
+    return asStated(row!);
+  };
+
+  it("flume status --help names the exit code the state-root resolution refusals take", () => {
+    const codes = took.get("status");
+    expect(codes, "no `flume status` run was driven").toHaveLength(
+      ROOT_RESOLUTION_REFUSALS.length,
+    );
+    // The code is the driven one in both directions: it is a status the verb
+    // really returns, and it is not the status an unrefused run returns, so a
+    // page naming the ordinary exit would not satisfy this.
+    const listed = [...documentedExitCodes(helpPageFor("status")!)];
+    for (const code of codes!) {
+      expect(code, "a refused run answered as an ordinary one").not.toBe(clean);
+      expect(
+        listed,
+        `flume status --help lists no ${code} row, and its process returns one`,
+      ).toContain(code);
+    }
+    expect(listed, "the ordinary exit fell off the page").toContain(clean);
+  });
+
+  it("every verb's --help states both state-root resolution refusals among its exit-2 causes", () => {
+    // Vacuity: an unparsed listing would hold every read below over zero
+    // verbs, and the named one is the page that carried no such row at all.
+    expect(names.length).toBeGreaterThan(1);
+    expect(names).toContain("status");
+    // The clause's own arms, since the title claims both: a clause that lost
+    // one would leave this green over the other.
+    expect(ROOT_RESOLUTION_USAGE_PHRASES).toHaveLength(
+      ROOT_RESOLUTION_REFUSALS.length,
+    );
+
+    for (const name of names) {
+      const codes = took.get(name);
+      expect(codes, `flume ${name} was not driven`).toHaveLength(
+        ROOT_RESOLUTION_REFUSALS.length,
+      );
+      for (const [at, code] of codes!.entries()) {
+        const phrase = ROOT_RESOLUTION_USAGE_PHRASES[at]!;
+        expect(
+          rowOf(name, code),
+          `flume ${name} --help's ${code} row does not state ${ROOT_RESOLUTION_REFUSALS[at]!.named}`,
+        ).toContain(asStated(phrase));
+      }
+    }
+  });
+
+  it("docs/CLI.md states both state-root resolution refusals in every verb section's window for the code they take", async () => {
+    expect(names.length).toBeGreaterThan(1);
+    const doc = await readCliDoc();
+
+    for (const name of names) {
+      const codes = took.get(name);
+      expect(codes, `flume ${name} was not driven`).toHaveLength(
+        ROOT_RESOLUTION_USAGE_PHRASES.length,
+      );
+      const section = sectionOf(doc, new RegExp(`^## \`flume ${name}\\b`));
+      expect(
+        section.length,
+        `docs/CLI.md has no \`flume ${name}\` section`,
+      ).toBeGreaterThan(0);
+
+      for (const [at, code] of codes!.entries()) {
+        const phrase = ROOT_RESOLUTION_USAGE_PHRASES[at]!;
+        // The producer's side first: the phrase is a span of the clause the
+        // shipped row really renders, so the page is read against what an
+        // operator running `--help` sees.
+        expect(rowOf(name, code)).toContain(asStated(phrase));
+
+        const window = asStated(sentencesNamingExitCode(section, code).join("\n"));
+        expect(
+          window.length,
+          `docs/CLI.md's flume ${name} section spends no sentence on ${code}`,
+        ).toBeGreaterThan(0);
+        expect(
+          window,
+          `docs/CLI.md's flume ${name} section states no ${code} cause under the phrase the row renders`,
+        ).toContain(asStated(phrase));
+      }
+    }
+
+    // The window is scoped to this code rather than to the section: each of
+    // these sections documents refusals of other classes too, and those
+    // sentences carry none of these causes, so a reader handing back the
+    // whole section could not tell a stated cause from a neighbouring one.
+    const taken = new Set([...took.values()].flat());
+    const elsewhere = names.flatMap((name) => {
+      const section = sectionOf(doc, new RegExp(`^## \`flume ${name}\\b`));
+      return namedExitCodes(section)
+        .filter((code) => !taken.has(code))
+        .flatMap((code) => {
+          const window = asStated(sentencesNamingExitCode(section, code).join("\n"));
+          return ROOT_RESOLUTION_USAGE_PHRASES.filter(
+            (phrase) => !window.includes(asStated(phrase)),
+          );
+        });
+    });
+    expect(
+      elsewhere.length,
+      "the per-code read handed back the whole section",
+    ).toBeGreaterThan(0);
+  });
+});
+
+/**
  * CLI-DOC-LOOP-EXIT-CODES-PINNED — `docs/CLI.md` § `flume loop` is the loop
  * range's prose copy, and it had drifted: it named 0, 1 and 69 and neither
  * the usage code, the I/O refusal nor the terminal-misconfiguration code. It
@@ -1235,6 +1473,7 @@ function spendVerdict(at: Date): TickVerdict {
 describe("docs/CLI.md's status and log sections against the codes those verbs really return (CLI-DOC-STATUS-LOG-EXIT-CODES-PINNED)", () => {
   it("docs/CLI.md's flume status section names every exit code the real status verb returns", async () => {
     const root = await mkFixtureRoot("flume-doc-status-exits-");
+    const elsewhere = await mkFixtureRoot("flume-doc-status-other-repo-");
     const flumeDir = join(root, ".flume");
     // The window the spend line totals over: the lock states when the run
     // took it, and a row dated inside that window is the run's own.
@@ -1278,6 +1517,19 @@ describe("docs/CLI.md's status and log sections against the codes those verbs re
             return runCli(root, ["status"]);
           },
         },
+        {
+          // The resolution's own refusal, which `status` takes before it
+          // observes anything: an inherited stamp naming another repository.
+          // It lands ahead of every read above, so the denial that arm left
+          // standing changes nothing about what this one answers.
+          arm: "an inherited FLUME_DIR_RESOLVED_FOR stamp naming another repo",
+          evidence: "refusing to write there",
+          run: () =>
+            runCli(root, ["status"], {
+              ...hermeticEnv(),
+              FLUME_DIR_RESOLVED_FOR: elsewhere,
+            }),
+        },
       ]);
 
       const section = sectionOf(await readCliDoc(), /^## `flume status\b/);
@@ -1287,6 +1539,7 @@ describe("docs/CLI.md's status and log sections against the codes those verbs re
       // that no arm can produce.
       expect(namedExitCodes(section)).toEqual(driven);
     } finally {
+      await rm(elsewhere, { recursive: true, force: true });
       await rm(root, { recursive: true, force: true });
     }
   }, SPAWN_BUDGET_MS);

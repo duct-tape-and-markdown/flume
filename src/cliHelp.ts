@@ -130,6 +130,82 @@ const SHARED_ROOT_CLAUSE = rootClause([
 const READ_ONLY_ROOT_CLAUSE = rootClause(SHARED_ROOT_RESOLUTION_CAUSES);
 
 /**
+ * The exit-`2` refusals the state root's **resolution** takes, labelled once
+ * the way the `74` row's shared causes above are. Each is a pair of roots the
+ * caller named that will not compose, raised where the roots resolve
+ * (`StateRootResolutionError`, `src/cliStateDirs.ts`) and classified at one
+ * arm of the CLI's dispatch — which runs before any verb reaches its own
+ * argument checks, so every verb's `2` row carries them and no page states a
+ * narrower range than its own process returns (`spec/loop.md`, *Exit codes —
+ * the run never lies to CI*).
+ *
+ * These are refusals of the roots themselves rather than of anything on
+ * disk: the causes above are a root that came back unusable, and these two
+ * are a root that resolved fine and is the wrong one. A verb answers them
+ * whether or not it has usage of its own to refuse, which is why `status`
+ * carries a `2` row at all.
+ *
+ * Labelled rather than spelled as flat prose for the reason
+ * {@link SHARED_ROOT_RESOLUTION_CAUSES} is: `docs/CLI.md` states these same
+ * refusals per verb in a register of its own, and the phrase is what crosses
+ * ({@link ExitCauseLabel}).
+ */
+const ROOT_RESOLUTION_USAGE_CAUSES: readonly ExitCauseLabel[] = [
+  {
+    opening: "An ",
+    phrase:
+      "inherited `FLUME_DIR_RESOLVED_FOR` stamp names a different repository " +
+      "than this invocation resolved",
+    rest:
+      " — `FLUME_DIR` was canonicalized and written back by that " +
+      "repository's own flume process, then inherited across a boundary no " +
+      "invocation should have carried it over. Refused rather than written " +
+      "into the outer repository's control plane, naming the vars to clear; " +
+      "a `FLUME_DIR` typed fresh for this invocation carries no stamp and is " +
+      "never refused on that basis, whatever its path looks like.",
+  },
+  {
+    opening: "Or ",
+    phrase:
+      "a relocated state root resolved in a checkout that already holds " +
+      "flume state of its own",
+    rest:
+      " — one checkout resolves one state root, so the second separates " +
+      "nothing and collides several steps on as git's error over a branch " +
+      "the first root's tick holds. Refused where the roots resolve, ahead " +
+      "of every verb's own work and before either root is published, naming " +
+      "both roots and the checkout.",
+  },
+];
+
+/**
+ * The whole state-root clause a `2` row states — both refusals above, in the
+ * order the resolution takes them. Rendered into every verb's `2` row: the
+ * resolution runs ahead of verb dispatch, so there is no verb whose process
+ * answers ahead of it.
+ */
+const ROOT_RESOLUTION_USAGE_CLAUSE =
+  ROOT_RESOLUTION_USAGE_CAUSES.map(clauseOf).join(" ");
+
+/**
+ * The lead a `2` row takes when those refusals are the whole of it — a verb
+ * that consumes no positional and takes no flag, so nothing else it is handed
+ * can be usage-shaped.
+ */
+const ROOT_RESOLUTION_ONLY_LEAD =
+  "Usage: this verb consumes no positional and takes no flag, so the two " +
+  "refusals state-root resolution takes ahead of every verb are the whole " +
+  "of this row.";
+
+/**
+ * The phrases those causes are labelled with — what every surface
+ * documenting a verb's `2` row states them under. Exported for the seam that
+ * reads `docs/CLI.md`'s per-verb copies against the clause the pages render.
+ */
+export const ROOT_RESOLUTION_USAGE_PHRASES: readonly string[] =
+  ROOT_RESOLUTION_USAGE_CAUSES.map((cause) => cause.phrase);
+
+/**
  * The phrases the resolution causes are labelled with — what every surface
  * documenting a verb's `74` row states them under, whatever register it
  * states them in. Exported for the seam that reads `docs/CLI.md`'s per-verb
@@ -222,6 +298,29 @@ function sharedRootRow(indent: number): string {
 }
 
 /**
+ * The state-root resolution's `2` clause wrapped into a page's own exit-code
+ * block — {@link sharedRootRefusal} for the usage row, and the same
+ * continuation column.
+ */
+function rootResolutionUsageRefusal(indent: number): string {
+  return wrapClause(ROOT_RESOLUTION_USAGE_CLAUSE, indent).join(
+    `\n${" ".repeat(indent)}`,
+  );
+}
+
+/**
+ * The whole `2` row for a verb with no usage of its own to refuse, which
+ * today is `status` alone.
+ */
+function rootResolutionUsageRow(indent: number): string {
+  return exitCodeRow(
+    2,
+    [ROOT_RESOLUTION_ONLY_LEAD, ROOT_RESOLUTION_USAGE_CLAUSE],
+    indent,
+  );
+}
+
+/**
  * The column a `--help` page's prose stops at — the width every block in
  * this file is typed to by hand, and the bound the rows rendered below wrap
  * to.
@@ -300,6 +399,7 @@ function tickExitCodeBlock(): string {
         "Usage: a stray trailing positional (`tick` consumes none — running " +
           "something other than whichever phase is awake is refused, not " +
           "honored), or `--phase` with no name after it.",
+        ROOT_RESOLUTION_USAGE_CLAUSE,
       ],
     ],
     [69, []],
@@ -390,6 +490,7 @@ Observational
 Exit codes:
   0   Every observation above succeeded — including "nothing to report" for
       each optional line.
+${rootResolutionUsageRow(6)}
   74  I/O error (EX_IOERR): loop.pid, the stop flag, or the tip claim file
       exists but could not be read (permission denied, a symlink loop, a
       directory standing at the path, a path too long for the platform, ...)
@@ -491,6 +592,7 @@ Exit codes:
       stray positional past --max/<value> — loop consumes no positionals,
       and running anything other than what was typed is refused rather
       than silently starting a run.
+      ${rootResolutionUsageRefusal(6)}
 `,
   wake: `Usage: flume wake <phase>
 
@@ -503,6 +605,7 @@ Exit codes:
   0   Success.
   2   Missing <phase> argument, an extra positional past <phase>, or <phase>
       names a phase the loaded chain does not declare. No flag is written.
+      ${rootResolutionUsageRefusal(6)}
 ${sharedRootRow(6)}
 `,
   sleep: `Usage: flume sleep <phase>
@@ -516,6 +619,7 @@ Exit codes:
   0   Success (no-op if already hibernating).
   2   Missing <phase> argument, an extra positional past <phase>, or <phase>
       names a phase the loaded chain does not declare.
+      ${rootResolutionUsageRefusal(6)}
 ${sharedRootRow(6)}
 `,
   stop: `Usage: flume stop
@@ -535,6 +639,7 @@ Exit codes:
   0   Always — including when the flag was already present.
   2   Usage: a stray trailing positional (\`stop\` consumes none). No flag is
       written.
+      ${rootResolutionUsageRefusal(6)}
 ${sharedRootRow(6)}
 `,
   log: `Usage: flume log [-n N] [--json]
@@ -551,6 +656,7 @@ Exit codes:
   0   Success — including no tick-verdicts.jsonl on disk (prints nothing).
   2   Usage: unknown or extra arguments, or -n is missing, non-numeric, or
       negative. No verdicts are read.
+      ${rootResolutionUsageRefusal(6)}
   74  I/O error (EX_IOERR): tick-verdicts.jsonl exists but could not be read
       (permission denied, a symlink loop, a directory in its place, ...).
       Refused rather than printed as an empty history — exit 0 over silence
@@ -579,6 +685,7 @@ Exit codes:
        the chain load below; or the chain failed to load with the
        CJS-context refusal — the host repo's package.json (or the one
        beside .flume/chain.ts) lacks "type": "module". Add it and re-run.
+       ${rootResolutionUsageRefusal(7)}
   65   Data error (EX_DATAERR): an entry under plan/pending/ fails schema
        validation, or an entry declares a path outside the consumer
        phase's fence.
@@ -620,6 +727,7 @@ Exit codes:
       nothing pickable and no --entry to scope it. Also: the chain failed to
       load with the CJS-context refusal — the host repo's package.json (or
       the one beside .flume/chain.ts) lacks "type": "module".
+      ${rootResolutionUsageRefusal(6)}
   65  Data error (EX_DATAERR): the prompt never resolved — an inline-exec
       span exited non-zero (each failing span named with its stderr), or the
       phase's promptArgs hook threw. The same refusal a tick would have
@@ -648,6 +756,7 @@ Exit codes:
       that would resolve outside it). Also: the chain failed to load with
       the CJS-context refusal — the host repo's package.json (or the one
       beside .flume/chain.ts) lacks "type": "module".
+      ${rootResolutionUsageRefusal(6)}
   69  Mount-dead (EX_UNAVAILABLE): the chain module could not load for any
       other reason. Nothing was read — fix the chain and re-run.
   74  I/O error (EX_IOERR): the channel dir, or a note in it, exists but
