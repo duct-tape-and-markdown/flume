@@ -403,9 +403,11 @@ export interface TickOutcome {
    *  - `platform-preempt` the agent process failed for non-work reasons
    *                       (rate-limit, auth, timeout, dispatcher-killed) —
    *                       NOT a defect in the work,
-   *  - `render-refused`   the prompt itself never resolved (an inline-exec
-   *                       span failed, or a `{{KEY}}` no arg filled) — the
-   *                       agent was never invoked at all.
+   *  - `render-refused`   the prompt itself never resolved — an inline-exec
+   *                       span that would not resolve, a `{{KEY}}` no arg
+   *                       filled, a `promptArgs` hook that threw, or a
+   *                       `shouldRun` hook that threw — so the agent was
+   *                       never invoked at all.
    * Absent when the tick shipped a usable commit, hibernated, `failed`
    * (chain resolution threw), or ran no agent because nothing was pickable
    * (as opposed to `render-refused`, where an agent invocation was

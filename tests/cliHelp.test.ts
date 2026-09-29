@@ -42,6 +42,11 @@ import {
   stopFlagPath,
 } from "../src/paths.ts";
 import { entryFileName } from "../src/PendingSchema.ts";
+import {
+  docCommentFor,
+  docProse,
+  srcText,
+} from "./helpers/docComments.ts";
 import { currentRefPath, gitCommonDir, tipClaimPath } from "../src/git.ts";
 import { renderPidClaim } from "../src/pidClaim.ts";
 import {
@@ -3055,6 +3060,44 @@ describe("the render-refused class, enumerated whole wherever it is named (THE-R
     expect(asStated(page).length).toBeGreaterThan(bullet.length);
     // The tick's roster, not the verb's: this bullet documents what a tick
     // records, and a tick reaches one member `flume render` cannot.
+    expect(TICK_RENDER_REFUSED_PHRASES.length).toBeGreaterThan(0);
+    for (const phrase of TICK_RENDER_REFUSED_PHRASES) {
+      expect(bullet, `the bullet does not name ${phrase}`).toContain(
+        asStated(phrase),
+      );
+    }
+  });
+
+  /**
+   * The same width again, one surface over from the bullet: `TickOutcome`
+   * ships from `src/index.ts`, so its `noCommit` block is the hover text a
+   * chain author reads before reaching any page. That block enumerated two of
+   * the four a tick records — a third spelling of the roster, held by
+   * nothing — so it is read against the array the bullet is, and a member
+   * either roster gains reaches it too.
+   */
+  it("TickResult.noCommit's render-refused line names every member of the tick's class", () => {
+    const doc = docProse(docCommentFor(srcText("Dispatcher.ts"), "noCommit"));
+    // The bullet, not the block: its siblings quote the render vocabulary too
+    // — `clean-exit` names the agent's own message, and the precedence
+    // sentence below names the mode outright — so a block-wide read would
+    // pass over a bullet that had gone silent
+    // (`.claude/rules/posture-sweep.md`, *A negative assertion over a whole
+    // rendered artifact*).
+    const opened = doc.indexOf("- `render-refused`");
+    const closed = doc.indexOf("Absent when", opened);
+    expect(
+      opened,
+      "the block spends no bullet on render-refused",
+    ).toBeGreaterThan(-1);
+    expect(closed, "the bullet runs to the end of the block").toBeGreaterThan(
+      opened,
+    );
+    const bullet = asStated(doc.slice(opened, closed));
+    expect(asStated(doc).length).toBeGreaterThan(bullet.length);
+
+    // The tick's roster, not the verb's: this field records what a tick
+    // produced, and a tick reaches one member `flume render` cannot.
     expect(TICK_RENDER_REFUSED_PHRASES.length).toBeGreaterThan(0);
     for (const phrase of TICK_RENDER_REFUSED_PHRASES) {
       expect(bullet, `the bullet does not name ${phrase}`).toContain(

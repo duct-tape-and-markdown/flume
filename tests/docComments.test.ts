@@ -19,6 +19,12 @@ import {
   docCommentBlocks,
 } from "./helpers/commentCitations.ts";
 import {
+  docCommentBefore,
+  docCommentFor,
+  srcPath,
+  srcText,
+} from "./helpers/docComments.ts";
+import {
   expectNoFindings,
   modulesUnder,
   parseScopeless,
@@ -32,32 +38,6 @@ import {
 // there ships one implementation's conventions with the engine's authority
 // (.claude/rules/engine-boundary.md § Capability vs convention): the option
 // describes only what the engine's mechanics consume.
-
-const srcPath = (module: string): string =>
-  fileURLToPath(new URL(`../src/${module}`, import.meta.url));
-
-const srcText = (module: string): string =>
-  readFileSync(srcPath(module), "utf8");
-
-/**
- * The doc comment block immediately preceding whatever `decl` (a regex
- * source) matches. The body pattern cannot cross a comment terminator, so
- * the match is the adjacent block, never an earlier one swallowed by a lazy
- * span.
- */
-const docCommentBefore = (
-  source: string,
-  decl: string,
-  label: string,
-): string => {
-  const body = source.match(
-    new RegExp(String.raw`/\*\*((?:[^*]|\*(?!/))*)\*/\s*${decl}`),
-  )?.[1];
-  if (body === undefined) {
-    throw new Error(`no doc comment precedes ${label}`);
-  }
-  return body;
-};
 
 /**
  * The manifest's `exports` map, which is the sole author of what the package
@@ -83,10 +63,6 @@ const exportsMap = (): Readonly<Record<string, { readonly types?: string }>> => 
  */
 const backtickedSpans = (doc: string): ReadonlySet<string> =>
   new Set([...doc.matchAll(/`([^`]+)`/g)].map((match) => match[1] ?? ""));
-
-/** The doc comment block immediately preceding `field`'s declaration. */
-const docCommentFor = (source: string, field: string): string =>
-  docCommentBefore(source, String.raw`${field}\??:`, `\`${field}\``);
 
 /**
  * Register the vocabulary scan over one shipped surface. The scan is one
