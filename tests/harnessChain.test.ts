@@ -16,6 +16,13 @@
  * seam that breaks when a prompt grows a placeholder the factory forgot — so
  * the fixture is a real git repository with a real state root under it, and
  * the windows read it with git.
+ *
+ * The agent cases and the setup cases stay here for that reason, though the
+ * agent lives in `harness/agent.ts` and the declared setup's reduction in
+ * `harness/provisioning.ts`: what each one claims is that the factory hands
+ * the declaration's field to that module and the module's answer to the
+ * phase — a seam only the real factory can drive. A case over either module
+ * called directly would prove the module and not the wiring.
  */
 
 import { existsSync } from "node:fs";

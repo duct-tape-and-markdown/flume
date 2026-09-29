@@ -9,11 +9,12 @@
  * declared gates in `declaredGates.ts`, the judge's gate in `judgeGate.ts`,
  * the wake set in `handoff.ts`, the windows in `windows.ts`, the args in
  * `prompts.ts`, the fields in `entryExtension.ts`, the ruling in `judge.ts`,
- * the reading of a commit that put its work down in `putDown.ts`, the plan
- * artifacts' paths and the fence that is their list in `layout.ts`. What is
- * decided here is only what a `Phase` object needs that none of them can
- * answer alone: which of those fences each phase carries, which prompt it
- * addresses, and the order the gates sit in.
+ * the reading of a commit that put its work down in `putDown.ts`, the phase
+ * agent in `agent.ts`, the declared setup reduced to one checkout in
+ * `provisioning.ts`, the plan artifacts' paths and the fence that is their
+ * list in `layout.ts`. What is decided here is only what a `Phase` object
+ * needs that none of them can answer alone: which of those fences each phase
+ * carries, which prompt it addresses, and the order the gates sit in.
  *
  * **The declaration is parsed here, not by the consumer.** The whole of
  * adoption is one declaration module and the hop that applies this factory
@@ -39,15 +40,12 @@
  * where every consumer gets it.
  */
 
-import { resolve } from "node:path";
-
-import type { Agent } from "../src/Agent.js";
 import type { FlumeApi } from "../src/flumeApi.js";
 import type { Gate } from "../src/Gate.js";
 import type { EntryExtension } from "../src/PendingSchema.js";
 import type { Chain, Phase, TickContext } from "../src/Phase.js";
-import { execFileWithShimRetry } from "../src/spawnShim.js";
 
+import { agentFactory } from "./agent.js";
 import {
   BUILD_PHASE,
   parseDeclaration,
@@ -56,14 +54,12 @@ import {
   type PlanSlice,
 } from "./declaration.js";
 import { constructGate } from "./declaredGates.js";
-import { runnableShell, shellArgs } from "./declaredShell.js";
 import { entryExtension } from "./entryExtension.js";
-import { MAX_OUTPUT_BYTES } from "./exec.js";
 import { harnessGates, type GateEngine } from "./gates.js";
 import { defaultRefusesEntry, resolveHandoff } from "./handoff.js";
-import { SESSIONS_REL } from "./ignores.js";
 import { namedLinesGate } from "./judgeGate.js";
 import { noteGlobs, planArtifacts } from "./layout.js";
+import { provisioning, worktreeSetup } from "./provisioning.js";
 import {
   BUILD_PROMPT_DATA_KEYS,
   PLAN_SLICE_PROMPT_DATA_KEYS,
@@ -432,185 +428,6 @@ export function harnessChain(options: HarnessChainOptions): Chain {
       ? { worktreesBase: declaration.worktreesBase }
       : {}),
     ...(policy ? { supervisorPolicy: policy } : {}),
-  };
-}
-
-// ------------------------------------------------- agents and provisioning
-
-/**
- * The package's agent for one phase: `claude -p` streaming structured
- * events, its raw stream teed under the state root and a condensed
- * one-line-per-tool-call summary on the dispatcher's stdout.
- *
- * The model is not one of the package's opinions — undeclared, the flag is
- * omitted and the binary's own default applies, which is the difference
- * between a consumer choosing a tier and inheriting one it has to discover
- * to turn off (`.claude/rules/engine-boundary.md`, *Surface, not
- * prescription*). What the package does choose is the shape: a transcript
- * per tick, because a loop nobody can read back is a loop nobody can cost.
- *
- * Every declared agent field is handed to the engine's own option of the
- * same name and nothing else: the MCP inheritance the declaration spells is
- * the engine's knob, defaulted by the engine when no consumer states one.
- *
- * The one field that is not spelled the same on both sides is the context
- * window, which the engine takes inside a budget declaration
- * (`BudgetDeclaration`, `src/budgetHook.ts`) beside a cadence and a set of
- * thresholds. The package fills in neither: how often an agent should be
- * told about its room is not an opinion this package holds either, and an
- * empty cadence is the engine's every-call line, which is what a prompt
- * naming its own percentages reads. Undeclared, no budget is passed at all,
- * so no hook is registered and the argv is the one a consumer who never
- * heard of the field gets.
- */
-function agentFactory(
-  api: FlumeApi,
-  declaration: Declaration,
-): (phase: HarnessPhase) => Agent {
-  const dir = resolve(api.paths.flumeDir, SESSIONS_REL);
-  return (phase) => {
-    const declared = declaration.agents?.[phase];
-    return api.withTerminalRenderer(
-      api.withSessionCapture(
-        api.claudeCode({
-          outputFormat: "stream-json",
-          ...(declared?.model !== undefined ? { model: declared.model } : {}),
-          ...(declared?.extraArgs !== undefined
-            ? { extraArgs: [...declared.extraArgs] }
-            : {}),
-          ...(declared?.contextWindow !== undefined
-            ? { budget: { contextWindow: declared.contextWindow } }
-            : {}),
-          ...(declared?.inheritUserMcp !== undefined
-            ? { inheritUserMcp: declared.inheritUserMcp }
-            : {}),
-        }),
-        { dir },
-      ),
-    );
-  };
-}
-
-/**
- * The declared `setup`, reduced to provisioning one checkout at its root.
- *
- * `directories` says where, `restore` says how: undeclared, each directory
- * gets the engine's own lockfile-aware install; declared, the command runs
- * in each directory instead — which is what a consumer whose stack has no
- * lockfile the engine reads (cargo, dotnet, a script) declares. With no
- * setup declared at all the root itself gets the engine's installer, which
- * is what a base checkout needs to run a suite and what a build worktree of
- * such a consumer inherits from its own tree.
- *
- * One reduction, two callers: the worktree hook below and the runner factory
- * above. A second one built beside either would be a chain restating what
- * this one already decides (`.claude/rules/engineering.md`, *Derived state
- * is computed, never restated beside its source*).
- *
- * Which is also why `setup.serialize` is honoured *here* rather than at
- * either caller: the queue is this reduction's own, so a wave's worktree
- * hooks and the base checkout the runner provisions take their turns in one
- * line. A second queue built beside this one would let the base checkout
- * warm the cache under a worktree that was promised exclusivity.
- */
-function provisioning(
-  api: FlumeApi,
-  declaration: Declaration,
-): (root: string) => Promise<void> {
-  const setup = declaration.setup;
-  if (setup === undefined) return (root) => api.setupWorktree(root);
-  const install = installing(api, declaration, setup.restore);
-  const walk = async (root: string): Promise<void> => {
-    for (const directory of setup.directories) {
-      await install(resolve(root, directory));
-    }
-  };
-  // The restore alone, and one worktree's whole walk at a time: the claim a
-  // consumer makes is about the command it wrote, and it makes it per
-  // checkout, so a tree's directories are restored contiguously rather than
-  // interleaved with another tree's. A declaration naming no restore is
-  // provisioned by the engine's installer, which a wave has always run
-  // concurrently and which this knob does not reach (`declaration.ts`).
-  if (setup.restore === undefined || setup.serialize !== true) return walk;
-  const turn = oneAtATime();
-  return (root) => turn(() => walk(root));
-}
-
-/**
- * A queue of one: each job starts when the job before it has settled, in the
- * order the calls arrived.
- *
- * Settled, not fulfilled. A restore that throws is that entry's provisioning
- * failure and parks it alone (`spec/worktrees.md`, *`setupWorktree` and
- * `teardownWorktree` — the chain's provisioning hooks*), so the rejection
- * reaches the caller who queued it and the queue itself keeps its own tail
- * resolved — a wave whose first restore failed still hands the next worktree
- * its turn rather than rejecting every one behind it.
- */
-function oneAtATime(): (job: () => Promise<void>) => Promise<void> {
-  let tail: Promise<void> = Promise.resolve();
-  return (job) => {
-    const turn = tail.then(job);
-    tail = turn.then(
-      () => {},
-      () => {},
-    );
-    return turn;
-  };
-}
-
-/**
- * How one declared directory is installed: the engine's own lockfile-aware
- * install, or the consumer's `restore` under the shell the declaration
- * named.
- *
- * A restore is a command line the consumer wrote, so it takes the shell and
- * the invocation form every other such line takes — a gate's command, a
- * gate's script — rather than a spawn of its own beside them
- * (`declaredShell.ts`). The shell is resolved once here, at chain load: a
- * host that will not run it strands every worktree this hook provisions, and
- * a wave of entries each parking on its own setup is that refusal arriving
- * once per entry, hours late (`.claude/rules/engineering.md`, *Loud or
- * nothing*).
- */
-function installing(
-  api: FlumeApi,
-  declaration: Declaration,
-  restore: string | undefined,
-): (cwd: string) => Promise<void> {
-  if (restore === undefined) return (cwd) => api.setupWorktree(cwd);
-  const shell = runnableShell(api, declaration.shell, `\`setup.restore\` "${restore}"`);
-  return async (cwd) => {
-    // The cap is this site's to state: a consumer's restore command is
-    // arbitrary, its output is read by nothing here, and node's inherited
-    // 1 MiB reports an overrun where an exit status would sit — a verbose
-    // install arriving as a restore that never ran
-    // (`.claude/rules/platform-facts.md`, *Node caps a captured child
-    // stream at 1 MiB, and reports the overrun as a spawn failure*). One
-    // number with the rest of the package's captures.
-    await execFileWithShimRetry(shell, shellArgs(restore), {
-      cwd,
-      maxBuffer: MAX_OUTPUT_BYTES,
-    });
-  };
-}
-
-/**
- * The hook every provisioned worktree runs, or none when the consumer
- * declared no setup — a tree a consumer said nothing about gets no hook, and
- * the engine skips the step rather than installing on its own authority.
- *
- * A throw here parks that one entry rather than the wave
- * (`spec/worktrees.md`, *Every `.git/worktrees` mutation is serialized; the
- * agent fanout is not*).
- */
-function worktreeSetup(
-  declaration: Declaration,
-  provision: (root: string) => Promise<void>,
-): Phase["setupWorktree"] | undefined {
-  if (declaration.setup === undefined) return undefined;
-  return async ({ worktreePath }) => {
-    await provision(worktreePath);
   };
 }
 

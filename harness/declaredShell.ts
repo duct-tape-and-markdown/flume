@@ -7,7 +7,7 @@
  *
  * **One mechanism, every declared line.** A `shell` gate's command, a
  * `script` gate's committed path (`declaredGates.ts`) and a `setup.restore`
- * (`chain.ts`) are the same thing said in three places: text the consumer
+ * (`provisioning.ts`) are the same thing said in three places: text the consumer
  * wrote, run by the package in a tree of the package's choosing. The two
  * decisions they share are made here once, so a command site cannot be the
  * one left spawning under a name of its own

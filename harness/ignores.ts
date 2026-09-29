@@ -71,7 +71,7 @@ const ENGINE_OWNED: ReadonlySet<string> = new Set<string>(
  * whole footprint.
  *
  * It lives here rather than beside the agent factory that passes it to the
- * session capture (`chain.ts`, which imports it): the ignore set is derived
+ * session capture (`agent.ts`, which imports it): the ignore set is derived
  * from the footprint, so the footprint is named once and the derivation
  * reads it (`.claude/rules/engineering.md`, *Derived state is computed,
  * never restated beside its source*).
