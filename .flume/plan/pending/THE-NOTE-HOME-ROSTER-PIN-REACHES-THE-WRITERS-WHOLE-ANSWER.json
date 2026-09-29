@@ -1,0 +1,25 @@
+{
+  "tag": "THE-NOTE-HOME-ROSTER-PIN-REACHES-THE-WRITERS-WHOLE-ANSWER",
+  "gate": { "kind": "open" },
+  "priority": 20,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "tests/harnessGates.test.ts",
+        "description": "the parked-note refusal case's detail roster, asserted at two of the three homes the gate folds into it, and the comment that says so"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "The park refusal's detail names every note home notePaths renders, and the case reading it asserts two of the three — the continuing home is in the string and in no assertion",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A seam gate reads what the real writer wrote"
+  },
+  "acceptance": "the parked-note refusal case asserts every path `notePaths` renders for the tick's own tag in the refusal detail the real gate wrote — all three homes, not two — so trimming a home out of the advice a misfiling tick is given reds instead of passing. The comment's \"spot-checked here at two of them\" goes with the narrowing. No source change; typecheck and suite green.",
+  "pins": [
+    "the records gate's park refusal names every note home notePaths renders for the tick's own tag"
+  ],
+  "notes": "From A-ROSTER-CLAIM-POINTS-AT-THE-SET-THE-PROGRAM-HOLDS's note, which reworded the claim and left the pin for plan. Verified this tick: `harness/gates.ts:516` folds `own?.join(\" or \")` into the detail, `own` being all three of `notePaths`' homes (`harness/layout.ts:375`, over a three-member `NOTE_DIR_RELS` at `:140`), while `tests/harnessGates.test.ts:689`-`:690` assert the parked and observation homes only. One `expect` line; the property holds, so a pin."
+}
