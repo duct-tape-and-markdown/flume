@@ -23695,6 +23695,10 @@ describe("Dispatcher — `priority` is the order every selection takes", () => {
  * real writer wrote*).
  */
 describe("Dispatcher fanout — the per-entry claim", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   /** Where this checkout's claim for `tag` lives, through the engine's own address. */
   const claimPathFor = async (tag: string): Promise<string> => {
     const { commonDir, segment } = await git.checkoutAddress(fx.repo);
@@ -23716,17 +23720,22 @@ describe("Dispatcher fanout — the per-entry claim", () => {
   };
 
   it("a build tick stakes its entry's claim before provisioning the worktree", async () => {
-    // BLOCKED's worktree path is occupied by a plain file git registers as
-    // nothing, so `createWorktree` refuses it — the entry reaches the
-    // provisioning loop and leaves it with no worktree at all. Its claim can
-    // therefore only stand if the stake ran ahead of the provisioning, which
-    // is the ordering under test.
-    const blockedPath = join(
-      worktreesBase(join(fx.repo, ".flume")),
-      worktreeDirName("BLOCKED"),
-    );
-    await mkdir(dirname(blockedPath), { recursive: true });
-    await writeFile(blockedPath, "not a worktree\n", "utf8");
+    // Read from inside the provisioning itself — the engine's own
+    // `addWorktree`, standing in for the held/EBUSY class by refusing BLOCKED
+    // alone — because a slot releases its claim the moment its own attempt
+    // ends (`settleSlot`, `src/waveTick.ts`), and a provisioning failure ends
+    // one. A sibling's agent therefore reads the drop, never the stake; the
+    // create is the last moment the ordering under test is observable.
+    const realAdd = git.addWorktree;
+    let duringProvision: string | null | undefined;
+    vi.spyOn(git, "addWorktree").mockImplementation(async (opts) => {
+      if (basename(opts.path) !== worktreeDirName("BLOCKED")) {
+        return realAdd(opts);
+      }
+      const path = await claimPathFor("BLOCKED");
+      duringProvision = existsSync(path) ? await readFile(path, "utf8") : null;
+      throw new Error("addWorktree refused: the slug is held");
+    });
 
     await writePending(fx.repo, [
       makeEntry("BLOCKED", ["src/blocked.ts"]),
@@ -23734,18 +23743,9 @@ describe("Dispatcher fanout — the per-entry claim", () => {
     ]);
     const chain: Chain = { phases: [wakeBuild()], humanOnly: [] };
 
-    // Read mid-wave, from inside the sibling entry's agent: a claim asserted
-    // after the tick would be asserting the drop, not the stake.
-    let midWave: { claim: string | null; worktree: boolean } | undefined;
     const agent = fanoutAgent({
-      observer: async (cwd) => {
-        const path = await claimPathFor("BLOCKED");
-        midWave = {
-          claim: existsSync(path) ? await readFile(path, "utf8") : null,
-          worktree: existsSync(blockedPath) && lstatSync(blockedPath).isDirectory(),
-        };
-        await writeAndCommit(cwd, "src/observer.ts", "ok\n", "build: OBSERVER");
-      },
+      observer: async (cwd) =>
+        writeAndCommit(cwd, "src/observer.ts", "ok\n", "build: OBSERVER"),
     });
 
     const outcome = await new Dispatcher({
@@ -23757,17 +23757,24 @@ describe("Dispatcher fanout — the per-entry claim", () => {
     }).tick();
 
     // Non-vacuity: the wave really did reach the provisioning loop for
-    // BLOCKED and really did fail it, so the claim below is one staked for an
-    // entry whose worktree was never created.
+    // BLOCKED and really did fail it — so the claim below is one staked for an
+    // entry whose worktree was never created — while its sibling provisioned,
+    // ran and shipped, which is the isolation that failure is held to.
     expect(outcome.result?.provisionFailures?.map((f) => f.tag)).toEqual([
       "BLOCKED",
     ]);
-    expect(midWave, "the observer entry's agent never ran").toBeDefined();
-    expect(midWave!.worktree).toBe(false);
+    expect(outcome.result?.shippedTags).toEqual(["OBSERVER"]);
+    expect(
+      duringProvision,
+      "the blocked entry never reached provisioning",
+    ).not.toBeUndefined();
     // The claim stood, and it names this process — the tick's own holder,
     // read back through the engine's own decode.
-    expect(midWave!.claim).not.toBeNull();
-    expect(parsePidClaim(midWave!.claim!)?.pid).toBe(process.pid);
+    expect(duringProvision).not.toBeNull();
+    expect(parsePidClaim(duringProvision!)?.pid).toBe(process.pid);
+    // And it did not outlive the attempt it covered: the failure ended that
+    // slot, so the claim is gone by the time the tick returns.
+    expect(existsSync(await claimPathFor("BLOCKED"))).toBe(false);
   });
 
   it("the claim is removed when an attempt ends without shipping", async () => {
@@ -24069,6 +24076,129 @@ describe("Dispatcher fanout — the per-entry claim", () => {
     expect(outcome.result?.claimedTags).toEqual([]);
     expect(outcome.result?.shippedTags).toEqual(["STALE"]);
     expect(existsSync(stale)).toBe(false);
+  });
+
+  it("a refilling wave releases a parked entry's claim before the wave ends", async () => {
+    // One slot wide, so PARKED's attempt has ended before REFILL's can begin
+    // and the read below is taken while the wave is still running. A wave
+    // that drops its claims together at wave end is still holding PARKED's.
+    await writePending(fx.repo, [
+      { ...makeEntry("PARKED", ["src/parked.ts"]), priority: 10 },
+      { ...makeEntry("REFILL", ["src/refill.ts"]), priority: 0 },
+    ]);
+    const chain: Chain = {
+      phases: [wakeBuild()],
+      humanOnly: [],
+      supervisorPolicy: { maxParallel: 1 },
+    };
+
+    let parkedClaimAtRefill: boolean | undefined;
+    const agent = fanoutAgent({
+      // The park: an agent that commits nothing, so the slot ends with the
+      // teardown of an attempt that did not ship and the entry stays queued.
+      parked: async () => {},
+      refill: async (cwd) => {
+        parkedClaimAtRefill = existsSync(await claimPathFor("PARKED"));
+        await writeAndCommit(cwd, "src/refill.ts", "ok\n", "build: REFILL");
+      },
+    });
+
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    }).tick();
+
+    // Non-vacuity: both entries reached an agent, so REFILL really was the
+    // refill of the slot PARKED freed — one slot wide, it could not have run
+    // beside it — and PARKED really parked, so the claim under assertion is
+    // one released by an attempt's own ending rather than by a ship.
+    expect(outcome.result?.entries?.map((e) => e.tag)).toEqual([
+      "PARKED",
+      "REFILL",
+    ]);
+    expect(outcome.result?.shippedTags).toEqual(["REFILL"]);
+    expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual(["PARKED"]);
+
+    // The claim: gone by the time the next slot's agent ran.
+    expect(parkedClaimAtRefill).toBe(false);
+  });
+
+  it("a settled slot's worktree and branch are torn down while a sibling slot is still running", async () => {
+    // The teardown moves with the claim (`spec/pending.md`, *Claims — an entry
+    // in flight is left alone*: the attempt ends with the ship or with the
+    // teardown), so the release above is only as early as the teardown it
+    // follows. Two slots, one settling while the other is mid-agent.
+    await writePending(fx.repo, [
+      makeEntry("SETTLES", ["src/settles.ts"]),
+      makeEntry("STILL-RUNNING", ["src/still-running.ts"]),
+    ]);
+    const chain: Chain = {
+      phases: [wakeBuild()],
+      humanOnly: [],
+      supervisorPolicy: { maxParallel: 2 },
+    };
+
+    // Both addresses through the engine's own spelling, never a second one
+    // composed here: the directory `createWorktree` provisions into and the
+    // `flume/<checkout>/<slug>` branch it cuts.
+    const settledPath = join(
+      worktreesBase(join(fx.repo, ".flume")),
+      worktreeDirName("SETTLES"),
+    );
+    const { segment } = await git.checkoutAddress(fx.repo);
+    const settledBranch = `flume/${segment}/${slugify("SETTLES")}`;
+    const tornDown = async (): Promise<true | undefined> => {
+      if (existsSync(settledPath)) return undefined;
+      const { stdout } = await exec(
+        "git",
+        ["branch", "--list", settledBranch],
+        { cwd: fx.repo },
+      );
+      return stdout.trim() === "" ? true : undefined;
+    };
+
+    let sawTeardown = false;
+    const agent = fanoutAgent({
+      settles: async (cwd) =>
+        writeAndCommit(cwd, "src/settles.ts", "ok\n", "build: SETTLES"),
+      "still-running": async (cwd) => {
+        // Blocks this slot inside its own agent until the sibling's worktree
+        // and branch are gone. A wave that tears down at wave end cannot get
+        // there while this invocation is open, so the wait reaches its
+        // ceiling and reds the case by name.
+        await waitFor("SETTLES' worktree and branch torn down", tornDown);
+        sawTeardown = true;
+        await writeAndCommit(
+          cwd,
+          "src/still-running.ts",
+          "ok\n",
+          "build: STILL-RUNNING",
+        );
+      },
+    });
+
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    }).tick();
+
+    // The claim, and the non-vacuity under it: the sibling observed the
+    // teardown from inside its own invocation, and the commit it wrote after
+    // the wait shipped — so it really was still running, not a slot that had
+    // already settled.
+    expect(sawTeardown).toBe(true);
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
+      "SETTLES",
+      "STILL-RUNNING",
+    ]);
+    // And the settled slot's own claim went with its teardown.
+    expect(existsSync(await claimPathFor("SETTLES"))).toBe(false);
   });
 });
 

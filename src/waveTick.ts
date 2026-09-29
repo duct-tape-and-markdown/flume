@@ -2,8 +2,8 @@
  * The wave leg of a tick: what a `fanout` phase does between `tick()`'s chain
  * load and its verdict — the slots it opens off the queue, the worktree each
  * provisions for the entry it pulled, the per-entry attempts they run in
- * parallel, the teardown that follows them, and the handoff facts it folds out
- * of all three.
+ * parallel, the teardown each slot takes as its own attempt ends, and the
+ * handoff facts it folds out of all three.
  *
  * The wave is slot-driven, not batch-driven: it opens `maxParallel` slots on
  * the queue's pickable head, and each slot whose span has merged re-reads the
@@ -189,15 +189,18 @@ export async function runFanout(
     );
   }
 
-  // Every worktree this wave created, and the entry each was created for —
-  // index-aligned, because the teardown walk below reads them as one list.
-  // Both grow as freed slots refill, so neither is the batch: they are what
-  // the wave provisioned by the time it put the work down.
-  const worktrees: Array<{ path: string; branch: string }> = [];
+  // Every entry this wave provisioned a worktree for. It grows as freed slots
+  // refill, so it is not the batch: it is what the wave provisioned by the
+  // time it put the work down. The worktree itself is the slot's own — each
+  // slot takes down what it created as its own attempt ends (`settleSlot`
+  // below), so nothing here is a list a wave-end walk reads back.
   const provisioned: PendingEntry[] = [];
-  // spec/pending.md "Claims — an entry in flight is left alone": every claim
-  // this wave staked, dropped together once its attempts have ended (below).
-  const staked: StakedPidClaim[] = [];
+  // What those teardowns came to, folded once for the wave: how many worktrees
+  // came down, and the paths that survived even the fallback removal. Reported
+  // once below rather than once per worktree — a locked node_modules on one
+  // entry shouldn't produce N identical log lines.
+  let cleaned = 0;
+  const survivingPaths: string[] = [];
   // And every entry this wave selected and then lost the stake race for,
   // reported on the result and the verdict below: the entry reaches no agent
   // and moves no tag list, so without this record the only trace of it is the
@@ -259,7 +262,9 @@ export async function runFanout(
   // `git worktree add`/`remove` mutate the shared `.git/worktrees/` metadata
   // dir and git is not concurrency-safe there: one slot's create can fail a
   // sibling's mid-validation. So creation is serialized for the wave's whole
-  // life, refills included, mirroring the pre-wave `pruneWorktrees` above.
+  // life, refills included, mirroring the pre-wave `pruneWorktrees` above —
+  // and a settling slot's teardown joins the same queue, because `remove`
+  // mutates the metadata a sibling's `add` is validating.
   // Its own queue rather than `mergeTail`'s, because the expensive half of
   // provisioning — the chain's `setupWorktree` install — must not hold a
   // finished sibling's span off trunk, and the agent fanout past it stays
@@ -339,13 +344,15 @@ export async function runFanout(
   const perEntry: EntryAttempt[] = [];
 
   /**
-   * One slot's whole life: the claim it stakes, the worktree it provisions
-   * alone, the chain's setup hook for that worktree, the agent, and the merge
-   * its span joins. One spelling for the wave's initial fill and for every
-   * refill a freed slot makes — the two differ in the ref the worktree is cut
-   * from and in nothing else.
+   * The carried half of one slot: the worktree it provisions alone, the
+   * chain's setup hook for that worktree, the agent, and the merge its span
+   * joins. Answers with the worktree it provisioned — what {@link settleSlot}
+   * then takes down — or `undefined` when provisioning never reached one.
+   *
+   * A throw leaves past the settling below, which is what keeps a walled
+   * wave's worktree and claim standing for the operator to clear.
    */
-  const runSlot = async (
+  const carrySlot = async (
     entry: PendingEntry,
     baseRef: () => Promise<string>,
     offered: {
@@ -353,35 +360,19 @@ export async function runFanout(
       claimed: readonly string[];
       priorAttempts: ReadonlyMap<string, PriorAttempt>;
     },
-  ): Promise<void> => {
-    // Staked *before* the worktree exists, which is the whole point of the
-    // ordering: from here until this wave lets go, the entry is this tick's
-    // and a producer that would have re-scoped it is told so. A `held`
-    // answer is a sibling that staked between this wave's selection read and
-    // now — it carries the entry, this wave does not.
-    const claim = await leg.claims.stake(entry.tag);
-    if (claim.kind === "held") {
-      stakeLosses.push({ tag: entry.tag, by: claim.by });
-      leg.log.warn(
-        `[flume] ${phase.name}: ${entry.tag} was claimed by pid ${claim.by.pid} after this wave selected it; entry stays pending`,
-      );
-      return;
-    }
-    staked.push(claim.claim);
-
+  ): Promise<{ path: string; branch: string } | undefined> => {
     // A provisioning failure (base read, create, or the chain's hook) is
     // isolated to the entry whose slot hit it — a held/EBUSY worktree dir on
     // one entry must not crash the whole wave when its siblings are perfectly
     // pickable (the ship-detection-declared-files-diff incident: 12/16 ticks
     // burned on one held slug while 6/7 other entries sat pickable). The
-    // failed entry stays pending, its slot frees like any other, and
-    // `provisioned`/`worktrees` stay index-aligned for everything downstream.
+    // failed entry stays pending, its slot frees like any other, and the
+    // worktree this answers with is the one the slot's own tail takes down.
     let wt: { path: string; branch: string } | undefined;
     const create = provisionTail.then(async () => {
       try {
         const from = await baseRef();
         wt = await createWorktree(entry.tag, from, leg.worktreeCtx);
-        worktrees.push(wt);
         provisioned.push(entry);
       } catch (err) {
         const message = (err as Error).message;
@@ -394,7 +385,7 @@ export async function runFanout(
     });
     provisionTail = create;
     await create;
-    if (wt === undefined) return;
+    if (wt === undefined) return undefined;
 
     // Optional per-phase setup (e.g. materialize node_modules / .env so gates
     // run). The return value MAY contribute extraEnv that this leg layers
@@ -421,7 +412,7 @@ export async function runFanout(
         leg.log.warn(
           `[flume] ${phase.name}: setupWorktree hook failed for ${entry.tag} (${signature}); entry stays pending, continuing with the remaining batch`,
         );
-        return;
+        return wt;
       }
     }
 
@@ -457,20 +448,118 @@ export async function runFanout(
       mergeError ??= err;
     });
     await mergeTail;
+    return wt;
+  };
+
+  /**
+   * Whether this wave leaves by throwing: a merge that walled, or a slot's own
+   * leg that did. Each is held rather than propagated where it happened, so
+   * the siblings still running settle first — and both are read twice, by the
+   * freed slot that then pulls nothing more ({@link wavePulls}) and by the
+   * settling slot that then leaves its worktree and claim standing
+   * ({@link settleSlot}).
+   */
+  const waveThrows = (): boolean =>
+    mergeError !== undefined || slotError !== undefined;
+
+  /**
+   * The tail of a slot whose own attempt has ended: the teardown of the
+   * worktree and branch it provisioned, then the release of the claim it
+   * staked (`spec/pending.md`, *Claims — an entry in flight is left alone*).
+   * Both belong to the slot rather than to the wave, so an entry whose attempt
+   * parked is unclaimed while its siblings still run, and the records that
+   * claim covers are reachable to the next producer that drains them — not at
+   * the end of a wave still refilling hours later.
+   *
+   * One tail for every way an attempt ends short of a throw — a provisioning
+   * failure with no worktree to take down, a hook that declined, a park, a
+   * ship — so the wave has one release site per slot and no exit that leaves
+   * an entry claimed by a tick that has stopped carrying it. A slot that died
+   * with the process leaves a file naming a pid that is gone, and the next
+   * selection reclaims it by the same liveness probe every engine lock uses
+   * (`spec/loop.md`, *Crash equals stop*).
+   *
+   * Teardown rides `provisionTail` for the reason creation does — `remove`
+   * mutates the metadata a sibling's `add` is validating — and fires before
+   * the release, so the claim outlives every trace of the attempt it covered.
+   * The chain's `teardownWorktree` hook and the friction harvest run inside it
+   * while the worktree path still exists (`teardownWorktreeInstance`,
+   * `src/worktrees.ts`).
+   *
+   * A wave that has hit a wall takes neither half: the throw waiting below is
+   * the operator's to clear, and the worktrees and claim files it leaves
+   * standing are the accepted cost of refusing rather than proceeding — the
+   * next `pruneWorktrees` and the next selection's liveness probe reclaim
+   * them, and the reclaim needs no repair. A slot that threw never reaches
+   * here at all, which is the same verdict by the same reasoning.
+   */
+  const settleSlot = async (
+    entry: PendingEntry,
+    claim: StakedPidClaim,
+    wt: { path: string; branch: string } | undefined,
+  ): Promise<void> => {
+    if (waveThrows()) return;
+    if (wt !== undefined) {
+      const drop = provisionTail.then(() =>
+        teardownWorktreeInstance(phase, chain, wt, entry.tag, leg.worktreeCtx),
+      );
+      // The queue moves on whatever the teardown answered: a throw out of it
+      // is this slot's to carry like any other, never a sibling's create
+      // rejecting behind it.
+      provisionTail = drop.then(
+        () => {},
+        () => {},
+      );
+      if (await drop) cleaned++;
+      else survivingPaths.push(wt.path);
+    }
+    claim.release();
+  };
+
+  /**
+   * One slot's whole life: the claim it stakes, the attempt it carries under
+   * that claim ({@link carrySlot}), and the teardown and release its own
+   * ending takes ({@link settleSlot}). One spelling for the wave's initial
+   * fill and for every refill a freed slot makes — the two differ in the ref
+   * the worktree is cut from and in nothing else.
+   */
+  const runSlot = async (
+    entry: PendingEntry,
+    baseRef: () => Promise<string>,
+    offered: {
+      pickable: readonly PendingEntry[];
+      claimed: readonly string[];
+      priorAttempts: ReadonlyMap<string, PriorAttempt>;
+    },
+  ): Promise<void> => {
+    // Staked *before* the worktree exists, which is the whole point of the
+    // ordering: from here until this wave lets go, the entry is this tick's
+    // and a producer that would have re-scoped it is told so. A `held`
+    // answer is a sibling that staked between this wave's selection read and
+    // now — it carries the entry, this wave does not.
+    const claim = await leg.claims.stake(entry.tag);
+    if (claim.kind === "held") {
+      stakeLosses.push({ tag: entry.tag, by: claim.by });
+      leg.log.warn(
+        `[flume] ${phase.name}: ${entry.tag} was claimed by pid ${claim.by.pid} after this wave selected it; entry stays pending`,
+      );
+      return;
+    }
+    const wt = await carrySlot(entry, baseRef, offered);
+    await settleSlot(entry, claim.claim, wt);
   };
 
   /**
    * Whether this wave still pulls. The teardown signal and the operator's
-   * stop flag say the run is ending; the two error holders and a refill read
-   * that did not resolve say the wave has hit a wall. Either way the entries
-   * in flight settle and the wave leaves with them.
+   * stop flag say the run is ending; a refill read that did not resolve and
+   * the two holders {@link waveThrows} reads say the wave has hit a wall.
+   * Either way the entries in flight settle and the wave leaves with them.
    */
   const wavePulls = (): boolean =>
     !leg.attemptCtx.stopSignal?.aborted &&
     !stopFlagSeen &&
     refillParseFailure === undefined &&
-    mergeError === undefined &&
-    slotError === undefined;
+    !waveThrows();
 
   /**
    * What a freed slot pulls against, read at the moment it frees: the queue
@@ -601,11 +690,13 @@ export async function runFanout(
   // verdict the error carries names the whole wave — the spans already landed
   // on trunk, and the decline or render refusal a sibling settled after the
   // refusal (`waveMergeError`, `src/waveMerge.ts`). From here it propagates
-  // past the worktree cleanup below, straight to `tick()`'s catch. Surviving
-  // worktrees are the accepted cost of refusing rather than proceeding; the
-  // next `pruneWorktrees` call reclaims their metadata once a human has
-  // cleared the refusal, and the claims below stay staked for the same
-  // reason — the reclaim needs no repair.
+  // straight to `tick()`'s catch, over the worktree and the claim of every
+  // slot that settled behind the refusal — `settleSlot` above takes neither
+  // half once this holder is set. Surviving worktrees are the accepted cost
+  // of refusing rather than proceeding; the next `pruneWorktrees` call
+  // reclaims their metadata once a human has cleared the refusal, and those
+  // claim files stay staked for the same reason — the reclaim needs no
+  // repair.
   if (mergeError !== undefined) throw await waveMergeError(merge, mergeError);
 
   // Close the stage: the fold over what the picks observed. Each of them
@@ -613,55 +704,19 @@ export async function runFanout(
   // nothing here touches trunk.
   const mergeStage = closeWaveMerge(merge);
 
-  // Cleanup worktrees. Best-effort teardown fires before git.removeWorktree
-  // so chain-provisioned ephemera (per-worktree DB, scratch lease, etc.)
-  // releases while the worktree path still exists. Teardown failures are
-  // logged but do not block worktree removal — leaks are recoverable, a
-  // stuck worktree is not. Friction harvest runs in the same
-  // best-effort slot, immediately before removal — the last point the
-  // worktree-local mirror is still readable.
-  let cleaned = 0;
-  // A worktree whose directory survives even the fallback removal is
-  // reported once for the whole wave, not once per worktree — a locked
-  // node_modules on one entry shouldn't produce N identical log lines.
-  const survivingPaths: string[] = [];
-  // Serialize teardown for the same reason as setup: N concurrent
-  // `git worktree remove --force` calls race the shared `.git/worktrees/`
-  // dir. The chain's `teardownWorktree` hook and branch deletion ride the
-  // same serial loop — teardown is off the critical path, so a simple
-  // sequential walk beats interleaving the git-mutating step out alone.
-  for (let i = 0; i < worktrees.length; i++) {
-    const wt = worktrees[i]!;
-    const tag = provisioned[i]!.tag;
-    const ok = await teardownWorktreeInstance(
-      phase,
-      chain,
-      wt,
-      tag,
-      leg.worktreeCtx,
-    );
-    if (ok) cleaned++;
-    else survivingPaths.push(wt.path);
-  }
+  // What the slots' own teardowns came to (`settleSlot` above), reported once
+  // for the wave rather than once per worktree. The denominator is what came
+  // down, not what was provisioned: a wave that hit a wall leaves its
+  // worktrees standing for the operator, and the two part exactly there.
+  const tornDown = cleaned + survivingPaths.length;
   leg.log.info(
-    `[flume] ${phase.name}: cleaned ${cleaned}/${worktrees.length} worktree(s)`,
+    `[flume] ${phase.name}: cleaned ${cleaned}/${tornDown} worktree(s)`,
   );
   if (survivingPaths.length > 0) {
     leg.log.warn(
       `[flume] ${phase.name}: ${survivingPaths.length} worktree(s) survived removal (fallback exhausted): ${survivingPaths.join(", ")}`,
     );
   }
-  // spec/pending.md "Claims — an entry in flight is left alone": every claim
-  // this wave staked goes here — with the ship for an entry that shipped,
-  // with the teardown above for one that did not, and at the same point for
-  // an entry whose provisioning never reached a worktree. One site, so no way
-  // out of the wave leaves an entry claimed by a tick that has stopped
-  // carrying it; a death anywhere above leaves files naming a pid that is
-  // gone, and the next selection reclaims them by its liveness probe
-  // (spec/loop.md, *Crash equals stop*). A `WaveCarriedThrow` thrown past
-  // this line leaves them standing for the same reason it leaves worktrees:
-  // the wall is the operator's to clear, and the reclaim needs no repair.
-  for (const claim of staked) claim.release();
 
   leg.log.info(
     `[flume] ${phase.name}: wave done in ${Date.now() - waveStart}ms`,
