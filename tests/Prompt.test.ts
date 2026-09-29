@@ -20,7 +20,12 @@ import type { PendingEntry } from "../src/PendingSchema.ts";
 import { entryWriteScope } from "../src/paths.ts";
 import { NO_COMMIT_MODES, PRIOR_ATTEMPT_MODES } from "../src/index.ts";
 import type { NoCommitMode } from "../src/index.ts";
-import { renderPrompt, InlineExecRenderError } from "../src/Prompt.ts";
+import {
+  renderPrompt,
+  InlineExecRenderError,
+  MissingPlaceholderRenderError,
+  RenderRefusal,
+} from "../src/Prompt.ts";
 import type {
   GateRevertAttempt,
   CleanExitAttempt,
@@ -539,6 +544,28 @@ describe("renderPrompt — an unresolved {{KEY}} refuses the render", () => {
         args: { HERE: "resolved-value" },
       }),
     ).rejects.toThrow("prompt references missing args: GONE");
+  }, SPAWN_BUDGET_MS);
+
+  it("the refusal is the render's own class, naming every missing key and the wall it signs", async () => {
+    let caught: unknown;
+    await render("a={{BETA}} b={{ALPHA}} c={{BETA}}\n").catch((err: unknown) => {
+      caught = err;
+    });
+
+    // The type first: the tick classifies `render-refused` on `RenderRefusal`
+    // (`src/tickAttempt.ts`), so a plain `Error` here would leave `runAttempt`
+    // whole and tear the wave down instead of ending one slot.
+    expect(caught).toBeInstanceOf(MissingPlaceholderRenderError);
+    expect(caught).toBeInstanceOf(RenderRefusal);
+    expect(caught).not.toBeInstanceOf(InlineExecRenderError);
+
+    const err = caught as MissingPlaceholderRenderError;
+    // Every key, deduped and sorted — not the first one found.
+    expect(err.missing).toEqual(["ALPHA", "BETA"]);
+    // The wall the repeated-failure backstop keys on: the keys, never the
+    // prompt text around them.
+    expect(err.signature).toBe("missing args: ALPHA, BETA");
+    expect(err.name).toBe("MissingPlaceholderRenderError");
   }, SPAWN_BUDGET_MS);
 });
 

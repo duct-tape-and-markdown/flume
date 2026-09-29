@@ -498,6 +498,55 @@ export async function renderPrompt(opts: RenderOptions): Promise<string> {
 
 // ---------- transformations ----------
 
+/**
+ * The render's own refusal: a stage of {@link renderPrompt} that could not
+ * resolve what the prompt asked for, thrown before the agent is invoked. The
+ * tick's name for the whole class is `render-refused` ({@link NO_COMMIT_MODES})
+ * — a render that does not resolve is one outcome whatever refused it, so the
+ * attempt ends its own slot with a persisted record while its siblings carry
+ * on, and it never tears the tick down (spec/prompt.md, *The render
+ * pipeline*). The base exists so the catch that classifies it names a class
+ * rather than a roster of stages: a stage that gains a refusal extends this
+ * and is classified without the catch being touched.
+ *
+ * {@link RenderRefusal.signature} is the wall this refusal keys on — the
+ * stable identity of what would not resolve, never what it printed, so the
+ * same wall hit twice counts twice for the repeated-failure backstop
+ * (spec/loop.md, *Repeated identical failures — quarantine, then abort*).
+ * That backstop is also what a config defect answers to: a template no arg
+ * can fill refuses identically for every entry, which is a repeated failure
+ * rather than a class of its own. `message` carries the full picture, for a
+ * caller that only logs it.
+ */
+export abstract class RenderRefusal extends Error {
+  abstract readonly signature: string;
+}
+
+/**
+ * Thrown by stage 1 when the prompt names a `{{KEY}}` the merged `promptArgs`
+ * map — the phase's, plus the reserved `FLUME_DIR` — has no entry for. The
+ * render aborts before any span is evaluated and the agent is never invoked,
+ * so no prompt is ever sent carrying an unsubstituted placeholder and no
+ * substituted marker stands in for a value that never came
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * `missing` names every such key, sorted — the whole set in one refusal
+ * rather than the first found, so a chain fixes its args once.
+ */
+export class MissingPlaceholderRenderError extends RenderRefusal {
+  readonly missing: readonly string[];
+  readonly signature: string;
+
+  constructor(missing: readonly string[]) {
+    super(`prompt references missing args: ${missing.join(", ")}`);
+    this.name = "MissingPlaceholderRenderError";
+    this.missing = missing;
+    // The keys that would not resolve, never the prompt text around them: two
+    // templates missing the same key are one wall.
+    this.signature = `missing args: ${missing.join(", ")}`;
+  }
+}
+
 function substitutePlaceholders(
   raw: string,
   args: Record<string, string>,
@@ -507,9 +556,7 @@ function substitutePlaceholders(
     if (!(key! in args)) missing.add(key!);
   }
   if (missing.size > 0) {
-    throw new Error(
-      `prompt references missing args: ${[...missing].sort().join(", ")}`,
-    );
+    throw new MissingPlaceholderRenderError([...missing].sort());
   }
   return raw.replace(PLACEHOLDER_RE, (_, key: string) => args[key]!);
 }
@@ -555,10 +602,13 @@ export interface InlineExecFailure {
  * overrun): the render aborts and the agent is never invoked. `message` names
  * every failing span's command text and stderr, so a caller that just logs
  * `.message` (rather than reading `.failures`) still surfaces the full
- * picture.
+ * picture. The sibling refusal stage 1 raises is
+ * {@link MissingPlaceholderRenderError}; both are {@link RenderRefusal}, which
+ * is the class the tick classifies on.
  */
-export class InlineExecRenderError extends Error {
+export class InlineExecRenderError extends RenderRefusal {
   readonly failures: InlineExecFailure[];
+  readonly signature: string;
 
   constructor(failures: InlineExecFailure[]) {
     super(
@@ -569,6 +619,10 @@ export class InlineExecRenderError extends Error {
     );
     this.name = "InlineExecRenderError";
     this.failures = failures;
+    // The commands that would not resolve, never what they printed: the same
+    // span failing twice with two different stderrs is one wall, and the
+    // stderr is on `message` either way.
+    this.signature = failures.map((f) => f.cmd).join("; ");
   }
 }
 

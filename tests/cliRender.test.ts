@@ -327,6 +327,32 @@ it("flume render exits EX_DATAERR naming an unresolved span", async () => {
   }
 }, SPAWN_BUDGET_MS);
 
+it("flume render exits EX_DATAERR naming a placeholder no arg filled", async () => {
+  const repo = await makeRenderRepo(
+    [entry("ONLY", "src/only.ts")],
+    "before\n{{UNFILLABLE_PROBE}}\nafter\n",
+  );
+  try {
+    const r = await runCliStreams(repo.dir, [
+      "render",
+      "build",
+      "--entry",
+      "ONLY",
+    ]);
+    // The same code the unresolved span above exits with: the engine gives
+    // both stages one name (`RenderRefusal`, `src/Prompt.ts`), so the verb
+    // spends one exit code on the class rather than dropping this stage into
+    // the mount-dead arm, which means the chain would not come up at all.
+    expect(r.code).toBe(EX_DATAERR);
+    expect(r.stderr).toContain("UNFILLABLE_PROBE");
+    // Total, exactly as the span refusal is — nothing on the prompt's own
+    // channel, read on stdout alone for the reason that case states.
+    expect(r.stdout).toBe("");
+  } finally {
+    await repo.cleanup();
+  }
+}, SPAWN_BUDGET_MS);
+
 it("flume --help names render on the subcommand surface", async () => {
   const dir = await mkFixtureRoot("flume-render-help-");
   try {

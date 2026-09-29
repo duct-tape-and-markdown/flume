@@ -16345,6 +16345,128 @@ describe("Dispatcher fanout — render-refused: an unresolved inline-exec span a
 });
 
 /**
+ * THE-PLACEHOLDER-REFUSAL-IS-A-RENDER-REFUSAL — the other stage that can
+ * refuse. A `{{KEY}}` no arg fills used to throw a plain `Error`, which
+ * `runAttempt`'s catch did not classify: it left the leg whole and tore the
+ * whole wave down, where an unresolved span had always been one entry's
+ * `render-refused` (spec/prompt.md, *The render pipeline*).
+ */
+it("a prompt referencing a missing arg ends the tick as render-refused with a persisted prior-attempt record", async () => {
+  await writePending(fx.repo, [makeEntry("MISSING-ARG", ["src/a.ts"])]);
+  new Baton(join(fx.repo, ".flume")).wake("build");
+  await writeFile(join(fx.configDir, "prompt.md"), "task: {{TASK}}\n", "utf8");
+
+  // No `promptArgs` at all, so the merged map is `FLUME_DIR` alone and
+  // `{{TASK}}` has nothing to resolve against.
+  const phase = makePhase({
+    name: "build",
+    concurrency: "fanout",
+    writablePaths: ["src/**"],
+  });
+
+  let invoked = false;
+  const dispatcher = new Dispatcher({
+    chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+    repoRoot: fx.repo,
+    configDir: fx.configDir,
+    agent: fanoutAgent({
+      "missing-arg": async () => {
+        invoked = true;
+      },
+    }),
+    log: silent,
+  });
+
+  const outcome = await dispatcher.tick();
+
+  // The tick settled rather than throwing, and settled as the refusal — the
+  // whole claim, since the pre-fix tree reached neither.
+  expect(outcome.failed).toBeFalsy();
+  expect(invoked).toBe(false);
+  expect(outcome.noCommit).toBe("render-refused");
+  expect(outcome.verdict?.noCommit).toBe("render-refused");
+
+  // Named on the verdict under the tag that refused, keyed on the missing
+  // keys rather than on the prompt text around them.
+  expect(outcome.verdict?.renderFailures?.map((f) => f.tag)).toEqual([
+    "MISSING-ARG",
+  ]);
+  expect(outcome.verdict?.renderFailures?.[0]?.signature).toBe(
+    "missing args: TASK",
+  );
+
+  // And persisted, so the retry is handed the wall rather than running blind.
+  const record = JSON.parse(
+    await readFile(
+      priorAttemptPath(join(fx.repo, ".flume"), entryRef("MISSING-ARG")),
+      "utf8",
+    ),
+  ) as { mode: string; failures: string };
+  expect(record.mode).toBe("render-refused");
+  expect(record.failures).toContain("prompt references missing args: TASK");
+
+  // Nothing reached the cherry-pick: the entry stays pending for the tick
+  // that fixes the args.
+  expect(readPendingFromDisk(fx.repo)).toHaveLength(1);
+});
+
+it("a missing arg in one fanout slot leaves its sibling slots running", async () => {
+  await writePending(fx.repo, [
+    makeEntry("SHIP-A", ["src/a.ts"]),
+    makeEntry("MISS-B", ["src/b.ts"]),
+  ]);
+  new Baton(join(fx.repo, ".flume")).wake("build");
+  await writeFile(join(fx.configDir, "prompt.md"), "task: {{TASK}}\n", "utf8");
+
+  const phase = makePhase({
+    name: "build",
+    concurrency: "fanout",
+    writablePaths: ["src/**"],
+    promptArgs: (ctx: TickContext) =>
+      ctx.assignedEntry?.tag === "MISS-B" ? {} : { TASK: "ship it" },
+  });
+
+  const dispatcher = new Dispatcher({
+    chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+    repoRoot: fx.repo,
+    configDir: fx.configDir,
+    agent: fanoutAgent({
+      "ship-a": (cwd) =>
+        writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(SHIP-A): ship"),
+    }),
+    log: silent,
+    maxParallel: 2,
+  });
+
+  let thrown: unknown;
+  const outcome = await dispatcher.tick().catch((err: unknown) => {
+    thrown = err;
+    return undefined;
+  });
+
+  // Vacuity pin for the arm under test: the wave really did open both slots,
+  // so "its sibling carried on" stands over a refusal that happened beside a
+  // live sibling rather than over a one-entry wave.
+  expect(outcome?.verdict?.tags?.sort()).toEqual(["MISS-B", "SHIP-A"]);
+  expect(outcome?.verdict?.renderFailures?.map((f) => f.tag)).toEqual([
+    "MISS-B",
+  ]);
+
+  // The sibling shipped: the tick was never torn down, and A's span reached
+  // trunk while B's render refused beside it.
+  expect(thrown).toBeUndefined();
+  expect(outcome?.verdict?.shippedTags).toEqual(["SHIP-A"]);
+  expect(existsSync(join(fx.repo, "src", "a.ts"))).toBe(true);
+  expect(existsSync(join(fx.repo, "src", "b.ts"))).toBe(false);
+
+  // …and B stays pending under its own per-entry mode, not the wave's wall.
+  expect(
+    outcome?.result?.entries?.find((e) => e.tag === "MISS-B")?.noCommit,
+  ).toBe("render-refused");
+  expect(readPendingFromDisk(fx.repo).map((e) => e.tag)).toEqual(["MISS-B"]);
+});
+
+/**
  * THE-VERDICT-NAMES-A-RENDER-REFUSAL-PER-ENTRY — a refusal reaches no gate
  * loop and no cherry-pick, so the only trace of one used to be the tick-level
  * `noCommit` a shipping sibling erases: nothing on the verdict said which
@@ -23415,14 +23537,16 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
 /**
  * A two-entry wave where one slot's own leg throws outside any ledger read.
  *
- * The arming is the render: `substitutePlaceholders` (`src/Prompt.ts`) throws
- * a plain `Error` for a `{{KEY}}` the phase's `promptArgs` did not supply, and
- * that throw is not the `InlineExecRenderError` `runAttempt` catches — it
- * leaves `runFanoutEntry` whole and lands in the wave's `slotError`. Which is
- * the shape the field hit: an agent that explodes, a hook that throws, a
- * render that does not resolve. SHIP-A's args are complete, so its span
- * cherry-picks, gates and lands on trunk while BOOM-B's leg is tearing the
- * wave down beside it.
+ * The arming is the tip read `runAttempt` makes once its agent returns:
+ * BOOM-B's agent wrecks the tree under its own feet, so `git.revParse` on
+ * that worktree refuses and the throw is no refusal the attempt classifies —
+ * it leaves `runFanoutEntry` whole and lands in the wave's `slotError`.
+ * Structural denial rather than a permission bit, which denies on every host
+ * (`.claude/rules/platform-facts.md`, *`chmod` denies nothing on win32*).
+ * Which is the shape the field hit: an agent that explodes, a hook that
+ * throws, a read of the tree that will not resolve. SHIP-A's slot is
+ * untouched, so its span cherry-picks, gates and lands on trunk while
+ * BOOM-B's leg is tearing the wave down beside it.
  *
  * Returns the tick settled either way — outcome or throw — because whether it
  * throws at all is one of the properties under test.
@@ -23442,8 +23566,7 @@ async function waveTornDownByASlotLeg(): Promise<{
     name: "build",
     concurrency: "fanout",
     writablePaths: ["src/**"],
-    promptArgs: (ctx: TickContext) =>
-      ctx.assignedEntry?.tag === "BOOM-B" ? {} : { TASK: "ship it" },
+    promptArgs: () => ({ TASK: "ship it" }),
   });
 
   const dispatcher = new Dispatcher({
@@ -23453,6 +23576,11 @@ async function waveTornDownByASlotLeg(): Promise<{
     agent: fanoutAgent({
       "ship-a": (cwd) =>
         writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(SHIP-A): ship"),
+      // The `.git` file a linked worktree is addressed through, pointed at a
+      // gitdir that is not there: every later git call in this leg refuses,
+      // starting with the tip read that follows the agent.
+      "boom-b": (cwd) =>
+        writeFile(join(cwd, ".git"), "gitdir: /flume-no-such-gitdir\n", "utf8"),
     }),
     log: silent,
     maxParallel: 2,
@@ -23474,7 +23602,7 @@ it("a wave whose slot leg throws outside a ledger read still writes the settled 
   // the assertions below would hold over the `WaveLedgerRefusal` arm the
   // suites above already cover.
   expect(outcome?.failed).toBe(true);
-  expect(outcome?.summary).toMatch(/prompt references missing args: TASK/);
+  expect(outcome?.summary).toMatch(/fatal: not a git repository/);
   expect(outcome?.ledgerRefusal).toBeUndefined();
 
   // The claim, in three parts. `tick()` returns rather than re-throwing…

@@ -162,6 +162,10 @@ export {
   // The value rides `FlumeApi.InlineExecRenderError`; only the shape of its
   // `.failures` is named here, for a chain that reads one span's cmd/stderr.
   type InlineExecFailure,
+  // The base every render-stage refusal extends, and so the type that stands
+  // in `InlineExecRenderError`'s own declaration: named here because a
+  // heritage clause a consumer can reach must resolve to an exported name.
+  type RenderRefusal,
   type NoCommitMode,
   type PriorAttempt,
   // The base all six `PriorAttempt` variants extend: it stands in the hover

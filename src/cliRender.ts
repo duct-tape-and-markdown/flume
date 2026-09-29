@@ -18,7 +18,7 @@ import {
   type RenderResolution,
 } from "./Dispatcher.js";
 import { EX_DATAERR, EX_MOUNT_DEAD } from "./exitCodes.js";
-import { InlineExecRenderError } from "./Prompt.js";
+import { RenderRefusal } from "./Prompt.js";
 
 export async function renderVerb(run: CliVerbRun): Promise<number> {
   const { rest, dispatcher } = run;
@@ -51,16 +51,14 @@ export async function renderVerb(run: CliVerbRun): Promise<number> {
       console.error(`[flume] render refuses: ${err.message}`);
       return 2;
     }
-    // The two shapes of "the prompt never resolved" — an unresolved
-    // inline-exec span (which names every failing span itself) and a
-    // `promptArgs` throw. One exit code because the engine gives them one
-    // name: `render-refused` (`NO_COMMIT_MODES`, src/Prompt.ts). This is
-    // the refusal a tick would have bought with an invocation, so it is the
-    // same EX_DATAERR `check` spends nothing to reach.
-    if (
-      err instanceof InlineExecRenderError ||
-      err instanceof RenderUnresolvedError
-    ) {
+    // The shapes of "the prompt never resolved" — every stage refusal the
+    // render itself raises (`RenderRefusal`, src/Prompt.ts: an unresolved
+    // inline-exec span, a `{{KEY}}` no arg filled), and a `promptArgs` throw.
+    // One exit code because the engine gives them one name: `render-refused`
+    // (`NO_COMMIT_MODES`, src/Prompt.ts). This is the refusal a tick would
+    // have bought with an invocation, so it is the same EX_DATAERR `check`
+    // spends nothing to reach.
+    if (err instanceof RenderRefusal || err instanceof RenderUnresolvedError) {
       console.error(`[flume] render refuses: ${err.message}`);
       return EX_DATAERR;
     }

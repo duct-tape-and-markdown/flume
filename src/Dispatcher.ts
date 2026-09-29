@@ -381,7 +381,8 @@ export interface TickOutcome {
    *                       (rate-limit, auth, timeout, dispatcher-killed) —
    *                       NOT a defect in the work,
    *  - `render-refused`   the prompt itself never resolved (an inline-exec
-   *                       span failed) — the agent was never invoked at all.
+   *                       span failed, or a `{{KEY}}` no arg filled) — the
+   *                       agent was never invoked at all.
    * Absent when the tick shipped a usable commit, hibernated, `failed`
    * (chain resolution threw), or ran no agent because nothing was pickable
    * (as opposed to `render-refused`, where an agent invocation was
@@ -536,9 +537,11 @@ export class RenderUsageError extends Error {
  * A render that reached the prompt and could not resolve it: a `promptArgs`
  * hook that threw. The tick's own name for this class is `render-refused`
  * (`NO_COMMIT_MODES`, `src/Prompt.ts`) — the agent is never invoked either
- * way; here there is simply no invocation to skip. An unresolved inline-exec
- * span is the same class and keeps its own richer type,
- * `InlineExecRenderError` (`src/Prompt.ts`), which names every failing span.
+ * way; here there is simply no invocation to skip. A stage of the render
+ * itself refusing is the same class and keeps its own richer types under
+ * `RenderRefusal` (`src/Prompt.ts`) — `InlineExecRenderError`, naming every
+ * failing span, and `MissingPlaceholderRenderError`, naming every key no arg
+ * filled.
  */
 export class RenderUnresolvedError extends Error {
   constructor(message: string) {

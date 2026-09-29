@@ -49,7 +49,7 @@ import {
   PriorAttemptStore,
   type PriorAttemptRef,
 } from "./priorAttempts.js";
-import { renderPrompt, InlineExecRenderError } from "./Prompt.js";
+import { renderPrompt, RenderRefusal } from "./Prompt.js";
 import type { NoCommitMode } from "./Prompt.js";
 import {
   gateFailureSignature,
@@ -285,10 +285,13 @@ export async function runAttempt(
       ...(prior ? { priorAttempt: prior } : {}),
     });
   } catch (err) {
-    if (!(err instanceof InlineExecRenderError)) throw err;
-    // An unresolved inline-exec span aborts the render — the agent is
-    // never invoked. Distinct from clean-exit/platform-preempt: no agent
-    // ran at all.
+    if (!(err instanceof RenderRefusal)) throw err;
+    // A render stage that would not resolve aborts the render — an
+    // unresolved inline-exec span, or a `{{KEY}}` this phase's args never
+    // supplied. One class, classified here rather than rethrown past the
+    // dispatcher, so the refusal ends this slot and not the wave carrying
+    // it (spec/prompt.md, *The render pipeline*). Distinct from
+    // clean-exit/platform-preempt: the agent is never invoked at all.
     const renderFailure = await persistRenderRefused(
       ctx,
       ref,
@@ -902,21 +905,18 @@ async function persistRenderRefused(
   ref: PriorAttemptRef,
   label: string,
   entry: PendingEntry | undefined,
-  err: InlineExecRenderError,
+  err: RenderRefusal,
 ): Promise<RenderFailure> {
   await ctx.attempts.write(ref, buildRenderRefused(err.message));
   ctx.log.warn(
     `[flume] ${label}: render-refused (no commit): ${err.message}`,
   );
   return {
+    // The wall the refusal itself names, whichever stage raised it — read off
+    // the class rather than rebuilt per stage here (`RenderRefusal.signature`,
+    // `src/Prompt.ts`), so a stage that gains a refusal keys on its own facts.
     ...(entry ? blamedOn(entry) : {}),
-    // The commands that would not resolve, never what they printed: the same
-    // span failing twice with two different stderrs is one wall, and the
-    // stderr is on `message` either way.
-    signature: bound(
-      err.failures.map((f) => f.cmd).join("; "),
-      MAX_FAILURE_SIGNATURE,
-    ),
+    signature: bound(err.signature, MAX_FAILURE_SIGNATURE),
     message: err.message,
   };
 }
