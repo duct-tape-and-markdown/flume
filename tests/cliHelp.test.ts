@@ -22,6 +22,7 @@ import { EX_IOERR, EX_TERMINAL_MISCONFIG } from "../src/exitCodes.ts";
 import {
   SHARED_ROOT_ONLY_LEAD,
   SHARED_ROOT_PHRASES,
+  TICK_TIP_CLAIM_HELD_PHRASE,
   helpPageFor,
 } from "../src/cliHelp.ts";
 import {
@@ -635,6 +636,101 @@ describe("docs/CLI.md's flume tick causes against the labels their arms carry (C
     ).toBeGreaterThan(0);
   });
 });
+
+/**
+ * The arm the two per-arm reads above cannot see: `tickExitCode` classifies
+ * outcomes, and the tip-claim refusal is taken in `main` before an outcome
+ * exists — so no arm carries it, and both surfaces spent their `1` row on the
+ * claim being loop-level only, which is the opposite of what the verb does.
+ *
+ * Driven off a tick that really refused: one real `flume tick` over a
+ * repository whose tip is held by a live process, beside the same tick with
+ * no claim standing, so the phrase the page is read under is one the shipped
+ * `--help` row renders for a refusal the verb really takes
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ */
+it("docs/CLI.md's flume tick section states the live tip-claim refusal among its exit-1 causes", async () => {
+  const repo = await makeScratchRepo("flume-tick-tip-claim-", "main");
+  try {
+    await writeRepoConfig(repo.dir, minimalChainSrc());
+    const head = await currentRefPath(repo.dir);
+    if (head.kind !== "ref") {
+      throw new Error(`the fixture repository is not on a branch: ${head.kind}`);
+    }
+    const claimPath = tipClaimPath(await gitCommonDir(repo.dir), head.path);
+
+    // Non-vacuity: the same tick with no claim standing reaches its own
+    // hibernation, so the refusal below is the claim's and not a fixture
+    // refusing everything handed to it.
+    const clear = await runCli(repo.dir, ["tick"]);
+    expect(clear.code, clear.out).toBe(0);
+    expect(clear.out).toContain("hibernating");
+
+    // A live holder: this process, which is alive by definition, stating a
+    // state root of its own so the refusal has two roots to name. Composed by
+    // the real writer of that statement (`renderPidClaim`,
+    // `src/pidClaim.ts`) rather than hand-spelled — a hand copy would
+    // re-author the claim format by the tester's hand.
+    const holderRoot = join(repo.dir, "another-state-root");
+    await mkdir(dirname(claimPath), { recursive: true });
+    await writeFile(
+      claimPath,
+      renderPidClaim(process.pid, new Date(), holderRoot),
+      "utf8",
+    );
+
+    const refused = await runCli(repo.dir, ["tick"]);
+    expect(refused.code, refused.out).toBe(1);
+    // And it is *this* refusal: the last line the run wrote names the holder
+    // we planted, both roots, and the claim path — which is what tells it from
+    // a tick that failed somewhere else for 1.
+    const line = refused.out.trimEnd().split("\n").at(-1) ?? "";
+    expect(line).toContain(`claimed by pid ${process.pid}`);
+    expect(line).toContain(holderRoot);
+    expect(line).toContain(claimPath);
+
+    // The producer's side first: the phrase is a span of the clause the
+    // shipped `1` row really renders, so the page below is read against what
+    // an operator running `--help` sees rather than a label nothing states.
+    const page = helpPageFor("tick");
+    expect(page, "the help table answers no page for `tick`").toBeDefined();
+    const row = documentedExitCodeRows(page!).get(1);
+    expect(row, "the tick block lists no 1 row").toBeDefined();
+    expect(
+      asStated(row!),
+      "the tick block's 1 row does not state the phrase its cause is labelled with",
+    ).toContain(asStated(TICK_TIP_CLAIM_HELD_PHRASE));
+
+    const section = sectionOf(await readCliDoc(), "## `flume tick`");
+    expect(section.length).toBeGreaterThan(0);
+    const window = asStated(sentencesNamingExitCode(section, 1).join("\n"));
+    expect(window.length, "the section spends no sentence on 1").toBeGreaterThan(0);
+    expect(
+      window,
+      "the section's 1 sentences do not state the tip-claim refusal",
+    ).toContain(asStated(TICK_TIP_CLAIM_HELD_PHRASE));
+
+    // The window is scoped to this code rather than to the section: the page
+    // documents the whole range in one paragraph, so a reader handing back all
+    // of it would carry this phrase into every code's window and pass over a
+    // sentence that had gone silent.
+    const scoped = namedExitCodes(section)
+      .filter((code) => code !== 1)
+      .filter(
+        (code) =>
+          !asStated(sentencesNamingExitCode(section, code).join("\n")).includes(
+            asStated(TICK_TIP_CLAIM_HELD_PHRASE),
+          ),
+      );
+    expect(
+      scoped.length,
+      "the per-code read handed back the whole section",
+    ).toBeGreaterThan(0);
+  } finally {
+    await repo.cleanup();
+  }
+}, SPAWN_BUDGET_MS);
 
 /**
  * The window every per-code doc read above is cut from, pinned on the page

@@ -1180,10 +1180,9 @@ async function main(): Promise<number> {
     // tip claim itself, so it has no sibling child to strip.
     await clearTickVerdict(flumeDir, named);
     // Tick and loop both refuse before any tick when HEAD does not name a ref
-    // — the tick record's meaning is advancing a named tip, and the
-    // (loop-level) claim that guards it keys on a ref. A bare tick takes no
-    // claim itself but still refuses here so the behavior is identical whether
-    // or not a loop wraps it.
+    // — the tick record's meaning is advancing a named tip, and the claim
+    // taken just below keys on a ref, so there is nothing for a bare tick to
+    // claim here either.
     const tickHeadRef = await currentRefPath(repoRoot);
     if (tickHeadRef.kind !== "ref") {
       console.error(`[flume] tick refuses: ${describeRefFailure(tickHeadRef)}`);

@@ -103,6 +103,37 @@ export const SHARED_ROOT_ONLY_LEAD =
   "only ones.";
 
 /**
+ * `flume tick`'s own `1` cause that a second surface states in a register of
+ * its own: the advisory per-ref tip claim a bare tick takes around its single
+ * tick, and the refusal a live holder answers it with (`spec/loop.md`, *The
+ * loop lock and the tip claim*). Taken in `main` before a `TickOutcome`
+ * exists, so no arm of `tickExitCode` carries it and this block owns it.
+ *
+ * Labelled for the reason {@link SHARED_ROOT_CAUSES} is: `docs/CLI.md` spends
+ * one flowing sentence on the whole range and cannot carry this clause whole,
+ * so the phrase is what crosses ({@link ExitCauseLabel}).
+ */
+const TICK_TIP_CLAIM_HELD: ExitCauseLabel = {
+  opening: "Or ",
+  phrase:
+    "another live process holds the advisory tip claim for the ref HEAD names",
+  rest:
+    " — a bare tick acquires that claim around its single tick and releases " +
+    "it at exit, so two on one ref refuse rather than interleave, while a " +
+    "loop-spawned child runs under its supervisor's claim and takes none. " +
+    "The refusal names the holder's pid, the state root that holder took " +
+    "the tip for, the root this invocation resolved, and the claim path; no " +
+    "agent runs.",
+};
+
+/**
+ * The phrase that cause is labelled with — what every surface documenting
+ * `flume tick`'s `1` row states it under. Exported for the seam that reads
+ * `docs/CLI.md`'s copy against the clause this block renders.
+ */
+export const TICK_TIP_CLAIM_HELD_PHRASE = TICK_TIP_CLAIM_HELD.phrase;
+
+/**
  * The clause above, wrapped into a page's own exit-code block. `indent` is
  * that block's continuation column — a block aligns its rows to the widest
  * code it lists, so `check`'s sits one past everyone else's. The first line
@@ -193,8 +224,9 @@ function tickExitCodeBlock(): string {
       1,
       [
         "Harness error (unexpected exception), or HEAD is detached (the tick " +
-          "record's meaning is advancing a named tip; checkout a branch " +
-          "first). No claim is taken or checked — that's loop-level only.",
+          "record's meaning is advancing a named tip, and the claim below " +
+          "keys on a ref; checkout a branch first).",
+        clauseOf(TICK_TIP_CLAIM_HELD),
       ],
     ],
     [

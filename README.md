@@ -359,9 +359,11 @@ it claims the tip at start and releases it at exit, exclusive-create at
 identically from every linked worktree, so a claim taken in one is visible
 from all of them. A second `loop` against the same ref refuses (exit 1),
 naming the holder's pid; a stale claim (holder process dead) is reclaimed
-silently, the same stake as the state-root lock above. `flume
-tick` alone takes no claim — only `loop` does. Both refuse outright (exit
-1) on a detached HEAD, since the claim keys on a named ref.
+silently, the same stake as the state-root lock above. A bare `flume
+tick` takes the same claim around its single tick, so two of them on one
+ref refuse rather than interleave; a loop-spawned tick child runs under its
+supervisor's claim and takes none of its own. Both verbs refuse outright
+(exit 1) on a detached HEAD, since the claim keys on a named ref.
 
 It is advisory, not exclusive against every possible writer — a signal
 plus a fact when the signal is bypassed. `flume status` reports the
