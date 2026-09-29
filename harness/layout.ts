@@ -144,8 +144,11 @@ export const NOTE_DIR_RELS = [
 
 /**
  * The record directories' names under a state root, in the order
- * `.flume/PROTOCOL.md`, *Records: one file each* lists them: findings from
- * the field, then build ticks' notes, one directory per kind. The one
+ * `docs/CHAIN-AUTHORING.md`, *Records: one file each* lists them: findings
+ * from the field, then build ticks' notes, one directory per kind — the page
+ * the package ships for this fact, never {@link PROTOCOL_REL} under a
+ * consumer's state root, which the consumer edits after init and may head
+ * anything at all (`spec/harness.md`, *Adoption and upgrade*). The one
  * spelling, composed from rather than re-walked: a listing, a fence glob and a
  * gate's record test differ only in the separator they join with, never in
  * which directories exist or in what order they are named.

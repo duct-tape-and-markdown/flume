@@ -2398,6 +2398,47 @@ it("every section a shipped help literal cites is a section its page still carri
   );
 });
 
+it("no comment in harness/ cites a page under a consumer's state root", () => {
+  const consumerTree = `${DEFAULT_STATE_ROOT}/`;
+  const ownedByConsumer = (page: string): boolean =>
+    page.startsWith(consumerTree) && page.endsWith(".md");
+  const inHarness = (site: CitationSite): boolean =>
+    site.module.startsWith("harness/");
+  const pages = repoScan.scanned.filter(inHarness);
+  const sections = repoScan.sections.scanned.filter(inHarness);
+
+  // Vacuity guard, four halves. The package's own tree was read, and its
+  // comments cite pages and sections in quantity — both arms the verdict
+  // filters — before any emptiness is read off either; a `trees` prefix or a
+  // subject rule that stopped matching would report a clean tree over zero
+  // citations. And the predicate itself fires: the one page path this module
+  // family composes under that root answers it, so what the verdict reads is
+  // an absence in these comments rather than a filter matching nothing.
+  expect(repoScan.modules.filter(
+    (module) => module.startsWith("harness/"),
+  ).length).toBeGreaterThan(20);
+  expect(pages.filter((site) => site.text.endsWith(".md")).length)
+    .toBeGreaterThan(20);
+  expect(sections.length).toBeGreaterThan(20);
+  expect(ownedByConsumer(protocolPath(DEFAULT_STATE_ROOT))).toBe(true);
+
+  // The verdict: a page under that root belongs to the consumer — init writes
+  // it and the consumer edits it afterwards — so the package's own source
+  // cannot warrant a fact of its own with one, and a section of one is a name
+  // it is guessing at (`spec/harness.md`, *Adoption and upgrade*). This
+  // checkout is itself a consumer, which is why the citation pins above
+  // answer such a page at all: the green they read is this tree's copy, not
+  // the page an install carries, so nothing there reds when the two disagree.
+  // Cite what the install carries — `docs/CHAIN-AUTHORING.md` for where a
+  // record lives, the page the protocol template itself sends a reader to.
+  expectNoFindings([
+    ...pages.filter((site) => ownedByConsumer(site.text)).map(formatCitation),
+    ...sections
+      .filter((site) => ownedByConsumer(site.page))
+      .map((site) => `${formatCitation(site)} -> ${site.page}`),
+  ]);
+});
+
 it("no surface the package ships names a section of a page the consumer owns", () => {
   const consumerTree = `${DEFAULT_STATE_ROOT}/`;
 
