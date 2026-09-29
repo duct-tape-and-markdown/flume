@@ -425,7 +425,7 @@ stays pending in every case; only the residue differs.
   verdict.
 - **Harness-driven commits carry no expected-tip bookkeeping — the claim refuses,
   git arbitrates.** Before each `cherry-pick` and before the pending-ledger commit
-  (`commitPendingUpdate`, checked *before* the `writeFile`), the wave asks one
+  (`commitPendingUpdate`, checked *before* the `writeFile`), the tick asks one
   question: does a live foreign claim exist? There is no expected-sha comparison,
   because a sha equality check at a merge site is wrong in both directions — it is
   provably more pessimistic than the merge it guards (it refuses on provenance
@@ -437,7 +437,7 @@ stays pending in every case; only the residue differs.
   later the same check refused four builds over a commit the dispatcher itself had
   just cherry-picked. The claim answers the only question content cannot:
   - **A live claim held by another process is a concurrent engine instance**, and
-    the wave refuses exactly as before: `tipMoved`, remaining entries stay pending,
+    the tick refuses exactly as before: `tipMoved`, remaining entries stay pending,
     nothing dropped. Two engines interleaving cherry-picks onto one ref is the
     corruption the claim exists to prevent; absorbing it would launder it.
   - **No live foreign claim means the mover was not an engine, and the commit is
@@ -861,6 +861,10 @@ keyed by stage-tagged signature:
   A retry that genuinely attempts something different produces different output and
   breaks the streak by construction; only byte-identical repetition accumulates, and
   output noise that defeats equality merely makes the brake conservative.
+- **ship** — a `shipped` hook that threw (*Prior-outcome feedback to the retrying
+  tick*, `not-shipped`), recorded under the entry's tag with the thrown message as its
+  signature: the chain's own hook failing for one entry, as a thrown `promptArgs` is at
+  the render stage.
 - **platform** — an agent that failed for non-work reasons (`platform-preempt`, *The
   no-commit taxonomy*), recorded under the phase with its preempt class as the
   signature and blamed on no entry, so it feeds the backstop alone: an expired login
@@ -881,7 +885,7 @@ Two legs, not either alone:
   the run: the entry stays in the ledger untouched, other entries keep dispatching.
   A re-scoped entry is a new key, so an edit on trunk lifts the hold without a
   relaunch (a slug-only key survived a re-scope and forced stop-and-relaunch, field
-  report, 0.12.0). A **render-stage**, **gate-stage**, or **merge-stage** hold lifts once the newest tip a verdict has reported differs from the one the placing tick reported — the world that render, gate, or pick judged is gone — a chain's own hook fixed on trunk is a new render, and inequality is the only order a supervisor that reads no ref can have; out of order under two children it lifts early, the safe direction, and the backstop below bounds the retry — a gate fixed on trunk
+  report, 0.12.0). A **render-stage**, **gate-stage**, **merge-stage**, or **ship-stage** hold lifts once the newest tip a verdict has reported differs from the one the placing tick reported — the world that render, gate, or pick judged is gone — a chain's own hook fixed on trunk is a new render, and inequality is the only order a supervisor that reads no ref can have; out of order under two children it lifts early, the safe direction, and the backstop below bounds the retry — a gate fixed on trunk
   mid-run otherwise kept quarantining entries the fix would have passed until an
   operator restarted (field report, 0.19.0); a provision-stage hold stays for the
   run, since nothing on trunk changes what a worktree could not provision. The
