@@ -37,6 +37,7 @@ import { buildFlumeApi } from "../src/flumeApi.ts";
 // This import fails tsc if it drops from src/index.ts.
 import { stopFlagPath as indexStopFlagPath } from "../src/index.ts";
 import { Baton } from "../src/Baton.ts";
+import { parseMaxValue } from "../src/cliArgs.ts";
 import { loadChainModule } from "../src/chainLoad.ts";
 import {
   EX_DATAERR,
@@ -5460,6 +5461,85 @@ describe("flume loop refuses a stray positional past --max/<value> (spec/cli.md 
     SPAWN_BUDGET_MS,
   );
 
+});
+
+/**
+ * `--max` and `-n` take a decimal integer or refuse. `parseMaxValue`
+ * (`src/cliArgs.ts`) is the one reading both verbs share, and it read a
+ * value `Number` accepts: the empty string and whitespace as 0, so a
+ * wrapper spelling `--max "$BUDGET"` over an unset variable started no
+ * child and exited 0 as a completed run — an unresolved input proceeded
+ * over rather than refused (`.claude/rules/engineering.md`, *Loud or
+ * nothing*).
+ *
+ * Driven per verb rather than at the shared reading alone, because what the
+ * entry claims is the operator-visible refusal: exit 2 and the verb's usage
+ * line, the same one `abc` already reaches. The refusal resolves before the
+ * bay, the lock and the first child, so `loop` needs no repo — like the
+ * `--max abc` rows above it.
+ */
+const NOT_A_DECIMAL_INTEGER: readonly { readonly label: string; readonly value: string }[] = [
+  { label: "the empty string", value: "" },
+  { label: "a space", value: " " },
+  { label: "a tab", value: "\t" },
+  { label: "a signed zero", value: "-0" },
+  { label: "a fraction", value: "2.5" },
+  { label: "a hex literal", value: "0x10" },
+  { label: "an exponent literal", value: "1e3" },
+  // Digits alone, past what a finite number holds: `Number` reads it as
+  // Infinity, which as a budget is a run with no bound.
+  { label: "an overlong digit run", value: "9".repeat(400) },
+];
+
+describe("the count flags take a decimal integer or refuse (parseMaxValue, src/cliArgs.ts)", () => {
+  it("flume loop refuses a --max value that is not a decimal integer", async () => {
+    expect(NOT_A_DECIMAL_INTEGER.length).toBeGreaterThan(0);
+    const dir = await mkFixtureRoot("flume-loop-max-");
+    try {
+      for (const { label, value } of NOT_A_DECIMAL_INTEGER) {
+        const r = await runCli(dir, ["loop", "--max", value]);
+        expect(r.code, `--max ${label} did not exit 2`).toBe(2);
+        expect(r.out, `--max ${label} printed no usage line`).toContain(
+          "usage: flume loop",
+        );
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, SPAWN_BUDGET_MS);
+
+  it("flume log refuses a -n value that is not a decimal integer", async () => {
+    expect(NOT_A_DECIMAL_INTEGER.length).toBeGreaterThan(0);
+    const dir = await mkFixtureRoot("flume-log-n-");
+    try {
+      for (const { label, value } of NOT_A_DECIMAL_INTEGER) {
+        const r = await runCli(dir, ["log", "-n", value]);
+        expect(r.code, `-n ${label} did not exit 2`).toBe(2);
+        expect(r.out, `-n ${label} printed no usage line`).toContain(
+          "usage: flume log",
+        );
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, SPAWN_BUDGET_MS);
+
+  // The decimal values the flags keep taking, at the shared reading rather
+  // than through a spawn per value: 0 is a count both verbs accept, and a
+  // leading zero is still digits.
+  it("parseMaxValue takes every decimal integer, 0 among them", () => {
+    const taken: readonly [string, number][] = [
+      ["0", 0],
+      ["1", 1],
+      ["007", 7],
+      ["3", 3],
+    ];
+    expect(taken.length).toBeGreaterThan(0);
+    for (const [value, expected] of taken) {
+      expect(parseMaxValue(value), `parseMaxValue('${value}')`).toBe(expected);
+    }
+    expect(parseMaxValue(undefined)).toBeNull();
+  });
 });
 
 /**

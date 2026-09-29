@@ -706,10 +706,15 @@ Exit codes:
       [--max N]"). The refusal names the file, the branch and the entry;
       nothing is touched and the startup sweep does not run, so the branch
       survives — reconcile, then remove the file to acknowledge.
-  2   Bad --max: missing, non-numeric, or negative. No tick runs. Also, a
-      stray positional past --max/<value> — loop consumes no positionals,
-      and running anything other than what was typed is refused rather
-      than silently starting a run.
+  2   Bad --max: missing, or not a decimal integer — the empty string,
+      whitespace, a signed, fractional, hex or exponent literal, and a
+      digit run past what a finite number holds are each refused rather
+      than read as a count, so a wrapper spelling --max "$BUDGET" over an
+      unset variable is refused instead of starting no tick and reporting a
+      completed run. No tick runs. Also, a stray positional past
+      --max/<value> — loop consumes no positionals, and running anything
+      other than what was typed is refused rather than silently starting a
+      run.
       ${rootResolutionUsageRefusal(6)}
 `,
   wake: `Usage: flume wake <phase>
@@ -772,8 +777,10 @@ baton flag is touched, no agent runs.
 
 Exit codes:
   0   Success — including no tick-verdicts.jsonl on disk (prints nothing).
-  2   Usage: unknown or extra arguments, or -n is missing, non-numeric, or
-      negative. No verdicts are read.
+  2   Usage: unknown or extra arguments, or -n is missing or not a decimal
+      integer — the empty string, whitespace, a signed, fractional, hex or
+      exponent literal, and a digit run past what a finite number holds are
+      each refused rather than read as a count. No verdicts are read.
       ${rootResolutionUsageRefusal(6)}
   74  I/O error (EX_IOERR): tick-verdicts.jsonl exists but could not be read
       (permission denied, a symlink loop, a directory in its place, ...).
