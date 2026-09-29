@@ -1,0 +1,41 @@
+{
+  "tag": "THE-ROOT-IDENTITY-COMPARISONS-FOLD-BEFORE-THEY-REFUSE",
+  "gate": { "kind": "open" },
+  "priority": 0,
+  "files": {
+    "edit": [
+      {
+        "path": "src/cliStateDirs.ts",
+        "description": "the inherited-stamp comparison folds both sides, as the second-root comparison beside it already does"
+      },
+      {
+        "path": "src/worktrees.ts",
+        "description": "both stamp judgments over a tree under the base fold the root they compare — provisioning's occupied-path leg and the startup sweep's"
+      },
+      {
+        "path": "src/pathIdentity.ts",
+        "description": "the header's roster of the comparisons that resolve here"
+      },
+      {
+        "path": "tests/cliStateDirs.test.ts",
+        "description": "the second-spelling stamp case, beside the cross-repo refusal's own block"
+      },
+      {
+        "path": "tests/worktrees.test.ts",
+        "description": "the sweep and the provisioning cases, beside the occupied-path block"
+      }
+    ]
+  },
+  "summary": "Three comparisons deciding whether two paths are one directory use bare `resolve`: one checkout under two spellings refuses as another repo's, and its own residue as another checkout's",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "The fix lands at the mechanism"
+  },
+  "acceptance": "every comparison that decides whether two paths name one directory folds through `canonicalDir` (`src/pathIdentity.ts`) before it refuses — the inherited `FLUME_DIR_RESOLVED_FOR` stamp against this invocation's repo root, and the worktree stamp against this run's state root at both of its readers — so a checkout or state root reached under a second on-disk spelling resolves, reclaims its own residue and provisions over it rather than being refused as another repo's or another checkout's; what `stampWorktree` writes is unchanged, and that module's header names the set that folds",
+  "tests": [
+    "a state root whose inherited stamp names its own checkout under a second spelling is not refused as a different repo's",
+    "the startup sweep reclaims a worktree its own state root stamped under a second spelling",
+    "provisioning over a worktree this state root stamped under a second spelling removes it rather than refusing"
+  ],
+  "notes": "Measured this tick over one checkout with two spellings. `src/cliStateDirs.ts:208` threw `CrossRepoFlumeDirError` naming \"a different repo's flume process\" for its own repo; `createWorktree` (`src/worktrees.ts:531`) refused its own residue as \"a second checkout sharing this worktree base\"; `sweepStaleWorktrees` (`:775`) left it standing. The sibling at `:235` already folds, and `src/pathIdentity.ts:9` enumerates three comparisons — these are the rest."
+}
