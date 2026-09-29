@@ -14,7 +14,7 @@
  */
 
 import { resolve, join, basename, dirname, toNamespacedPath } from "node:path";
-import { readFileSync, statSync, writeFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Stats } from "node:fs";
 
@@ -95,6 +95,7 @@ import {
 import {
   mkdirUnderStateRoot,
   StateRootWriteError,
+  writeFileUnderStateRoot,
 } from "./stateRootWrite.js";
 import { canonicalDir, onDiskIdentity } from "./pathIdentity.js";
 import {
@@ -714,8 +715,11 @@ async function dispatch(): Promise<number> {
     // here, and one it cannot make is this verb's `EX_IOERR` rather than a
     // raw stack, without a second spelling of the report
     // (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+    // The flag write beside it goes through the same refusal for the same
+    // reason: a directory standing at `<flumeDir>/stop` walks past the mkdir
+    // and fails the write, and this verb's whole effect is that one leaf.
     mkdirUnderStateRoot(flumeDir, "the root itself", flumeDir);
-    writeFileSync(namespacedJoin(stopPath), "");
+    writeFileUnderStateRoot(flumeDir, "the stop flag", stopPath, "");
     console.log(
       `[flume] wrote ${stopPath}: a live supervisor finishes its in-flight ` +
         "tick and ends the run; the next `loop` refuses to start until the " +

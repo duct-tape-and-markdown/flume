@@ -9,11 +9,15 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
 
 import { existsLoud } from "./fsProbe.js";
 import { awakeDir, namespacedJoin } from "./paths.js";
-import { mkdirUnderStateRoot } from "./stateRootWrite.js";
+import {
+  mkdirUnderStateRoot,
+  writeFileUnderStateRoot,
+} from "./stateRootWrite.js";
 
 /**
  * What a flag carries: the opaque mark {@link Baton.wake} wrote into it, read
@@ -49,8 +53,23 @@ export type BatonToken = string;
  * in the Dispatcher/CLI, so a relocated `flumeDir` carries the baton with it).
  */
 export class Baton {
-  /** Absolute path of the awake-flag directory, e.g. `<flumeDir>/awake`. */
-  readonly dir: string;
+  /**
+   * flume's mutable-state root — the root every write this class makes lands
+   * under, and so the root a failed one names. Held rather than recovered from
+   * {@link dir}, which is the derivation and not the source.
+   */
+  private readonly stateRoot: string;
+
+  /**
+   * Absolute path of the awake-flag directory, e.g. `<flumeDir>/awake`.
+   *
+   * Computed from {@link stateRoot} on each read rather than stored beside it:
+   * one truth, one home (`.claude/rules/engineering.md`, *Derived state is
+   * computed, never restated beside its source*).
+   */
+  get dir(): string {
+    return awakeDir(this.stateRoot);
+  }
 
   /**
    * The first write under the state root any verb makes, and so the one that
@@ -64,7 +83,7 @@ export class Baton {
    * @param flumeDir flume's mutable-state root (default `<repoRoot>/.flume`).
    */
   constructor(flumeDir: string) {
-    this.dir = awakeDir(flumeDir);
+    this.stateRoot = flumeDir;
     mkdirUnderStateRoot(flumeDir, "awake-flag directory", this.dir);
   }
 
@@ -111,9 +130,20 @@ export class Baton {
    * Idempotent: stand the flag up carrying a fresh token, whether or not one
    * already stood. Repeated calls are one flag and one queued run — the depth
    * of the queue is one, and the newest token is what stands.
+   *
+   * A flag that cannot be written is the same refusal the constructor's `mkdir`
+   * raises, naming the same root: a directory standing at
+   * `<flumeDir>/awake/<name>` passes that `mkdir` and fails here, and a phase
+   * silently not woken is a tick that never runs
+   * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
    */
   wake(name: string): void {
-    writeFileSync(namespacedJoin(this.dir, name), randomUUID());
+    writeFileUnderStateRoot(
+      this.stateRoot,
+      "awake flag",
+      join(this.dir, name),
+      randomUUID(),
+    );
   }
 
   /**

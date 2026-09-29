@@ -1202,6 +1202,94 @@ it(
   SPAWN_BUDGET_MS,
 );
 
+/**
+ * The `mkdir` that case denies is one of two writes those verbs make under the
+ * resolved root: each then writes a **leaf** in it, and a directory standing
+ * where that leaf belongs walks past every stat and every `mkdir -p` above it
+ * to fail the write with `EISDIR`. Raw, that throw was `main()`'s stack and
+ * exit 1 one line below the `mkdir` that exits `EX_IOERR` naming the root — the
+ * same failure of the same root reported two ways, which is the shallow-fix
+ * signature (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ *
+ * `EISDIR` needs no permission bit, so the structural instrument reaches both
+ * on every host and for every uid (`tests/helpers/denial.ts`;
+ * `.claude/rules/platform-facts.md`, "`chmod` denies nothing on win32").
+ */
+it(
+  "flume stop exits EX_IOERR naming the resolved state root when the stop flag cannot be written",
+  async () => {
+    const dir = await mkFixtureRoot("flume-unwritable-stop-flag-");
+    try {
+      const flumeDir = join(dir, ".flume");
+
+      // Non-vacuity in the instrument's order: the verb answers over this
+      // fixture first — writing the very leaf denied below — so the refusal is
+      // the obstruction's and not a fixture that could never have stopped a
+      // run (`.claude/rules/engineering.md`, *A green verdict is proven
+      // non-vacuous*).
+      const stopped = await runCli(dir, ["stop"]);
+      expect(stopped.code).toBe(0);
+      expect(stopped.out).toContain(`[flume] wrote ${stopFlagPath(flumeDir)}`);
+
+      denyFile(stopFlagPath(flumeDir));
+
+      const refused = await runCli(dir, ["stop"]);
+
+      expect(refused.code).toBe(EX_IOERR);
+      // The root this process resolved, not the leaf the errno carried — the
+      // reading the `mkdir` one line above already gives.
+      expect(refused.out).toContain(
+        `[flume] state root at ${flumeDir} cannot be written`,
+      );
+      expect(refused.out).not.toContain("    at ");
+      // The statement `stop` prints on success is exactly what a refusal must
+      // never print: an operator reading it walks away believing the
+      // supervisor will wind down.
+      expect(refused.out).not.toContain("[flume] wrote ");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  },
+  SPAWN_BUDGET_MS,
+);
+
+/**
+ * The baton's own leaf, denied the same way: `<flumeDir>/awake` is a directory
+ * the constructor's `mkdir -p` is happy with, and `<flumeDir>/awake/<phase>` is
+ * where the flag write lands.
+ */
+it(
+  "flume wake exits EX_IOERR naming the resolved state root when the awake flag cannot be written",
+  async () => {
+    const dir = await mkFixtureRoot("flume-unwritable-awake-flag-");
+    try {
+      const flumeDir = join(dir, ".flume");
+
+      const woke = await runCli(dir, ["wake", "plan"]);
+      expect(woke.code).toBe(0);
+      expect(woke.out).toContain("woke plan");
+
+      denyFile(join(awakeDir(flumeDir), "plan"));
+
+      const refused = await runCli(dir, ["wake", "plan"]);
+
+      expect(refused.code).toBe(EX_IOERR);
+      expect(refused.out).toContain(
+        `[flume] state root at ${flumeDir} cannot be written`,
+      );
+      expect(refused.out).not.toContain("    at ");
+      // A phase reported awake that carries no token is a wake the next tick
+      // reads as a flag standing with an empty token (`src/Baton.ts`,
+      // `BatonToken`) — the success line is the one reading this refusal must
+      // not leave behind.
+      expect(refused.out).not.toContain("woke plan");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  },
+  SPAWN_BUDGET_MS,
+);
+
 // ---------- the real CLI over a scratch repository ----------
 
 /**

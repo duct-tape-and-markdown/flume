@@ -1,6 +1,6 @@
 /**
  * stateRootWrite — the refusal a *write* under the state root raises, and the
- * mkdir that raises it.
+ * mkdir and file-write that raise it.
  *
  * Sibling to `src/fsProbe.ts`, which holds the loud existence probes: that
  * module answers what is *at* a path, this one answers what happened when
@@ -14,7 +14,7 @@
  * a cycle.
  */
 
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 
 import { namespacedJoin } from "./paths.js";
 
@@ -31,7 +31,9 @@ import { namespacedJoin } from "./paths.js";
  * the process's exit code (`src/cli.ts`, `EX_IOERR`) — so a second writer
  * adopting {@link mkdirUnderStateRoot} reaches the operator as a sentence
  * rather than through the CLI's raw-stack arm, with no per-verb copy of the
- * report (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ * report — and why a second *kind* of write under the root is a sibling here
+ * rather than its own refusal (`.claude/rules/engineering.md`, *The fix lands
+ * at the mechanism*).
  */
 export class StateRootWriteError extends Error {
   /** The resolved state root the failed write was under. */
@@ -77,6 +79,37 @@ export function mkdirUnderStateRoot(
 ): void {
   try {
     mkdirSync(namespacedJoin(dir), { recursive: true });
+  } catch (err) {
+    throw new StateRootWriteError(stateRoot, what, err);
+  }
+}
+
+/**
+ * Write `contents` to `file`, a leaf under `stateRoot`, refusing as
+ * {@link StateRootWriteError} rather than as a raw fs throw.
+ *
+ * The mkdir above makes the root; this makes a leaf in it, and the two fail
+ * for the same reasons — a directory standing where the file belongs
+ * (`EISDIR`), an obstructed ancestor, permission denied. None of them is
+ * tolerated: a leaf the caller could not write is a flag the next tick will
+ * read the absence of, which is the silent degradation this module exists to
+ * refuse (`.claude/rules/engineering.md`, *Loud or nothing*). Sharing the
+ * refusal rather than restating it beside each write is why the class names
+ * the root and not the leaf (`.claude/rules/engineering.md`, *The fix lands at
+ * the mechanism*).
+ *
+ * `stateRoot` and `file` are plain paths, folded here for the same reason the
+ * mkdir folds its own: the path arrived whole, and the refusal names the plain
+ * root an operator has to go fix.
+ */
+export function writeFileUnderStateRoot(
+  stateRoot: string,
+  what: string,
+  file: string,
+  contents: string,
+): void {
+  try {
+    writeFileSync(namespacedJoin(file), contents);
   } catch (err) {
     throw new StateRootWriteError(stateRoot, what, err);
   }
