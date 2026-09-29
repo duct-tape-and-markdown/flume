@@ -176,6 +176,14 @@ function checkoutStateRootArtifact(repoRoot: string): string | undefined {
  * against its own cwd. The refusal fires only when the stamp is present and
  * disagrees; a `FLUME_DIR` typed fresh for this invocation carries no
  * stamp and is never refused on that basis, whatever its path looks like.
+ * *A different repo* is decided through `canonicalDir`
+ * (`src/pathIdentity.ts`), the fold the second-root comparison below already
+ * spends: one checkout reached under two on-disk spellings — a stamp written
+ * for its real path, this invocation's root discovered through a link, or the
+ * reverse — is one repo, and refusing it as another repo's hands the operator
+ * a message naming one directory twice and a remedy that unsets the stamp it
+ * wrote itself (`.claude/rules/engineering.md`, *The fix lands at the
+ * mechanism*).
  *
  * Second-state-root refusal: a resolved `flumeDir` that is not the checkout's
  * own, in a checkout that already holds flume state of its own
@@ -205,7 +213,7 @@ export function resolveStateDirs(
 ): { flumeDir: string; configDir: string } {
   if (
     env.FLUME_DIR_RESOLVED_FOR &&
-    resolve(env.FLUME_DIR_RESOLVED_FOR) !== resolve(repoRoot)
+    canonicalDir(env.FLUME_DIR_RESOLVED_FOR) !== canonicalDir(repoRoot)
   ) {
     // Both halves of the message vary with whether `FLUME_DIR` came along:
     // an inherited stamp can outlive the dir it was written beside, and

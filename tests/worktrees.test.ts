@@ -18,7 +18,7 @@
  * stays in tests/Dispatcher.test.ts, where the tick that produces it lives.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { lstat, mkdir, readdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -528,6 +528,49 @@ describe("worktrees — an occupied path is judged by git's registry", () => {
     expect(await registeredWorktrees(fx.repo)).toContain(wt.path);
     expect(await flumeBranches(fx.repo)).toEqual([wt.branch]);
     expect(await stampAt(wt.path)).toBe(resolve(ctx.flumeDir));
+  });
+
+  it("provisioning over a worktree this state root stamped under a second spelling removes it rather than refusing", async () => {
+    const { ctx, base } = contextFor(silent);
+    // A crashed run's tree, stamped by the real writer with the state root's
+    // own directory name.
+    const stale = await createWorktree("build", await head(), ctx);
+    await writeFile(join(stale.path, "crashed.txt"), "residue\n");
+
+    // The same state root reached under a second on-disk spelling — a
+    // FLUME_DIR typed through a link, or a root whose directory an operator
+    // linked. The base is declared on both sides, so the tick below computes
+    // the very path the stale tree occupies and the only difference is the
+    // name this run calls its own root by.
+    const alias = join(fx.repo, ".flume-alias");
+    await symlink(ctx.flumeDir, alias, "dir");
+    const aliased: WorktreeContext = {
+      ...ctx,
+      flumeDir: alias,
+      stateRootRel: ".flume-alias",
+      declaredWorktreesBase: base,
+    };
+
+    // Vacuity pin (`.claude/rules/engineering.md`, *A green verdict is proven
+    // non-vacuous*), in the direction the title claims: the path really is
+    // occupied by a registered tree, its stamp really names the root's other
+    // spelling, and the two spellings really are one directory.
+    expect(existsSync(join(stale.path, "crashed.txt"))).toBe(true);
+    expect(await registeredWorktrees(fx.repo)).toContain(stale.path);
+    expect(await stampAt(stale.path)).toBe(resolve(ctx.flumeDir));
+    expect(resolve(alias)).not.toBe(resolve(ctx.flumeDir));
+    expect(realpathSync.native(alias)).toBe(resolve(ctx.flumeDir));
+
+    const wt = await createWorktree("build", await head(), aliased);
+
+    // Its own residue, reclaimed: same path, the crashed run's file gone, and
+    // re-stamped in the spelling this run was declared with — what the writer
+    // puts on disk is untouched by the fold that read it.
+    expect(wt.path).toBe(stale.path);
+    expect(existsSync(join(stale.path, "crashed.txt"))).toBe(false);
+    expect(await registeredWorktrees(fx.repo)).toContain(wt.path);
+    expect(await flumeBranches(fx.repo)).toEqual([wt.branch]);
+    expect(await stampAt(wt.path)).toBe(resolve(alias));
   });
 
   it("createWorktree refuses an occupied worktree path git registers but this state root did not stamp", async () => {
@@ -1370,5 +1413,44 @@ describe("worktrees — the startup sweep removes on the stamp provisioning mint
     const named = log.warnings.filter((w) => w.includes(unstamped));
     expect(named).toHaveLength(1);
     expect(named[0]).toContain("no stamp from this state root");
+  });
+
+  it("the startup sweep reclaims a worktree its own state root stamped under a second spelling", async () => {
+    const log = collectingLogger();
+    const { own, base } = twoRoots(log);
+    // This root's abandoned residue, stamped by the real writer with the
+    // state root's own directory name.
+    const ours = await createWorktree("SWEEP-SECOND-SPELLING", await head(), own);
+
+    // The next start reaching that same root under a second on-disk spelling —
+    // a FLUME_DIR typed through a link, or a root whose directory an operator
+    // linked. The base is declared on both, so the sweep reads the one
+    // directory holding the residue and the only difference is the name this
+    // run calls its own root by.
+    const alias = join(fx.repo, ".flume-alias");
+    await symlink(own.flumeDir, alias, "dir");
+    const aliased: WorktreeContext = {
+      ...own,
+      flumeDir: alias,
+      stateRootRel: ".flume-alias",
+    };
+
+    // Vacuity pin, in the direction the title claims: the tree is registered
+    // under the base this sweep reads, its stamp names the root's other
+    // spelling, and the two spellings really are one directory.
+    expect(await registeredWorktrees(fx.repo)).toContain(ours.path);
+    expect(await stampAt(ours.path)).toBe(resolve(own.flumeDir));
+    expect(aliased.declaredWorktreesBase).toBe(base);
+    expect(resolve(alias)).not.toBe(resolve(own.flumeDir));
+    expect(realpathSync.native(alias)).toBe(resolve(own.flumeDir));
+
+    await sweepStaleWorktrees(aliased);
+
+    // Reclaimed, directory and branch alike, and never reported as another
+    // root's tree.
+    expect(existsSync(ours.path)).toBe(false);
+    expect(await registeredWorktrees(fx.repo)).not.toContain(ours.path);
+    expect(await flumeBranches(fx.repo)).toEqual([]);
+    expect(log.warnings.filter((w) => w.includes(ours.path))).toEqual([]);
   });
 });

@@ -6,12 +6,20 @@
  * symlinked checkout, a `FLUME_DIR` typed through a link: each hands the
  * engine a second spelling of a path it already holds, and every comparison
  * that decides whether two paths are one thing has to fold before it
- * compares. The three that do — the CLI's entry check against the path it
- * was invoked by, the bay root against the root git names paths from, a
- * relocated state root against the checkout's own bay — resolve here rather
- * than beside themselves, so a spelling one of them folds is a spelling all
- * of them fold (`.claude/rules/engineering.md`, *The fix lands at the
- * mechanism*).
+ * compares. Every one that does resolves here rather than beside itself, so a
+ * spelling one of them folds is a spelling all of them fold
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*). The set,
+ * each named by what it refuses on disagreement:
+ *
+ * - the CLI's entry check against the path it was invoked by;
+ * - the bay root against the root git names paths from;
+ * - a relocated state root against the checkout's own bay
+ *   (`resolveStateDirs`, `src/cliStateDirs.ts`);
+ * - an inherited `FLUME_DIR_RESOLVED_FOR` stamp against this invocation's
+ *   repo root, beside it;
+ * - a worktree's state-root stamp against the run reading it
+ *   (`stampVerdict`, `src/worktrees.ts`), at both readers that would
+ *   destroy a directory — provisioning's occupied path and the startup sweep.
  *
  * `realpathSync` in its native form throughout, for the reason
  * `tests/helpers/fixtureRoot.ts` gives — only the libuv binding asks the OS

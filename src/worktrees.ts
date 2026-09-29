@@ -27,6 +27,7 @@ import type { Logger } from "./log.js";
 import { harvestFriction } from "./friction.js";
 import { existsLoud, isDirectoryOrAbsentUnder } from "./fsProbe.js";
 import * as git from "./git.js";
+import { canonicalDir } from "./pathIdentity.js";
 import {
   boundedName,
   namespacedJoin,
@@ -188,12 +189,23 @@ export async function stampWorktree(
 }
 
 /**
- * The state root that stamped the worktree at `worktreePath`, or `undefined`
- * where none did — read by both sides that would destroy a directory under
- * the base: {@link sweepStaleWorktrees} deciding a dead run's residue, and
- * {@link createWorktree} deciding an occupied path. One read for both, so the
- * two cannot come to disagree about what counts as this root's tree
- * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ * What the stamp on the worktree at `worktreePath` says about `flumeDir`: the
+ * state root it names (`undefined` where none did), and whether that root is
+ * this one — read by both sides that would destroy a directory under the
+ * base: {@link sweepStaleWorktrees} deciding a dead run's residue, and
+ * {@link createWorktree} deciding an occupied path. One read and one verdict
+ * for both, so the two cannot come to disagree about what counts as this
+ * root's tree (`.claude/rules/engineering.md`, *The fix lands at the
+ * mechanism*).
+ *
+ * *This one* is decided through `canonicalDir` (`src/pathIdentity.ts`), never
+ * by comparing the two absolutized strings: one state root reached under a
+ * second on-disk spelling — the stamp written through the directory's real
+ * name, this run's root declared through a link, or the reverse — would
+ * otherwise read as a sibling checkout's, and every tree it provisioned
+ * becomes residue neither reader will ever reclaim. What
+ * {@link stampWorktree} writes is unchanged: the fold decides identity, not
+ * what goes on disk.
  *
  * Every failure reads as "no stamp": an admin directory git will not name, an
  * absent or unreadable file, a file holding nothing. None of them is this
@@ -203,18 +215,23 @@ export async function stampWorktree(
  * destroys nothing, and each caller says out loud what it left — the sweep in
  * a warning, provisioning by failing the tick that named the path.
  */
-async function stampedStateRoot(
+async function stampVerdict(
   worktreePath: string,
-): Promise<string | undefined> {
+  flumeDir: string,
+): Promise<{ names: string | undefined; isOwn: boolean }> {
   let text: string;
   try {
     const adminDir = await git.absoluteGitDir(worktreePath);
     text = await readFile(namespacedJoin(adminDir, STATE_ROOT_STAMP), "utf8");
   } catch {
-    return undefined;
+    return { names: undefined, isOwn: false };
   }
   const stamp = text.trim();
-  return stamp.length > 0 ? stamp : undefined;
+  if (stamp.length === 0) return { names: undefined, isOwn: false };
+  return {
+    names: stamp,
+    isOwn: canonicalDir(stamp) === canonicalDir(flumeDir),
+  };
 }
 
 /**
@@ -527,11 +544,11 @@ export async function createWorktree(
     // live tree registers exactly here, and a colliding `dirName` would take
     // it out from under a running sibling on the registry's word alone.
     const ownStateRoot = resolve(ctx.flumeDir);
-    const stamped = await stampedStateRoot(path);
-    if (stamped !== ownStateRoot) {
+    const stamp = await stampVerdict(path, ctx.flumeDir);
+    if (!stamp.isOwn) {
       throw new Error(
         `worktree path is occupied by a registered worktree this state root (${ownStateRoot}) did not provision ` +
-          `(${stamped === undefined ? "no stamp" : `stamped ${stamped}`}); refusing to remove it — ` +
+          `(${stamp.names === undefined ? "no stamp" : `stamped ${stamp.names}`}); refusing to remove it — ` +
           `a second checkout sharing this worktree base is the likely occupant: ${path}`,
       );
     }
@@ -754,8 +771,9 @@ export async function sweepStaleWorktrees(
   // the stamp. Left standing, and named once at the end — the registry says
   // git owns them, and nothing says this root provisioned them.
   const unstamped: string[] = [];
-  // The state root whose worktrees this sweep owns, in the spelling
-  // `stampWorktree` wrote.
+  // The state root whose worktrees this sweep owns, for the report below —
+  // the spelling this run was declared with, which is what an operator has to
+  // recognize. Identity is `stampVerdict`'s to decide, not this string's.
   const ownStateRoot = resolve(ctx.flumeDir);
   // The branches the removed directories were checked out on — collected as
   // each removal succeeds, so the leg below reaps what this sweep just took
@@ -772,7 +790,7 @@ export async function sweepStaleWorktrees(
         // remove; leave it untouched.
         continue;
       }
-      if ((await stampedStateRoot(path)) !== ownStateRoot) {
+      if (!(await stampVerdict(path, ctx.flumeDir)).isOwn) {
         // Registered, but not on this root's evidence. The tip claim this
         // sweep holds guards this state root's worktrees alone: a second
         // checkout of the same repository has a different tip, so its claim

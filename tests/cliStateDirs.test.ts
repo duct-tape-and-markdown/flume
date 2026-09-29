@@ -270,6 +270,39 @@ describe("resolveStateDirs — cross-repo FLUME_DIR provenance-stamp refusal", (
     expect(() => resolveStateDirs(env, repoRoot)).not.toThrow();
   });
 
+  it("a state root whose inherited stamp names its own checkout under a second spelling is not refused as a different repo's", async () => {
+    const checkout = await mkFixtureRoot("flume-stamp-spelling-");
+    // The link stands in for the checkout itself — the shape a cwd reached
+    // through a linked path gives bay discovery — while the stamp this
+    // process inherited was written against the checkout's real name. One
+    // repo under two spellings, and the refusal is about two repos.
+    const holder = await mkTempDir("flume-stamp-spelling-link-");
+    try {
+      const linked = join(holder, "checkout");
+      await symlink(checkout, linked, "dir");
+      // Non-vacuity, in the direction the title claims: the two names really
+      // are distinct spellings of one directory, and the stamp really is
+      // present and disagreeing character for character — the one condition
+      // the guard fires on.
+      expect(linked).not.toBe(checkout);
+      expect(realpathSync.native(linked)).toBe(checkout);
+      expect(resolve(checkout)).not.toBe(resolve(linked));
+
+      const env: NodeJS.ProcessEnv = { FLUME_DIR_RESOLVED_FOR: checkout };
+      const { flumeDir, configDir } = resolveStateDirs(env, linked);
+
+      // Resolved against this invocation's own spelling, and the stamp
+      // re-published in it: the fold decides identity, not what a child
+      // inherits.
+      expect(flumeDir).toBe(join(linked, ".flume"));
+      expect(configDir).toBe(join(linked, ".flume"));
+      expect(env.FLUME_DIR_RESOLVED_FOR).toBe(resolve(linked));
+    } finally {
+      await rm(holder, { recursive: true, force: true });
+      await rm(checkout, { recursive: true, force: true });
+    }
+  });
+
   it("an absolute FLUME_DIR with no FLUME_DIR_RESOLVED_FOR stamp never throws, whatever its shape (misfire repro)", () => {
     // Under the retired path-shape detection, an absolute FLUME_DIR whose
     // path happened to end in a `.flume` segment for what looks like a
