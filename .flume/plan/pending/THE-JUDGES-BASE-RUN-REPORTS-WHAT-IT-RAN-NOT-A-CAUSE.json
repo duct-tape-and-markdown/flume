@@ -1,0 +1,29 @@
+{
+  "tag": "THE-JUDGES-BASE-RUN-REPORTS-WHAT-IT-RAN-NOT-A-CAUSE",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 20,
+  "files": {
+    "edit": [
+      {
+        "path": "harness/judge.ts",
+        "description": "the `suite-failed` message states the base run's result and drops the cause it concludes from it"
+      },
+      {
+        "path": "tests/harnessJudge.test.ts",
+        "description": "the message's first reader, beside the `blamesSpan` cases that already read the base-red arm"
+      }
+    ]
+  },
+  "summary": "One green base run is reported as `so the failure arrived with this span`, so a load-sensitive case blames whichever entry was merging and sends the next drain after an innocent span",
+  "per": {
+    "path": "spec/harness.md",
+    "section": "The judges"
+  },
+  "acceptance": "the `suite-failed` message states what the judge ran and what came back — red on the merged tree, the same files green at the base sha — and concludes no cause from it, so a drain reading a standing prior-attempt record is told the evidence rather than a verdict the one run does not carry; `blamesSpan`, the `base-red` outcome and the base run itself are unchanged",
+  "tests": [
+    "the judge's suite-failed message reports the base run's result without claiming the span caused the failure"
+  ],
+  "notes": "Measured: suite green at 7949add3 (2040 passed), and the record's named failure — tests/Dispatcher.test.ts, the merging marker — green in isolation x3 and under load average 22 x4 (670ms to 2.3s against a 10s ceiling), while the reverted span touched docs/CLI.md and src/cliHelp.ts alone. `askBase` (`harness/judge.ts:249`) spends one base run; `:272` states it as cause. No test reads that sentence. Repeating the base run prices every red at another suite."
+}
