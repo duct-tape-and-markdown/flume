@@ -1,0 +1,30 @@
+{
+  "tag": "THE-EXPORT-WARRANTS-NAME-WHAT-THE-PROGRAM-HOLDS",
+  "gate": { "kind": "open" },
+  "priority": 0,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/paths.ts",
+        "description": "the two `the one consumer` warrants on the exported names, and the loop-lock reader `STATE_ROOT_NAMES`'s header names"
+      },
+      {
+        "path": "src/pidClaim.ts",
+        "description": "`liveLoopPid`'s export warrant, whose named caller is gone"
+      },
+      {
+        "path": "harness/handoff.ts",
+        "description": "`resolveHandoff`'s closing sentence, which names a refusal the default no longer raises"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "Four shipped doc comments warrant a symbol to a roster the program outgrew: two `the one consumer` claims over three consumers each, a renamed reader, and a retired refusal",
+  "per": {
+    "path": ".claude/rules/posture-sweep.md",
+    "section": "Routing"
+  },
+  "acceptance": "each of the four warrants states what the program holds: `STATE_ROOT_DIRNAME` and `STATE_ROOT_NAMES` stop claiming one bare-name consumer where three stand — either naming all of them or pointing at the program the way `escapesRoot` beside them already does; `STATE_ROOT_NAMES`'s header names the loop lock's real reader rather than `liveLoopPid`; `liveLoopPid`'s own warrant names a caller that exists; and `resolveHandoff`'s closing sentence stops naming a refusal `defaultHandoff` does not raise. Behavior-free: no test changes, and the typecheck plus the citation pins hold the edit.",
+  "notes": "Fourth sighting of one family under three names (three-notes rule): the loop-lock readers, `canonicalDir`'s fallback warrant (since repaired in `src/pathIdentity.ts`), and `STATE_ROOT_NAMES`. Verified this tick: `STATE_ROOT_DIRNAME` has 3 bare-name consumers (`harness/init.ts:71`, `src/cliStateDirs.ts:69`, `src/cliHelp.ts:49`); `STATE_ROOT_NAMES` 3 (`src/runtimeIgnores.ts:45`, `harness/ignores.ts:63`, `src/cliHistory.ts:59`); the handoff refusal left with 49288fcc's successor."
+}
