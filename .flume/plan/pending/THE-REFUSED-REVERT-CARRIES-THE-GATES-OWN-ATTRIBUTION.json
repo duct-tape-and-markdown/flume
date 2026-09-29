@@ -1,0 +1,31 @@
+{
+  "tag": "THE-REFUSED-REVERT-CARRIES-THE-GATES-OWN-ATTRIBUTION",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 0,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/waveMerge.ts",
+        "description": "the two refused-revert legs read the gate's own attribution, at one site with the gate-failure record beside them"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the disowning-gate arm driven to a refused revert, beside the existing blamesSpan cases"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "A refused afterMerge revert blames its entry unconditionally, so a gate declaring `blamesSpan: false` still quarantines that entry for the run",
+  "per": {
+    "path": "spec/chain.md",
+    "section": "What a gate returns"
+  },
+  "acceptance": "an afterMerge gate that declares `blamesSpan: false` and whose revert is then refused leaves a gate-stage failure carrying neither `tag` nor `quarantineKey`, so the run-scoped quarantine holds no entry for a bystander collision the gate said its span did not build — while a gate that declared no attribution still reports both halves, and the attribution is read at one site for the gate failure and both refusal legs rather than spelled per leg",
+  "tests": [
+    "a revert refused after a gate declaring blamesSpan false records an unblamed gate failure"
+  ],
+  "notes": "Verified on disk: `src/waveMerge.ts:865` reads `entryFailure.blamesSpan === false`; the refusal legs at `:896` and `:919` push `...blamedOn(r.entry)` unconditionally, and any tagged failure quarantines for the run (`src/loopSupervisor.ts:788`). `revertAfterCommitFailure` (`src/tickAttempt.ts`) already honors it, and `src/singletonTick.ts` spells one `mergeFate` where the wave copies the leg. Repro: `blamesSpan: false` on the collide-veto gate at `tests/Dispatcher.test.ts:8548`."
+}
