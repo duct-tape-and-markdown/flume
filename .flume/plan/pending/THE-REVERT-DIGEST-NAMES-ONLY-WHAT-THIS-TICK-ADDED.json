@@ -1,0 +1,39 @@
+{
+  "tag": "THE-REVERT-DIGEST-NAMES-ONLY-WHAT-THIS-TICK-ADDED",
+  "gate": { "kind": "open" },
+  "priority": 20,
+  "files": {
+    "edit": [
+      {
+        "path": "src/priorAttempts.ts",
+        "description": "the digest is taken over the span the tick added rather than off a tip sha, so a revert over a span that added nothing digests nothing"
+      },
+      {
+        "path": "src/singletonTick.ts",
+        "description": "the singleton leg's afterMerge revert names the span it is reverting, not the tip it found"
+      },
+      {
+        "path": "src/waveMerge.ts",
+        "description": "the per-entry leg's afterMerge revert, the same pair it already reads for the merge row"
+      },
+      {
+        "path": "src/tickAttempt.ts",
+        "description": "the afterCommit site follows whatever shape the digest takes"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the wholly-absorbed span's afterMerge revert record, beside the absorption cases"
+      }
+    ]
+  },
+  "summary": "An afterMerge gate failing over a span the tip already held whole digests the tip's own commit, so the prior-attempt record names another writer's diff as the reverted work",
+  "per": {
+    "path": "spec/loop.md",
+    "section": "Prior-outcome feedback to the retrying tick"
+  },
+  "acceptance": "a `gate-revert` record's digest names only what this tick added to the tip it reverts from — over a span the tip already held whole it says nothing was added rather than showing the commit it found standing there — so no retry reads a foreign diff as its own prior attempt; the record's other fields, the revert and its ownership guard are unchanged",
+  "tests": [
+    "the afterMerge gate-revert record over a wholly-absorbed span digests no commit the tick did not make"
+  ],
+  "notes": "Off note AN-EMPTY-PICK-IS-ABSORBED-NEVER-READ-AS-A-CONFLICT (3). Verified: both legs run the afterMerge stack whenever no conflict, then hand `mergedSha` to `buildGateRevert` (`src/singletonTick.ts:454`, `src/waveMerge.ts:792`, builder `src/priorAttempts.ts:726`, digest `:712`); over a wholly-absorbed span `mergedSha === preCherry`, the equality both legs already read (`src/singletonTick.ts:517`, `src/waveMerge.ts:882`). The revert itself is safe: `resetKeepTo(preCherry)` is a no-op."
+}
