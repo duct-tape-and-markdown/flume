@@ -1,0 +1,54 @@
+{
+  "tag": "THE-VERDICT-RECORDS-THE-PREEMPT-CLASS-THE-BACKSTOP-COUNTS",
+  "gate": { "kind": "open" },
+  "priority": 10,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/tickVerdict.ts",
+        "description": "the stage-failure family beside `RenderFailure`, and the verdict list a platform failure rides"
+      },
+      {
+        "path": "src/tickAttempt.ts",
+        "description": "the no-commit classification, the one site holding the preempt's failure class"
+      },
+      {
+        "path": "src/tickLeg.ts",
+        "description": "`PhaseTickOutcome`'s sibling list, beside `renderFailures`"
+      },
+      {
+        "path": "src/singletonTick.ts",
+        "description": "the singleton leg's fold of the attempt's own refusal record"
+      },
+      {
+        "path": "src/waveMerge.ts",
+        "description": "the wave's fold, where a preempted agent's attempt outcome is read per entry"
+      },
+      {
+        "path": "src/Dispatcher.ts",
+        "description": "`TickOutcome` and the handoff fold carrying the render/merge/gate lists"
+      },
+      {
+        "path": "src/Phase.ts",
+        "description": "`TickResult`'s sibling list"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the verdict's stage-record cases, beside the render-failure ones"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "A platform-preempt's failure class reaches the prior-attempt record alone, so the verdict a supervisor reads carries no signature for the platform stage the section names",
+  "per": {
+    "path": "spec/loop.md",
+    "section": "Repeated identical failures — quarantine, then abort"
+  },
+  "acceptance": "an agent that failed for non-work reasons leaves a platform-stage failure record on the tick verdict — the preempt class as its signature, blamed on no entry — under either leg, and reported on the surfaces the render/merge/gate records already reach. Every other verdict field decodes as today, so the standing verdict and handoff tests stay green unchanged.",
+  "tests": [
+    "a singleton tick preempted by a platform failure records the preempt class on its verdict",
+    "a wave preempted by a platform failure records a platform failure blamed on no entry"
+  ],
+  "notes": "Verified this tick: the class is built at `src/tickAttempt.ts:559`/`:586` and persists only through `buildPlatformPreempt` (`src/priorAttempts.ts:838`) into the prior-attempt record; the verdict carries `noCommit` alone (`src/tickVerdict.ts:739`). `attempt.renderFailure` (`src/singletonTick.ts:631`, `src/waveMerge.ts`) is the analogue to follow. Sibling of THE-FAILURE-ACCOUNTING-TAKES-PLATFORM-AS-A-FIFTH-STAGE, blocked on this and reading the list."
+}

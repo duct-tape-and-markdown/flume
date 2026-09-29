@@ -1,0 +1,22 @@
+{
+  "tag": "THE-SELF-EXCLUSION-DOC-BOUNDS-ONE-TICK-AND-NAMES-THE-BACKSTOP",
+  "gate": { "kind": "open" },
+  "priority": 10,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "harness/handoff.ts",
+        "description": "`wakeSet`'s exclusion paragraph, which claims the wall costs one tick"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "wakeSet's doc claims the self-exclusion costs one tick, where two live slices alternate the same wall past it; the section now bounds a longer wall at the backstop",
+  "per": {
+    "path": "spec/harness.md",
+    "section": "The default `handoff`"
+  },
+  "acceptance": "`wakeSet`'s exclusion paragraph says what one tick of exclusion actually buys and names the repeated-failure backstop as the bound on a wall that outlasts it, so no prose in the package claims a bound a stateless per-tick handoff cannot hold. No behavior change: the wake set is byte-identical, typecheck and suite green.",
+  "notes": "Verified this tick: `harness/handoff.ts:267` — \"Excluded, it costs one tick\" — is the only site claiming it; nothing in `src/`, `harness/` or `docs/` carries a second copy. Two live plan slices alternate: each excludes itself and wakes the sibling, which walls and wakes it back, so the exclusion is one tick deep whatever the wall. Half 2 of the drained question `what-bounds-a-run-spent-on-a-wall-no-tick-can-move`."
+}

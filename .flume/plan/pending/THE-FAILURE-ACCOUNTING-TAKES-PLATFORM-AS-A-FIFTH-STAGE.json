@@ -1,0 +1,63 @@
+{
+  "tag": "THE-FAILURE-ACCOUNTING-TAKES-PLATFORM-AS-A-FIFTH-STAGE",
+  "gate": {
+    "kind": "blockedBy",
+    "tags": ["THE-VERDICT-RECORDS-THE-PREEMPT-CLASS-THE-BACKSTOP-COUNTS"]
+  },
+  "priority": 10,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/loopSupervisor.ts",
+        "description": "`FAILURE_STAGES`, the stage-list fold, the per-entry preamble, and `LIFTS_ON_A_MOVED_TIP`'s declared subset"
+      },
+      {
+        "path": "src/tickVerdict.ts",
+        "description": "the signature-bound comment's roster — the seam this shares with its blocker"
+      },
+      {
+        "path": "src/Dispatcher.ts",
+        "description": "the four-stage roster at the quarantine drop"
+      },
+      {
+        "path": "src/cliHelp.ts",
+        "description": "the `loop` help's abort-stage roster"
+      },
+      {
+        "path": "docs/CLI.md",
+        "description": "the `flume loop` section's abort-stage roster"
+      },
+      {
+        "path": "docs/CHAIN-AUTHORING.md",
+        "description": "the supervisor-policy section's stage-tagged roster paragraph"
+      },
+      {
+        "path": "tests/loopSupervisor.test.ts",
+        "description": "the backstop's per-stage abort cases"
+      },
+      {
+        "path": "tests/examples.test.ts",
+        "description": "the authoring-page roster pin, whose title claims every member quarantines"
+      },
+      {
+        "path": "tests/docComments.test.ts",
+        "description": "the roster scan's own prose example, which the scan reads back against the set"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "FAILURE_STAGES stops at four, so a platform preempt repeating every tick joins no streak and every roster prose names a set the section has outgrown",
+  "per": {
+    "path": "spec/loop.md",
+    "section": "Repeated identical failures — quarantine, then abort"
+  },
+  "acceptance": "the accounting counts a fifth `platform` stage: three consecutive ticks whose verdicts record the same preempt class abort the run naming that stage, the quarantine leg places no hold for it, the tip-expiry lift set stays render/merge/gate and names platform as the member it leaves out, and every roster read back against `FAILURE_STAGES` — engine prose, the `loop` help, `docs/CLI.md`, `docs/CHAIN-AUTHORING.md`, the suite's own — names the member or declares its subset at the site.",
+  "tests": [
+    "the backstop aborts a run whose ticks repeat one platform failure class"
+  ],
+  "pins": [
+    "a repeated platform failure quarantines no entry"
+  ],
+  "notes": "Verified this tick: `FAILURE_STAGES` (`src/loopSupervisor.ts:239`) has four members and the `stageLists` fold (`:760`) is exhaustive over it by type, so the member is a compile error until the blocker's verdict list is named. An unblamed failure already skips the quarantine leg (`:788`). Roster pins that red: `tests/examples.test.ts:2478` (its title claims quarantine) and the doc-comment scan over `src/`+`tests/` prose. Precedent: cff96f8d took render the same way."
+}
