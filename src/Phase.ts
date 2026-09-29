@@ -11,6 +11,7 @@ import type {
   GateFailure,
   MergeFailure,
   MergeOutcome,
+  PlatformFailure,
   ProvisionFailure,
   RenderFailure,
   ReportedGateResult,
@@ -575,6 +576,32 @@ export interface TickResult {
    * *Routing rule (plan, build, and interactive sessions)*).
    */
   gateFailures?: readonly GateFailure[];
+  /**
+   * Every platform-stage failure this tick recorded — one per agent that
+   * failed for non-work reasons rather than reaching an exit of its own — the
+   * same {@link PlatformFailure} records the tick verdict persists. Each
+   * carries the preempt's `message` and the `signature` the run's
+   * consecutive-failure backstop compares repeats by, and no entry: a
+   * preempt's wall is the host's, so there is nothing here to key a hold
+   * under. Absent when every agent this tick invoked exited on its own
+   * account.
+   *
+   * What this adds beyond {@link noCommit}: that field is `platform-preempt`
+   * for the whole tick, so it names no class at all — an expired login and
+   * an OOM kill read identically — and a wave whose sibling shipped carries
+   * no `noCommit` to read. Nothing else on this surface traces a preempt: no
+   * `gateResults` row, since the gates never ran, and no
+   * {@link FanoutEntryOutcome.mergeOutcome}, since nothing reached the pick.
+   * A `handoff` routing on one — holding the phase awake, counting how many
+   * ticks in a row died on the same host wall — reads the records here
+   * (spec/chain.md "What a hook receives").
+   *
+   * A fact, never a verdict: whether a repeated preempt means retry, back
+   * off or stop the run stays the chain's
+   * (`.claude/rules/engine-boundary.md`, *Routing rule (plan, build, and
+   * interactive sessions)*).
+   */
+  platformFailures?: readonly PlatformFailure[];
   /** Set of pending tags shipped by this phase (build only; usually 0 or 1). */
   shippedTags: readonly string[];
   /**

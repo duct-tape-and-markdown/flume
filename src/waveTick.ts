@@ -57,6 +57,7 @@ import { consultShouldRun, runAttempt } from "./tickAttempt.js";
 import type { PhaseTickOutcome, TickLegContext } from "./tickLeg.js";
 import {
   MAX_FAILURE_SIGNATURE,
+  type PlatformFailure,
   type ProvisionFailure,
   type RenderFailure,
   type StakeLoss,
@@ -212,6 +213,13 @@ export async function runFanout(
   // this same array and is built where the wave has settled, so a refusal
   // reports the refusals raised behind it as well as before it.
   const renderFailures: RenderFailure[] = [];
+  // And every entry whose agent failed for non-work reasons rather than
+  // reaching an exit of its own. Same shortfall the array above answers, one
+  // stage later and with no blame to carry: the preempt class reaches the
+  // entry's prior-attempt slot for the retry's prompt to read, and nothing
+  // else on this wave's surfaces states it (`PlatformFailure`,
+  // `src/tickVerdict.ts`). Filled and read exactly as the refusals are.
+  const platformFailures: PlatformFailure[] = [];
 
   // Carry each entry's span onto trunk as that entry's own agent finishes:
   // the merge/gate/revert stage, one span at a time under its own ship lock
@@ -226,6 +234,7 @@ export async function runFanout(
     partitionIgnore,
     provisionFailures,
     renderFailures,
+    platformFailures,
     stakeLosses,
     clearedPriorAttempts,
   });
@@ -430,6 +439,7 @@ export async function runFanout(
     );
     perEntry.push(r);
     if (r.renderFailure) renderFailures.push(r.renderFailure);
+    if (r.platformFailure) platformFailures.push(r.platformFailure);
     // A walled wave carries no further span onto trunk — but what this
     // attempt observed away from trunk is still a fact of this tick, and the
     // verdict below is built where every slot has finished, so the facts half
@@ -782,6 +792,7 @@ export async function runFanout(
     ...(provisionFailures.length > 0 ? { provisionFailures } : {}),
     ...(stakeLosses.length > 0 ? { stakeLosses } : {}),
     ...(renderFailures.length > 0 ? { renderFailures } : {}),
+    ...(platformFailures.length > 0 ? { platformFailures } : {}),
     ...(mergeStage.mergeFailures.length > 0
       ? { mergeFailures: mergeStage.mergeFailures }
       : {}),

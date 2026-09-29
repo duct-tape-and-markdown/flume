@@ -500,7 +500,7 @@ function singleAgent(action: (cwd: string) => Promise<void>): Agent {
  * short enough not to need its length bound).
  */
 function fanoutAgent(
-  bySlug: Record<string, (cwd: string) => Promise<void>>,
+  bySlug: Record<string, (cwd: string) => Promise<number | void>>,
 ): Agent {
   return {
     name: "fake-fanout",
@@ -514,8 +514,16 @@ function fanoutAgent(
       // invocation throws: a wait blown in here would otherwise reach the
       // case only as an entry that did not commit (`runAgentBody`,
       // tests/helpers/dispatcherFixture.ts).
-      await runAgentBody(() => action(inv.cwd));
-      return { exitCode: 0, stdout: "", stderr: "" };
+      //
+      // An action that answers with a number ends its invocation on that exit
+      // code, which is how a case puts a platform-preempt in a wave beside
+      // slots that ship; every other action answers `void` and exits clean.
+      const ended = await runAgentBody(() => action(inv.cwd));
+      return {
+        exitCode: typeof ended === "number" ? ended : 0,
+        stdout: "",
+        stderr: "",
+      };
     },
   };
 }
@@ -17041,6 +17049,142 @@ describe("TickVerdict renderFailures — the render stage names the entry it ref
   });
 });
 
+/**
+ * THE-VERDICT-RECORDS-THE-PREEMPT-CLASS-THE-BACKSTOP-COUNTS — an agent that
+ * died for non-work reasons wrote its class into the entry's prior-attempt
+ * slot, which only the retry's own prompt reads, and the verdict carried the
+ * tick-level `platform-preempt` with no class on it: two ticks killed by an
+ * expired login and one killed by an OOM were one indistinguishable label, and
+ * a wave whose sibling shipped carried no label at all (`PlatformFailure`,
+ * `src/tickVerdict.ts`).
+ */
+describe("TickVerdict platformFailures — the platform stage names the class, never an entry", () => {
+  it("a singleton tick preempted by a platform failure records the preempt class on its verdict", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    let handedToHandoff: TickResult | undefined;
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      handoff: (r) => {
+        handedToHandoff = r;
+        return [];
+      },
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      // 137 is the SIGKILL/OOM shape: the process ended without ever
+      // accounting for the work, which is what makes this the platform stage
+      // and not a clean exit.
+      agent: {
+        name: "preempted-singleton",
+        async invoke() {
+          return { exitCode: 137, stdout: "", stderr: "Killed" };
+        },
+      },
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Non-vacuity: the agent really ran — a usage row proves the invocation
+    // happened, which is what separates this from the render stage — and
+    // really ended at the platform stage.
+    expect(outcome.verdict?.invocations).toHaveLength(1);
+    expect(outcome.verdict?.noCommit).toBe("platform-preempt");
+    expect(outcome.verdict?.committed).toBe(false);
+
+    const reported = outcome.verdict?.platformFailures ?? [];
+    expect(reported).toHaveLength(1);
+    // The class is the signature: the wall a repeat is recognized by is the
+    // exit the host handed back, and the tick-level mode above names none of
+    // it.
+    expect(reported[0]!.signature).toContain("exited with code 137");
+    expect(reported[0]!.message).toBe(reported[0]!.signature);
+    // Blamed on no entry, and by the record's own shape rather than by two
+    // absent fields: a preempt's wall is the host's, so there is no key here
+    // to hold a quarantine under and the record feeds the
+    // consecutive-identical-failure backstop alone.
+    expect(Object.keys(reported[0]!).sort()).toEqual([
+      "message",
+      "signature",
+    ]);
+
+    // One set of facts, three surfaces: what `handoff` read is what the
+    // verdict persisted and what the outcome carries.
+    expect(handedToHandoff?.platformFailures).toEqual(reported);
+    expect(outcome.platformFailures).toEqual(reported);
+  });
+
+  it("a wave preempted by a platform failure records a platform failure blamed on no entry", async () => {
+    await writePending(fx.repo, [
+      makeEntry("SHIPS-ONE", ["src/ships-one.ts"]),
+      makeEntry("PREEMPT-TWO", ["src/preempt-two.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    let handedToHandoff: TickResult | undefined;
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      handoff: (r) => {
+        handedToHandoff = r;
+        return [];
+      },
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "ships-one": (cwd) =>
+          writeAndCommit(
+            cwd,
+            "src/ships-one.ts",
+            "A\n",
+            "build(SHIPS-ONE): ship",
+          ),
+        "preempt-two": async () => 137,
+      }),
+      log: silent,
+      maxParallel: 2,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Non-vacuity, and the case's whole point: the sibling really shipped, so
+    // the wave carries no `noCommit` at all — every fold above the per-entry
+    // record has lost the preempt.
+    expect(outcome.verdict?.shippedTags).toEqual(["SHIPS-ONE"]);
+    expect(outcome.verdict?.noCommit).toBeUndefined();
+    expect(outcome.verdict?.invocations).toHaveLength(2);
+
+    const reported = outcome.verdict?.platformFailures ?? [];
+    expect(reported).toHaveLength(1);
+    expect(reported[0]!.signature).toContain("exited with code 137");
+    // Blamed on no entry even here, where there is an entry to name: the
+    // preempted slot was carrying PREEMPT-TWO, which is still pending and
+    // untouched, and the wall that killed it was never PREEMPT-TWO's.
+    expect(readPendingFromDisk(fx.repo).map((e) => e.tag)).toEqual([
+      "PREEMPT-TWO",
+    ]);
+    expect(Object.keys(reported[0]!).sort()).toEqual([
+      "message",
+      "signature",
+    ]);
+
+    expect(handedToHandoff?.platformFailures).toEqual(reported);
+    expect(outcome.platformFailures).toEqual(reported);
+  });
+});
+
 describe("Dispatcher render-refused — singleton/fanout agreement (DISPATCHER-RENDER-REFUSED-CATCH-UNSHARED)", () => {
   it("both callsites persist byte-identical prior-attempt record content and emit a same-shaped log line for equivalent input, driven through the one shared persist+log method", async () => {
     await writeFile(
@@ -24091,14 +24235,16 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
     );
 
     // The judged wave, in the order one slot carries it: a stake lost, a
-    // `setupWorktree` that throws, a prompt that refuses, an entry declined, a
-    // span that ships, a span the trunk moves under, and — last, so that every
-    // fact above is already on the wave when its rewrite runs — the span that
-    // walls on the fence and carries the corruption.
+    // `setupWorktree` that throws, a prompt that refuses, an agent killed for
+    // non-work reasons, an entry declined, a span that ships, a span the trunk
+    // moves under, and — last, so that every fact above is already on the wave
+    // when its rewrite runs — the span that walls on the fence and carries the
+    // corruption.
     await writePending(target.repo, [
-      { ...makeEntry("TAKEN", ["src/taken.ts"]), priority: 7 },
-      { ...makeEntry("SETUP-BOOM", ["src/setup-boom.ts"]), priority: 6 },
-      { ...makeEntry("RENDER-WALL", ["src/render-wall.ts"]), priority: 5 },
+      { ...makeEntry("TAKEN", ["src/taken.ts"]), priority: 8 },
+      { ...makeEntry("SETUP-BOOM", ["src/setup-boom.ts"]), priority: 7 },
+      { ...makeEntry("RENDER-WALL", ["src/render-wall.ts"]), priority: 6 },
+      { ...makeEntry("PREEMPT-WALL", ["src/preempt-wall.ts"]), priority: 5 },
       { ...makeEntry("DECLINE-ME", ["src/decline-me.ts"]), priority: 4 },
       { ...makeEntry("SHIP-ONE", ["src/ship-one.ts"]), priority: 3 },
       { ...makeEntry("CONFLICT-TRUNK", ["src/conflict-trunk.ts"]), priority: 2 },
@@ -24110,10 +24256,13 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
     new Baton(flumeDir).wake("build");
 
     const outcome = await dispatcherWith(
-      // Registered for the three entries that reach an agent: DECLINE-ME,
+      // Registered for the four entries that reach an agent: DECLINE-ME,
       // RENDER-WALL, SETUP-BOOM or TAKEN arriving at one throws, which is the
       // loudest failure this fixture can take.
       fanoutAgent({
+        // The host wall, not the work: a non-zero exit with no commit, which
+        // the attempt classes a platform-preempt (`platformFailures`).
+        "preempt-wall": async () => 137,
         "ship-one": (cwd) =>
           writeAndCommit(cwd, "src/ship-one.ts", "ok\n", "build: SHIP-ONE"),
         "conflict-trunk": async (cwd) => {
@@ -24220,6 +24369,7 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
       "renderFailures",
       "mergeFailures",
       "gateFailures",
+      "platformFailures",
       "clearedPriorAttempts",
     ];
     const legs: [string, WaveLeg][] = [

@@ -31,6 +31,7 @@ import type { AttemptContext } from "./tickAttempt.js";
 import type {
   GateFailure,
   MergeFailure,
+  PlatformFailure,
   ProvisionFailure,
   RenderFailure,
   StakeLoss,
@@ -59,6 +60,8 @@ export type PhaseTickOutcome = {
   mergeFailures?: MergeFailure[];
   /** See {@link TickVerdict.gateFailures}. */
   gateFailures?: GateFailure[];
+  /** See {@link TickVerdict.platformFailures}. */
+  platformFailures?: PlatformFailure[];
   /** Entry tags this wave provisioned a worktree/agent for (fanout only); absent for a singleton phase. */
   tags?: string[];
   /** Fanout only: each provisioned entry's cherry-pick/merge fate; absent for a singleton phase. */

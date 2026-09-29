@@ -57,6 +57,7 @@ import {
   reportedGateRow,
   throwFacts,
   type GateFailure,
+  type PlatformFailure,
   type RenderFailure,
   type ReportedGateResult,
   type TickVerdictTiming,
@@ -168,6 +169,15 @@ type AttemptFacts = {
    * names the entry and the wall (`RenderFailure`, `src/tickVerdict.ts`).
    */
   renderFailure?: RenderFailure;
+  /**
+   * Set only alongside `noCommit: "platform-preempt"` — the unblamed record
+   * of the preempt, the platform stage's own answer to the two above. The
+   * mode is tick-level once a caller folds it and a shipping sibling erases
+   * it outright, so the record is what carries the class a supervisor
+   * compares one tick's preempt against the next's by
+   * (`PlatformFailure`, `src/tickVerdict.ts`).
+   */
+  platformFailure?: PlatformFailure;
 };
 
 /**
@@ -348,10 +358,12 @@ export async function runAttempt(
     // platform-preempt (not a defect in the work) — consulted here for the
     // empty span too, since a span that cannot ship is no reason to let a
     // platform failure masquerade as an agent's own exit.
-    const mode = await classifyNoCommit(ctx, ref, termination, {
-      spanBase,
-      spanHead: headSha,
-    });
+    const { mode, platformFailure } = await classifyNoCommit(
+      ctx,
+      ref,
+      termination,
+      { spanBase, spanHead: headSha },
+    );
     ctx.log.warn(
       `[flume] ${label}: ${mode} (${emptySpan ? "empty span" : "no commit"})`,
     );
@@ -360,6 +372,7 @@ export async function runAttempt(
       gateResults: [],
       timings: [],
       noCommit: mode,
+      ...(platformFailure ? { platformFailure } : {}),
       spanBase,
       // Only when a commit was made and then dropped as unusable: an
       // unmoved ref has no span tip to name.
@@ -838,26 +851,35 @@ async function writeRevertNote(
  * about what the exit meant; a
  * **platform-preempt** otherwise — the non-work failure class, explicitly
  * not a defect in the work. Returns the mode for `TickOutcome` / the
- * logger record.
+ * logger record, and — on a preempt — the stage-failure record that class
+ * becomes on every reporting surface: the retry's own prompt reads the
+ * prior-attempt slot written here, and nothing else does, so the class
+ * reaches a supervisor only by riding back out with the mode
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*).
  */
 async function classifyNoCommit(
   ctx: AttemptContext,
   ref: PriorAttemptRef,
   termination: AgentTermination,
   span: { spanBase: string; spanHead: string },
-): Promise<NoCommitMode> {
+): Promise<{ mode: NoCommitMode; platformFailure?: PlatformFailure }> {
   if (termination.kind === "clean") {
     await ctx.attempts.write(
       ref,
       buildCleanExit(termination.finalMessage, span),
     );
-    return "clean-exit";
+    return { mode: "clean-exit" };
   }
-  await ctx.attempts.write(
-    ref,
-    buildPlatformPreempt(termination.failureClass),
-  );
-  return "platform-preempt";
+  const { failureClass } = termination;
+  await ctx.attempts.write(ref, buildPlatformPreempt(failureClass));
+  return {
+    mode: "platform-preempt",
+    platformFailure: {
+      signature: bound(failureClass.trim(), MAX_FAILURE_SIGNATURE),
+      message: failureClass,
+    },
+  };
 }
 
 /**

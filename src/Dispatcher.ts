@@ -83,6 +83,7 @@ import {
   throwFacts,
   type GateFailure,
   type MergeFailure,
+  type PlatformFailure,
   type ProvisionFailure,
   type RenderFailure,
   type TickVerdict,
@@ -485,6 +486,12 @@ export interface TickOutcome {
    * Present only when the tick hit at least one; absent on a clean tick.
    */
   gateFailures?: GateFailure[];
+  /**
+   * See {@link TickVerdict.platformFailures}.
+   * Present only when the tick hit at least one; absent on a tick whose every
+   * agent exited on its own account.
+   */
+  platformFailures?: PlatformFailure[];
   /**
    * This tick's unified facts artifact, present iff a phase
    * actually ran (same condition as `result`) — absent on `hibernated`,
@@ -1102,6 +1109,7 @@ export class Dispatcher {
       renderFailures,
       mergeFailures,
       gateFailures,
+      platformFailures,
       tags,
       mergeOutcomes,
       timings,
@@ -1123,6 +1131,11 @@ export class Dispatcher {
     // again: a prompt that never resolved ran no agent, so nothing else on
     // the surface names the entry it was blamed on.
     //
+    // The platform-stage fold is the shortfall with no per-entry trace at all:
+    // an agent that died for non-work reasons ran no gate, reached no pick and
+    // wrote its class only into the prior-attempt slot the *retry's prompt*
+    // reads, so a `handoff` counting host walls has nothing else to read.
+    //
     // `tipMoved` does NOT fold in here: `TickResult`
     // (`src/Phase.ts`) carries no field for it — the fact lives on
     // `TickOutcome`/`TickVerdict` alone, read by a fresh next tick, never by
@@ -1140,6 +1153,9 @@ export class Dispatcher {
         : {}),
       ...(mergeFailures && mergeFailures.length > 0 ? { mergeFailures } : {}),
       ...(gateFailures && gateFailures.length > 0 ? { gateFailures } : {}),
+      ...(platformFailures && platformFailures.length > 0
+        ? { platformFailures }
+        : {}),
     };
 
     // Sleep this phase by default; handoff re-wakes if needed. Scoped to the
@@ -1223,6 +1239,7 @@ export class Dispatcher {
       renderFailures,
       mergeFailures,
       gateFailures,
+      platformFailures,
       clearedPriorAttempts,
       summary,
       headSha: await git.revParse(this.opts.repoRoot),
@@ -1244,6 +1261,9 @@ export class Dispatcher {
         : {}),
       ...(mergeFailures && mergeFailures.length > 0 ? { mergeFailures } : {}),
       ...(gateFailures && gateFailures.length > 0 ? { gateFailures } : {}),
+      ...(platformFailures && platformFailures.length > 0
+        ? { platformFailures }
+        : {}),
       awakeAfter: this.baton.awake(),
       summary,
     };

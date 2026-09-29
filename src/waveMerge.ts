@@ -69,6 +69,7 @@ import {
   unrevertableMergeFailure,
   type GateFailure,
   type MergeFailure,
+  type PlatformFailure,
   type ProvisionFailure,
   type RenderFailure,
   type ReportedGateResult,
@@ -266,6 +267,13 @@ interface WaveMergeSetup {
    * every stage-failure class the completing verdict would.
    */
   readonly renderFailures: RenderFailure[];
+  /**
+   * Platform preempts the wave recorded, one per agent that failed for
+   * non-work reasons. The leg's own array on the same terms as
+   * `renderFailures` above, and unblamed by its own type
+   * (`PlatformFailure`, `./tickVerdict.js`).
+   */
+  readonly platformFailures: PlatformFailure[];
   /**
    * Entries the wave selected and then lost the stake race for, each naming
    * the holder that took it.
@@ -1298,6 +1306,7 @@ async function settledWaveVerdict(
     provisioned,
     provisionFailures,
     renderFailures,
+    platformFailures,
     stakeLosses,
     clearedPriorAttempts,
   } = w.setup;
@@ -1329,6 +1338,7 @@ async function settledWaveVerdict(
     stakeLosses,
     mergeFailures: w.mergeFailures,
     gateFailures: w.gateFailures,
+    platformFailures,
     clearedPriorAttempts,
     summary:
       shippedTags.length > 0

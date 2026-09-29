@@ -666,6 +666,12 @@ export async function runSingleton(
     ...(attempt.renderFailure
       ? { renderFailures: [attempt.renderFailure] }
       : {}),
+    // Unblamed like every other failure a singleton records, and unblamed by
+    // its own type besides (`PlatformFailure`, `src/tickVerdict.ts`): the
+    // host wall a preempt names is nobody's entry.
+    ...(attempt.platformFailure
+      ? { platformFailures: [attempt.platformFailure] }
+      : {}),
     ...(mergeFailure ? { mergeFailures: [mergeFailure] } : {}),
     mergeOutcomes,
     timings,

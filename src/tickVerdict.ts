@@ -188,6 +188,39 @@ export type RenderFailure = StageFailureEntry & {
 };
 
 /**
+ * A platform-stage failure (spec/loop.md "Repeated identical failures —
+ * quarantine, then abort"): the agent process failed for non-work reasons —
+ * a crash, an OOM kill, an expired login, a spent cap — so the attempt
+ * classed a `platform-preempt` (`NoCommitMode`, `./Prompt.js`) rather than
+ * an account of the work.
+ *
+ * Not a {@link StageFailureEntry}, and the one stage-failure record that is
+ * not: the wall a preempt names belongs to the host, never to the entry the
+ * slot happened to be carrying, so a platform failure is blamed on no entry
+ * at all and feeds the consecutive-failure backstop alone. The type carries
+ * that rather than a comment asking each producer to leave the blame half
+ * off (`.claude/rules/engineering.md`, *Narration is the ladder's bottom
+ * rung*), which also keeps a preempt out of the run quarantine's reach: an
+ * expired login fails every tick identically, and holding the entry it
+ * struck first would isolate a healthy entry for the rest of the run.
+ *
+ * Without this record the class reaches the prior-attempt slot alone
+ * (`buildPlatformPreempt`, `./priorAttempts.js`) — read by the retry's own
+ * prompt, never by a supervisor — and the verdict carries the tick-level
+ * `platform-preempt` with no signature to compare one tick's preempt against
+ * the next's.
+ */
+export interface PlatformFailure {
+  /**
+   * Same comparison-key contract as `ProvisionFailure.signature`: the
+   * preempt class itself — the exit code, the abort, or the error raised
+   * before exit — which is the whole wall a preempt has to name.
+   */
+  signature: string;
+  message: string;
+}
+
+/**
  * One gate's result as the engine reports it — the single row shape every
  * reporting surface carries: a {@link TickVerdict}'s `gateResults` on disk,
  * `TickResult.gateResults` for `handoff`, and `ShipContext.gateResults` for
@@ -249,7 +282,7 @@ export interface ReportedGateResult {
   blamesSpan?: false;
 }
 
-/** Bound on a persisted stage-failure signature (provision/render/merge/gate alike) — a comparison key, not a transcript. */
+/** Bound on a persisted stage-failure signature (provision/render/merge/gate/platform alike) — a comparison key, not a transcript. */
 export const MAX_FAILURE_SIGNATURE = 500;
 
 /**
@@ -848,6 +881,13 @@ export interface TickVerdict {
    */
   gateFailures?: GateFailure[];
   /**
+   * Platform-stage failures this tick recorded — one per agent that failed
+   * for non-work reasons, each blamed on no entry
+   * ({@link PlatformFailure}). Absent/empty when every agent this tick
+   * invoked reached an exit of its own.
+   */
+  platformFailures?: PlatformFailure[];
+  /**
    * spec/loop.md "No false signal": prior-attempt records this tick cleared
    * as stale — entry-keyed records whose tag the queue the wave read no
    * longer carries — by the key each was filed under. The retry those
@@ -913,6 +953,7 @@ interface TickVerdictFacts {
   renderFailures?: readonly RenderFailure[] | undefined;
   mergeFailures?: readonly MergeFailure[] | undefined;
   gateFailures?: readonly GateFailure[] | undefined;
+  platformFailures?: readonly PlatformFailure[] | undefined;
   clearedPriorAttempts?: readonly string[] | undefined;
   summary: string;
   /**
@@ -970,6 +1011,9 @@ export function buildTickVerdict(facts: TickVerdictFacts): TickVerdict {
       : {}),
     ...(facts.gateFailures?.length
       ? { gateFailures: [...facts.gateFailures] }
+      : {}),
+    ...(facts.platformFailures?.length
+      ? { platformFailures: [...facts.platformFailures] }
       : {}),
     ...(facts.clearedPriorAttempts?.length
       ? { clearedPriorAttempts: [...facts.clearedPriorAttempts] }
