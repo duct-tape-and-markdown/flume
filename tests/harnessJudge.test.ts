@@ -335,10 +335,12 @@ describe("the judge", () => {
     expect(verdict.baseFailures).toEqual([]);
   });
 
-  it("a red suite green at the base names the span rather than leaving the reading open", async () => {
+  it("the judge's suite-failed message reports the base run's result without claiming the span caused the failure", async () => {
     const line = "the widget refuses a negative count";
-    // The span changed source; a test file it never declared broke on the
-    // change. Outside the footprint, and the base run settles it.
+    // A test file the span never declared is red on the merged tree and green
+    // at the base. One green base run is the whole evidence — a
+    // load-sensitive failure reads exactly this way whichever span happened
+    // to be merging — so the message states the two runs and stops.
     const { runner, asked } = fakeRunner(
       {
         passing: [{ fullName: `widget > ${line}`, file: "tests/widget.test.ts" }],
@@ -355,14 +357,22 @@ describe("the judge", () => {
       cwd: CWD,
     });
 
-    // Vacuity: the base run happened and came back green, so the ruling below
-    // is the answer to it rather than the answer to no run at all.
+    // Vacuity: the base run happened and came back green, so the message
+    // below reports a run rather than reporting nothing.
     expect(asked.runAtBase).toHaveLength(1);
     expect(verdict.baseFailures).toEqual([]);
-
     expect(verdict.outcome).toBe("suite-failed");
-    expect(verdict.message).toContain("green at");
-    expect(verdict.message).toContain(BASE_SHA.slice(0, 7));
+
+    // The whole message, exactly: what ran on the merged tree, what came back
+    // at the base, and no third clause drawing a cause from the two.
+    expect(verdict.message).toBe(
+      `the suite is not green: 1 failure(s), first ${INHERITED.file} \u00d7 ${INHERITED.name}` +
+        `; the same 1 file(s) ran green at ${BASE_SHA.slice(0, 7)}`,
+    );
+    // Stated in the title's direction too, over a one-sentence message this
+    // case composes end to end — not a rendered artifact quoting foreign
+    // text, so the vocabulary is the assertion's own subject.
+    expect(verdict.message).not.toMatch(/arrived with|caused/);
   });
 
   it("the judge names its failing files from the failures the run reported", async () => {

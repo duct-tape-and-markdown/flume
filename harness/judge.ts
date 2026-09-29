@@ -269,7 +269,13 @@ export async function judgeNamedLines(
       message:
         `the suite is not green: ${run.failures.length} failure(s)` +
         firstOf(run.failures) +
-        (askBase ? `; green at ${short}, so the failure arrived with this span` : ""),
+        // What the base run found, and nothing concluded from it. One green
+        // run over these files says the failure is not standing at the base;
+        // it does not say this span caused it — a load-sensitive case is red
+        // on the merged tree and green at the base whichever span was
+        // merging, and a drain reading a standing prior-attempt record acts
+        // on the verdict either way.
+        (askBase ? `; the same ${failingFiles.length} file(s) ran green at ${short}` : ""),
       lines,
       ...observed,
     };
