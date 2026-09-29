@@ -1,0 +1,24 @@
+{
+  "tag": "THE-CASCADE-HANDOFFS-NOT-SHIPPED-ARMS-DECLARE-THEIR-FIXTURE-LENS",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 30,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "examples/cascade-chain.ts",
+        "description": "the build handoff's `not-shipped` split, unreachable on this chain's own ticks because it declares no `shipped` \u2014 the divergence goes at the site, pointing at the `declaredFilesGate` header that already states the absence"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "Cascade's handoff splits not-shipped two ways on a chain that declares no shipped predicate, so both arms are fixture-only with nothing at the site saying that is on purpose",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "The fix lands at the mechanism"
+  },
+  "acceptance": "the handoff's two `not-shipped` arms carry a declared, cited divergence: they are written for the author who copies this handoff and declares `shipped`, so a hand-folded `TickResult` is the lens on purpose rather than a cheaper fixture standing in for the real writer. The note points at the absence the chain already states rather than restating it. No behavior change; typecheck and suite green, and the Dead plumbing lens stops re-finding the arms.",
+  "notes": "Operator ruling (inbox, 2026-09-29): neither bare nor a cascade `shipped` \u2014 the example's behavior stays and the site declares. Verified this tick: `examples/cascade-chain.ts:518` folds `shipFailures` by tag into the split, and `:252` already states the chain declares no `shipped`; nothing says the fixture is deliberate. Second cite for the note: `engine-boundary.md`, *Opinion ships by name, opted into*. Engine half THE-SHIP-THREW-RECORD-TAG-NAMES-THE-BLAMED-SPAN: other section, disjoint files."
+}
