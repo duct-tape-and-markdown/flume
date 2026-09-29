@@ -35,6 +35,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Logger } from "../src/log.ts";
 import { computeStateRootRel, resolvePendingDir } from "../src/paths.ts";
+import { currentRefPath, gitCommonDir, tipClaimPath } from "../src/git.ts";
 import {
   commitPendingUpdate,
   isPendingRelocated,
@@ -617,12 +618,129 @@ describe("commitPendingUpdate — the commit it reports is the one it wrote", ()
       expect(foreign).not.toBe(landed.commitSha);
 
       const noop = await commitPendingUpdate(ctx, ["SHIP-ONE"], [], []);
-      expect(noop.tipMoved).toBe(false);
+      expect(noop.exit).toBe("nothing-to-write");
       expect(noop.commitSha).toBeUndefined();
       // …and the tip really did move under it, so the `undefined` above is the
       // exit talking rather than a quiet repository.
       expect(await gitOut(repo.dir, ["rev-parse", "HEAD"])).toBe(foreign);
     } finally {
+      await repo.cleanup();
+    }
+  });
+
+  /**
+   * And the other half: *which* way out it took when it took none of the
+   * committing one. The three no-commit exits leave the queue in three
+   * different states — already current and untouched, refused and untouched,
+   * freshly written to a dock git cannot see — and a caller reading the sha
+   * alone sees one `undefined` across all three, so the merge stage's operator
+   * lines had to guess (`.claude/rules/engineering.md`, *A fact the engine
+   * holds is reported, never rediscovered*).
+   *
+   * Each exit is driven over a real repository, and each is proven by the disk
+   * state that distinguishes it from its siblings rather than by the report
+   * alone.
+   */
+  it("the pending-ledger rewrite states which no-commit exit it took", async () => {
+    const repo = await makeScratchRepo("flume-ledger-exits-", "main");
+    const dock = await mkTempDir("flume-ledger-dock-");
+    try {
+      const pendingDir = join(repo.dir, "queue", "ledger");
+      await mkdir(pendingDir, { recursive: true });
+      const entryFile = entryFileName("SHIP-ONE");
+      const entry =
+        JSON.stringify(
+          {
+            tag: "SHIP-ONE",
+            gate: { kind: "open" },
+            files: { new: [], edit: [], retire: [] },
+          },
+          null,
+          2,
+        ) + "\n";
+      await writeFile(join(pendingDir, entryFile), entry, "utf8");
+      await exec("git", ["add", "."], { cwd: repo.dir });
+      await exec("git", ["commit", "-q", "-m", "ledger"], { cwd: repo.dir });
+
+      const inTree: PendingLedgerContext = {
+        repoRoot: repo.dir,
+        flumeDir: repo.dir,
+        pendingDir,
+        entryExtension: undefined,
+        log: silent,
+      };
+
+      // (1) Nothing to write: a tag the fresh re-read of the queue no longer
+      // carries. Non-vacuity — the queue this call reads is populated, so the
+      // exit is "this rewrite changes nothing" and not "there is no queue".
+      const before = await gitOut(repo.dir, ["rev-parse", "HEAD"]);
+      expect(
+        await gitOut(repo.dir, ["ls-tree", "--name-only", "HEAD", "queue/ledger/"]),
+      ).toContain(entryFile);
+      const current = await commitPendingUpdate(inTree, ["SHIPPED-LAST-WAVE"], [], []);
+      expect(current.exit).toBe("nothing-to-write");
+      expect(current.commitSha).toBeUndefined();
+      // Untouched on both surfaces — this exit's own disk state, and what tells
+      // it from the dock below, which writes.
+      expect(existsSync(join(pendingDir, entryFile))).toBe(true);
+      expect(await gitOut(repo.dir, ["rev-parse", "HEAD"])).toBe(before);
+
+      // (2) Tip claimed: a live foreign pid on the ref this repo is on. The
+      // vitest worker plays the holder, as the wave's own tip-claim case does
+      // (`tests/Dispatcher.test.ts`) — this context declares no
+      // `ownTipClaimPid`, so a live pid reads as a concurrent engine instance.
+      const ref = await currentRefPath(repo.dir);
+      expect(ref.kind).toBe("ref");
+      const claim = tipClaimPath(
+        await gitCommonDir(repo.dir),
+        ref.kind === "ref" ? ref.path : "",
+      );
+      await mkdir(dirname(claim), { recursive: true });
+      await writeFile(claim, String(process.pid), "utf8");
+      let claimed;
+      try {
+        claimed = await commitPendingUpdate(inTree, ["SHIP-ONE"], [], []);
+      } finally {
+        rmSync(claim, { force: true });
+      }
+      expect(claimed.exit).toBe("tip-claimed");
+      expect(claimed.commitSha).toBeUndefined();
+      // Refused before the writes, so the entry this call would have retired
+      // is still on disk — and the same shipped tag under no claim commits
+      // below, which is what proves the claim was what refused it.
+      expect(existsSync(join(pendingDir, entryFile))).toBe(true);
+      expect(await gitOut(repo.dir, ["rev-parse", "HEAD"])).toBe(before);
+
+      // (3) Dock outside the repo: the same rewrite over a queue git cannot
+      // name. It writes, and it commits nothing.
+      const dockPending = join(dock, "plan", "pending");
+      await mkdir(dockPending, { recursive: true });
+      await writeFile(join(dockPending, entryFile), entry, "utf8");
+      const relocated: PendingLedgerContext = {
+        repoRoot: repo.dir,
+        flumeDir: dock,
+        pendingDir: dockPending,
+        entryExtension: undefined,
+        log: silent,
+      };
+      expect(isPendingRelocated(relocated)).toBe(true);
+      const docked = await commitPendingUpdate(relocated, ["SHIP-ONE"], [], []);
+      expect(docked.exit).toBe("dock-outside-repo");
+      expect(docked.commitSha).toBeUndefined();
+      // The write this exit made, which is exactly what "nothing to write"
+      // above did not do — so the two are told apart on disk, not only in the
+      // word each reported.
+      expect(existsSync(join(dockPending, entryFile))).toBe(false);
+      expect(await gitOut(repo.dir, ["rev-parse", "HEAD"])).toBe(before);
+
+      // And the committing exit says so in the same vocabulary: the in-tree
+      // queue, no claim, the tag it really carries.
+      const landed = await commitPendingUpdate(inTree, ["SHIP-ONE"], [], []);
+      expect(landed.exit).toBe("committed");
+      expect(landed.commitSha).toMatch(/^[0-9a-f]{40}$/);
+      expect(await gitOut(repo.dir, ["rev-parse", "HEAD"])).toBe(landed.commitSha);
+    } finally {
+      await rm(dock, { recursive: true, force: true });
       await repo.cleanup();
     }
   });

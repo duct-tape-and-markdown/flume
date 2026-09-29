@@ -42,6 +42,7 @@ import {
 } from "./paths.js";
 import {
   commitPendingUpdate,
+  type PendingRewriteNoCommitExit,
   type PendingRewriteResult,
 } from "./pendingLedger.js";
 import { PendingParseFailure, type PendingEntry } from "./PendingSchema.js";
@@ -1061,8 +1062,8 @@ async function commitAttemptLedger(
   // — the same rule, one call down: three of its four exits write no commit,
   // and a tip comparison around this call cannot tell the wave's own sibling
   // pick landing beside it from a commit this rewrite made.
-  if (update.commitSha !== undefined) w.ledgerShas.push(update.commitSha);
-  if (update.tipMoved) {
+  if (update.exit === "committed") w.ledgerShas.push(update.commitSha);
+  if (update.exit === "tip-claimed") {
     w.tipMoved = true;
     // The refusal's own disk state, from the call that took it rather than
     // from this site's memory of where its tip check sits: the claim is read
@@ -1081,17 +1082,45 @@ async function commitAttemptLedger(
   }
   // Same fact again, so the line an operator reads and the sha the handoff
   // carries can never disagree: a no-commit exit says so in words, and a sha
-  // is quoted only where the rewrite reported one.
-  const commitSha = update.commitSha;
+  // is quoted only where the rewrite reported one. Which no-commit exit is the
+  // rewrite's own statement, never a cause keyed off the one `undefined` all
+  // three of them answer with — read off the sha alone, a queue whose fresh
+  // re-read no longer carries the shipped entry's file was reported as an
+  // out-of-tree dock, and a relocated dock that had just written the queue was
+  // reported as a footprint already recorded
+  // (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+  // never rediscovered*).
   leg.log.info(
-    shippedTags.length > 0
-      ? commitSha === undefined
-        ? `[flume] shipped ${shippedTags.join(", ")}; pending updated on disk, no chore commit (dock outside repo)`
-        : `[flume] ship commit ${commitSha.slice(0, 8)}: ${shippedTags.join(", ")}`
-      : commitSha === undefined
-        ? `[flume] footprint already recorded, no commit: ${footprintTags.join(", ")}`
-        : `[flume] footprint commit ${commitSha.slice(0, 8)}: ${footprintTags.join(", ")}`,
+    update.exit === "committed"
+      ? shippedTags.length > 0
+        ? `[flume] ship commit ${update.commitSha.slice(0, 8)}: ${shippedTags.join(", ")}`
+        : `[flume] footprint commit ${update.commitSha.slice(0, 8)}: ${footprintTags.join(", ")}`
+      : noCommitLine(update.exit, shippedTags, footprintTags),
   );
+}
+
+/**
+ * The operator line for a ledger rewrite that wrote no commit: what the queue
+ * this pick was about to move is now, in the words of the exit the rewrite
+ * reported (`PendingRewriteNoCommitExit`, `src/pendingLedger.ts`).
+ *
+ * `tip-claimed` never reaches here — its caller above returns on the warning
+ * that names the claim — so the two arms left are the two states an operator
+ * has to tell apart: a queue that already said what this rewrite would have
+ * said, and a queue written to a dock git cannot see.
+ */
+function noCommitLine(
+  exit: PendingRewriteNoCommitExit,
+  shippedTags: string[],
+  footprintTags: string[],
+): string {
+  const subject =
+    shippedTags.length > 0
+      ? `shipped ${shippedTags.join(", ")}`
+      : `footprints for ${footprintTags.join(", ")}`;
+  return exit === "dock-outside-repo"
+    ? `[flume] ${subject}; pending updated on disk, no chore commit (dock outside repo)`
+    : `[flume] ${subject}; pending already up to date, no commit`;
 }
 
 /**

@@ -482,6 +482,44 @@ export async function readPendingTolerant(
 }
 
 /**
+ * Which way out of {@link commitPendingUpdate} the call took — the fact a
+ * caller would otherwise have to guess, since three of the four write no
+ * commit and a sha alone tells them apart only as one `undefined`
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*).
+ *
+ * - `committed` — the rewrite landed the ledger commit named by
+ *   {@link PendingRewriteResult}'s `commitSha`.
+ * - `nothing-to-write` — the fresh re-read of the queue already matched what
+ *   this rewrite would have written: the shipped entries' files are gone and
+ *   every footprint is already recorded. Nothing on disk moved.
+ * - `tip-claimed` — a live foreign tip claim refused the rewrite. Checked
+ *   before the writes, so nothing on disk moved either: the queue at
+ *   {@link PendingRewriteResult.path} is the one the call read.
+ * - `dock-outside-repo` — a relocated dock puts the queue where git cannot
+ *   see it, so the rewrite stands on disk and no chore commit is wanted.
+ *
+ * Named as one closed set here and reached by consumers through
+ * {@link PendingRewriteResult}, whose arms are the only shape a caller needs:
+ * the three no-commit ways out are the same `undefined` to a caller reading
+ * the sha, and they are three different states of the queue on disk: one
+ * untouched and already current, one untouched and refused, one freshly
+ * written. A report that stops at the sha leaves every operator line keyed on
+ * whichever one the writer had in mind.
+ */
+type PendingRewriteExit =
+  | "committed"
+  | "nothing-to-write"
+  | "tip-claimed"
+  | "dock-outside-repo";
+
+/** The three {@link PendingRewriteExit} values that land no ledger commit. */
+export type PendingRewriteNoCommitExit = Exclude<
+  PendingRewriteExit,
+  "committed"
+>;
+
+/**
  * What {@link commitPendingUpdate} answers with, and the one place a caller
  * learns where the file it was about to move stands.
  *
@@ -490,34 +528,35 @@ export async function readPendingTolerant(
  * the tip-claim refusal below and the rewrite that landed — are both about a
  * queue whose location the chain chose, and the caller holds it only as the
  * absolute `pendingDir` it would have to re-fold itself.
+ *
+ * A union on {@link PendingRewriteExit} rather than a sha beside a set of
+ * flags: the sha exists on exactly one exit, so the arm that names it is the
+ * arm that carries it, and a caller cannot reach for a sha the call never
+ * wrote. `exit` is stated by the branch that took itself, never left to a
+ * caller comparing the tip before the call against the tip after — the writes
+ * here are not the only thing that can move the ref in that window, so any
+ * pick landing beside this one, or an operator's own commit, reads as this
+ * call's contribution under a comparison (`.claude/rules/engineering.md`, *A
+ * fact the engine holds is reported, never rediscovered*). A caller wanting
+ * the current tip asks git for it; what only this call knows is which of its
+ * ways out it took, and whether the sha git would answer with is one this
+ * rewrite wrote.
  */
-export interface PendingRewriteResult {
-  /**
-   * The ledger commit **this call** landed, and `undefined` when it landed
-   * none — three of the four ways out of this function write no commit (a
-   * footprint already recorded, the tip claim below, an out-of-tree dock git
-   * never sees).
-   *
-   * Stated by the branch that took itself, never left to a caller comparing
-   * the tip before the call against the tip after: the writes here are not the
-   * only thing that can move the ref in that window, so any pick landing
-   * beside this one — or an operator's own commit — reads as this call's
-   * contribution under a comparison, and the whole no-commit set reads as a
-   * commit (`.claude/rules/engineering.md`, *A fact the engine holds is
-   * reported, never rediscovered*). A caller wanting the current tip asks git
-   * for it; what only this call knows is whether the sha it would read is one
-   * this rewrite wrote.
-   */
-  readonly commitSha: string | undefined;
-  /**
-   * A live foreign tip claim refused the rewrite. Checked before the writes,
-   * so nothing on disk moved either: the queue at {@link path} is the one the
-   * call read.
-   */
-  readonly tipMoved: boolean;
+export type PendingRewriteResult = {
   /** The ledger directory's path as a report spells it ({@link reportedPendingDir}). */
   readonly path: string;
-}
+} & (
+  | {
+      readonly exit: "committed";
+      /** The ledger commit **this call** landed. */
+      readonly commitSha: string;
+    }
+  | {
+      readonly exit: PendingRewriteNoCommitExit;
+      /** No commit on this exit — which one it was rides `exit`. */
+      readonly commitSha: undefined;
+    }
+);
 
 /**
  * One merge's ledger rewrite: retire what shipped, drain the `blockedBy`
@@ -629,8 +668,8 @@ export async function commitPendingUpdate(
   // second time around) — committing an unchanged tree fails, so skip.
   if (removals.length === 0 && writes.length === 0) {
     return {
+      exit: "nothing-to-write",
       commitSha: undefined,
-      tipMoved: false,
       path: reportedPendingDir(ctx),
     };
   }
@@ -657,8 +696,8 @@ export async function commitPendingUpdate(
     );
     if (foreignClaim !== null) {
       return {
+        exit: "tip-claimed",
         commitSha: undefined,
-        tipMoved: true,
         path: reportedPendingDir(ctx),
       };
     }
@@ -677,8 +716,8 @@ export async function commitPendingUpdate(
   }
   if (relocated) {
     return {
+      exit: "dock-outside-repo",
       commitSha: undefined,
-      tipMoved: false,
       path: reportedPendingDir(ctx),
     };
   }
@@ -718,7 +757,11 @@ export async function commitPendingUpdate(
       { cause: err },
     );
   }
-  return { commitSha: sha, tipMoved: false, path: reportedPendingDir(ctx) };
+  return {
+    exit: "committed",
+    commitSha: sha,
+    path: reportedPendingDir(ctx),
+  };
 }
 
 /**
