@@ -1,0 +1,29 @@
+{
+  "tag": "THE-ENTRY-MODULE-HEADER-NAMES-EVERY-SHIPPED-SUBPATH",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 0,
+  "files": {
+    "edit": [
+      {
+        "path": "src/index.ts",
+        "description": "the header states the entry points the manifest's `exports` map declares, in place of the clause ruling every other name unreachable"
+      },
+      {
+        "path": "tests/exportConsumers.test.ts",
+        "description": "the header read against the manifest, off the same `exports` map resolution `scanExports` already takes for `entryModules`"
+      }
+    ]
+  },
+  "summary": "The shipped `src/index.ts` header says the exports map restricts resolution to this entry point, so nothing else is reachable; the map names `./harness`, whose names it re-exports none of",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Narration is the ladder's bottom rung"
+  },
+  "acceptance": "the header the package ships at `dist/src/index.d.ts` states the entry points the manifest's `exports` map actually declares rather than one, so a reader deciding whether a symbol absent from this module is public surface is not told the map has a single entry, and a subpath added to the manifest reds the read instead of shipping beside a header that names the old set",
+  "tests": [
+    "the src/ entry module's header names every subpath the package's exports map declares"
+  ],
+  "notes": "Measured this tick. `exports` names `.` -> `dist/src/index.d.ts` and `./harness` -> `dist/harness/index.d.ts`; `harness/index.ts` hands out `Declaration`, `GateEngine`, `Handoff` and more that `src/index.ts` re-exports none of. A declaration emit run here carries the header into `dist/src/index.d.ts` verbatim - the one comment in that file that survives - so it is the carve-out engine surface. `scanExports` (`tests/helpers/exportGraph.ts`) resolves manifest and emit together already."
+}
