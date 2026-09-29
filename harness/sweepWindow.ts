@@ -33,16 +33,18 @@
 
 import { matchesAny } from "../src/paths.js";
 
-import { cursorWindow } from "./cursorWindow.js";
+import { cursorWindow, unresolvedCursorRefusal } from "./cursorWindow.js";
 import type { Declaration } from "./declaration.js";
 import {
   commitsPast,
   deletedLines,
+  resolvesInTree,
   touchedPast,
   touches,
   type DeletedPage,
   type RangeCommit,
 } from "./gitRange.js";
+import { planStatePath } from "./layout.js";
 import { readPlanState, readPlanStateBounded } from "./planState.js";
 import {
   SLICE_DATA_KEYS,
@@ -157,11 +159,14 @@ function renderSweepWindow(
   const frontier = [...domain, ...posturePages];
 
   return cursorWindow("sweptThrough", frontier, ctx, (cursor, all) => {
+    const read = retiredCursor(ctx, cursor);
+    if ("refusal" in read) return read.refusal;
+    const searched = read.searched;
+
     const touching = all.filter((commit) => touches(commit, frontier));
 
     const lines = frontierListing(cursor, touching, domain, posturePages);
 
-    const searched = retiredCursor(ctx, cursor);
     lines.push(
       "",
       `=== lines the spec locus no longer states since ${searched} ` +
@@ -214,9 +219,30 @@ function renderSweepWindow(
  * `cursorWindow`'s bootstrap leg and never reaches this render — and is
  * answered rather than asserted away, since it is the same answer the absent
  * field has.
+ *
+ * **A field naming no commit refuses here, under its own name.** The stamp
+ * resolved before this render ran, so a delta drawn past an unreadable
+ * `retiredThrough` fails inside the diff and reaches `bounded` as an
+ * unreadable *window* — which would send the tick to rewrite the one cursor
+ * that was correct. The probe is taken beside the read instead, and the
+ * refusal names this field and this slice's own file
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
  */
-const retiredCursor = (ctx: WindowContext, cursor: string): string =>
-  readPlanState(ctx.flumeDir, "plan-sweep")?.retiredThrough ?? cursor;
+function retiredCursor(
+  ctx: WindowContext,
+  cursor: string,
+): { searched: string } | { refusal: string } {
+  const retired = readPlanState(ctx.flumeDir, "plan-sweep")?.retiredThrough;
+  if (retired === undefined) return { searched: cursor };
+  if (resolvesInTree(ctx.cwd, retired)) return { searched: retired };
+  return {
+    refusal: unresolvedCursorRefusal(
+      "retiredThrough",
+      retired,
+      planStatePath(ctx.flumeDir, "plan-sweep"),
+    ),
+  };
+}
 
 /** The paths a commit touched that a glob list names. */
 const pathsIn = (commit: RangeCommit, globs: string[]): readonly string[] =>

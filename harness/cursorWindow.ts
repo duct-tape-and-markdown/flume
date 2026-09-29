@@ -60,7 +60,11 @@ export function cursorWindow(
     const cursor = readCursor(ctx.flumeDir, field);
     if (cursor === undefined) return bootstrap(field, ctx, globs);
     if (!resolvesInTree(ctx.cwd, cursor)) {
-      return unresolvedCursor(field, cursor, ctx.flumeDir);
+      return unresolvedCursorRefusal(
+        field,
+        cursor,
+        stateFileFor(field, ctx.flumeDir),
+      );
     }
     return render(cursor, commitsPast(ctx.cwd, cursor));
   });
@@ -127,16 +131,29 @@ const refusal = (cause: string, repair: string): string =>
     repair,
   });
 
-/** The refusal a cursor that names no commit in this tree renders. */
-const unresolvedCursor = (
-  field: CursorField,
+/**
+ * The refusal a cursor that names no commit in this tree renders, under the
+ * name the tick repairs it by and in the file it repairs it in.
+ *
+ * **The name is the caller's, because not every cursor is one a window is
+ * drawn past.** The sweep keeps a second position in its own file — the
+ * retired-claim cursor, read inside the render this module drives
+ * (`retiredCursor`, `sweepWindow.ts`) — and a cursor that cannot be read
+ * must refuse under its own name, or the tick is sent to repair a sibling
+ * that resolves (`.claude/rules/engineering.md`, *Loud or nothing*).
+ * Taking the name and the state file as values is what lets this spelling be
+ * the one refusal both reads render, without a field only one slice has
+ * entering the shared table ({@link CursorField}, `planState.ts`).
+ */
+export const unresolvedCursorRefusal = (
+  name: string,
   cursor: string,
-  flumeDir: string,
+  stateFile: string,
 ): string =>
   refusal(
-    `\`${field}\` is \`${cursor}\`, which does not resolve to a commit in ` +
+    `\`${name}\` is \`${cursor}\`, which does not resolve to a commit in ` +
       `this tick's tree`,
-    `repair \`${field}\` in ${stateFileFor(field, flumeDir)} and say in ` +
+    `repair \`${name}\` in ${stateFile} and say in ` +
       `the commit body what it was and what you set it to.`,
   );
 

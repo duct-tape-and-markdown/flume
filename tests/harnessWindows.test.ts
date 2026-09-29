@@ -1537,6 +1537,49 @@ it("a window refuses a cursor sha that does not resolve in the tick's tree", () 
   ).toBe(true);
 });
 
+/**
+ * The sweep keeps two cursors in one file, and only one of them is the cursor
+ * its window is drawn past. A `retiredThrough` naming no commit fails inside
+ * the retired-claim diff, which reaches the window's own bound — so pre-fix
+ * the tick was handed a refusal naming `sweptThrough`, and sent to rewrite
+ * the one cursor that was correct (`.claude/rules/engineering.md`, *Loud or
+ * nothing*).
+ */
+it("a retired-claim cursor that names no commit refuses naming retiredThrough rather than the stamp", () => {
+  const stamp = commit(
+    {
+      "src/a.ts": "export const a = 1;\n",
+      "spec/loop.md": "# Loop\n\nA ratified claim.\n",
+    },
+    "build: a",
+  );
+  commit({ "spec/loop.md": "# Loop\n" }, "spec: retire the claim");
+  const absent = "0123456789abcdef0123456789abcdef01234567";
+  const ctx = { cwd: repo, flumeDir: stateRoot() };
+
+  // The control: the same stamp with no retired-claim cursor beside it
+  // renders the delta, so the refusal below is that one field's doing rather
+  // than a stamp this fixture got wrong.
+  writeState({ sweptThrough: stamp });
+  const readable = windows()["plan-sweep"].args(ctx).SWEEP_WINDOW;
+  expect(retiredDelta(readable)).toContain("-A ratified claim.");
+  expect(readable).not.toContain("REFUSE");
+
+  writeState({ sweptThrough: stamp, retiredThrough: absent });
+  const window = windows()["plan-sweep"].args(ctx).SWEEP_WINDOW;
+
+  expect(window).toContain("REFUSE");
+  expect(window).toContain(`\`retiredThrough\` is \`${absent}\``);
+  expect(window).toContain("does not resolve to a commit");
+  // The repair is the file that field lives in — this slice's own state.
+  expect(window).toContain(planStatePath(stateRoot(), "plan-sweep"));
+  expect(window).toContain("advance no cursor this tick");
+  // The whole render is the refusal, so the cursor that was correct is named
+  // by nothing in it: not as a field to repair, not as a sha to doubt.
+  expect(window).not.toContain("sweptThrough");
+  expect(window).not.toContain(stamp);
+});
+
 it("a plan window over a tree git cannot read refuses as unreadable rather than as a cursor to repair", () => {
   // The cursor is this repository's own tip, so it is correct: the only thing
   // wrong below is the tree the window is drawn in. Pre-fix the cursor probe
