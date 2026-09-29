@@ -1,9 +1,9 @@
 {
   "tag": "THE-FAILURE-ACCOUNTING-TAKES-PLATFORM-AS-A-FIFTH-STAGE",
   "gate": {
-    "kind": "blockedBy",
-    "tags": ["THE-VERDICT-RECORDS-THE-PREEMPT-CLASS-THE-BACKSTOP-COUNTS"]
+    "kind": "open"
   },
+  "dependsOnForks": [],
   "priority": 10,
   "files": {
     "new": [],
