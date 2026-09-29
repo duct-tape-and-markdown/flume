@@ -1,0 +1,25 @@
+{
+  "tag": "THE-COUNT-FLAG-REFUSAL-CLASS-IS-PINNED-AGAINST-ITS-PARSE",
+  "gate": { "kind": "open" },
+  "priority": 20,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "tests/cliHelp.test.ts",
+        "description": "the count-flag row's agreement pin, beside the shared-root-cause pins that section already drives per verb"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "The --max/-n refusal class is hand-stated four times across docs/CLI.md and src/cliHelp.ts with nothing driving parseMaxValue over the class the rows name",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A seam gate reads what the real writer wrote"
+  },
+  "acceptance": "the real producer decides the pin: each member of the class the four rows enumerate is handed to `parseMaxValue` and refused there, so a row naming a value the parse accepts — or a parse widened past a row — reds. No prose or source change expected; the rows agree with the predicate today, so typecheck and the standing suite stay green unchanged.",
+  "pins": [
+    "every count-flag refusal row names a value parseMaxValue refuses"
+  ],
+  "notes": "Build note from A-COUNT-FLAG-TAKES-A-DECIMAL-INTEGER-OR-REFUSES. Counted on disk this tick: `docs/CLI.md:71` (loop) and `:153` (log), `src/cliHelp.ts:709` (loop) and the `log` exit-2 row at `:780`, each spelling empty / whitespace / signed / fractional / hex / exponent / overlong-digit-run. `tests/cliHelp.test.ts` pins the exit-2 code and the shared root causes, not this list. Producer is `parseMaxValue` (`src/cliArgs.ts:25`). Precedent: CLI-DOC-SHARED-ROOT-CAUSES-PINNED-PER-VERB."
+}
