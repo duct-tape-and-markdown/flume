@@ -1,0 +1,33 @@
+{
+  "tag": "THE-EXAMPLE-SCANS-STRIP-COMMENTS-OFF-THE-PARSER",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 20,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "tests/helpers/commentCitations.ts",
+        "description": "the comment-stripped counterpart of `commentProse`, off the same `commentRuns` trivia the citation scan already reads"
+      },
+      {
+        "path": "tests/examples.test.ts",
+        "description": "both strips read that one home rather than their own regex; the two cases beside the scans they belong to"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "Two scans in tests/examples.test.ts strip comments by regex, so a \"src/**\" glob opens a phantom block and the engine-import absence pin goes green over deleted code",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "The fix lands at the mechanism"
+  },
+  "acceptance": "both comment strips read the parser's own trivia through the one home `commentProse` already reads from, so a `/*` inside a string literal deletes no code line: a value import below a writable-path glob reaches the engine-import scan, and the CHAIN-AUTHORING quote comparison reads every code line of the declaration it compares; both scans' current verdicts over the real chains are unchanged",
+  "tests": [
+    "the example-chain import scan reads a value import placed below a writable-path glob",
+    "the slicePhase quote comparison reads a code line between a glob and a block-comment terminator"
+  ],
+  "pins": [],
+  "notes": "Off note THE-ROSTER-SCAN-READS-THE-TESTS-THAT-RESTATE-THE-SET. Measured: `importsOf` (`tests/examples.test.ts:876`) and `normalize` (`:2036`) strip by text regex; `examples/cascade-chain.ts:468` is `\"src/**\"`, and a value import injected below it is invisible to `importsOf` — the pin is an absence verdict, so the deletion reads green. `normalize`'s block has no terminator today, so that half is latent. `commentProse` (`tests/helpers/commentCitations.ts:705`) returns prose, not stripped code."
+}
