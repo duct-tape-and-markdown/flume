@@ -721,10 +721,13 @@ describe("superviseLoop — merge-stage-only failure counts as errored (loop-mer
  * spec/loop.md "The tick verdict — one facts artifact", *No interpretation
  * fields*: `not-shipped` has two causes, and only one of them is the chain
  * declining. A `shipped` predicate that *threw* never made a ship decision
- * at all, and the verdict distinguishes the two by carrying `threw` on the
- * merge outcome (`TickVerdictMergeOutcome`) — so the supervisor's errored
+ * at all, and the verdict distinguishes the two on both surfaces the wave
+ * writes: `threw` on the merge outcome (`TickVerdictMergeOutcome`) for a
+ * chain reading the entry's fate, and a `ShipFailure` record beside it for
+ * the run's accounting — so the supervisor's errored
  * allowlist reads them apart rather than treating a broken predicate as a
- * deliberate park. Same `runTick` fixture idiom as the errored-accounting
+ * deliberate park. The stub writes both, as the real producer does
+ * (`src/waveMerge.ts`). Same `runTick` fixture idiom as the errored-accounting
  * suites above.
  */
 describe("superviseLoop — a thrown shipped predicate counts as errored (not-shipped's two causes)", () => {
@@ -752,6 +755,17 @@ describe("superviseLoop — a thrown shipped predicate counts as errored (not-sh
                 ...(over.threw === undefined ? {} : { threw: over.threw }),
               },
             ],
+            ...(over.threw === undefined
+              ? {}
+              : {
+                  shipFailures: [
+                    {
+                      ...blamedOnFixture("PARKED"),
+                      signature: over.threw,
+                      message: over.threw,
+                    },
+                  ],
+                }),
           }),
         ),
         "utf8",
@@ -1539,16 +1553,19 @@ describe("superviseLoop — the render stage joins the quarantine and the backst
 /**
  * spec/loop.md "Repeated identical failures — quarantine, then abort": a
  * run-scoped hold is keyed by the entry as the failing tick read it, and a
- * *render*-, *gate*- or *merge*-stage hold carries one more expiry — the tip
+ * *render*-, *gate*-, *merge*- or *ship*-stage hold carries one more expiry —
+ * the tip
  * that tick reported. Once trunk has moved past it the tree that gate judged,
- * the trunk that pick conflicted against, or the declaration that render read,
+ * the trunk that pick conflicted against, or the declaration that render read
+ * and that the same chain's `shipped` predicate was consulted from,
  * is gone, so the hold lifts and the entry is pickable again; a
  * provision-stage hold has no such expiry, since nothing landing on trunk
- * changes what a worktree could not provision. The tip each tick reports is
+ * changes what a worktree could not provision, and a platform-stage failure
+ * places no hold for any of this to reach. The tip each tick reports is
  * `TickVerdict.headSha`, which the stub writes here exactly as a real child
  * does — the supervisor reads no ref of its own.
  */
-describe("superviseLoop — a render-, gate- or merge-stage hold expires with the tip it was placed at", () => {
+describe("superviseLoop — a render-, gate-, merge- or ship-stage hold expires with the tip it was placed at", () => {
   const verdictPath = (phase: string): string =>
     childVerdictPath(join(fx.repo, ".flume"), phase);
 
@@ -1804,6 +1821,80 @@ describe("superviseLoop — a render-, gate- or merge-stage hold expires with th
         (l) =>
           l.includes("lifting the merge-stage quarantine") &&
           l.includes("CONFLICT-A"),
+      ),
+    ).toBe(true);
+  });
+
+  it("a ship-stage quarantine hold lifts once the tip its placing verdict reported has moved", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+
+    const receivedSlugs: Array<string[]> = [];
+    const written: TickVerdict[] = [];
+    let calls = 0;
+    const runTick = async ({
+      phase,
+      quarantinedSlugs,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+      calls++;
+      receivedSlugs.push([...quarantinedSlugs].sort());
+      const verdict =
+        calls === 1
+          ? // The chain's `shipped` predicate throws over the declaration
+            // trunk holds at TIP_A. The pick landed, so the tick reports
+            // TIP_A as the tip it ended at.
+            verdictFixture({
+              committed: false,
+              headSha: TIP_A,
+              shipFailures: [
+                {
+                  ...blamedOnFixture("THROWN-SHIP"),
+                  signature: "shipped hook threw: ctx.gateResults is undefined",
+                  message: "shipped hook threw: ctx.gateResults is undefined",
+                },
+              ],
+            })
+          : calls === 2
+            ? // The hold stands over the declaration it was placed on: this
+              // tick is told the key, and it is this tick that moves trunk —
+              // the operator's hook fix, or any sibling landing.
+              verdictFixture({
+                committed: true,
+                headSha: TIP_B,
+                shippedTags: ["OK-B"],
+              })
+            : // Trunk is no longer the tree the throwing predicate was
+              // consulted over, so the entry is pickable again.
+              verdictFixture({ committed: false, headSha: TIP_B });
+      written.push(verdict);
+      await writeFile(verdictPath(phase), JSON.stringify(verdict), "utf8");
+      if (calls >= 3) baton.sleep("build");
+      return { exitCode: 0 };
+    };
+
+    const infos: string[] = [];
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: 5,
+      runTick,
+      log: { info: (l) => infos.push(l), warn: () => {}, error: () => {} },
+    });
+
+    expect(res.ticks).toBe(3);
+    // Vacuity pin: the hold this case watches expire was placed by a record
+    // that actually reached the supervisor, at the tip the lift is judged
+    // against (`.claude/rules/engineering.md`, *A green verdict is proven
+    // non-vacuous*).
+    expect(written[0]?.shipFailures ?? []).toHaveLength(1);
+    expect(written[0]?.headSha).toBe(TIP_A);
+    expect(written[1]?.headSha).toBe(TIP_B);
+
+    expect(receivedSlugs).toEqual([[], ["thrown-ship@00112233aa"], []]);
+    expect(
+      infos.some(
+        (l) =>
+          l.includes("lifting the ship-stage quarantine") &&
+          l.includes("THROWN-SHIP"),
       ),
     ).toBe(true);
   });
@@ -2293,6 +2384,12 @@ describe("superviseLoop — the aborting streak's stage is reported, not inferre
       noCommit: "gate-revert" as const,
       gateFailures: [record],
     }),
+    // Always blamed: `shipped` is consulted only for a span that reached
+    // trunk, so a `ShipFailure` (`src/tickVerdict.ts`) always names the entry
+    // the pick carried.
+    ship: (record) => ({
+      shipFailures: [{ ...blamedOnFixture("STAGED"), ...record }],
+    }),
     // The one member with no blame half to hand it: a preempt's record
     // carries the signature and the message alone (`PlatformFailure`,
     // `src/tickVerdict.ts`), so this arm passes `record` through as the whole
@@ -2504,6 +2601,170 @@ describe("superviseLoop — the platform stage feeds the backstop alone", () => 
     // the first, and it was handed nothing.
     expect(receivedSlugs).toEqual([[], []]);
     expect(warnings.some((w) => w.includes("quarantining"))).toBe(false);
+  });
+});
+
+
+/**
+ * spec/loop.md "Repeated identical failures — quarantine, then abort": the
+ * ship stage is the chain's own `shipped` hook throwing for one entry, as a
+ * thrown `promptArgs` is at the render stage. A predicate that throws
+ * deterministically throws again on the next wave, so without this record the
+ * entry was re-picked, re-provisioned, re-agented and re-picked to `--max`,
+ * while every verdict already carried the throw on the entry's merge outcome.
+ *
+ * The blamed half is always filled — `shipped` is consulted only for a span
+ * that reached trunk — so both legs reach this stage: the entry is
+ * quarantined, and the signature joins the streak. A `shipped` that *returned*
+ * `false` records nothing: a declined ship is the chain's verdict on a landed
+ * commit, not a failure.
+ *
+ * Same `runTick` fixture idiom as the sibling suites: a stub writes the
+ * records a real child would, whose own production `tests/Dispatcher.test.ts`
+ * proves.
+ */
+describe("superviseLoop — a `shipped` hook that threw is a ship-stage failure", () => {
+  const verdictPath = (phase: string): string =>
+    childVerdictPath(join(fx.repo, ".flume"), phase);
+
+  /** The message the chain's broken predicate throws, identically every wave. */
+  const THROWN = "shipped hook threw: Cannot read properties of undefined";
+
+  /**
+   * A verdict as a wave whose `shipped` threw for `THROWN-SHIP` writes it: the
+   * entry's merge outcome carries the `not-shipped` fate and the thrown
+   * message, and the stage record beside it carries the blame pair and the
+   * comparison key. A sibling entry whose predicate deliberately returned
+   * `false` rides along, so every case here reads a verdict where the two
+   * causes of one `not-shipped` are both present and only one of them is a
+   * failure.
+   */
+  const threwVerdict = (): TickVerdict =>
+    verdictFixture({
+      committed: false,
+      tags: ["THROWN-SHIP", "DECLINED-SHIP"],
+      mergeOutcomes: [
+        {
+          entryTag: "THROWN-SHIP",
+          outcome: "not-shipped",
+          threw: THROWN,
+        },
+        { entryTag: "DECLINED-SHIP", outcome: "not-shipped" },
+      ],
+      shipFailures: [
+        { ...blamedOnFixture("THROWN-SHIP"), signature: THROWN, message: THROWN },
+      ],
+    });
+
+  it("the backstop aborts a run whose ticks repeat one ship-stage failure signature", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build"); // never hibernates — the abort must come from the backstop alone
+
+    const written: TickVerdict[] = [];
+    let calls = 0;
+    const runTick = async ({
+      phase,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+      calls++;
+      const verdict = threwVerdict();
+      written.push(verdict);
+      await writeFile(verdictPath(phase), JSON.stringify(verdict), "utf8");
+      return { exitCode: 0 };
+    };
+
+    const errors: string[] = [];
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: 10,
+      runTick,
+      log: { info: () => {}, warn: () => {}, error: (l) => errors.push(l) },
+    });
+
+    // The budget was 10 and the streak stopped it at 3: the seven ticks the
+    // run did not spend at full agent price are what this leg buys.
+    expect(calls).toBe(3);
+    expect(res.ticks).toBe(3);
+    expect(res.hibernated).toBe(false);
+    expect(res.repeatedFailure).toEqual({
+      stage: "ship",
+      signature: THROWN,
+      count: 3,
+    });
+    expect(
+      errors.some((e) => e.includes("ship-stage") && e.includes(THROWN)),
+    ).toBe(true);
+
+    // Vacuity pin: every tick the streak counted carried exactly the one
+    // ship-stage record, beside the declined sibling that contributed none
+    // (`.claude/rules/engineering.md`, *A green verdict is proven
+    // non-vacuous*).
+    expect(written).toHaveLength(3);
+    for (const verdict of written) {
+      expect(verdict.shipFailures ?? []).toHaveLength(1);
+      expect(verdict.mergeOutcomes).toHaveLength(2);
+    }
+
+    // The run's own accounting names the throw and the entry it was blamed
+    // on, rather than reporting a tick that merely committed nothing.
+    expect(res.erroredTicks).toHaveLength(3);
+    expect(res.erroredTicks[0]).toContain("shipped predicate threw");
+    expect(res.erroredTicks[0]).toContain("THROWN-SHIP");
+  });
+
+  it("a repeated ship-hook throw quarantines the entry its merge outcome blamed", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+
+    const receivedSlugs: Array<string[]> = [];
+    const written: TickVerdict[] = [];
+    let calls = 0;
+    const runTick = async ({
+      phase,
+      quarantinedSlugs,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+      calls++;
+      receivedSlugs.push([...quarantinedSlugs].sort());
+      const verdict = threwVerdict();
+      written.push(verdict);
+      await writeFile(verdictPath(phase), JSON.stringify(verdict), "utf8");
+      // Two ticks, one short of the threshold: the run ends on the baton, so
+      // what the second child was handed is read rather than lost to an abort.
+      if (calls >= 2) baton.sleep("build");
+      return { exitCode: 0 };
+    };
+
+    const warnings: string[] = [];
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: 10,
+      runTick,
+      log: { info: () => {}, warn: (l) => warnings.push(l), error: () => {} },
+    });
+
+    expect(res.ticks).toBe(2);
+    expect(res.repeatedFailure).toBeUndefined();
+
+    // Vacuity pin: both verdicts carried the record the hold is keyed from,
+    // and the tip never moved, so the hold below stands rather than having
+    // been lifted by a tip this stub advanced.
+    expect(written).toHaveLength(2);
+    for (const verdict of written) {
+      expect(verdict.shipFailures ?? []).toHaveLength(1);
+    }
+    expect(new Set(written.map((v) => v.headSha)).size).toBe(1);
+
+    // The second child carries the hold the first tick placed, under the key
+    // that tick reported — and carries nothing for the sibling whose
+    // predicate deliberately returned `false`.
+    expect(receivedSlugs).toEqual([[], ["thrown-ship@00112233aa"]]);
+    expect(
+      warnings.some(
+        (w) =>
+          w.includes("quarantining THROWN-SHIP") &&
+          w.includes("ship-stage failure"),
+      ),
+    ).toBe(true);
+    expect(warnings.some((w) => w.includes("DECLINED-SHIP"))).toBe(false);
   });
 });
 

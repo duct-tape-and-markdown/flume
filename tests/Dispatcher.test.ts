@@ -21927,7 +21927,7 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
     expect(verdict).toBeDefined();
     // Non-vacuity: this run's only queue-unchanged fact is the decline —
     // nothing shipped, no no-commit mode, and no provision-, render-, merge-,
-    // gate- or platform-stage failure for the derivation to key off instead. The whole
+    // gate-, ship- or platform-stage failure for the derivation to key off instead. The whole
     // roster is asserted, not the three a reader happens to reach for: a
     // stage left unasserted is one the derivation could have keyed off
     // unseen (`.claude/rules/engineering.md`, *A green verdict is proven
@@ -21943,6 +21943,9 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
     expect(verdict!.mergeFailures ?? []).toEqual([]);
     expect(verdict!.gateFailures ?? []).toEqual([]);
     expect(verdict!.platformFailures ?? []).toEqual([]);
+    // The stage this case is nearest to: the predicate *returned* `false`, so
+    // the ship stage records nothing and the decline is the whole fact.
+    expect(verdict!.shipFailures ?? []).toEqual([]);
 
     baton.wake("build");
     const res = await superviseLoop({
@@ -24184,6 +24187,16 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
       promptArgs: (ctx) => ({
         CMD: ctx.assignedEntry?.tag === "RENDER-WALL" ? FAILING_SPAN : "exit 0",
       }),
+      // The chain's own ship consult, broken for exactly one entry: its span
+      // lands on trunk and the predicate throws instead of ruling on it
+      // (`shipFailures`). Every other merged span is ruled on normally, so
+      // SHIP-ONE still ships.
+      shipped: (ctx) => {
+        if (ctx.entry.tag === "SHIP-THREW") {
+          throw new Error("shipped hook boom for SHIP-THREW");
+        }
+        return true;
+      },
     });
 
     const chain: Chain = {
@@ -24237,17 +24250,19 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
 
     // The judged wave, in the order one slot carries it: a stake lost, a
     // `setupWorktree` that throws, a prompt that refuses, an agent killed for
-    // non-work reasons, an entry declined, a span that ships, a span the trunk
+    // non-work reasons, an entry declined, a span that ships, a span whose
+    // ship consult throws, a span the trunk
     // moves under, and — last, so that every fact above is already on the wave
     // when its rewrite runs — the span that walls on the fence and carries the
     // corruption.
     await writePending(target.repo, [
-      { ...makeEntry("TAKEN", ["src/taken.ts"]), priority: 8 },
-      { ...makeEntry("SETUP-BOOM", ["src/setup-boom.ts"]), priority: 7 },
-      { ...makeEntry("RENDER-WALL", ["src/render-wall.ts"]), priority: 6 },
-      { ...makeEntry("PREEMPT-WALL", ["src/preempt-wall.ts"]), priority: 5 },
-      { ...makeEntry("DECLINE-ME", ["src/decline-me.ts"]), priority: 4 },
-      { ...makeEntry("SHIP-ONE", ["src/ship-one.ts"]), priority: 3 },
+      { ...makeEntry("TAKEN", ["src/taken.ts"]), priority: 9 },
+      { ...makeEntry("SETUP-BOOM", ["src/setup-boom.ts"]), priority: 8 },
+      { ...makeEntry("RENDER-WALL", ["src/render-wall.ts"]), priority: 7 },
+      { ...makeEntry("PREEMPT-WALL", ["src/preempt-wall.ts"]), priority: 6 },
+      { ...makeEntry("DECLINE-ME", ["src/decline-me.ts"]), priority: 5 },
+      { ...makeEntry("SHIP-ONE", ["src/ship-one.ts"]), priority: 4 },
+      { ...makeEntry("SHIP-THREW", ["src/ship-threw.ts"]), priority: 3 },
       { ...makeEntry("CONFLICT-TRUNK", ["src/conflict-trunk.ts"]), priority: 2 },
       { ...makeEntry("GATE-OUT", ["src/gate-out.ts"]), priority: 1 },
     ]);
@@ -24266,6 +24281,9 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
         "preempt-wall": async () => 137,
         "ship-one": (cwd) =>
           writeAndCommit(cwd, "src/ship-one.ts", "ok\n", "build: SHIP-ONE"),
+        // Lands cleanly; the chain's `shipped` consult is what refuses it.
+        "ship-threw": (cwd) =>
+          writeAndCommit(cwd, "src/ship-threw.ts", "ok\n", "build: SHIP-THREW"),
         "conflict-trunk": async (cwd) => {
           // The trunk moves under this span after its worktree was cut from
           // it, so the pick below carries a diff whose context is gone and git
@@ -24371,6 +24389,7 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
       "mergeFailures",
       "gateFailures",
       "platformFailures",
+      "shipFailures",
       "clearedPriorAttempts",
     ];
     const legs: [string, WaveLeg][] = [

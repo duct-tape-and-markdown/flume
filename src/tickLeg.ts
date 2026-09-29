@@ -34,6 +34,7 @@ import type {
   PlatformFailure,
   ProvisionFailure,
   RenderFailure,
+  ShipFailure,
   StakeLoss,
   TickVerdict,
   TickVerdictTiming,
@@ -62,6 +63,8 @@ export type PhaseTickOutcome = {
   gateFailures?: GateFailure[];
   /** See {@link TickVerdict.platformFailures}. */
   platformFailures?: PlatformFailure[];
+  /** See {@link TickVerdict.shipFailures}; fanout only, since `shipped` is consulted there alone. */
+  shipFailures?: ShipFailure[];
   /** Entry tags this wave provisioned a worktree/agent for (fanout only); absent for a singleton phase. */
   tags?: string[];
   /** Fanout only: each provisioned entry's cherry-pick/merge fate; absent for a singleton phase. */

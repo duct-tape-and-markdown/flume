@@ -2402,12 +2402,15 @@ tick, singleton and fanout alike. It accounts for every failure fact
 the tick verdict records, keyed by **stage-tagged signature** — `provision` (a
 pre-tick worktree sweep, create, or `setupWorktree` throw), `render` (a prompt
 that refused to render, so no agent ever read the entry), `merge` (a cherry-pick
-conflict or a dirty trunk refusing the pick), `gate` (a gate revert), and
+conflict or a dirty trunk refusing the pick), `gate` (a gate revert), `ship`
+(the chain's own `shipped` predicate *throwing* over a span that landed —
+never one that deliberately returned `false`, which is a verdict rather than a
+failure), and
 `platform` (an agent that failed for non-work reasons — a crash, an OOM kill,
 an expired login, a spent cap — keyed by its preempt class). The
 two legs reach different failures: an entry a failure can be
 **blamed** on is quarantined for the rest of the run, whichever of the first
-four stages it failed at,
+five stages it failed at,
 so the supervisor stops re-attempting a wall it already hit (entry-keyed,
 so fanout's in practice), and a consecutive-identical-failure backstop aborts
 the run outright when the same stage-tagged signature repeats with no clearing
@@ -2444,15 +2447,18 @@ const chain: Chain = {
 ```
 
 - **`quarantineScope`** — `"run"` (default): a tagged failure at any of the
-  four entry-scoped stages above quarantines that entry for the rest of the run, under the key
+  five entry-scoped stages above quarantines that entry for the rest of the run, under the key
   the failing tick reported — its slug plus a hash of its bytes in
   its queue file, so a re-scope on trunk is a new key and lifts the hold.
-  A **render**-, **merge**- or **gate**-stage hold carries one expiry beyond
+  A **render**-, **merge**-, **gate**- or **ship**-stage hold carries one
+  expiry beyond
   the key: the trunk tip the placing tick reported. Each of those judged
   one tree — the prompt render read, the trunk the pick went onto, the tree
-  the gate ran over — so once a later tick reports a different tip that
+  the gate ran over, the declaration the `shipped` consult came from — so once
+  a later tick reports a different tip that
   judgment is gone and the hold lifts on its own. That is what makes a gate,
-  or a `promptArgs` hook that threw, fixed on trunk mid-run reach the entries
+  or a `promptArgs` or `shipped` hook that threw, fixed on trunk mid-run reach
+  the entries
   it would now pass, instead of waiting for a restart
   ([*Where the chain lives*](#where-the-chain-lives)). A **provision**-stage
   hold has no such expiry: nothing landing on trunk changes what a worktree

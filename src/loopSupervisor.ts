@@ -169,7 +169,7 @@ interface SuperviseLoopOptions {
    * Chain-declared override for the run-scoped quarantine (spec/loop.md
    * "Repeated identical failures — quarantine, then abort"). `"none"` disables
    * per-entry quarantine outright — a tagged failure at the provision,
-   * render, merge or gate stage is never
+   * render, merge, gate or ship stage is never
    * withheld from later ticks this run, and a platform-stage failure, blamed
    * on no entry, reached this leg under neither value — while the
    * consecutive-identical-failure backstop (`abortThreshold` below) still
@@ -184,7 +184,7 @@ interface SuperviseLoopOptions {
   /**
    * Chain-declared override for the consecutive-identical-failure abort
    * threshold — the number of consecutive ticks the same *stage-tagged*
-   * signature (provision, render, merge, gate, or platform) must repeat, with no
+   * signature (provision, render, merge, gate, ship, or platform) must repeat, with no
    * successful tick between them, before the run aborts. Defaults to {@link DEFAULT_ABORT_THRESHOLD},
    * pinned by tests/loopSupervisor.test.ts's "a chain declaring neither
    * supervisor knob gets both defaults: a run-scoped quarantine and a
@@ -223,9 +223,10 @@ interface SuperviseLoopOptions {
 }
 
 /**
- * Every stage a failure record the accounting reads can come from — the five
+ * Every stage a failure record the accounting reads can come from — the six
  * the tick verdict carries in separate lists (`provisionFailures`,
- * `renderFailures`, `mergeFailures`, `gateFailures`, `platformFailures`),
+ * `renderFailures`, `mergeFailures`, `gateFailures`, `shipFailures`,
+ * `platformFailures`),
  * declared once as a runtime value so
  * whatever enumerates the stages — the fold below, a prompt, a test driving
  * every stage through the abort path — names them from the engine rather than
@@ -233,7 +234,7 @@ interface SuperviseLoopOptions {
  * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
  * beside its source*).
  *
- * Four of the five are per-entry records (`StageFailureEntry`,
+ * Five of the six are per-entry records (`StageFailureEntry`,
  * `./tickVerdict.js`) a tick may blame on one entry, so they reach both legs.
  * `platform` is the one that cannot: a preempt's wall — an expired login, a
  * spent cap, an OOM kill — belongs to the host, never to the entry the slot
@@ -250,6 +251,7 @@ export const FAILURE_STAGES = [
   "render",
   "merge",
   "gate",
+  "ship",
   "platform",
 ] as const;
 
@@ -370,13 +372,15 @@ interface QuarantineHold {
 /**
  * The stages whose holds expire with the tip they were placed at (spec/loop.md,
  * *Repeated identical failures — quarantine, then abort*). Deliberately a
- * proper subset of {@link FAILURE_STAGES}: render, merge and gate, leaving out
- * provision and platform. Each of the three judges one tree — a gate's verdict
- * is over the tree it ran on, a merge's conflict is against the trunk it
- * picked onto, and a render reads the declaration and the host that trunk
- * holds (a chain's own hook fixed on trunk is a new render) — so once trunk is
- * not that tree, none of those judgments has been re-made, while nothing
- * landing on trunk changes what a worktree could not provision. `platform` is
+ * proper subset of {@link FAILURE_STAGES}: render, merge, gate and ship,
+ * leaving out provision and platform. Each of the four judges one tree — a
+ * gate's verdict is over the tree it ran on, a merge's conflict is against the
+ * trunk it picked onto, a render reads the declaration and the host that trunk
+ * holds, and a `shipped` predicate that threw is that same declaration one
+ * stage later (a chain's own hook fixed on trunk is a new render and a new
+ * consult) — so once trunk is not that tree, none of those judgments has been
+ * re-made, while nothing landing on trunk changes what a worktree could not
+ * provision. `platform` is
  * left out from further up still: a preempt is blamed on no entry, so no hold
  * of that stage is ever placed for this set to expire.
  * Spelled as a membership set over the
@@ -387,6 +391,7 @@ const LIFTS_ON_A_MOVED_TIP: ReadonlySet<FailureStage> = new Set<FailureStage>([
   "render",
   "gate",
   "merge",
+  "ship",
 ]);
 
 /**
@@ -500,9 +505,9 @@ export async function superviseLoop(
   // what is on the disk the next tick reads.
   let latestTip: string | undefined;
   // spec/loop.md "Repeated identical failures — quarantine, then abort"
-  // generalizes both legs past provisioning to the render, merge and gate
-  // stages, and the backstop alone to the platform stage, whose preempts are
-  // blamed on no entry.
+  // generalizes both legs past provisioning to the render, merge, gate and
+  // ship stages, and the backstop alone to the platform stage, whose preempts
+  // are blamed on no entry.
   // The accounting is keyed by *stage-tagged* signature (`${stage}:${signature}`) so a
   // coincidentally-identical message from a different stage never shares a
   // streak with this one, and never shadows it in the quarantine loop either.
@@ -551,7 +556,8 @@ export async function superviseLoop(
    * placing tick reported, the hold is standing on a judgment nothing re-made —
    * a gate fixed on trunk mid-run otherwise kept holding entries the fix would
    * have passed, a pick that conflicted kept holding one a fresh pick onto the
-   * moved trunk would land, and a prompt whose refusing hook was fixed on
+   * moved trunk would land, and a prompt whose refusing hook — or a `shipped`
+   * predicate whose throwing one — was fixed on
    * trunk kept holding the entry its next render would resolve, until an
    * operator restarted the loop. A provision-stage hold is untouched, since
    * nothing landing on trunk changes what a worktree could not provision. The
@@ -668,9 +674,12 @@ export async function superviseLoop(
     // the chain's `shipped` predicate declining a landed commit is that
     // chain's own verdict, not a failure of the tick that produced it
     // (spec/loop.md "The tick verdict — one facts artifact", *No
-    // interpretation fields*). The `threw` field exists precisely so the two
-    // `not-shipped` causes never collapse into one record
-    // (`TickVerdictMergeOutcome.threw`), and they are read apart here.
+    // interpretation fields*). The two `not-shipped` causes are split on the
+    // verdict itself — a throw writes a `shipFailures` record and a returned
+    // `false` writes none — so this leg reads that list rather than
+    // re-filtering `mergeOutcomes` for the `threw` half beside the engine that
+    // already separated them (`.claude/rules/engineering.md`, *A fact the
+    // engine holds is reported, never rediscovered*).
     // The formula is an allowlist for exactly this — a fact absent from it
     // is excluded by construction, and each of the two above stays named
     // here so that exclusion reads as decided rather than overlooked.
@@ -726,15 +735,13 @@ export async function superviseLoop(
       latestTip = verdict.headSha;
       const verdictProvisionFailures = verdict.provisionFailures ?? [];
       const verdictMergeFailures = verdict.mergeFailures ?? [];
-      const shipHookThrew = verdict.mergeOutcomes.filter(
-        (o) => o.outcome === "not-shipped" && o.threw !== undefined,
-      );
+      const verdictShipFailures = verdict.shipFailures ?? [];
       const errored =
         verdict.noCommit === "gate-revert" ||
         verdict.noCommit === "platform-preempt" ||
         verdict.noCommit === "render-refused" ||
         verdict.tipMoved === true ||
-        shipHookThrew.length > 0 ||
+        verdictShipFailures.length > 0 ||
         (verdictProvisionFailures.length > 0 &&
           verdict.shippedTags.length === 0) ||
         (verdictMergeFailures.length > 0 && verdict.shippedTags.length === 0);
@@ -750,10 +757,10 @@ export async function superviseLoop(
                     f.tag ? `${f.tag} (${f.signature})` : f.signature,
                   )
                   .join("; ")}`
-              : shipHookThrew.length > 0
-                ? `${verdict.summary} — shipped predicate threw: ${shipHookThrew
-                    .map((o) =>
-                      o.entryTag ? `${o.entryTag} (${o.threw})` : o.threw,
+              : verdictShipFailures.length > 0
+                ? `${verdict.summary} — shipped predicate threw: ${verdictShipFailures
+                    .map((f) =>
+                      f.tag ? `${f.tag} (${f.message})` : f.message,
                     )
                     .join("; ")}`
                 : verdict.summary,
@@ -765,7 +772,7 @@ export async function superviseLoop(
     // Every failure fact the
     // verdict records, tagged with the stage it came from — a clean exit
     // never joins this list, since it writes no provision, render, merge,
-    // gate or platform failure record at all.
+    // gate, ship or platform failure record at all.
     // The one place a roster member meets the verdict list that carries it.
     // Keyed by `FailureStage`, so the mapping is exhaustive over
     // `FAILURE_STAGES` by type: a stage added to the roster is a compile
@@ -779,6 +786,7 @@ export async function superviseLoop(
       render: verdict?.renderFailures ?? [],
       merge: verdict?.mergeFailures ?? [],
       gate: verdict?.gateFailures ?? [],
+      ship: verdict?.shipFailures ?? [],
       // The one member with no blame half to carry: `PlatformFailure`
       // (`./tickVerdict.js`) declares no `tag`, so the quarantine loop below
       // skips it by type rather than by a branch on the stage name, and it

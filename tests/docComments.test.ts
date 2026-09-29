@@ -465,17 +465,26 @@ const ROSTER_TREES: readonly string[] = ["src", "tests"];
  * How a stage's name is spelled in prose: `provision` also appears as the
  * gerund the worktree leg is named by, and every member may carry the
  * `-stage`/` stage` suffix the summary line writes, or the bare hyphen an
- * elided one leaves (`a provision-, render-, merge-, gate- or platform-stage
- * wall`).
+ * elided one leaves (`a provision-, render-, merge-, gate-, ship- or
+ * platform-stage wall`).
+ *
+ * `ship` is the one member fenced against its own inflections: this tree
+ * spells `shipped`, `shipping` and `ships` everywhere, and a bare `ship`
+ * matching inside them would read a sentence about what a wave shipped as the
+ * roster naming its stage — green over prose that names nothing.
  */
 const stageWord = (stage: FailureStage): string =>
-  stage === "provision" ? String.raw`provision(?:ing)?` : stage;
+  stage === "provision"
+    ? String.raw`provision(?:ing)?`
+    : stage === "ship"
+      ? String.raw`ship(?![a-z])`
+      : stage;
 const stageToken = (): string =>
   `(?:${FAILURE_STAGES.map(stageWord).join("|")})(?:[-\\s]stages?|-(?=[,\\s]))?`;
 
 /**
- * A run of stage names joined as a list — `provision, render, merge, gate or
- * platform`, `merge/gate`, `render and gate`. The separator alphabet carries only
+ * A run of stage names joined as a list — `provision, render, merge, gate,
+ * ship or platform`, `merge/gate`, `render and gate`. The separator alphabet carries only
  * punctuation and the two connectives, never bare whitespace: `after-merge
  * gate` is two words that happen to be adjacent, not a list.
  */

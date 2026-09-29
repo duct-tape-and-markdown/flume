@@ -14,6 +14,7 @@ import type {
   PlatformFailure,
   ProvisionFailure,
   RenderFailure,
+  ShipFailure,
   ReportedGateResult,
   StakeLoss,
 } from "./tickVerdict.js";
@@ -602,6 +603,23 @@ export interface TickResult {
    * interactive sessions)*).
    */
   platformFailures?: readonly PlatformFailure[];
+  /**
+   * Every ship-stage failure this tick recorded — one per merged span whose
+   * `shipped` consult threw rather than returning — the same
+   * {@link ShipFailure} records the tick verdict persists. Each carries the
+   * blamed entry's `tag`, the thrown `message`, and the `signature` the run's
+   * consecutive-failure backstop compares repeats by. Absent when every
+   * consult this tick made returned, a `false` among them.
+   *
+   * What this adds beyond {@link FanoutEntryOutcome.mergeOutcome}: that field
+   * reads `not-shipped` for a predicate that threw and for one that declined,
+   * and a `handoff` telling the two apart off the outcome alone would be
+   * re-deriving a split the engine already made. Whether a repeated throw
+   * means retry, park or stop the run stays the chain's
+   * (`.claude/rules/engine-boundary.md`, *Routing rule (plan, build, and
+   * interactive sessions)*).
+   */
+  shipFailures?: readonly ShipFailure[];
   /** Set of pending tags shipped by this phase (build only; usually 0 or 1). */
   shippedTags: readonly string[];
   /**
@@ -1030,7 +1048,8 @@ export interface Chain {
    * the run-scoped quarantine and the consecutive-identical-failure abort
    * threshold ship as engine defaults; this block lets a chain choose
    * otherwise. Between them the two legs read every failure a tick reported,
-   * whichever stage it came from — provision, render, merge, gate or platform
+   * whichever stage it came from — provision, render, merge, gate, ship or
+   * platform
    * alike — never provisioning alone. Only the backstop reads a platform
    * preempt: it is blamed on no entry, so there is nothing to quarantine. Undeclared or omitted fields fall through to the defaults in
    * `src/loopSupervisor.ts`'s
@@ -1041,7 +1060,7 @@ export interface Chain {
   supervisorPolicy?: {
     /**
      * `"run"`: a failure a tick blamed on one entry — at the provision,
-     * render, merge or gate stage alike, never the platform stage, whose
+     * render, merge, gate or ship stage alike, never the platform stage, whose
      * preempts name no entry — quarantines that entry's slug for
      * the rest of the run. `"none"`: quarantine never engages — every entry stays pickable
      * every tick regardless of an earlier failure. The
@@ -1052,8 +1071,8 @@ export interface Chain {
     /**
      * Number of consecutive ticks the same stage-tagged failure signature
      * must repeat, with no successful tick between them, before the
-     * supervisor aborts the run — a provision-, render-, merge-, gate- or
-     * platform-stage wall alike, each streak counted separately.
+     * supervisor aborts the run — a provision-, render-, merge-, gate-,
+     * ship- or platform-stage wall alike, each streak counted separately.
      */
     abortThreshold?: number;
     /**

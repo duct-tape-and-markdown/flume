@@ -799,6 +799,9 @@ export async function runFanout(
     ...(mergeStage.gateFailures.length > 0
       ? { gateFailures: mergeStage.gateFailures }
       : {}),
+    ...(mergeStage.shipFailures.length > 0
+      ? { shipFailures: mergeStage.shipFailures }
+      : {}),
     tags: provisioned.map((e) => e.tag),
     mergeOutcomes: mergeStage.mergeOutcomes,
     timings: mergeStage.timings,

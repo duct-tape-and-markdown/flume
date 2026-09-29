@@ -86,6 +86,7 @@ import {
   type PlatformFailure,
   type ProvisionFailure,
   type RenderFailure,
+  type ShipFailure,
   type TickVerdict,
 } from "./tickVerdict.js";
 import * as git from "./git.js";
@@ -222,9 +223,9 @@ export interface DispatcherOptions {
    * pickable — the queue itself is untouched. The `flume loop`
    * supervisor populates this (via the `tick` command's
    * `FLUME_QUARANTINED_SLUGS` env var, whose name predates the key and
-   * stands) from entries whose provision, render, merge or gate stage failed
-   * earlier in the run — never a platform-stage one, which is blamed on no
-   * entry and feeds the run's backstop alone; the exclusion is run-scoped only — a fresh run/process always
+   * stands) from entries whose provision, render, merge, gate or ship stage
+   * failed earlier in the run — never a platform-stage one, which is blamed on
+   * no entry and feeds the run's backstop alone; the exclusion is run-scoped only — a fresh run/process always
    * starts with nothing quarantined. Because the key covers the entry's
    * bytes, an entry re-scoped on trunk no longer matches the held key and
    * is pickable again without a relaunch. Default: nothing quarantined.
@@ -493,6 +494,12 @@ export interface TickOutcome {
    * agent exited on its own account.
    */
   platformFailures?: PlatformFailure[];
+  /**
+   * See {@link TickVerdict.shipFailures}.
+   * Present only when the tick hit at least one; absent on a tick whose every
+   * `shipped` consult returned.
+   */
+  shipFailures?: ShipFailure[];
   /**
    * This tick's unified facts artifact, present iff a phase
    * actually ran (same condition as `result`) — absent on `hibernated`,
@@ -1111,6 +1118,7 @@ export class Dispatcher {
       mergeFailures,
       gateFailures,
       platformFailures,
+      shipFailures,
       tags,
       mergeOutcomes,
       timings,
@@ -1131,6 +1139,12 @@ export class Dispatcher {
     // recognized by. The render-stage fold is that shortfall one earlier
     // again: a prompt that never resolved ran no agent, so nothing else on
     // the surface names the entry it was blamed on.
+    //
+    // The ship-stage fold is the same shortfall one stage later: an entry's
+    // `mergeOutcome` reads `not-shipped` whether the chain's predicate
+    // declined or threw, so a handoff separating a deliberate park from a
+    // broken hook off that field alone would be rebuilding a split the engine
+    // already made.
     //
     // The platform-stage fold is the shortfall with no per-entry trace at all:
     // an agent that died for non-work reasons ran no gate, reached no pick and
@@ -1157,6 +1171,7 @@ export class Dispatcher {
       ...(platformFailures && platformFailures.length > 0
         ? { platformFailures }
         : {}),
+      ...(shipFailures && shipFailures.length > 0 ? { shipFailures } : {}),
     };
 
     // Sleep this phase by default; handoff re-wakes if needed. Scoped to the
@@ -1241,6 +1256,7 @@ export class Dispatcher {
       mergeFailures,
       gateFailures,
       platformFailures,
+      shipFailures,
       clearedPriorAttempts,
       summary,
       headSha: await git.revParse(this.opts.repoRoot),
@@ -1265,6 +1281,7 @@ export class Dispatcher {
       ...(platformFailures && platformFailures.length > 0
         ? { platformFailures }
         : {}),
+      ...(shipFailures && shipFailures.length > 0 ? { shipFailures } : {}),
       awakeAfter: this.baton.awake(),
       summary,
     };

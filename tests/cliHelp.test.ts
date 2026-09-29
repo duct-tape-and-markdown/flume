@@ -295,6 +295,7 @@ const TICK_OUTCOME_SPACE: {
   mergeFailures: [ABSENT, [A_STAGE_FAILURE]],
   gateFailures: [ABSENT, [A_STAGE_FAILURE]],
   platformFailures: [ABSENT, [A_STAGE_FAILURE]],
+  shipFailures: [ABSENT, [A_STAGE_FAILURE]],
   verdict: [ABSENT, A_TICK_VERDICT],
   awakeAfter: [[], ["plan"]],
   summary: ["no phases awake; hibernating"],

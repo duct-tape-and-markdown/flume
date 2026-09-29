@@ -72,6 +72,7 @@ import {
   type PlatformFailure,
   type ProvisionFailure,
   type RenderFailure,
+  type ShipFailure,
   type ReportedGateResult,
   type StakeLoss,
   type TickVerdict,
@@ -353,6 +354,13 @@ interface WaveMerge {
   /** Gate-stage failures, the sibling accounting to {@link WaveMerge.mergeFailures}. */
   readonly gateFailures: GateFailure[];
   /**
+   * Ship-stage failures — one per span whose `shipped` consult threw
+   * ({@link ShipFailure}), on the same terms as the two above. This stage is
+   * the only place the consult happens, so it is the only place this record
+   * is produced.
+   */
+  readonly shipFailures: ShipFailure[];
+  /**
    * Every ledger commit this wave has landed, in the order it landed them —
    * one per pick whose rewrite reported one, empty while every rewrite so far
    * wrote no commit (a footprint already recorded, a live foreign tip claim
@@ -412,6 +420,7 @@ interface WaveMergeResult {
   readonly mergeOutcomes: TickVerdictMergeOutcome[];
   readonly mergeFailures: MergeFailure[];
   readonly gateFailures: GateFailure[];
+  readonly shipFailures: ShipFailure[];
   /** A tip claim or a per-entry ancestry refusal stopped at least one span. */
   readonly tipMoved: boolean;
   /** `shouldRun` declined at least one entry. */
@@ -436,6 +445,7 @@ export function openWaveMerge(setup: WaveMergeSetup): WaveMerge {
     mergeOutcomes: [],
     mergeFailures: [],
     gateFailures: [],
+    shipFailures: [],
     ledgerShas: [],
     tipMoved: false,
     declined: false,
@@ -1015,6 +1025,21 @@ async function carrySpan(
       headSha: mergedSha,
       ...(shipThrew === undefined ? {} : { threw: shipThrew }),
     });
+    // A throw is a stage failure; a `false` is not. The run's accounting
+    // reads this list, never the `not-shipped` outcomes above — the outcome
+    // is the entry's fate, and re-filtering it for the throws would rebuild
+    // beside the engine the split the engine already made
+    // (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+    // never rediscovered*). Blamed by `blamedOn` unconditionally: the consult
+    // only happens for a span this wave carried, so the entry is always
+    // there, and a hook broken for one entry is exactly what the per-entry
+    // leg exists to isolate.
+    if (shipThrew !== undefined)
+      w.shipFailures.push({
+        ...blamedOn(r.entry),
+        signature: bound(shipThrew.trim(), MAX_FAILURE_SIGNATURE),
+        message: shipThrew,
+      });
     return slug;
   }
 
@@ -1059,6 +1084,7 @@ export function closeWaveMerge(w: WaveMerge): WaveMergeResult {
     mergeOutcomes: w.mergeOutcomes,
     mergeFailures: w.mergeFailures,
     gateFailures: w.gateFailures,
+    shipFailures: w.shipFailures,
     tipMoved: w.tipMoved,
     declined: w.declined,
     ...(w.bystanderCheckpointSha
@@ -1338,6 +1364,7 @@ async function settledWaveVerdict(
     stakeLosses,
     mergeFailures: w.mergeFailures,
     gateFailures: w.gateFailures,
+    shipFailures: w.shipFailures,
     platformFailures,
     clearedPriorAttempts,
     summary:

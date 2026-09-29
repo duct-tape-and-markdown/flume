@@ -2481,7 +2481,7 @@ describe("docs/CHAIN-AUTHORING.md — the supervisor-policy walk covers the bloc
    * old set (*Derived state is computed, never restated beside its source*).
    *
    * The claim is the roster, never what each member costs an entry: `platform`
-   * is accounted like the other four and quarantines nothing, so a title
+   * is accounted like the other five and quarantines nothing, so a title
    * saying "as a quarantine stage" would name a property the body never reads
    * (*A green verdict is proven non-vacuous*: a title is a claim its body
    * asserts). What each stage does reach is the bullets' to say, below.

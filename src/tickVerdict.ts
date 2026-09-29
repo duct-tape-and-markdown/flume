@@ -221,6 +221,34 @@ export interface PlatformFailure {
 }
 
 /**
+ * A ship-stage failure (spec/loop.md "Repeated identical failures —
+ * quarantine, then abort"): the chain's own `shipped` predicate *threw* over
+ * one span that had already landed on trunk (`spec/chain.md`, *What a hook
+ * receives*: a throw is not `false`), so the tick's ship decision for that
+ * entry was never actually made. `signature` is the thrown message — the
+ * chain's own hook failing for one entry, as a thrown `promptArgs` is at the
+ * render stage ({@link RenderFailure}).
+ *
+ * A `shipped` that *returned* `false` records nothing here: a declined ship
+ * is the chain's verdict on a commit that landed, not a failure of the tick
+ * that produced it. {@link TickVerdictMergeOutcome.threw} is where the two
+ * causes of one `not-shipped` are already held apart; this record is the
+ * supervisor's half of that same split, so a predicate throwing identically
+ * every wave joins a streak instead of being re-paid at full agent price.
+ *
+ * A {@link StageFailureEntry} whose blame half is always filled: `shipped` is
+ * consulted only for a fanout entry whose span reached trunk, so there is
+ * exactly one entry to blame. The pairing still rides the shared type rather
+ * than a narrower shape of its own, so every stage failure the supervisor
+ * folds is read through one vocabulary.
+ */
+export type ShipFailure = StageFailureEntry & {
+  /** Same comparison-key contract as `ProvisionFailure.signature`. */
+  signature: string;
+  message: string;
+};
+
+/**
  * One gate's result as the engine reports it — the single row shape every
  * reporting surface carries: a {@link TickVerdict}'s `gateResults` on disk,
  * `TickResult.gateResults` for `handoff`, and `ShipContext.gateResults` for
@@ -282,7 +310,7 @@ export interface ReportedGateResult {
   blamesSpan?: false;
 }
 
-/** Bound on a persisted stage-failure signature (provision/render/merge/gate/platform alike) — a comparison key, not a transcript. */
+/** Bound on a persisted stage-failure signature (provision/render/merge/gate/ship/platform alike) — a comparison key, not a transcript. */
 export const MAX_FAILURE_SIGNATURE = 500;
 
 /**
@@ -888,6 +916,13 @@ export interface TickVerdict {
    */
   platformFailures?: PlatformFailure[];
   /**
+   * Ship-stage failures this tick recorded — one per merged span whose
+   * `shipped` consult threw, each blamed on the entry the pick carried
+   * ({@link ShipFailure}). Absent/empty when every consult this tick made
+   * returned.
+   */
+  shipFailures?: ShipFailure[];
+  /**
    * spec/loop.md "No false signal": prior-attempt records this tick cleared
    * as stale — entry-keyed records whose tag the queue the wave read no
    * longer carries — by the key each was filed under. The retry those
@@ -954,6 +989,7 @@ interface TickVerdictFacts {
   mergeFailures?: readonly MergeFailure[] | undefined;
   gateFailures?: readonly GateFailure[] | undefined;
   platformFailures?: readonly PlatformFailure[] | undefined;
+  shipFailures?: readonly ShipFailure[] | undefined;
   clearedPriorAttempts?: readonly string[] | undefined;
   summary: string;
   /**
@@ -1014,6 +1050,9 @@ export function buildTickVerdict(facts: TickVerdictFacts): TickVerdict {
       : {}),
     ...(facts.platformFailures?.length
       ? { platformFailures: [...facts.platformFailures] }
+      : {}),
+    ...(facts.shipFailures?.length
+      ? { shipFailures: [...facts.shipFailures] }
       : {}),
     ...(facts.clearedPriorAttempts?.length
       ? { clearedPriorAttempts: [...facts.clearedPriorAttempts] }
