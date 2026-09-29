@@ -2087,6 +2087,66 @@ it("the retired-claim delta renders the lines deleted since the retired-claim cu
 });
 
 /**
+ * The two cursors move independently — the stamp is pinned by the rotation
+ * while the retired-claim cursor advances on whichever tick searched the
+ * block — so the locus paths a delta is narrowed to are read off the range
+ * the delta is diffed over, never off the frontier's. Drawn off the
+ * frontier's, a page retired between the cursors is named by nothing, its
+ * lines are never diffed, and the block reports whole over claims no tick
+ * searched (`.claude/rules/posture-sweep.md`, *The frontier is decidable; the
+ * neighborhood is judged*).
+ */
+it("the retired-claim delta renders a locus page retired before the stamp and untouched since", () => {
+  const searched = commit(
+    {
+      "src/a.ts": "export const a = 1;\n",
+      "spec/loop.md": "# Loop\n\nA retired claim.\n",
+    },
+    "build: a",
+  );
+
+  // The claim leaves the locus, and only then does the rotation's stamp land
+  // — on a commit that touches no locus path, as does everything after it.
+  commit({ "spec/loop.md": "# Loop\n" }, "spec: retire the claim");
+  const stamp = commit(
+    { "src/a.ts": "export const a = 2;\n" },
+    "build: bump a",
+  );
+  const tip = commit(
+    { "src/a.ts": "export const a = 3;\n" },
+    "build: bump a again",
+  );
+
+  writeState({ sweptThrough: stamp, retiredThrough: searched });
+
+  // Vacuity pin: the frontier's own range touches `src/` and no locus path at
+  // all, so a delta narrowed by that range could name no page — while the
+  // range the delta is actually diffed over carries the retired claim.
+  expect(
+    git("log", "--name-only", "--format=", `${stamp}..HEAD`)
+      .split("\n")
+      .filter((line) => line !== ""),
+  ).toEqual(["src/a.ts"]);
+  expect(git("diff", `${searched}..HEAD`, "--", "spec/loop.md")).toContain(
+    "-A retired claim.",
+  );
+
+  const rendered = windows()["plan-sweep"].args({
+    cwd: repo,
+    flumeDir: stateRoot(),
+  }).SWEEP_WINDOW;
+
+  expect(retiredDelta(rendered)).toEqual([
+    "=== deleted from spec/loop.md ===",
+    "-",
+    "-A retired claim.",
+  ]);
+  // And the advance rides that set: the block is whole because every line the
+  // delta's own range deleted rendered, not because none was looked for.
+  expect(closingBlock(rendered)).toContain(advanceLine(tip));
+});
+
+/**
  * The field is optional, and absent is a state rather than a degradation: a
  * slice that has advanced it through no commit yet has searched nothing past
  * its stamp, which is what the stamp already says.

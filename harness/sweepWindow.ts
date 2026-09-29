@@ -36,6 +36,7 @@ import { matchesAny } from "../src/paths.js";
 import { cursorWindow } from "./cursorWindow.js";
 import type { Declaration } from "./declaration.js";
 import {
+  commitsPast,
   deletedLines,
   touchedPast,
   touches,
@@ -167,7 +168,7 @@ function renderSweepWindow(
         `(retired-claim delta) ===`,
     );
     const retired = retiredBlock(
-      retiredLines(ctx.cwd, searched, all, locus),
+      retiredLines(ctx.cwd, searched, locus),
       budget,
     );
     lines.push(...retired.lines);
@@ -269,21 +270,36 @@ function frontierListing(
 }
 
 /**
- * The spec-locus lines deleted across the window — the sentences a doc
- * comment, a docs page or a README section may still assert
+ * The spec-locus lines deleted since the retired-claim cursor — the sentences
+ * a doc comment, a docs page or a README section may still assert
  * (`.claude/rules/posture-sweep.md`, *The frontier is decidable; the
  * neighborhood is judged*).
  *
- * The paths are the locus paths the range touched, so the diff is narrowed to
- * files the window actually names rather than to the whole locus.
+ * The diff is narrowed to the locus paths the range touched rather than run
+ * over the whole locus, and **the range those paths are read off is this
+ * delta's own** — the commits past `searched`, never the frontier's. The two
+ * cursors move independently: the stamp is pinned by the rotation while this
+ * one advances on whichever tick searched the block, so a page whose
+ * deletions fall between them is touched past `searched` and untouched past
+ * the stamp. Narrowed by the frontier's range, such a page is named by no
+ * path, the diff that would have carried its lines is never run, and the
+ * block reports whole over claims nothing searched — which advances this
+ * cursor across them (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * The second scan is what that costs: one `git log` past a cursor whose range
+ * is, on any rotation this slice has searched at all, shorter than the
+ * frontier's own.
  */
 function retiredLines(
   cwd: string,
-  cursor: string,
-  all: readonly RangeCommit[],
+  searched: string,
   locus: string[],
 ): DeletedPage[] {
-  return deletedLines(cwd, cursor, unionOf(all, locus));
+  return deletedLines(
+    cwd,
+    searched,
+    unionOf(commitsPast(cwd, searched), locus),
+  );
 }
 
 /**
