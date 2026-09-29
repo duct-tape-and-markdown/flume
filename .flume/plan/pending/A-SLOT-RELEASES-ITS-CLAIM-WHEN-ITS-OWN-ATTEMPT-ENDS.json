@@ -1,0 +1,32 @@
+{
+  "tag": "A-SLOT-RELEASES-ITS-CLAIM-WHEN-ITS-OWN-ATTEMPT-ENDS",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 30,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/waveTick.ts",
+        "description": "the slot's own tail taking the teardown of the worktree and branch it provisioned and the release of the claim it staked, and the wave-end walk plus the `staked`/`worktrees` accumulators that hold them today"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the refilling-wave cases, beside the stake-before-provision and skips-a-claimed-entry cases the section already carries"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "A wave releases every claim it staked in one loop at wave end, so a slot whose attempt parked hours ago still reads as claimed and its records stay unreachable",
+  "per": {
+    "path": "spec/pending.md",
+    "section": "Claims — an entry in flight is left alone"
+  },
+  "acceptance": "the claim a slot staked is released when that slot's own attempt ends — with the ship, or with the teardown of the worktree and branch it provisioned, which moves into the slot with it — so a parked entry is unclaimed while its siblings still run and a refilling wave holds no claim for an attempt it has stopped carrying. The hazard the one wave-end site guarded goes with the per-wave teardown that created it, never by a second release site. Teardown stays serialized against the shared worktree metadata as creation is, the wave still reports surviving paths once rather than once per worktree, and the merge wall keeps whatever its site declares today. Every claim a wave staked is gone when the wave ends, as now.",
+  "tests": [
+    "a refilling wave releases a parked entry's claim before the wave ends",
+    "a settled slot's worktree and branch are torn down while a sibling slot is still running"
+  ],
+  "notes": "Ruled in the inbox, 45073e80: fork (1), the slot is the attempt; (2) rejected as two sites for one invariant, (3) as accepting the measured cost — a park unreachable 1h55m, a drain tick per cycle. Verified this tick: `src/waveTick.ts:664` releases every `staked` claim after the wave-end teardown walk (`:626`), while `runSlot` (`:349`) already carries provision, agent and merge. Sibling of A-CLAIMED-ENTRY-STANDING-REFUSAL-IS-WITHHELD-FROM-THE-DRAIN over this section; no file shared."
+}
