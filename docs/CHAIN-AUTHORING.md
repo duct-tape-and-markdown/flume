@@ -1942,6 +1942,15 @@ difference between two stamped lines (§8).
 A prompt file is markdown plus two extensions the renderer applies
 per-tick.
 
+The engine loads it for you, once per tick beside the chain load, and every
+slot of that tick renders from those bytes. `api.readPhaseTemplate(configDir,
+promptPath)` is that same read: a relative `promptPath` resolves beneath the
+config dir and an absolute one is taken as given, so a prompt shipped inside
+a package is addressed rather than assumed to live under the chain. Reach for
+it whenever you need a phase's template yourself — `api.renderPrompt` takes
+the template bytes, never a path, and the address is the engine's to answer
+rather than a `resolve()` your chain keeps in step by hand.
+
 ### Placeholders: `{{KEY}}`
 
 `{{UPPER_SNAKE_CASE}}` is replaced from the phase's `promptArgs(ctx)`

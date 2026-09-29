@@ -39,7 +39,11 @@ import type { Chain, Phase, TickContext, TickResult } from "../src/Phase.ts";
 import { entryFileName } from "../src/PendingSchema.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import type { PriorAttempt } from "../src/Prompt.ts";
-import { InlineExecRenderError, renderPrompt } from "../src/Prompt.ts";
+import {
+  InlineExecRenderError,
+  readPhaseTemplate,
+  renderPrompt,
+} from "../src/Prompt.ts";
 import { Baton } from "../src/Baton.ts";
 import * as builtinGates from "../src/builtinGates.ts";
 import { Dispatcher, type TickOutcome } from "../src/Dispatcher.ts";
@@ -2852,10 +2856,15 @@ describe("backlog-groomer-chain.ts — the prompt names its artifacts through th
     const held = groom!.writablePaths;
     expect(held.length, "the groom fence names the artifacts it holds").toBe(2);
 
-    const promptFile = fileURLToPath(
-      new URL(`../examples/${groom!.promptPath}`, import.meta.url),
+    // Addressed through the api the factory is handed, not through a URL
+    // composed here: `promptPath`'s resolution is the engine's
+    // (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+    // never rediscovered*), so this reads the bytes a tick would render from
+    // rather than a second spelling that agrees until one of them moves.
+    const template = await buildFlumeApi(EXAMPLE_PATHS).readPhaseTemplate(
+      EXAMPLE_PATHS.configDir,
+      groom!.promptPath,
     );
-    const template = readFileSync(promptFile, "utf8");
     for (const path of held) {
       expect(template, `the template spells ${path} itself`).not.toContain(path);
     }
@@ -2887,6 +2896,108 @@ describe("backlog-groomer-chain.ts — the prompt names its artifacts through th
     const body = rendered.slice(rendered.indexOf("</harness>"));
     for (const path of held) {
       expect(body, `the rendered task body names ${path}`).toContain(path);
+    }
+  });
+});
+
+/**
+ * `.claude/rules/engineering.md`, *A fact the engine holds is reported, never
+ * rediscovered* — the render seam has two halves and a chain was handed one.
+ * `api.renderPrompt` takes template bytes, never an address, so a chain
+ * rendering a phase's prompt had to respell `resolve(configDir, promptPath)`
+ * and the win32 fold beneath it to call the one member it holds. The loader
+ * rides the surface beside the renderer, and both resolution arms are the
+ * engine's answer rather than a convention a chain author has to know.
+ *
+ * Driven through the real `buildFlumeApi`, the seam a chain factory is handed.
+ */
+describe("buildFlumeApi().readPhaseTemplate (.claude/rules/engineering.md 'A fact the engine holds is reported, never rediscovered')", () => {
+  it("a chain loads a phase's prompt template through the api it was handed", async () => {
+    // The api a shipped example's factory is handed, and a real phase's real
+    // `promptPath` off the chain that factory returned — the two values a
+    // chain actually holds at the moment it wants a template.
+    const api = buildFlumeApi(EXAMPLE_PATHS);
+    const groom = backlogGroomerChain.phases.find((p) => p.name === "groom");
+    // Vacuity pins (*A green verdict is proven non-vacuous*): an absent phase
+    // or an empty template would leave the claim asserted over nothing.
+    expect(groom, "the groomer chain declares a groom phase").toBeDefined();
+    expect(groom!.promptPath, "the groom phase addresses a prompt").toBeTruthy();
+
+    // The engine's own loader, by reference — not a second read wearing the
+    // api's name.
+    expect(api.readPhaseTemplate).toBe(readPhaseTemplate);
+
+    const template = await api.readPhaseTemplate(
+      api.paths.configDir,
+      groom!.promptPath,
+    );
+    expect(template.length).toBeGreaterThan(0);
+    // And it is that phase's template rather than any readable file: the
+    // bytes fill through the renderer the other half of the seam ships,
+    // driven with the phase's own `promptArgs`.
+    const rendered = await renderPrompt({
+      phase: groom!,
+      template,
+      cwd: EXAMPLE_PATHS.repoRoot,
+      flumeDir: EXAMPLE_PATHS.flumeDir,
+      args: groom!.promptArgs!({
+        cwd: EXAMPLE_PATHS.repoRoot,
+        flumeDir: EXAMPLE_PATHS.flumeDir,
+      }),
+    });
+    expect(rendered).toContain(groom!.writablePaths[0]!);
+  });
+
+  it("the api's prompt-template loader resolves a relative promptPath beneath the chain's config dir", async () => {
+    const root = mkTempDirSync("api-prompt-relative-");
+    try {
+      const configDir = join(root, "config");
+      mkdirSync(join(configDir, "prompts"), { recursive: true });
+      writeFileSync(join(configDir, "prompts", "groom.md"), "beneath the config dir\n");
+      // A decoy at the same relative name under the repo root: a resolution
+      // keyed off `repoRoot`, or off the process's cwd, reads this one.
+      mkdirSync(join(root, "prompts"), { recursive: true });
+      writeFileSync(join(root, "prompts", "groom.md"), "beside the config dir\n");
+
+      const api = buildFlumeApi({
+        repoRoot: root,
+        configDir,
+        flumeDir: join(root, ".flume"),
+      });
+      expect(
+        await api.readPhaseTemplate(api.paths.configDir, join("prompts", "groom.md")),
+      ).toBe("beneath the config dir\n");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("the api's prompt-template loader takes an absolute promptPath as given", async () => {
+    const root = mkTempDirSync("api-prompt-absolute-");
+    try {
+      // The shape this arm exists for: a prompt shipped inside a package,
+      // addressed absolutely, with the chain's config dir somewhere else
+      // entirely — and holding a file of its own, so a loader that joined
+      // rather than resolved would have something to find.
+      const configDir = join(root, "config");
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(join(configDir, "groom.md"), "under the config dir\n");
+
+      const shipped = join(root, "node_modules", "some-pkg", "prompts");
+      mkdirSync(shipped, { recursive: true });
+      const absolute = join(shipped, "groom.md");
+      writeFileSync(absolute, "shipped inside the package\n");
+
+      const api = buildFlumeApi({
+        repoRoot: root,
+        configDir,
+        flumeDir: join(root, ".flume"),
+      });
+      expect(await api.readPhaseTemplate(api.paths.configDir, absolute)).toBe(
+        "shipped inside the package\n",
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

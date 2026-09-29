@@ -64,7 +64,11 @@ import {
   touchedPaths,
   isPickableNow,
 } from "./PendingSchema.js";
-import { InlineExecRenderError, renderPrompt } from "./Prompt.js";
+import {
+  InlineExecRenderError,
+  readPhaseTemplate,
+  renderPrompt,
+} from "./Prompt.js";
 import { setupWorktree } from "./setupWorktree.js";
 import { checkoutAt, readWorktreeRegistry } from "./worktrees.js";
 
@@ -172,6 +176,30 @@ export interface FlumeApi {
   isPickableNow: typeof isPickableNow;
   partitionByFileOverlap: typeof partitionByFileOverlap;
   matchesAny: typeof matchesAny;
+  /**
+   * The bytes half of the render seam, at the address the engine resolves:
+   * a phase's `promptPath` against the chain's config dir, read once
+   * (`readPhaseTemplate`, `src/Prompt.ts`). Relative keeps its meaning
+   * beneath the config dir; absolute is taken as given, which is how a
+   * prompt shipped inside a package gets an address rather than a path the
+   * chain is assumed to hold beneath itself.
+   *
+   * What a chain reaching {@link renderPrompt} reads instead of composing
+   * that address by hand. The renderer takes a template, never a path, so
+   * everything on this surface that renders a phase's prompt — a gate
+   * proving the shipped template still fills, a decorator re-rendering for a
+   * retry, a test driving the real writer — has to load the bytes first, and
+   * the only spelling left on hand is `resolve(configDir, promptPath)` plus
+   * the win32 total-path fold the engine already runs on it. A chain-local
+   * copy agrees with the dispatcher until either rule moves, and what it
+   * fails with is a render over a file no tick ever used.
+   *
+   * Reported as a **fact**: the bytes at that address, or the read's own
+   * failure, thrown. Which of a chain's phases wants a template loaded, and
+   * what it does with one, stays the chain's
+   * (`.claude/rules/engine-boundary.md`).
+   */
+  readPhaseTemplate: typeof readPhaseTemplate;
   renderPrompt: typeof renderPrompt;
   readTickVerdicts: typeof readTickVerdicts;
   readLatestVerdictsSync: typeof readLatestVerdictsSync;
@@ -464,6 +492,7 @@ export function buildFlumeApi(paths: FlumePaths): FlumeApi {
     isPickableNow,
     partitionByFileOverlap,
     matchesAny,
+    readPhaseTemplate,
     renderPrompt,
     readTickVerdicts,
     readLatestVerdictsSync,
