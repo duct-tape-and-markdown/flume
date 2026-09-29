@@ -1894,9 +1894,10 @@ describe("superviseLoop — a render-, gate- or merge-stage hold expires with th
  * `abortThreshold` open the two constants the suite above exercises at
  * their shipped defaults (run-scoped quarantine; three-failure abort) as
  * chain-overridable config. The CLI forwards a resolved chain's
- * `supervisorPolicy` block into these same options (`src/cli.ts`); this
- * suite proves `superviseLoop` itself, the same seam the prior suite
- * already proves defaults through when neither option is passed.
+ * `supervisorPolicy` block into these same options (`loopVerb`,
+ * `src/cliLoop.ts`); this suite proves `superviseLoop` itself, the same
+ * seam the prior suite already proves defaults through when neither option
+ * is passed.
  */
 describe("superviseLoop — supervisor policy knobs override the shipped defaults", () => {
   const verdictPath = (phase: string): string =>

@@ -260,8 +260,8 @@ interface QueueFenceViolation {
  * **The one derivation.** Both surfaces that pre-check a queue read the
  * fence and the per-entry violation list from here — `pendingGate`
  * (`src/builtinGates.ts`) refusing a plan commit that queues unshippable
- * work, and `flume check` (`src/cli.ts`) answering the same question for an
- * operator off the tick path. Each used to spell the `writablePaths ∪
+ * work, and `checkVerb` (`src/cliCheck.ts`) answering the same question for
+ * an operator off the tick path. Each used to spell the `writablePaths ∪
  * entryChannelPaths` union and the `declaredPaths(e).filter(...)` scan for
  * itself, so a one-sided edit could make the gate and the verb name
  * different offending paths for one queue (`.claude/rules/engineering.md`,
@@ -368,14 +368,16 @@ export function boundedName(
  * Whether a filename is dot-prefixed — the one spelling of "a placeholder
  * git made the consumer create is no work". Every friction-channel surface
  * that decides whether a name is a note shares it (spec/chain.md,
- * "`Chain.friction` — the declared friction channel"), and there are two:
- * `frictionNotes` (`src/friction.ts`), the channel's one listing, behind the
- * status count, the `friction` verb's bare list, the teardown harvest's
- * candidates — which would otherwise relay a skipped name into the primary
- * dir under a stamped one the readers can no longer skip — and the harness
- * package's window; and the `friction` verb's read-by-name (`src/cli.ts`),
- * which resolves a name the operator typed rather than one it listed. One
- * detection, never re-derived beside each
+ * "`Chain.friction` — the declared friction channel"), and it has exactly one
+ * caller to share it through: `frictionNotes` (`src/friction.ts`), the
+ * channel's one listing, behind the status count, the `friction` verb's bare
+ * list, the teardown harvest's candidates — which would otherwise relay a
+ * skipped name into the primary dir under a stamped one the readers can no
+ * longer skip — and the harness package's window. The `friction` verb's
+ * read-by-name (`frictionVerb`, `src/cliFriction.ts`) resolves a name the
+ * operator typed rather than one it listed, and reaches this test through
+ * that listing rather than asking it a second time, so a typed name and a
+ * listed one are judged alike. One detection, never re-derived beside each
  * (`.claude/rules/engineering.md`, "The fix lands at the mechanism") — a
  * second spelling is how the count and the listing come to disagree about
  * what the channel holds.

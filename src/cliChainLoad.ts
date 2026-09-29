@@ -12,13 +12,13 @@
  * an exit code.
  *
  * `loadChainOrRefuse` is the refusing load: the verbs that can do no work at
- * all without a chain — `flume check` and `flume friction` (`src/cli.ts`) —
- * take it before any work of their own, and differ only in the name they give
- * themselves in the report.
+ * all without a chain — `checkVerb` (`src/cliCheck.ts`) and `frictionVerb`
+ * (`src/cliFriction.ts`) — take it before any work of their own, and differ
+ * only in the name they give themselves in the report.
  *
  * `loadChainForObservation` is the best-effort load the read-only surfaces
- * take — `flume status` and `flume wake`/`flume sleep` (`src/cli.ts`). Each
- * reads chain-declared values
+ * take — `statusVerb` (`src/cliStatus.ts`) and `flume wake`/`flume sleep`
+ * (`batonVerb`, `src/cliBaton.ts`). Each reads chain-declared values
  * (`Chain.pendingDir`, `Chain.friction`, `Chain.capabilities`,
  * `Chain.phases`) to describe or validate against state it will report either
  * way; none may fail on a chain that does not load, because none of them runs

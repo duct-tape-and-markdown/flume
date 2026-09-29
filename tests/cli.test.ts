@@ -744,13 +744,13 @@ function ledgerRewriteFailureChainSrc(phaseName: string): string {
  * whose `commitPendingUpdate` rewrite hits a `PendingParseFailure` after its
  * cherry-picks already landed writes the same `TickOutcome.verdict` a clean
  * completion would — `tests/Dispatcher.test.ts` proves that in memory. What
- * actually reaches disk depends on `src/cli.ts`'s `if (outcome.verdict)
- * writeTickVerdict(...)` branch running regardless of `outcome.failed` —
- * unverified until now, and only exercisable through the real `tick`
- * subprocess (`Dispatcher.tick()` alone never writes the file). The wave
- * here also mixes a shipped entry with a declined one, so both facts must
- * survive onto the on-disk artifact, not just the shipped tag the existing
- * single-entry suite already covers. Which slot settles first is the wave's
+ * actually reaches disk depends on `tickVerb` (`src/cliTick.ts`) running its
+ * `if (outcome.verdict) writeTickVerdict(...)` branch regardless of
+ * `outcome.failed` — unverified until now, and only exercisable through the
+ * real `tick` subprocess (`Dispatcher.tick()` alone never writes the file).
+ * The wave here also mixes a shipped entry with a declined one, so both
+ * facts must survive onto the on-disk artifact, not just the shipped tag the
+ * existing single-entry suite already covers. Which slot settles first is the wave's
  * own business: the refusal's verdict is built where every slot has finished,
  * so the `declined` read below does not turn on it
  * (`tests/Dispatcher.test.ts`, the same block's two ordered cases).
@@ -847,10 +847,11 @@ describe("flume tick — the tick verdict on disk after a ledger-rewrite Pending
 
 /**
  * Real CLI seam — `Chain.supervisorPolicy` reaching `flume loop`'s
- * supervisor end-to-end (`src/cli.ts`'s best-effort chain resolve →
- * `superviseLoop` forwarding). `tests/loopSupervisor.test.ts`'s "supervisor
- * policy knobs" suite already proves the quarantine/abort-backstop
- * mechanics themselves at the `superviseLoop` options seam with a stubbed
+ * supervisor end-to-end (`loopVerb`'s best-effort chain resolve →
+ * `superviseLoop` forwarding, `src/cliLoop.ts`).
+ * `tests/loopSupervisor.test.ts`'s "supervisor policy knobs" suite already
+ * proves the quarantine/abort-backstop mechanics themselves at the
+ * `superviseLoop` options seam with a stubbed
  * `runTick`; this suite proves only that the CLI's real chain-load-and-
  * forward wiring carries the declared block there at all — nothing
  * upstream of that seam is re-tested here.
@@ -6264,10 +6265,10 @@ describe("the run log (spec/cli.md §A log line carries the instant it was writt
         expect(loop.code).toBe(0);
 
         // The child's own lines. The dispatch line is written by
-        // `Dispatcher.tick` and the outcome summary by the `tick` branch of
-        // `src/cli.ts`; a supervisor process runs neither — past its startup
-        // sweep it constructs no tick of its own, and it never holds a
-        // `TickOutcome`.
+        // `Dispatcher.tick` and the outcome summary by `tickVerb`
+        // (`src/cliTick.ts`); a supervisor process runs neither — past its
+        // startup sweep it constructs no tick of its own, and it never holds
+        // a `TickOutcome`.
         const childLines = narratedLines(loop.out).filter(
           (line) =>
             line.includes("[flume] tick → probe (singleton)") ||

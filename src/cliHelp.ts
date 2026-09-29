@@ -236,8 +236,9 @@ export const SHARED_ROOT_ONLY_LEAD =
  * `flume tick`'s own `1` cause that a second surface states in a register of
  * its own: the advisory per-ref tip claim a bare tick takes around its single
  * tick, and the refusal a live holder answers it with (`spec/loop.md`, *The
- * loop lock and the tip claim*). Taken in `main` before a `TickOutcome`
- * exists, so no arm of `tickExitCode` carries it and this block owns it.
+ * loop lock and the tip claim*). Taken in `tickVerb` (`src/cliTick.ts`)
+ * before a `TickOutcome` exists, so no arm of `tickExitCode` carries it and
+ * this block owns it.
  *
  * Labelled for the reason {@link SHARED_ROOT_RESOLUTION_CAUSES} is:
  * `docs/CLI.md` spends one flowing sentence on the whole range and cannot
@@ -372,11 +373,12 @@ function exitCodeRow(
 
 /**
  * `flume tick`'s exit-code block. Each row states the causes it owns — the
- * refusals `main` takes before a `TickOutcome` exists, and the I/O row every
- * verb shares — and the causes an arm of `tickExitCode` owns are rendered
- * from the label that arm carries (`tickExitCauses`, `src/cliVerdict.ts`)
- * rather than spelled a second time here, so a code re-routed between two
- * arms cannot leave this page describing the arm it used to be
+ * refusals `tickVerb` (`src/cliTick.ts`) takes before a `TickOutcome`
+ * exists, and the I/O row every verb shares — and the causes an arm of
+ * `tickExitCode` owns are rendered from the label that arm carries
+ * (`tickExitCauses`, `src/cliVerdict.ts`) rather than spelled a second time
+ * here, so a code re-routed between two arms cannot leave this page
+ * describing the arm it used to be
  * (`.claude/rules/engineering.md`, *Derived state is computed, never
  * restated beside its source*).
  */
