@@ -1,0 +1,40 @@
+{
+  "tag": "A-CHAIN-NAMES-THE-CLASS-AN-UNREADABLE-PROMPT-REFUSES-WITH",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 0,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/flumeApi.ts",
+        "description": "the error roster a chain branches on, beside `RenderRefusal` and `MissingPlaceholderRenderError`"
+      },
+      {
+        "path": "src/index.ts",
+        "description": "the `./Prompt.js` block, so the class rides the entry point beside the loader that raises it"
+      },
+      {
+        "path": "docs/CHAIN-AUTHORING.md",
+        "description": "§ 5's `api.readPhaseTemplate` paragraph, which hands a chain the loader and leaves `api.RenderRefusal` reading as the base that covers it"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the api error-class roster pin, and the doc-against-interface reader beside it"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "api.readPhaseTemplate is public and raises PromptTemplateUnreadableError, a class on no exported surface, so a chain can classify the refusal only by matching its message",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A fact the engine holds is reported, never rediscovered"
+  },
+  "acceptance": "a chain classifies a prompt file that would not read the way the engine does — one `instanceof` against a named class off `api` — and the page that hands it the loader says which class that is; the class's own fields, the tick's `promptUnreadable` report and every exit code stay as they are",
+  "tests": [
+    "the chain factory is handed the class a prompt file that would not read is raised as",
+    "docs/CHAIN-AUTHORING.md's prompt-template section names the class a load that would not read refuses with"
+  ],
+  "notes": "Verified this tick: `src/Prompt.ts:465` declares the class, `src/Dispatcher.ts:1004` branches on it, and it reaches nothing past `src/` — absent from `src/index.ts`'s Prompt block and from `FlumeApi`'s roster (`src/flumeApi.ts:448`). `docs/CHAIN-AUTHORING.md:1946` hands a chain the loader, :2032 names `api.RenderRefusal` as the base to branch on, and `src/Prompt.ts:456` says this class is deliberately not one. Seam with THE-RENDER-REFUSED-CLASS-IS-ENUMERATED-WHOLE on `docs/CHAIN-AUTHORING.md`."
+}
