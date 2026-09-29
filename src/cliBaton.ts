@@ -22,7 +22,7 @@ import { stopFlagPath } from "./paths.js";
 import {
   mkdirUnderStateRoot,
   writeFileUnderStateRoot,
-} from "./stateRootWrite.js";
+} from "./stateRootAccess.js";
 
 /**
  * `wake`/`sleep`'s best-effort chain load: a missing or broken chain must

@@ -9,15 +9,17 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { readdirSync, readFileSync, rmSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { existsLoud } from "./fsProbe.js";
+import { existsLoud, isDirectoryOrAbsentUnder } from "./fsProbe.js";
 import { awakeDir, namespacedJoin } from "./paths.js";
 import {
   mkdirUnderStateRoot,
+  readUnderStateRoot,
+  removeUnderStateRoot,
   writeFileUnderStateRoot,
-} from "./stateRootWrite.js";
+} from "./stateRootAccess.js";
 
 /**
  * What a flag carries: the opaque mark {@link Baton.wake} wrote into it, read
@@ -35,6 +37,14 @@ import {
  * Absence is `undefined`, which is why this type does not spell it.
  */
 export type BatonToken = string;
+
+/**
+ * What a refusal names when the directory is the subject, and when one flag
+ * in it is — spelled once, because the operator reads them beside each other
+ * and the two writes {@link Baton.wake} makes are one sentence apart.
+ */
+const AWAKE_DIR_SUBJECT = "awake-flag directory";
+const AWAKE_FLAG_SUBJECT = "awake flag";
 
 /**
  * Filesystem-flag mechanism for which phases wake next. Presence of
@@ -72,39 +82,68 @@ export class Baton {
   }
 
   /**
-   * The first write under the state root any verb makes, and so the one that
-   * finds a root nothing can be made under: a plain file standing at
-   * `<flumeDir>/awake` stats clean above and fails this `mkdir` with `EEXIST`,
-   * on every host and for every uid. Refused as
-   * `StateRootWriteError` (`src/stateRootWrite.ts`) naming `flumeDir` — the
-   * root that is unusable, which the errno's own leaf leaves an operator to
-   * infer (`.claude/rules/engineering.md`, *Loud or nothing*).
+   * Holds the root and touches nothing: constructing the baton is not
+   * reading it, and reading it creates nothing (`spec/loop.md`, *Baton —
+   * presence wakes, absence hibernates*). {@link wake} makes the directory
+   * when the first flag needs one.
    *
    * @param flumeDir flume's mutable-state root (default `<repoRoot>/.flume`).
    */
   constructor(flumeDir: string) {
     this.stateRoot = flumeDir;
-    mkdirUnderStateRoot(flumeDir, "awake-flag directory", this.dir);
   }
 
-  /** Phases currently awake, sorted by name for stable iteration. */
+  /**
+   * Whether the awake-flag directory stands: `true` when a directory is
+   * there, `false` when it — or a directory between the state root and it —
+   * is absent, and a throw for everything else.
+   *
+   * `false` is the **empty baton**, and it has to be a proven absence rather
+   * than an errno: a plain file at `<flumeDir>/awake` answers a single stat
+   * beneath it `ENOENT` on win32 (`.claude/rules/platform-facts.md`, *win32
+   * reports a path through a non-directory as not found*), so a reader keyed
+   * off that errno would hibernate over an obstructed baton on one host and
+   * refuse on the other. The descent answers alike on both.
+   */
+  private dirStands(): boolean {
+    return isDirectoryOrAbsentUnder(
+      AWAKE_DIR_SUBJECT,
+      this.stateRoot,
+      this.dir,
+    );
+  }
+
+  /**
+   * Phases currently awake, sorted by name for stable iteration. An absent
+   * directory is the empty baton — nothing has woken yet, and reading that
+   * creates nothing. A directory that is present and will not read refuses
+   * as `StateRootAccessError` (`src/stateRootAccess.ts`), the same sentence and the same
+   * `EX_IOERR` an unwritable flag refuses with.
+   */
   awake(): string[] {
-    return readdirSync(namespacedJoin(this.dir))
-      .filter((name) => !name.startsWith("."))
-      .sort();
+    return readUnderStateRoot(this.stateRoot, AWAKE_DIR_SUBJECT, () => {
+      if (!this.dirStands()) return [];
+      return readdirSync(namespacedJoin(this.dir))
+        .filter((name) => !name.startsWith("."))
+        .sort();
+    });
   }
 
   /**
    * True iff the named phase has an awake flag. Absent is the only silent
-   * reading; every other stat failure throws, the same disposition `awake()`
-   * takes. Pinned by "Baton — an unstattable awake flag is loud"
-   * (`tests/Baton.test.ts`).
+   * reading — the flag's, and the directory's, each proven by
+   * {@link dirStands} rather than read off an errno; every other stat failure
+   * refuses, the same disposition {@link awake} takes. Pinned by "Baton — an
+   * unstattable awake flag is loud" (`tests/Baton.test.ts`).
    *
    * Presence alone, never the token: what a flag carries scopes a sleep, and
    * decides nothing about whether the phase is awake.
    */
   isAwake(name: string): boolean {
-    return existsLoud(namespacedJoin(this.dir, name));
+    return readUnderStateRoot(this.stateRoot, AWAKE_FLAG_SUBJECT, () => {
+      if (!this.dirStands()) return false;
+      return existsLoud(namespacedJoin(this.dir, name));
+    });
   }
 
   /**
@@ -117,13 +156,16 @@ export class Baton {
    * {@link sleepIfUnchanged} after its work.
    */
   token(name: string): BatonToken | undefined {
-    try {
-      return readFileSync(namespacedJoin(this.dir, name), "utf8");
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code === "ENOENT") return undefined;
-      throw err;
-    }
+    return readUnderStateRoot(this.stateRoot, AWAKE_FLAG_SUBJECT, () => {
+      if (!this.dirStands()) return undefined;
+      try {
+        return readFileSync(namespacedJoin(this.dir, name), "utf8");
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === "ENOENT") return undefined;
+        throw err;
+      }
+    });
   }
 
   /**
@@ -131,16 +173,20 @@ export class Baton {
    * already stood. Repeated calls are one flag and one queued run — the depth
    * of the queue is one, and the newest token is what stands.
    *
-   * A flag that cannot be written is the same refusal the constructor's `mkdir`
-   * raises, naming the same root: a directory standing at
-   * `<flumeDir>/awake/<name>` passes that `mkdir` and fails here, and a phase
-   * silently not woken is a tick that never runs
+   * **The directory is made here**, by the first wake and by no read: a root
+   * nothing can be made under is found by this `mkdir`, where a plain file
+   * standing at `<flumeDir>/awake` stats clean above and fails with `EEXIST`
+   * on every host and for every uid. The flag write past it fails for the
+   * kindred reasons — a directory standing at `<flumeDir>/awake/<name>`
+   * passes the `mkdir` and fails here — and both are the one refusal naming
+   * the root, because a phase silently not woken is a tick that never runs
    * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
    */
   wake(name: string): void {
+    mkdirUnderStateRoot(this.stateRoot, AWAKE_DIR_SUBJECT, this.dir);
     writeFileUnderStateRoot(
       this.stateRoot,
-      "awake flag",
+      AWAKE_FLAG_SUBJECT,
       join(this.dir, name),
       randomUUID(),
     );
@@ -152,14 +198,18 @@ export class Baton {
    * `spec/cli.md`) — an operator putting a phase down means the phase, not one
    * wake of it. A tick sleeping the phase it just ran wants
    * {@link sleepIfUnchanged} instead.
+   *
+   * A removal is a write of the directory holding the flag, so a flag that is
+   * there and will not go refuses in the write's own direction
+   * (`removeUnderStateRoot`, `src/stateRootAccess.ts`) — a phase left awake by
+   * a `sleep` that reported success is the loop running it again forever.
    */
   sleep(name: string): void {
-    try {
-      rmSync(namespacedJoin(this.dir, name));
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code !== "ENOENT") throw err;
-    }
+    removeUnderStateRoot(
+      this.stateRoot,
+      AWAKE_FLAG_SUBJECT,
+      join(this.dir, name),
+    );
   }
 
   /**

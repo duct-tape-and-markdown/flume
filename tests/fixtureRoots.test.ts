@@ -139,7 +139,7 @@ describe("a temp fixture root speaks git's spelling of itself", () => {
  * Driven by the real writer: the CLI itself, run from a directory with no
  * `.flume` at or above it, which is exactly how the litter was produced —
  * `resolveRepoRoot` falls back to cwd, `stop` mkdirs the bay and writes the
- * flag, and the `Baton` constructor mkdirs `awake/`.
+ * flag, and `wake` mkdirs `awake/` and plants one in it.
  */
 describe("the suite refuses a flume state root above its fixtures", () => {
   it("a run that creates a state root above its own fixture fails the suite and names the offender", async () => {
@@ -161,12 +161,13 @@ describe("the suite refuses a flume state root above its fixtures", () => {
       expect(watch.known.has(join(attic, ".flume"))).toBe(false);
       expect(() => refuseLeakedStateRoots(watch, "control")).not.toThrow();
 
-      // The leak, written by the real CLI: `stop` plants the bay and the flag,
-      // `status` builds a Baton and plants `awake/`.
+      // The leak, written by the real CLI: `stop` plants the bay and the
+      // flag, `wake` plants `awake/` and a flag in it. (`status` plants
+      // nothing — reading the baton creates nothing, `spec/loop.md`.)
       expect((await runCli(attic, ["stop"])).code).toBe(0);
-      expect((await runCli(attic, ["status"])).code).toBe(0);
+      expect((await runCli(attic, ["wake", "probe"])).code).toBe(0);
       expect(existsSync(join(attic, ".flume", "stop"))).toBe(true);
-      expect(existsSync(join(attic, ".flume", "awake"))).toBe(true);
+      expect(existsSync(join(attic, ".flume", "awake", "probe"))).toBe(true);
 
       const offender = "cli.test.ts > some suite > some leaking test";
       let reported = "";

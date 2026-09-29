@@ -37,7 +37,7 @@ type Subcommand = (typeof SUBCOMMANDS)[number];
  *
  * These are the ways a root comes back unusable *before it is used*, and not
  * every way it comes back unusable at all: a root that resolves clean and
- * still admits nothing made under it is {@link ROOT_WRITE_REFUSAL}, which no
+ * still admits nothing made under it is {@link ROOT_ACCESS_REFUSAL}, which no
  * stat here reaches and only a verb that writes can take.
  *
  * Labelled rather than spelled as flat prose because `docs/CLI.md` states
@@ -72,29 +72,35 @@ const SHARED_ROOT_RESOLUTION_CAUSES: readonly ExitCauseLabel[] = [
 ];
 
 /**
- * The `EX_IOERR` cause a verb's own **write** under the root takes: a root
+ * The `EX_IOERR` cause a verb's own **access** under the root takes: a root
  * that stats as a directory — so every check the resolution makes lets it
- * through — and still admits nothing made under it.
+ * through — and still admits nothing read or made under it.
  *
- * Raised where the write fails (`StateRootWriteError`,
- * `src/stateRootWrite.ts`) and classified once at the CLI's own process
- * boundary, so a verb can take it exactly when its process reaches a write
- * under the root. That is every verb but the three that only read, and it is
- * why this cause rides {@link SHARED_ROOT_CLAUSE} rather than the resolution
- * causes above: a row is the range its own process can return.
+ * Raised where the access fails (`StateRootAccessError`,
+ * `src/stateRootAccess.ts`) and classified once at the CLI's own process
+ * boundary, so a verb can take it exactly when its process reaches the state
+ * under the root. That is every verb that touches the baton or the stop
+ * flag, and it is why this cause rides {@link SHARED_ROOT_CLAUSE} rather than
+ * the resolution causes above: a row is the range its own process can return.
+ *
+ * One cause rather than a read one and a write one, because one class raises
+ * both and one arm reports them: a verb's row would otherwise state the
+ * direction the denial fixture happened to drive it to rather than the root
+ * condition it answers (`.claude/rules/engineering.md`, *The fix lands at the
+ * mechanism*).
  *
  * Labelled for the reason those are — `docs/CLI.md` states it again per verb
  * in a register of its own ({@link ExitCauseLabel}).
  */
-const ROOT_WRITE_REFUSAL: ExitCauseLabel = {
+const ROOT_ACCESS_REFUSAL: ExitCauseLabel = {
   opening: "Or the root ",
-  phrase: "stats as a directory and admits no write",
+  phrase: "stats as a directory and the state under it will not open",
   rest:
     " — permission denied, a plain file standing where the directory this " +
-    "verb makes under the root belongs, a directory standing where its file " +
-    "belongs. No stat ahead of it reaches that, so it is refused at the " +
-    "write itself, naming the state root this process resolved rather than " +
-    "the leaf the errno carried.",
+    "verb reads or makes under the root belongs, a directory standing where " +
+    "its file belongs. No stat ahead of it reaches that, so it is refused at " +
+    "the access itself, naming the state root this process resolved rather " +
+    "than the leaf the errno carried.",
 };
 
 /**
@@ -112,20 +118,21 @@ function rootClause(causes: readonly ExitCauseLabel[]): string {
 
 /**
  * The whole shared state-root clause, as a `74` row states it: the
- * resolution causes and the write refusal past them. Rendered by every verb
- * whose process reaches a write under the root; a verb that answers ahead of
- * its first one renders {@link READ_ONLY_ROOT_CLAUSE} instead.
+ * resolution causes and the access refusal past them. Rendered by every verb
+ * whose process reaches the state under the root; a verb that answers ahead
+ * of its first touch of it renders {@link READ_ONLY_ROOT_CLAUSE} instead.
  */
 const SHARED_ROOT_CLAUSE = rootClause([
   ...SHARED_ROOT_RESOLUTION_CAUSES,
-  ROOT_WRITE_REFUSAL,
+  ROOT_ACCESS_REFUSAL,
 ]);
 
 /**
- * The same clause for a verb that only reads under the root — `log`,
- * `check`, `friction`, each of which answers and returns ahead of the first
- * write any verb makes. Carrying the write refusal here would state a cause
- * that verb's own process cannot return.
+ * The same clause for a verb that reaches none of the state under the root —
+ * `log`, `check`, `friction`, `render`, each of which answers out of its own
+ * guarded reads and never touches the baton or the stop flag. Carrying the
+ * access refusal here would state a cause that verb's own process cannot
+ * return.
  */
 const READ_ONLY_ROOT_CLAUSE = rootClause(SHARED_ROOT_RESOLUTION_CAUSES);
 
@@ -215,11 +222,11 @@ export const SHARED_ROOT_RESOLUTION_PHRASES: readonly string[] =
   SHARED_ROOT_RESOLUTION_CAUSES.map((cause) => cause.phrase);
 
 /**
- * The phrase the write refusal is labelled with, exported for the same seam:
+ * The phrase the access refusal is labelled with, exported for the same seam:
  * the pages that render {@link SHARED_ROOT_CLAUSE} are the ones whose
  * `docs/CLI.md` section has to state it too.
  */
-export const ROOT_WRITE_PHRASE = ROOT_WRITE_REFUSAL.phrase;
+export const ROOT_ACCESS_PHRASE = ROOT_ACCESS_REFUSAL.phrase;
 
 /**
  * The lead a `74` row takes when the state root's own refusals are the whole
@@ -292,10 +299,23 @@ function readOnlyRootRefusal(indent: number): string {
 
 /**
  * The whole `74` row for a verb whose refusals under the state root are all
- * of them — `wake`, `sleep`, `stop`, `render`.
+ * of them — `wake`, `sleep`, `stop`.
  */
 function sharedRootRow(indent: number): string {
   return exitCodeRow(74, [SHARED_ROOT_ONLY_LEAD, SHARED_ROOT_CLAUSE], indent);
+}
+
+/**
+ * {@link sharedRootRow} for a verb whose whole `74` row is the state root's
+ * and which reaches none of the state under it — `render`, which resolves
+ * the roots, loads the chain and writes its prompt to stdout.
+ */
+function readOnlyRootRow(indent: number): string {
+  return exitCodeRow(
+    74,
+    [SHARED_ROOT_ONLY_LEAD, READ_ONLY_ROOT_CLAUSE],
+    indent,
+  );
 }
 
 /**
@@ -737,7 +757,7 @@ Exit codes:
   69  Mount-dead (EX_UNAVAILABLE): the chain could not be brought up for any
       other reason — it failed to load, the queue at HEAD failed to parse,
       or the declared prompt file is not on disk. Nothing was rendered.
-${sharedRootRow(6)}
+${readOnlyRootRow(6)}
 `,
   friction: `Usage: flume friction [name]
 

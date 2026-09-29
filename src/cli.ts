@@ -48,7 +48,7 @@ import { statLoud } from "./fsProbe.js";
 import { gitToplevel } from "./git.js";
 import { canonicalDir, onDiskIdentity } from "./pathIdentity.js";
 import { readPackageVersion } from "./selfPackage.js";
-import { StateRootWriteError } from "./stateRootWrite.js";
+import { StateRootAccessError } from "./stateRootAccess.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -239,8 +239,8 @@ async function dispatch(): Promise<number> {
   // that anything can be made under it. A plain file standing where the root
   // belongs stats clean — so bay discovery above stops at it and resolution
   // names it — and then every read or write beneath it fails: the baton's
-  // `mkdir` of `awake/`, the stop flag's write, the dispatcher's own
-  // construction. Each of those threw past its verb into `main()`'s catch as a
+  // listing of `awake/`, the `mkdir` the first `wake` makes of it, the stop
+  // flag's write. Each of those threw past its verb into `main()`'s catch as a
   // raw stack and exit 1, which is the one exit none of these verbs may take
   // (`spec/loop.md`, *Exit codes — the run never lies to CI*). Refused at the
   // seam the roots resolve because the root is what is unusable, not any one
@@ -248,11 +248,12 @@ async function dispatch(): Promise<number> {
   // (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
   //
   // What a stat cannot reach — a root that is a directory and still admits no
-  // write, the plain file at `<flumeDir>/awake` this stat walks straight past —
-  // is refused where the write fails, by `StateRootWriteError`
-  // (`src/stateRootWrite.ts`), and reported with the same root and the same
-  // `EX_IOERR` at `main`'s one arm below. So the usability this seam claims is
-  // the usability it proves, and the rest is proven by being attempted.
+  // read or write beneath it, the plain file at `<flumeDir>/awake` this stat
+  // walks straight past — is refused where the access fails, by
+  // `StateRootAccessError` (`src/stateRootAccess.ts`), and reported with the
+  // same root and the same `EX_IOERR` at `main`'s one arm below. So the
+  // usability this seam claims is the usability it proves, and the rest is
+  // proven by being attempted.
   //
   // Absence is never this refusal — a state root that is not there yet is
   // every verb's ordinary first run, and `statLoud` answers `undefined` for
@@ -304,15 +305,15 @@ async function dispatch(): Promise<number> {
 }
 
 /**
- * The CLI, plus the one arm that reports a failed write under the resolved
- * state root.
+ * The CLI, plus the one arm that reports a failed read or write under the
+ * resolved state root.
  *
- * Wrapped here rather than at each verb because the root the write failed
- * under is the same root at every one of them, and the next verb added writes
- * under it too: a per-verb catch is one verb behind
+ * Wrapped here rather than at each verb because the root the access failed
+ * under is the same root at every one of them, and the next verb added reads
+ * or writes under it too: a per-verb catch is one verb behind
  * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*). The
  * stat seam in {@link dispatch} proves the root is a directory and no more, so
- * this is where "a directory that admits no write" stops being a raw stack and
+ * this is where "a directory that admits no access" stops being a raw stack and
  * exit 1 — the one exit these verbs may not take (`spec/loop.md`, *Exit codes
  * — the run never lies to CI*) — and becomes the same `EX_IOERR` and the same
  * root that seam reports.
@@ -324,7 +325,7 @@ async function main(): Promise<number> {
   try {
     return await dispatch();
   } catch (err) {
-    if (err instanceof StateRootWriteError) {
+    if (err instanceof StateRootAccessError) {
       operatorLog.error(`[flume] ${err.message}`);
       return EX_IOERR;
     }

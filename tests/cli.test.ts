@@ -1047,8 +1047,8 @@ describe("flume status — supervisor liveness", () => {
     // Not `mkFixtureRoot`: the bay this fixture plants is the subject, and it
     // is planted *obstructed* — a plain file where the state root belongs.
     // Bay discovery stops at it (it is present, so `existsLoud` answers
-    // there), resolution names it, and everything under it is unmakeable —
-    // for `status`, the baton's `mkdir` of `awake/`. Before the resolution
+    // there), resolution names it, and nothing under it can be read or made —
+    // for `status`, the baton's listing of `awake/`. Before the resolution
     // grew its guard the throw escaped to `main()`'s catch: a raw stack and
     // exit 1, the one exit `status` is specced never to take (spec/cli.md,
     // "Subcommand surface").
@@ -1286,8 +1286,8 @@ it(
 
 /**
  * The baton's own leaf, denied the same way: `<flumeDir>/awake` is a directory
- * the constructor's `mkdir -p` is happy with, and `<flumeDir>/awake/<phase>` is
- * where the flag write lands.
+ * `wake`'s own `mkdir -p` is happy with, and `<flumeDir>/awake/<phase>` is
+ * where the flag write one line past it lands.
  */
 it(
   "flume wake exits EX_IOERR naming the resolved state root when the awake flag cannot be written",
@@ -1314,6 +1314,128 @@ it(
       // `BatonToken`) — the success line is the one reading this refusal must
       // not leave behind.
       expect(refused.out).not.toContain("woke plan");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  },
+  SPAWN_BUDGET_MS,
+);
+
+/**
+ * Reading the baton creates nothing, and an absent awake-flag directory is the
+ * empty baton (`spec/loop.md`, *Baton — presence wakes, absence hibernates*).
+ * The `mkdir` the two cases above deny is `wake`'s, not every verb's: a read
+ * verb answers over the state root and leaves it as it found it.
+ */
+it(
+  "flume status over a state root with no awake-flag directory prints hibernating and writes nothing",
+  async () => {
+    const dir = await mkFixtureRoot("flume-status-untouched-root-");
+    try {
+      const flumeDir = join(dir, ".flume");
+      // Non-vacuity, in the direction the title claims: the bay is there and
+      // holds nothing, so anything standing in it afterwards is this verb's.
+      expect(readdirSync(flumeDir)).toEqual([]);
+
+      const r = await runCli(dir, ["status"]);
+
+      expect(r.code).toBe(0);
+      expect(r.out).toContain("hibernating");
+      expect(r.out).not.toContain("    at ");
+      expect(readdirSync(flumeDir)).toEqual([]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  },
+  SPAWN_BUDGET_MS,
+);
+
+/**
+ * Absence is the only failure that reads as empty. A baton directory that is
+ * **present** and cannot be read — obstructed by a plain file here, which
+ * denies on every host and for every uid (`tests/helpers/denial.ts`) — is a
+ * state root this verb never resolved, so it refuses at `EX_IOERR` naming it
+ * rather than printing `hibernating` over it or falling to `main()`'s raw
+ * stack and exit 1, the one exit `status` may not take (`spec/loop.md`, *Exit
+ * codes — the run never lies to CI*).
+ *
+ * The refusal is the **read**'s, not a `mkdir`'s: before the narrowing this
+ * same fixture answered with the write refusal, because constructing the
+ * baton was itself a write.
+ */
+it(
+  "a baton read over an obstructed awake-flag directory refuses at 74 naming the path",
+  async () => {
+    const dir = await mkFixtureRoot("flume-status-obstructed-awake-");
+    try {
+      const flumeDir = join(dir, ".flume");
+
+      // Non-vacuity, in the order the instrument asks for: the verb reads
+      // this baton first — over the directory the real writer made — so the
+      // refusal below is the obstruction's and not a fixture that could never
+      // have reported a phase awake.
+      expect((await runCli(dir, ["wake", "plan"])).code).toBe(0);
+      const read = await runCli(dir, ["status"]);
+      expect(read.code).toBe(0);
+      expect(read.out).toContain("awake: plan");
+
+      denyDirectory(awakeDir(flumeDir));
+
+      const refused = await runCli(dir, ["status"]);
+
+      expect(refused.code).toBe(EX_IOERR);
+      // The root this process resolved and the directory under it that would
+      // not open: the errno's leaf alone leaves the operator to infer which
+      // state root a walk — or a relocating `FLUME_DIR` — picked.
+      expect(refused.out).toContain(
+        `[flume] state root at ${flumeDir} cannot be read`,
+      );
+      expect(refused.out).toContain(awakeDir(flumeDir));
+      expect(refused.out).not.toContain("    at ");
+      // Never the reading an absent directory gets: a baton that will not
+      // read is not an empty one.
+      expect(refused.out).not.toContain("hibernating");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  },
+  SPAWN_BUDGET_MS,
+);
+
+/**
+ * `sleep`'s whole effect after the narrowing is removing one flag, so that
+ * unlink is the write its refusal has to ride: a flag that is there and will
+ * not go is a phase left awake by a verb that reported success, which the
+ * loop runs again forever (`.claude/rules/engineering.md`, *Loud or
+ * nothing*).
+ */
+it(
+  "flume sleep over an unwritable awake-flag directory refuses with the state-root write refusal",
+  async () => {
+    const dir = await mkFixtureRoot("flume-unremovable-awake-flag-");
+    try {
+      const flumeDir = join(dir, ".flume");
+
+      // Non-vacuity in the instrument's order: the verb answers over this
+      // fixture first — removing the very flag the denial below obstructs.
+      expect((await runCli(dir, ["wake", "plan"])).code).toBe(0);
+      const slept = await runCli(dir, ["sleep", "plan"]);
+      expect(slept.code).toBe(0);
+      expect(slept.out).toContain("slept plan");
+
+      denyDirectory(awakeDir(flumeDir));
+
+      const refused = await runCli(dir, ["sleep", "plan"]);
+
+      expect(refused.code).toBe(EX_IOERR);
+      // The flag, named as the subject: the directory's own `mkdir` is
+      // `wake`'s and this verb no longer makes it, so a refusal naming it
+      // would be reporting a write this process never attempted.
+      expect(refused.out).toContain(
+        `[flume] state root at ${flumeDir} cannot be written: awake flag`,
+      );
+      expect(refused.out).not.toContain("    at ");
+      expect(refused.out).not.toContain("slept plan");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

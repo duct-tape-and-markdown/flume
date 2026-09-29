@@ -22,7 +22,7 @@ import { EX_IOERR, EX_TERMINAL_MISCONFIG } from "../src/exitCodes.ts";
 import {
   SHARED_ROOT_ONLY_LEAD,
   ROOT_RESOLUTION_USAGE_PHRASES,
-  ROOT_WRITE_PHRASE,
+  ROOT_ACCESS_PHRASE,
   SHARED_ROOT_RESOLUTION_PHRASES,
   TICK_TIP_CLAIM_HELD_PHRASE,
   helpPageFor,
@@ -807,10 +807,10 @@ describe("the per-exit-code window is cut at its own paragraph", () => {
  * scope itself: a page read drawn from the lead leaves every verb that
  * documents refusals of its own unpinned over the same three copies.
  *
- * The fourth cause the shared clause carries — the write refusal, which only
- * the verbs that write under the root can take — is scoped by the verbs that
- * really take it rather than by every verb, and is pinned below
- * (CLI-VERB-PAGES-NAME-THE-STATE-ROOT-WRITE-REFUSAL).
+ * The fourth cause the shared clause carries — the access refusal, which only
+ * the verbs that reach the state under the root can take — is scoped by the
+ * verbs that really take it rather than by every verb, and is pinned below
+ * (CLI-VERB-PAGES-NAME-THE-STATE-ROOT-ACCESS-REFUSAL).
  */
 describe("docs/CLI.md's per-verb copies of the shared state-root cause (CLI-DOC-SHARED-ROOT-CAUSES-PINNED-PER-VERB)", () => {
   it("every docs/CLI.md verb section whose 74 row renders the state-root resolution causes states all three of them", async () => {
@@ -913,44 +913,51 @@ const VERB_ARGV: Record<string, readonly string[]> = {
 };
 
 /**
- * CLI-VERB-PAGES-NAME-THE-STATE-ROOT-WRITE-REFUSAL — the cause the resolution
+ * CLI-VERB-PAGES-NAME-THE-STATE-ROOT-ACCESS-REFUSAL — the cause the resolution
  * causes above cannot cover: a root that stats as a directory, so every check
- * the resolution makes lets it through, and still admits nothing made under
- * it. It is raised at the write (`StateRootWriteError`,
- * `src/stateRootWrite.ts`) and classified once at the CLI's process boundary,
- * so the verbs that can return it are exactly the verbs that write under the
- * root — and no page named it at all, while the shared clause's own doc called
- * the three resolution causes every way a root comes back unusable.
+ * the resolution makes lets it through, and whose own state still will not
+ * open. It is raised where the access fails (`StateRootAccessError`,
+ * `src/stateRootAccess.ts`) and classified once at the CLI's process
+ * boundary, so the verbs that can return it are exactly the verbs that reach
+ * the baton or the stop flag — and no page named it at all, while the shared
+ * clause's own doc called the three resolution causes every way a root comes
+ * back unusable.
  *
  * Which verbs those are is **driven, never listed**: every verb the top-level
  * page names is run over one repository whose root is structurally denied, and
  * the ones that really exit `EX_IOERR` naming the resolved root are the scope
  * both cases below read (`.claude/rules/engineering.md`, *A seam gate reads
  * what the real writer wrote*). A list here would be the tester's copy of a
- * dispatch order that moves whenever a verb grows a write.
+ * dispatch order that moves whenever a verb grows an access.
  *
- * **One pass, not a clean pass and a denied one.** The denial is in place
- * before the first verb runs, so nothing this describe does writes under the
- * root and no verb's run can change what a later one sees — and the fixture's
- * own liveness is read off the same pass rather than off a second one: the
- * verbs that answer `0` under the denial are the witness that this is not a
+ * **Two denial passes, because one cannot reach every verb's first access.**
+ * `stop`'s whole effect is the leaf `.flume/stop`, so nothing but a denial of
+ * that leaf drives it here; and `loop` reads the same leaf as its stop flag
+ * before it touches the baton, so that denial ends its run at exit `1`
+ * ("stop flag present") ahead of the access it does take. The awake-flag
+ * directory is denied in both passes — the deeper denial, and the one that
+ * keeps every verb that would invoke an agent refusing ahead of one — while
+ * the stop leaf is denied in the second alone. A verb's verdict is the union
+ * over the two: it took the refusal in some pass, or it answered `0` in some
+ * pass, and the verbs that answer `0` are the witness that this is not a
  * fixture refusing whatever it is handed (`.claude/rules/engineering.md`, *A
- * green verdict is proven non-vacuous*; the read-first order
- * `tests/helpers/denial.ts` describes is for a case whose subject is a read,
- * and this one's subject is which process reaches a write). What the scope
- * keys on is the write refusal's own sentence, which only the arm being
- * documented prints, so a verb that failed for some other reason cannot enter
- * the scope — and one that fell out of it reds the page read below rather than
- * narrowing it silently.
+ * green verdict is proven non-vacuous*). Weakening the page equality instead
+ * would let a verb that cannot be driven to its own refusal keep, or drop,
+ * the row silently.
+ *
+ * What the scope keys on is the access refusal's own sentence, which only the
+ * arm being documented prints, so a verb that failed for some other reason
+ * cannot enter the scope — and one that fell out of it reds the page read
+ * below rather than narrowing it silently.
  *
  * The lane this runs in is the one every merge pays (`vitest.config.ts`), so
- * the pass is also the cheapest shape that carries the claim: ten refusals
- * that never reach an agent, no verb run twice.
+ * the passes are still the cheapest shape that carries the claim: twenty
+ * answers that never reach an agent.
  */
-describe("the state-root write refusal, per verb (CLI-VERB-PAGES-NAME-THE-STATE-ROOT-WRITE-REFUSAL)", () => {
-  /** What the CLI prints when a write under the resolved root refused. */
-  const writeRefusalOf = (stateRoot: string): string =>
-    `state root at ${stateRoot} cannot be written`;
+describe("the state-root access refusal, per verb (CLI-VERB-PAGES-NAME-THE-STATE-ROOT-ACCESS-REFUSAL)", () => {
+  /** What the CLI prints when an access under the resolved root refused. */
+  const accessRefusalOf = (stateRoot: string): string =>
+    `state root at ${stateRoot} cannot be `;
 
   /** The verbs whose real process took that refusal, and the whole name set. */
   let refusing: string[];
@@ -963,47 +970,54 @@ describe("the state-root write refusal, per verb (CLI-VERB-PAGES-NAME-THE-STATE-
       "the argv table and the shipped command list disagree",
     ).toEqual([...names].sort());
 
-    const repo = await makeScratchRepo("flume-root-write-refusal-", "main");
+    const repo = await makeScratchRepo("flume-root-access-refusal-", "main");
     try {
       // `Chain.friction` declared, because a chain without it refuses that
-      // verb at usage — ahead of every write — and would read as a verb whose
-      // process cannot take this refusal.
+      // verb at usage — ahead of every access — and would read as a verb
+      // whose process cannot take this refusal.
       await writeRepoConfig(
         repo.dir,
         minimalChainSrc({ friction: "friction" }),
       );
       const stateRoot = join(repo.dir, STATE_ROOT_DIRNAME);
-      const refusal = writeRefusalOf(stateRoot);
+      const refusal = accessRefusalOf(stateRoot);
 
       // Denied by shape, on every host and for every uid: a plain file where
-      // the baton's `mkdir -p` wants a directory, and a directory where
-      // `stop`'s one leaf wants a file — the two writes every verb that
-      // writes under this root makes (`tests/helpers/denial.ts`).
-      denyDirectory(awakeDir(stateRoot));
-      denyFile(stopFlagPath(stateRoot));
-
-      const took: string[] = [];
-      for (const name of names) {
-        const denied = await runCli(repo.dir, [...VERB_ARGV[name]!]);
-        if (!denied.out.includes(refusal)) {
-          // The fixture is live: a verb that answers over the denied root is
-          // one whose process returns ahead of the first write, and it
-          // answers `0` — never a second failure this scope would be reading
-          // as "cannot take the refusal".
-          expect(
-            denied.code,
-            `flume ${name} neither took the write refusal nor answered over the denied root`,
-          ).toBe(0);
-          continue;
+      // the baton wants a directory, and — in the second pass — a directory
+      // where `stop`'s one leaf wants a file (`tests/helpers/denial.ts`).
+      const took = new Set<string>();
+      const answered = new Set<string>();
+      for (const stopDenied of [false, true]) {
+        denyDirectory(awakeDir(stateRoot));
+        if (stopDenied) denyFile(stopFlagPath(stateRoot));
+        for (const name of names) {
+          const denied = await runCli(repo.dir, [...VERB_ARGV[name]!]);
+          // `stop` is the one verb that can write its leaf in the first
+          // pass; cleared here so no later verb in this pass reads a flag
+          // an earlier one left, whatever order the shipped listing gives.
+          if (!stopDenied) await rm(stopFlagPath(stateRoot), { force: true });
+          if (denied.out.includes(refusal)) {
+            // And it is this refusal reaching the operator as the documented
+            // code, not as the raw-stack arm: the row a page spends on it is
+            // the `74` row.
+            expect(denied.code, denied.out).toBe(EX_IOERR);
+            expect(denied.out).not.toContain("    at ");
+            took.add(name);
+          } else if (denied.code === 0) {
+            answered.add(name);
+          }
         }
-        // And it is this refusal reaching the operator as the documented
-        // code, not as the raw-stack arm: the row a page spends on it is the
-        // `74` row.
-        expect(denied.code, denied.out).toBe(EX_IOERR);
-        expect(denied.out).not.toContain("    at ");
-        took.push(name);
       }
-      refusing = took;
+      // The fixture is live, and no verb is unaccounted for: one that
+      // neither took the refusal in a pass nor answered over the denied root
+      // in one is a verb this gate is silently not reading.
+      for (const name of names) {
+        expect(
+          took.has(name) || answered.has(name),
+          `flume ${name} neither took the access refusal nor answered over a denied root`,
+        ).toBe(true);
+      }
+      refusing = names.filter((name) => took.has(name));
     } finally {
       await repo.cleanup();
     }
@@ -1020,17 +1034,17 @@ describe("the state-root write refusal, per verb (CLI-VERB-PAGES-NAME-THE-STATE-
 
   /** Whether a page's `74` row renders every cause the shared clause carries. */
   const rendersSharedClause = (name: string): boolean =>
-    [...SHARED_ROOT_RESOLUTION_PHRASES, ROOT_WRITE_PHRASE].every((phrase) =>
+    [...SHARED_ROOT_RESOLUTION_PHRASES, ROOT_ACCESS_PHRASE].every((phrase) =>
       rowOf(name).includes(asStated(phrase)),
     );
 
-  it("every help page rendering the shared state-root clause states the write refusal among its 74 causes", () => {
+  it("every help page rendering the shared state-root clause states the access refusal among its 74 causes", () => {
     // Both directions of the scope, so neither a clause that reached every
     // page nor one that reached none reads as agreement.
-    expect(refusing.length, "no verb took the write refusal").toBeGreaterThan(1);
+    expect(refusing.length, "no verb took the access refusal").toBeGreaterThan(1);
     expect(
       refusing.length,
-      "every verb took it — the read-only verbs are not a scope",
+      "every verb took it — the verbs that reach none of the state are not a scope",
     ).toBeLessThan(names.length);
 
     // The pages that render the clause are exactly the verbs that can take
@@ -1044,22 +1058,23 @@ describe("the state-root write refusal, per verb (CLI-VERB-PAGES-NAME-THE-STATE-
     for (const name of refusing) {
       expect(
         rowOf(name),
-        `flume ${name} --help's ${EX_IOERR} row does not state the write refusal`,
-      ).toContain(asStated(ROOT_WRITE_PHRASE));
+        `flume ${name} --help's ${EX_IOERR} row does not state the access refusal`,
+      ).toContain(asStated(ROOT_ACCESS_PHRASE));
     }
 
     // And the converse the row owes a reader: a verb that answers and returns
-    // ahead of the first write names no cause its own process cannot return.
+    // ahead of the state under the root names no cause its own process cannot
+    // return.
     for (const name of names.filter((name) => !refusing.includes(name))) {
       expect(
         rowOf(name),
         `flume ${name} --help states a refusal its process cannot take`,
-      ).not.toContain(asStated(ROOT_WRITE_PHRASE));
+      ).not.toContain(asStated(ROOT_ACCESS_PHRASE));
     }
   });
 
-  it("docs/CLI.md states the state-root write refusal in every verb section whose 74 row renders it", async () => {
-    expect(refusing.length, "no verb took the write refusal").toBeGreaterThan(1);
+  it("docs/CLI.md states the state-root access refusal in every verb section whose 74 row renders it", async () => {
+    expect(refusing.length, "no verb took the access refusal").toBeGreaterThan(1);
     const doc = await readCliDoc();
 
     for (const name of refusing) {
@@ -1068,8 +1083,8 @@ describe("the state-root write refusal, per verb (CLI-VERB-PAGES-NAME-THE-STATE-
       // operator running `--help` sees.
       expect(
         rowOf(name),
-        `flume ${name} --help's ${EX_IOERR} row does not state the write refusal`,
-      ).toContain(asStated(ROOT_WRITE_PHRASE));
+        `flume ${name} --help's ${EX_IOERR} row does not state the access refusal`,
+      ).toContain(asStated(ROOT_ACCESS_PHRASE));
 
       const section = sectionOf(doc, new RegExp(`^## \`flume ${name}\\b`));
       expect(section.length, `docs/CLI.md has no \`flume ${name}\` section`).toBeGreaterThan(0);
@@ -1081,7 +1096,7 @@ describe("the state-root write refusal, per verb (CLI-VERB-PAGES-NAME-THE-STATE-
       expect(
         window,
         `docs/CLI.md's flume ${name} section states no ${EX_IOERR} cause under the phrase the row renders`,
-      ).toContain(asStated(ROOT_WRITE_PHRASE));
+      ).toContain(asStated(ROOT_ACCESS_PHRASE));
     }
 
     // The window is scoped to this code rather than to the section: each of
@@ -1094,7 +1109,7 @@ describe("the state-root write refusal, per verb (CLI-VERB-PAGES-NAME-THE-STATE-
         .filter(
           (code) =>
             !asStated(sentencesNamingExitCode(section, code).join("\n")).includes(
-              asStated(ROOT_WRITE_PHRASE),
+              asStated(ROOT_ACCESS_PHRASE),
             ),
         );
     });
@@ -2367,7 +2382,7 @@ describe("flume friction --help — the exit-code list against the verb's own I/
 describe("flume help — the bare verb against the flag (FLUME-HELP-IS-THE-SAME-ANSWER)", () => {
   it("flume help prints the same usage as flume --help and exits 0", async () => {
     // A bay of its own, holding no chain: the state a chain load refuses on
-    // and a baton read writes into, so both are observable below.
+    // and a baton wake writes into, so both are observable below.
     const dir = await mkFixtureRoot("flume-help-verb-");
     try {
       // Vacuity: the flag's answer is the real top-level usage before it
@@ -2389,12 +2404,14 @@ describe("flume help — the bare verb against the flag (FLUME-HELP-IS-THE-SAME-
       expect(await readdir(join(dir, ".flume"))).toEqual([]);
 
       // Non-vacuity for that absence: in this same directory a verb that does
-      // load the chain and construct the baton leaves both traces, so the
-      // empty bay above is the short-circuit's doing rather than a fixture
-      // nothing could have marked.
-      const status = await runCliStreams(dir, ["status"]);
-      expect(status.code).toBe(0);
-      expect(status.stderr).toContain("chain failed to load");
+      // load the chain and write a flag leaves both traces, so the empty bay
+      // above is the short-circuit's doing rather than a fixture nothing
+      // could have marked. `wake`, not `status`: reading the baton creates
+      // nothing (`spec/loop.md`, *Baton — presence wakes, absence
+      // hibernates*), so the directory is the first wake's.
+      const woke = await runCliStreams(dir, ["wake", "probe"]);
+      expect(woke.code).toBe(0);
+      expect(woke.stderr).toContain("chain failed to load");
       expect(await readdir(join(dir, ".flume"))).toEqual(["awake"]);
     } finally {
       await rm(dir, { recursive: true, force: true });

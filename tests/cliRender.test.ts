@@ -12,7 +12,7 @@
  * writer wrote*). A one-sided drift in either renderer reds it.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -163,8 +163,20 @@ it("flume render prints to stdout the prompt a tick would be handed and invokes 
       await exec("git", ["rev-parse", "HEAD"], { cwd: repo.dir })
     ).stdout.trim();
 
+    const bay = readdirSync(repo.flumeDir).sort();
+    // Vacuity for the read below: the bay this render runs over really holds
+    // the chain and the queue, so an unchanged listing is a verb that touched
+    // nothing rather than a directory nothing could have been added to.
+    expect(bay).toContain("chain.ts");
+
     const rendered = await runCliStreams(repo.dir, ["render", "build"]);
     expect(rendered.code).toBe(0);
+
+    // The no-write claim `docs/CLI.md` makes for this verb, read off the
+    // state root it resolved: reading the baton creates nothing and this
+    // verb does not even read it, so the bay is exactly as it was
+    // (`spec/loop.md`, *Baton — presence wakes, absence hibernates*).
+    expect(readdirSync(repo.flumeDir).sort()).toEqual(bay);
 
     // The real tick, with the agent seam replaced by a recorder — the only
     // substitution; chain load, queue read, selection, fence and renderer are

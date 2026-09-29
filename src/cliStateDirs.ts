@@ -92,12 +92,12 @@ export class SecondStateRootError extends StateRootResolutionError {}
  *
  * A file standing there was written: a stop flag, a loop lock, a verdict log.
  * Presence is the whole of what each carries, so presence is the evidence. A
- * directory is the name the runtime creates on the way to using it, and
- * creating one is not writing state: `flume status` constructs the baton to
- * read it, and constructing a baton mkdirs `awake/` (`src/Baton.ts`), so one
- * read-only look at the default root leaves an empty directory behind that
- * nothing ever wrote a flag into. Hence a directory is evidence only when it
- * holds an entry.
+ * directory outlives what was put in it, and an emptied one is not state:
+ * `Baton.wake` (`src/Baton.ts`) makes `awake/` for the first flag and
+ * `Baton.sleep` takes the last flag back out without removing the directory,
+ * so a run that woke a phase and slept it leaves an empty directory behind
+ * that carries nothing. Hence a directory is evidence only when it holds an
+ * entry.
  *
  * Absent is the only silent reading, the disposition every probe in this file
  * takes: a name that is not there holds nothing. Every other stat failure
@@ -126,8 +126,8 @@ function holdsState(bay: string, name: string): boolean {
  * a lock, a verdict, a populated runtime directory — is a root with a baton, a
  * worktree base or a verdict log of its own, which is the flume state a second
  * root in the same checkout collides with. A runtime name that holds nothing
- * is a bay the runtime probed, not state it wrote, and the documented
- * relocation still composes over it.
+ * is a directory some earlier run emptied, not state standing in it, and the
+ * documented relocation still composes over it.
  *
  * Only a directory can hold state, so a bay that is a plain file answers
  * `undefined`: what this asks is whether a *second* root stands in the

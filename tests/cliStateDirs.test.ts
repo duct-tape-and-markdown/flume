@@ -714,16 +714,15 @@ describe("flume — cross-repo FLUME_DIR inheritance refuses via the real CLI (C
  * which names neither root. The evidence the refusal keys on is the bay
  * discovery already probes for, read two levels deeper — a bay holding a
  * chain is this run's config dir, and a bay holding one of the runtime's own
- * names is another root only when that name holds something, since a
- * read-only `flume status` mkdirs an empty `awake/` in the default root and
- * writes no state into it.
+ * names is another root only when that name holds something, since a `flume
+ * sleep` over the last standing flag empties `awake/` without removing it.
  */
 describe("resolveStateDirs — the second state root in one checkout", () => {
   /**
    * A checkout whose bay already carries the runtime's own baton — a flag
    * standing in it, planted by the real writer (`Baton.wake`), because the
-   * directory alone is what one read-only `flume status` leaves behind and is
-   * no longer evidence of a root.
+   * directory alone is what a run that slept its last phase leaves behind and
+   * is no longer evidence of a root.
    */
   async function checkoutHoldingState(): Promise<string> {
     const checkout = await mkFixtureRoot("flume-second-root-");
@@ -872,11 +871,14 @@ describe("resolveStateDirs — the second state root in one checkout", () => {
     const checkout = await mkFixtureRoot("flume-second-root-");
     try {
       const own = join(checkout, ".flume");
-      // What one read-only `flume status` leaves in the default root:
-      // constructing the baton mkdirs `awake/` and writes no flag, so the
-      // real writer plants the directory this case is about rather than a
+      // What a run that woke a phase and slept it leaves in the default
+      // root: `Baton.wake` makes `awake/` for the flag and `Baton.sleep`
+      // takes the flag back out without removing the directory, so the real
+      // writer plants the empty directory this case is about rather than a
       // fixture's hand.
       const baton = new Baton(own);
+      baton.wake("probe");
+      baton.sleep("probe");
       // Non-vacuity, in the direction the title claims: the runtime name is
       // on disk, it is the bay's only entry, and it holds nothing.
       expect(readdirSync(own)).toEqual([STATE_ROOT_NAMES.awake]);

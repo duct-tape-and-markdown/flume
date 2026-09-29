@@ -29,11 +29,12 @@ import {
 
 export async function statusVerb(paths: FlumePaths): Promise<number> {
   const { repoRoot, flumeDir } = paths;
-  // Constructing the baton creates `<flumeDir>/awake/` (spec/cli.md,
-  // "Subcommand surface" — this verb's one filesystem effect). A root the
-  // mkdir cannot be made under is refused by the mkdir itself and reported
-  // at `main`'s arm, so this read needs no guard of its own for it; the
-  // loop-lock and tip-claim reads below guard their own files, which that
+  // Reading the baton creates nothing (spec/loop.md, *Baton — presence wakes,
+  // absence hibernates*): an absent `<flumeDir>/awake/` is the empty baton
+  // and prints `hibernating` over a state root this verb leaves untouched. A
+  // directory that is there and will not read is refused by the read itself
+  // and reported at `main`'s arm, so this needs no guard of its own for it;
+  // the loop-lock and tip-claim reads below guard their own files, which that
   // refusal says nothing about.
   const awake = new Baton(flumeDir).awake();
   console.log(awake.length ? `awake: ${awake.join(", ")}` : "hibernating");

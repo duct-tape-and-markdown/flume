@@ -25,11 +25,16 @@ import { dirname, join, resolve, toNamespacedPath } from "node:path";
 
 import type { Logger } from "./log.js";
 import { harvestFriction } from "./friction.js";
-import { existsLoud, isDirectoryOrAbsentUnder } from "./fsProbe.js";
+import {
+  existsLoud,
+  isDirectoryOrAbsent,
+  isDirectoryOrAbsentUnder,
+} from "./fsProbe.js";
 import * as git from "./git.js";
 import { canonicalDir } from "./pathIdentity.js";
 import {
   boundedName,
+  escapesRoot,
   namespacedJoin,
   slugify,
   worktreesBase,
@@ -801,9 +806,24 @@ export async function sweepStaleWorktrees(
     // An absent base is the normal, silent case, and the descent is what
     // proves it absent — an obstructed rung throws here and is named below
     // rather than passing for that silence on one host.
-    if (
-      !isDirectoryOrAbsentUnder(SWEEP_BASE_SUBJECT, ctx.flumeDir, sweepBase)
-    ) {
+    //
+    // Which root the descent starts from is the base's own. The state root
+    // sits above the engine's default base and above nothing else, so a base
+    // a chain declared outside it (`escapesRoot`, `src/paths.ts`) is proven
+    // against itself: descending from a root the base does not sit under
+    // reads an absent state root — a run whose first write under it has not
+    // landed yet, which is every run before its lock — as an absent base,
+    // and this sweep would then leave every abandoned worktree, and every
+    // branch one holds, standing. The declared case buys one rung for that,
+    // so an obstructed ancestor *above* a declared base reads as absence on
+    // win32 (`.claude/rules/platform-facts.md`, *win32 reports a path
+    // through a non-directory as not found*) — declared here rather than
+    // left looking like an accident, and bounded by the chain having named
+    // that base itself.
+    const baseStands = escapesRoot(ctx.flumeDir, sweepBase)
+      ? isDirectoryOrAbsent(SWEEP_BASE_SUBJECT, sweepBase)
+      : isDirectoryOrAbsentUnder(SWEEP_BASE_SUBJECT, ctx.flumeDir, sweepBase);
+    if (!baseStands) {
       return;
     }
     // Every ancestor is proven by now, so a listing failure here is real

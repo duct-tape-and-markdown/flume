@@ -183,10 +183,14 @@ describe("Baton — the flag carries a token", () => {
     // absent — and a tick reads the empty string off it and sleeps through it
     // like any other token.
     const baton = new Baton(flumeDir);
+    // The directory is the first wake's (`Baton.wake`), so a hand-written
+    // flag needs one standing: wake a name this case never reads, which is
+    // the only writer that makes it.
+    baton.wake("other");
     writeFileSync(join(baton.dir, "plan"), "");
 
     expect(baton.isAwake("plan")).toBe(true);
-    expect(baton.awake()).toEqual(["plan"]);
+    expect(baton.awake()).toEqual(["other", "plan"]);
     expect(baton.hibernating()).toBe(false);
     expect(baton.token("plan")).toBe("");
 
@@ -215,14 +219,20 @@ describe.runIf(process.platform !== "win32")("Baton — an unstattable awake fla
    * permission bit — a root-run test would bypass chmod.
    */
   const loopAwakeDir = (baton: Baton): void => {
+    // The directory is `wake`'s to make, so the real writer plants the one
+    // this replaces rather than a `mkdir` by the fixture's own hand.
+    baton.wake("probe");
     rmSync(baton.dir, { recursive: true });
     symlinkSync(basename(baton.dir), baton.dir);
   };
 
   it("an unstattable flag inside a readable dir leaves awake() listing it while isAwake throws", () => {
     const baton = new Baton(flumeDir);
-    // ELOOP — present on disk, unstattable. Not a permission bit: a root-run
-    // test would bypass that.
+    // The real writer makes the directory and the flag; the flag is then
+    // replaced in place with a self-symlink. ELOOP — present on disk,
+    // unstattable. Not a permission bit: a root-run test would bypass that.
+    baton.wake("plan");
+    rmSync(join(baton.dir, "plan"));
     symlinkSync("plan", join(baton.dir, "plan"));
 
     // readdir sees the entry, so the flag really is there.
@@ -256,29 +266,68 @@ describe.runIf(process.platform !== "win32")("Baton — an unstattable awake fla
   });
 });
 
-describe("Baton — missing directory", () => {
-  it("constructor creates `<flumeDir>/awake` when neither exists", () => {
+/**
+ * Reading the baton creates nothing (spec/loop.md, *Baton — presence wakes,
+ * absence hibernates*). The directory belongs to the first `wake`; until then
+ * its absence **is** the empty baton, so every read answers over a state root
+ * it leaves exactly as it found it.
+ *
+ * Absence is the only failure that reads as empty. A directory that is
+ * present and cannot be read is the refusal case, and it is driven through
+ * the CLI, where the exit code is observable (`tests/cli.test.ts`).
+ */
+describe("Baton — the directory is the first wake's", () => {
+  it("constructing the baton creates no awake-flag directory", () => {
     const fresh = mkTempDirSync("flume-baton-fresh-");
     try {
-      expect(existsSync(join(fresh, ".flume"))).toBe(false);
+      const stateRoot = join(fresh, ".flume");
+      // Non-vacuity, in the direction the title claims: there is no state
+      // root at all here, so anything the constructor made would be its own.
+      expect(existsSync(stateRoot)).toBe(false);
 
-      const baton = new Baton(join(fresh, ".flume"));
+      const baton = new Baton(stateRoot);
 
-      expect(existsSync(join(fresh, ".flume", "awake"))).toBe(true);
+      expect(existsSync(baton.dir)).toBe(false);
+      expect(existsSync(stateRoot)).toBe(false);
+      // And the reads take that absence as the empty baton rather than
+      // making the directory on their way to answering.
       expect(baton.awake()).toEqual([]);
+      expect(baton.isAwake("plan")).toBe(false);
+      expect(baton.token("plan")).toBeUndefined();
       expect(baton.hibernating()).toBe(true);
-
-      baton.wake("plan");
-      expect(baton.isAwake("plan")).toBe(true);
+      expect(() => baton.sleep("plan")).not.toThrow();
+      expect(existsSync(stateRoot)).toBe(false);
     } finally {
       rmSync(fresh, { recursive: true, force: true });
     }
   });
 
-  it("constructor is idempotent when `.flume/awake` already exists", () => {
-    new Baton(flumeDir);
-    const second = new Baton(flumeDir);
-    expect(second.awake()).toEqual([]);
+  it("the first wake creates the awake-flag directory the constructor no longer makes", () => {
+    const baton = new Baton(flumeDir);
+    expect(existsSync(baton.dir)).toBe(false);
+
+    baton.wake("plan");
+
+    expect(existsSync(baton.dir)).toBe(true);
+    expect(existsSync(join(baton.dir, "plan"))).toBe(true);
+    expect(baton.awake()).toEqual(["plan"]);
+
+    // And a second wake is the same one directory, whatever it already held.
+    baton.wake("build");
+    expect(baton.awake()).toEqual(["build", "plan"]);
+  });
+
+  it("sleeping the last flag empties the directory rather than removing it", () => {
+    // What `holdsState` (src/cliStateDirs.ts) keys the second-root refusal
+    // off: an emptied runtime name is a directory a run left behind, not
+    // state standing in it.
+    const baton = new Baton(flumeDir);
+    baton.wake("plan");
+    baton.sleep("plan");
+
+    expect(existsSync(baton.dir)).toBe(true);
+    expect(baton.awake()).toEqual([]);
+    expect(baton.hibernating()).toBe(true);
   });
 });
 
