@@ -1,0 +1,36 @@
+{
+  "tag": "THE-REVERT-SNAPSHOT-COVERS-THE-SPAN-IT-DIGESTS",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 20,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/priorAttempts.ts",
+        "description": "`snapshotReverted` takes the span the digest beside it already names, and lists it through the shared range read"
+      },
+      {
+        "path": "src/tickAttempt.ts",
+        "description": "the afterCommit revert leg hands the span it already holds instead of its head alone"
+      },
+      {
+        "path": "tests/priorAttempts.test.ts",
+        "description": "a two-commit span whose earlier commit is the only one touching a file"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "The reverted-prose snapshot lists one commit's files, so prose a multi-commit span wrote in any commit but its last is destroyed with the worktree",
+  "per": {
+    "path": "spec/worktrees.md",
+    "section": "Reverted prose survives the reset"
+  },
+  "acceptance": "the snapshot covers every non-deleted path the tick's whole span touched — listed over `base..head` through the range read `src/git.ts` already exports, content read at the head — so a finding written in the span's first commit is recoverable by opening a file rather than by reading a session log; the best-effort contract, the mirror layout and the single-commit case are unchanged",
+  "tests": [
+    "the revert snapshot carries a file only the span's first commit touched"
+  ],
+  "pins": [],
+  "notes": "Verified: `snapshotReverted` takes `sha` alone and lists it with `showNameOnly`, while its one caller passes the span's head and the digest beside it now spans base..head. `diffNameOnly` (`src/git.ts`) is the range read already in `src/`. The section's own sentence says \"the reverted commit\" — narrower than the shipped digest, and in this tick's spec question; the guarantee this entry serves is the section's \"recovery must never require reading session logs\"."
+}

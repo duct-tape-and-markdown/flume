@@ -1,0 +1,34 @@
+{
+  "tag": "THE-RENDER-PAGE-NAMES-EVERY-CODE-IT-RETURNS",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 20,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "docs/CLI.md",
+        "description": "the `flume render` section's exits sentence, so `65` and `69` stop trailing a sibling under one leading verb"
+      },
+      {
+        "path": "tests/cliHelp.test.ts",
+        "description": "a driven `render` range pin beside the tick, loop and status/log ones"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "`docs/CLI.md`'s `flume render` section trails 65 and 69 under one leading \"Exits\", so on the page's own convention its stated range is 0, 2 and 74",
+  "per": {
+    "path": "spec/loop.md",
+    "section": "Exit codes — the run never lies to CI"
+  },
+  "acceptance": "every code `flume render` returns carries its own introducing verb in its own clause, so the page's declared-range reader sees 0, 2, 65, 69 and 74 there, and a pin drives that range out of the verb itself — a bad `--entry`, a chain that will not load, an inline-exec span that exits non-zero — the way `tick`, `loop`, `status` and `log` each already have one",
+  "tests": [
+    "docs/CLI.md's flume render section names every exit code the verb returns"
+  ],
+  "pins": [
+    "every exit code docs/CLI.md's flume render section names is one the verb really returns"
+  ],
+  "notes": "Verified: the render section states `65` and `69` trailing one leading \"Exits\", against the page's own stated convention (*Reading the exit codes*), so the section's reader (`namedExitCodes`, `tests/helpers/docSections.ts`) reads [0,2,74]; the verb reaches both codes and its own `--help` block lists them. `check` and `friction` were read this tick — each code there carries its own verb already. Driven siblings: CLI-DOC-TICK / -LOOP / -STATUS-LOG-EXIT-CODES-PINNED; `render` has none."
+}
