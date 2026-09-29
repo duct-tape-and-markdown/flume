@@ -8,6 +8,7 @@
  */
 
 import { parseMaxValue } from "./cliArgs.js";
+import { operatorLog } from "./cliLog.js";
 import { formatTickVerdictLine } from "./cliVerdict.js";
 import { EX_IOERR } from "./exitCodes.js";
 import type { FlumePaths } from "./flumeApi.js";
@@ -35,14 +36,14 @@ export async function logVerb(
   if (nIdx >= 0) {
     const parsed = parseMaxValue(words[nIdx + 1]);
     if (parsed === null) {
-      console.error("usage: flume log [-n N] [--json]");
+      operatorLog.error("usage: flume log [-n N] [--json]");
       return 2;
     }
     n = parsed;
     words.splice(nIdx, 2);
   }
   if (words.length > 0) {
-    console.error("usage: flume log [-n N] [--json]");
+    operatorLog.error("usage: flume log [-n N] [--json]");
     return 2;
   }
 
@@ -55,7 +56,7 @@ export async function logVerb(
   try {
     verdicts = await readTickVerdicts(flumeDir, n);
   } catch (err) {
-    console.error(
+    operatorLog.error(
       `[flume] log: ${STATE_ROOT_NAMES.tickVerdictsLog} failed to read: ${err instanceof Error ? err.message : String(err)}`,
     );
     return EX_IOERR;

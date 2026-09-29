@@ -71,7 +71,7 @@ import {
 import { topLevelCommandNames } from "./helpers/shippedHelp.ts";
 import { mkFixtureRoot } from "./helpers/fixtureRoot.ts";
 import { makeScratchRepo } from "./helpers/scratchRepo.ts";
-import { OPTIONAL_STAMP } from "./helpers/stampedLine.ts";
+import { STAMP_SOURCE } from "./helpers/stampedLine.ts";
 import {
   SPAWN_BUDGET_MS,
   runCli,
@@ -2659,16 +2659,17 @@ describe("the cross-cutting I/O refusal on every verb's page (EVERY-VERBS-HELP-N
  * line rather than declared per arm, so a reworded refusal reds here instead
  * of being matched by a copy that moved with it.
  *
- * The stamp ahead of the prefix is optional because the writer decides it: the
- * refusals bay discovery and the state-root seam take are written through the
- * CLI's stamped logger, whichever verb reaches them (`spec/cli.md`, *A log
- * line carries the instant it was written*), while the reads `status` makes of
- * its own artifacts go to the console unstamped. Composed from the one home
- * for that spelling (`tests/helpers/stampedLine.ts`) rather than spelled again
- * here.
+ * The stamp ahead of the prefix is required, not skipped: every refusal the
+ * CLI writes is written through its stamped logger, whichever verb reaches it
+ * and whether the subject is a bay this process discovered or an artifact the
+ * verb went on to read (`spec/cli.md`, *A log line carries the instant it was
+ * written*). So an unstamped refusal matches nothing here and reds on the arm
+ * that drove it, instead of being read as a subject the page can be checked
+ * against. Composed from the one home for that spelling
+ * (`tests/helpers/stampedLine.ts`) rather than spelled again here.
  */
 const REFUSAL_SUBJECT = new RegExp(
-  String.raw`^${OPTIONAL_STAMP}\[flume\] (?:status: )?(.+?)(?: (?:at|from) \S+)? failed to (\w+)`,
+  String.raw`^${STAMP_SOURCE} \[flume\] (?:status: )?(.+?)(?: (?:at|from) \S+)? failed to (\w+)`,
 );
 
 /** Where one `flume status` refusal arm is armed. */

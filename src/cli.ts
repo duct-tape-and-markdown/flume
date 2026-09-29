@@ -8,10 +8,14 @@
  * `src/cliStatus.ts`, `src/cliBaton.ts`, `src/cliHistory.ts`,
  * `src/cliCheck.ts`, `src/cliFriction.ts`, `src/cliRender.ts`,
  * `src/cliTick.ts` and `src/cliLoop.ts` — and what this file owes each of
- * them is the words behind the verb, the roots it runs under, this process's
- * stamped log, and, for the three that hold a dispatcher, the run context
- * `src/cliRunContext.ts` resolves. The flag readings more than one verb
- * shares are `src/cliArgs.ts`.
+ * them is the words behind the verb, the roots it runs under, and, for the
+ * three that hold a dispatcher, the run context `src/cliRunContext.ts`
+ * resolves. The stamped log each of them writes its own refusals through is
+ * `src/cliLog.ts`'s `operatorLog`, reached there rather than handed down from
+ * here — this file reaches for the same one, and hands it on only where a
+ * `Logger` is a value something downstream takes (the run context's
+ * `Dispatcher`). The flag readings more than one verb shares are
+ * `src/cliArgs.ts`.
  *
  * The runtime usage text printed by `flume --help` / `flume <cmd> --help`
  * is the authoritative reference; the pages it prints are `HELP_TOP`
@@ -31,7 +35,7 @@ import { checkVerb } from "./cliCheck.js";
 import { frictionVerb } from "./cliFriction.js";
 import { HELP_TOP, helpPageFor, wantsHelp } from "./cliHelp.js";
 import { logVerb } from "./cliHistory.js";
-import { stampedLogger } from "./cliLog.js";
+import { operatorLog } from "./cliLog.js";
 import { loopVerb } from "./cliLoop.js";
 import { renderVerb } from "./cliRender.js";
 import { resolveRunContext } from "./cliRunContext.js";
@@ -94,31 +98,6 @@ async function bayRootDisagreement(
 }
 
 /**
- * Every operator line the CLI writes, stamped (`spec/cli.md`, *A log line
- * carries the instant it was written*): `loop`'s supervisor, `tick`'s child,
- * and the refusals either can take before reaching that narration — bay
- * discovery, the bay/root disagreement, state-root resolution, the obstructed
- * root, the malformed tip-claim handoff, and the write refusal {@link main}
- * classifies. The stamp is applied here rather than anywhere under `src/`'s
- * logging seam: `consoleLogger` stays the unstamped default an embedder's own
- * `Logger` replaces (`src/cliLog.ts`).
- *
- * Module scope, and unbranched by verb, because the first of those refusals is
- * reached before this process has decided which verb it is running, and the
- * last is caught past that frame entirely. A `flume loop` that takes one
- * writes the only line of its run, which is the line an operator most needs
- * placed against the rest of the artifacts the run left. Every one of them is
- * stderr, so nothing an observational verb pipes as data is touched: those
- * verbs' own listings still go straight to the console, a listing being read
- * rather than a run being narrated.
- *
- * One construction per process is exact rather than a shortcut:
- * `stampedLogger` reads the instant per call, never at construction
- * (`src/cliLog.ts`).
- */
-const operatorLog = stampedLogger();
-
-/**
  * The argv split, the roots resolved, and the verb's module called. Wrapped by
  * {@link main}, which owns the one arm that turns a state-root write refusal
  * into this process's exit code.
@@ -164,8 +143,8 @@ async function dispatch(): Promise<number> {
       const page =
         restArgs.length === 1 ? helpPageFor(restArgs[0] as string) : undefined;
       if (page === undefined) {
-        console.error(`no help page for: ${restArgs.join(" ")}`);
-        console.error(`usage: flume ${firstArg} [<command>]`);
+        operatorLog.error(`no help page for: ${restArgs.join(" ")}`);
+        operatorLog.error(`usage: flume ${firstArg} [<command>]`);
         return 2;
       }
       process.stdout.write(page);
@@ -299,8 +278,8 @@ async function dispatch(): Promise<number> {
   if (cmd === "tick") return tickVerb(context.run);
   if (cmd === "loop") return loopVerb(context.run);
 
-  console.error(`unknown command: ${cmd}`);
-  console.error("Run `flume --help` for usage.");
+  operatorLog.error(`unknown command: ${cmd}`);
+  operatorLog.error("Run `flume --help` for usage.");
   return 2;
 }
 

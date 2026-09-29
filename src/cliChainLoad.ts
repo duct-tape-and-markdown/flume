@@ -44,6 +44,7 @@
  */
 
 import { CjsContextLoadError, diskChainLoader } from "./chainLoad.js";
+import { operatorLog } from "./cliLog.js";
 import { EX_MOUNT_DEAD } from "./exitCodes.js";
 import type { Chain } from "./Phase.js";
 import type { FlumePaths } from "./flumeApi.js";
@@ -61,7 +62,7 @@ import type { FlumePaths } from "./flumeApi.js";
  */
 export function refuseCjsContextHost(err: unknown): number | undefined {
   if (!(err instanceof CjsContextLoadError)) return undefined;
-  console.error(`[flume] ${err.message}`);
+  operatorLog.error(`[flume] ${err.message}`);
   return 2;
 }
 
@@ -73,7 +74,7 @@ export function refuseCjsContextHost(err: unknown): number | undefined {
  */
 function reportChainLoadFailure(surface: string, err: unknown): string {
   const reason = err instanceof Error ? err.message : String(err);
-  console.error(`[flume] ${surface}: chain failed to load: ${reason}`);
+  operatorLog.error(`[flume] ${surface}: chain failed to load: ${reason}`);
   return reason;
 }
 
@@ -159,7 +160,7 @@ export async function loadChainForObservation(
     return { chain };
   } catch (err) {
     const reason = reportChainLoadFailure(surface, err);
-    console.error(
+    operatorLog.error(
       `[flume] ${surface}: ${degradedCost} \`flume tick\` and \`flume ` +
         `check\` refuse on this same load.`,
     );

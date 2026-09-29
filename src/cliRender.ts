@@ -21,11 +21,11 @@ import { EX_DATAERR, EX_MOUNT_DEAD } from "./exitCodes.js";
 import { RenderRefusal } from "./Prompt.js";
 
 export async function renderVerb(run: CliVerbRun): Promise<number> {
-  const { rest, dispatcher } = run;
+  const { rest, dispatcher, log: operatorLog } = run;
   const words = [...rest];
   const taken = takeFlagValue(words, "--entry");
   if (taken === null) {
-    console.error("usage: flume render <phase> [--entry <tag>]");
+    operatorLog.error("usage: flume render <phase> [--entry <tag>]");
     return 2;
   }
   const entryTag: string | undefined = taken;
@@ -34,7 +34,7 @@ export async function renderVerb(run: CliVerbRun): Promise<number> {
   // (spec/cli.md "Subcommand surface", gh#1): rendering a phase other than
   // the one typed is the harm, and it is refused before the chain loads.
   if (!phaseName || words.length > 1) {
-    console.error("usage: flume render <phase> [--entry <tag>]");
+    operatorLog.error("usage: flume render <phase> [--entry <tag>]");
     return 2;
   }
 
@@ -48,7 +48,7 @@ export async function renderVerb(run: CliVerbRun): Promise<number> {
     const cjs = refuseCjsContextHost(err);
     if (cjs !== undefined) return cjs;
     if (err instanceof RenderUsageError) {
-      console.error(`[flume] render refuses: ${err.message}`);
+      operatorLog.error(`[flume] render refuses: ${err.message}`);
       return 2;
     }
     // The shapes of "the prompt never resolved" — every stage refusal the
@@ -59,7 +59,7 @@ export async function renderVerb(run: CliVerbRun): Promise<number> {
     // have bought with an invocation, so it is the same EX_DATAERR `check`
     // spends nothing to reach.
     if (err instanceof RenderRefusal || err instanceof RenderUnresolvedError) {
-      console.error(`[flume] render refuses: ${err.message}`);
+      operatorLog.error(`[flume] render refuses: ${err.message}`);
       return EX_DATAERR;
     }
     // Declared bound (`.claude/rules/engineering.md`, "Loud or nothing"):
@@ -68,7 +68,7 @@ export async function renderVerb(run: CliVerbRun): Promise<number> {
     // Classified mount-dead, the same code `tick` and `check` return when
     // the chain cannot be run, rather than left to `main().catch`'s raw
     // stack and exit 1.
-    console.error(
+    operatorLog.error(
       `[flume] render: nothing resolved: ${err instanceof Error ? err.message : String(err)}`,
     );
     return EX_MOUNT_DEAD;
@@ -81,7 +81,7 @@ export async function renderVerb(run: CliVerbRun): Promise<number> {
   if (resolution.entry) {
     const tag = resolution.entry.tag;
     const carried = resolution.pickable.some((e) => e.tag === tag);
-    console.error(
+    operatorLog.error(
       carried
         ? `[flume] render: ${resolution.phaseName} scoped to entry ${tag}`
         : `[flume] render: ${resolution.phaseName} scoped to entry ${tag} — ` +

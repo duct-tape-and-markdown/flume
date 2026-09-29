@@ -17,6 +17,7 @@
 
 import { Baton } from "./Baton.js";
 import { loadChainForObservation } from "./cliChainLoad.js";
+import { operatorLog } from "./cliLog.js";
 import type { FlumePaths } from "./flumeApi.js";
 import { stopFlagPath } from "./paths.js";
 import {
@@ -75,11 +76,11 @@ export async function batonVerb(
 ): Promise<number> {
   const phase = rest[0];
   if (!phase || rest.length > 1) {
-    console.error(`usage: flume ${mutation} <phase>`);
+    operatorLog.error(`usage: flume ${mutation} <phase>`);
     return 2;
   }
   if (await chainRefusesPhase(paths, mutation, phase)) {
-    console.error(
+    operatorLog.error(
       `[flume] ${mutation} refuses: '${phase}' is not a phase this chain declares`,
     );
     return 2;
@@ -97,7 +98,7 @@ export function stopVerb(paths: FlumePaths, rest: string[]): number {
   // stray trailing arg is refused before the flag write below, not run as
   // something other than what the operator typed.
   if (rest.length > 0) {
-    console.error("usage: flume stop");
+    operatorLog.error("usage: flume stop");
     return 2;
   }
   // spec/loop.md "Graceful stop — the stop flag": the file is the

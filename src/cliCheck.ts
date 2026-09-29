@@ -11,6 +11,7 @@
  */
 
 import { loadChainOrRefuse } from "./cliChainLoad.js";
+import { operatorLog } from "./cliLog.js";
 import { EX_DATAERR, EX_IOERR } from "./exitCodes.js";
 import type { FlumePaths } from "./flumeApi.js";
 import {
@@ -29,7 +30,7 @@ export async function checkVerb(
   // `check` consumes no positionals (spec/cli.md "Subcommand surface") —
   // refuse before the chain load below, not just before the fence checks.
   if (rest.length > 0) {
-    console.error("usage: flume check");
+    operatorLog.error("usage: flume check");
     return 2;
   }
   // The shared refusing load (`loadChainOrRefuse`, src/cliChainLoad.ts):
@@ -51,7 +52,7 @@ export async function checkVerb(
   try {
     files = readQueueOnDisk(flumeDir, pendingDir);
   } catch (err) {
-    console.error(
+    operatorLog.error(
       `[flume] check: ${pendingRel} failed to read: ${err instanceof Error ? err.message : String(err)}`,
     );
     return EX_IOERR;
@@ -63,11 +64,11 @@ export async function checkVerb(
 
   const parsed = parsePendingQueue(files, chain.entryExtension);
   if (!parsed.ok) {
-    console.error(
+    operatorLog.error(
       `[flume] check: ${pendingRel} has ${parsed.errors.length} schema violation(s)`,
     );
     for (const e of parsed.errors) {
-      console.error(`  [${e.file}] ${e.path}: ${e.message}`);
+      operatorLog.error(`  [${e.file}] ${e.path}: ${e.message}`);
     }
     return EX_DATAERR;
   }
@@ -101,13 +102,13 @@ export async function checkVerb(
   // rather than failing a tick.
   const violations = queueFenceViolations(parsed.entries, consumerPhases);
   if (violations.length > 0) {
-    console.error(
+    operatorLog.error(
       `[flume] check: ${violations.length} pending entr${
         violations.length === 1 ? "y" : "ies"
       } declare files outside the consumer phase's fence`,
     );
     for (const v of violations) {
-      console.error(`  [${v.tag}] ${v.offending.join(", ")}`);
+      operatorLog.error(`  [${v.tag}] ${v.offending.join(", ")}`);
     }
     return EX_DATAERR;
   }

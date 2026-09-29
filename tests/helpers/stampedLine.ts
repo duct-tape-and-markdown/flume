@@ -1,12 +1,13 @@
 /**
  * The stamp an operator line opens with, for every case that reads one back.
  *
- * Its own file because two suites now need the same spelling: `tests/cli.test.ts`
- * asserts a run's lines carry it, and `tests/cliHelp.test.ts` reads a refusal's
- * subject off a line that may carry it — the refusals bay discovery and the
- * state-root seam take are stamped whichever verb reaches them, while a verb's
- * own listing is not. A second copy of the pattern is a copy that drifts from
- * the writer (`.claude/rules/engineering.md`, *A module is one job*).
+ * Its own file because two suites now need the same spelling:
+ * `tests/cli.test.ts` asserts a run's lines carry it — every operator line the
+ * CLI writes, a verb's own refusals included — and reads a report whose two
+ * producers disagree about whether one is there, and `tests/cliHelp.test.ts`
+ * reads a refusal's subject off the line that leads with it. A second copy of
+ * the pattern is a copy that drifts from the writer
+ * (`.claude/rules/engineering.md`, *A module is one job*).
  */
 
 import { expect } from "vitest";
@@ -26,8 +27,14 @@ export const STAMP_SOURCE = String.raw`\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3
 export const STAMPED_LINE = new RegExp(String.raw`^(${STAMP_SOURCE}) \S`);
 
 /**
- * A leading stamp, optional — the prefix a pattern anchored at the start of an
- * operator line skips when the line's writer decides whether it carries one.
+ * A leading stamp, optional — the prefix a pattern anchored at the start of a
+ * line skips when the two writers it is pointed at disagree about carrying
+ * one. That is a reader over a *pair* of producers, one of which narrates to
+ * an operator and one of which does not: the CLI stamps every line it writes
+ * (`spec/cli.md`, *A log line carries the instant it was written*), while a
+ * gate's `details` string is handed back to a caller and carries none. A
+ * reader of CLI output alone requires the stamp instead, since there the
+ * absence is the defect.
  */
 export const OPTIONAL_STAMP = String.raw`(?:${STAMP_SOURCE} )?`;
 

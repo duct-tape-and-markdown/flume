@@ -15,6 +15,7 @@ import type { Stats } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 
 import { loadChainOrRefuse } from "./cliChainLoad.js";
+import { operatorLog } from "./cliLog.js";
 import { EX_IOERR } from "./exitCodes.js";
 import type { FlumePaths } from "./flumeApi.js";
 import { frictionNotes } from "./friction.js";
@@ -27,7 +28,7 @@ export async function frictionVerb(
   const { flumeDir } = paths;
   const name = rest[0];
   if (rest.length > 1) {
-    console.error("usage: flume friction [name]");
+    operatorLog.error("usage: flume friction [name]");
     return 2;
   }
 
@@ -44,7 +45,7 @@ export async function frictionVerb(
   // "Subcommand surface"); this verb only moves bytes, it never derives
   // meaning from them.
   if (chain.friction === undefined) {
-    console.error(
+    operatorLog.error(
       "[flume] friction refuses: this chain does not declare Chain.friction",
     );
     return 2;
@@ -99,14 +100,14 @@ export async function frictionVerb(
         if (notes.includes(noteName))
           bytes = readFileSync(namespacedJoin(frictionDir, noteName));
       } catch (err) {
-        console.error(
+        operatorLog.error(
           `[flume] friction: '${name}' failed to read: ${err instanceof Error ? err.message : String(err)}`,
         );
         return EX_IOERR;
       }
     }
     if (bytes === undefined) {
-      console.error(
+      operatorLog.error(
         `[flume] friction: no note named '${name}' in '${chain.friction}'`,
       );
       return 2;
@@ -127,7 +128,7 @@ export async function frictionVerb(
   try {
     files = frictionNotes(flumeDir, frictionDir);
   } catch (err) {
-    console.error(
+    operatorLog.error(
       `[flume] friction: '${chain.friction}' failed to read: ${err instanceof Error ? err.message : String(err)}`,
     );
     return EX_IOERR;
@@ -145,7 +146,7 @@ export async function frictionVerb(
     try {
       stats = statSync(namespacedJoin(frictionDir, fileName));
     } catch (err) {
-      console.error(
+      operatorLog.error(
         `[flume] friction: '${chain.friction}/${fileName}' failed to read: ${err instanceof Error ? err.message : String(err)}`,
       );
       return EX_IOERR;

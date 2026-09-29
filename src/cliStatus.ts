@@ -13,6 +13,7 @@
 import { Baton } from "./Baton.js";
 import { agentUsageLine } from "./cliVerdict.js";
 import { loadChainForObservation } from "./cliChainLoad.js";
+import { operatorLog } from "./cliLog.js";
 import { EX_IOERR } from "./exitCodes.js";
 import type { FlumePaths } from "./flumeApi.js";
 import { frictionCountLine } from "./friction.js";
@@ -72,7 +73,7 @@ export async function statusVerb(paths: FlumePaths): Promise<number> {
     // "Subcommand surface").
     if (loopLockPresent) loopClaim = await liveLoopClaim(flumeDir);
   } catch (err) {
-    console.error(
+    operatorLog.error(
       `[flume] status: loop lock at ${statusLockPath} failed to read: ${err instanceof Error ? err.message : String(err)}`,
     );
     return EX_IOERR;
@@ -101,7 +102,7 @@ export async function statusVerb(paths: FlumePaths): Promise<number> {
   try {
     stopFlagPresent = existsLoudUnder("stop flag", flumeDir, statusStopPath);
   } catch (err) {
-    console.error(
+    operatorLog.error(
       `[flume] status: stop flag at ${statusStopPath} failed to stat: ${err instanceof Error ? err.message : String(err)}`,
     );
     return EX_IOERR;
@@ -141,7 +142,7 @@ export async function statusVerb(paths: FlumePaths): Promise<number> {
       // never an unclaimed one.
       if (claimPresent) holder = await liveTipClaim(claimPath);
     } catch (err) {
-      console.error(
+      operatorLog.error(
         `[flume] status: tip claim at ${claimPath} failed to read: ${err instanceof Error ? err.message : String(err)}`,
       );
       return EX_IOERR;
@@ -229,7 +230,7 @@ export async function statusVerb(paths: FlumePaths): Promise<number> {
   // `docs/MIGRATING-0.17.md`).
   const startedAtMs = supervisor?.atMs;
   if (supervisor !== undefined && startedAtMs === undefined) {
-    console.error(
+    operatorLog.error(
       `[flume] status: loop lock at ${statusLockPath} states no ` +
         "claim instant (written by flume before 0.17?) — withholding this " +
         "run's agent spend rather than totalling another run's with it",
@@ -251,7 +252,7 @@ export async function statusVerb(paths: FlumePaths): Promise<number> {
     try {
       spend = await readRunSpend(flumeDir, startedAtMs);
     } catch (err) {
-      console.error(
+      operatorLog.error(
         `[flume] status: the live run's spend failed to read: ${err instanceof Error ? err.message : String(err)}`,
       );
       return EX_IOERR;

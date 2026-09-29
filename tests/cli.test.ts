@@ -89,7 +89,10 @@ import {
   writeRepoConfig,
 } from "./helpers/repoChain.ts";
 import { makeScratchRepo, type ScratchRepo } from "./helpers/scratchRepo.ts";
+import { topLevelCommandNames } from "./helpers/shippedHelp.ts";
 import {
+  OPTIONAL_STAMP,
+  STAMPED_LINE,
   expectStampedDuring,
   narratedLines,
 } from "./helpers/stampedLine.ts";
@@ -5078,9 +5081,19 @@ describe("consumer-phase fence pre-check — `flume check` against `pendingGate`
     for (const line of text.split("\n")) {
       // Two leading spaces is the violation row; `[flume] check: ...` has
       // none, so the verb's own headline never reads as a row.
-      const m = /^ {2}\[([^\]]+)\] (.+?)(?: \(outside targetFence[^)]*\))?$/.exec(
-        line.trimEnd(),
-      );
+      //
+      // The stamp ahead of them is optional because only one of the two
+      // producers this reader is pointed at narrates: the verb writes its
+      // report through the CLI's stamped logger, per line and the rows with
+      // it (`spec/cli.md`, *A log line carries the instant it was written*),
+      // while the gate's `details` are a string handed back to a caller and
+      // carry none. Composed from the one home for that spelling
+      // (`tests/helpers/stampedLine.ts`), and optional here rather than
+      // stripped, so the comparison below is over what each side really
+      // wrote.
+      const m = new RegExp(
+        String.raw`^${OPTIONAL_STAMP} {2}\[([^\]]+)\] (.+?)(?: \(outside targetFence[^)]*\))?$`,
+      ).exec(line.trimEnd());
       if (m) rows[m[1]!] = m[2]!.split(", ");
     }
     return rows;
@@ -6646,6 +6659,227 @@ describe("the run log (spec/cli.md §A log line carries the instant it was writt
         expectStampedDuring(lines, before, after);
       } finally {
         await rm(bay, { recursive: true, force: true });
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  /**
+   * One refusal a verb can take under its own name, past the dispatch that
+   * chose it — the sites `src/cli.ts`'s pre-dispatch refusals never reach.
+   */
+  interface VerbRefusal {
+    /** The command the top-level listing advertises, which this row covers. */
+    readonly verb: string;
+    /** The words behind `flume`, whole. */
+    readonly args: string[];
+    /**
+     * A phrase of the refusal this row is about, so a run that refused
+     * somewhere else fails here rather than passing on a stamped line about
+     * something the row never drove.
+     */
+    readonly says: string;
+    /**
+     * Arm the refusal where argv alone cannot reach it, answering its own
+     * undo — the fixture is shared, so a denial left standing would refuse
+     * every row behind it.
+     */
+    readonly arm?: (flumeDir: string) => Promise<() => Promise<void>>;
+  }
+
+  /**
+   * Every verb the top-level listing advertises, refusing under its own name,
+   * plus the two refusals dispatch itself owns. Argv wherever argv reaches
+   * the arm; `status` takes no usage refusal at all — it is specced to ignore
+   * extras — so its row is driven through the one class it does exit non-zero
+   * on, a file it must read that is present and will not.
+   */
+  const VERB_REFUSALS: readonly VerbRefusal[] = [
+    { verb: "wake", args: ["wake"], says: "usage: flume wake <phase>" },
+    { verb: "sleep", args: ["sleep"], says: "usage: flume sleep <phase>" },
+    { verb: "stop", args: ["stop", "extra"], says: "usage: flume stop" },
+    {
+      verb: "log",
+      args: ["log", "-n", "not-a-number"],
+      says: "usage: flume log",
+    },
+    { verb: "check", args: ["check", "extra"], says: "usage: flume check" },
+    {
+      verb: "friction",
+      args: ["friction", "one", "two"],
+      says: "usage: flume friction",
+    },
+    {
+      verb: "render",
+      args: ["render"],
+      says: "usage: flume render <phase>",
+    },
+    { verb: "tick", args: ["tick", "stray"], says: "usage: flume tick" },
+    {
+      verb: "loop",
+      args: ["loop", "--max", "not-a-number"],
+      says: "usage: flume loop",
+    },
+    {
+      verb: "status",
+      args: ["status"],
+      says: "loop lock at",
+      arm: async (flumeDir) => {
+        // Denied at the read path itself (`tests/helpers/denial.ts`): the
+        // existence probe still finds the entry and the claim read fails, so
+        // the verb takes the refusal rather than printing "no supervisor".
+        const lock = loopLockPath(flumeDir);
+        denyFile(lock);
+        return async () => {
+          await rm(lock, { recursive: true, force: true });
+        };
+      },
+    },
+    // The chain-declared refusal past argv, so the row set is not usage
+    // alone: `wake` validates the name against a chain that loaded.
+    {
+      verb: "wake",
+      args: ["wake", "no-such-phase"],
+      says: "is not a phase this chain declares",
+    },
+    // Dispatch's own two, which no verb owns: a word the CLI holds no verb
+    // for, and a name the help table holds no page for.
+    {
+      verb: "tick",
+      args: ["no-such-verb"],
+      says: "unknown command: no-such-verb",
+    },
+    {
+      verb: "tick",
+      args: ["help", "no-such-verb"],
+      says: "no help page for: no-such-verb",
+    },
+  ];
+
+  it(
+    "every CLI verb's refusal opens with the instant it was written",
+    async () => {
+      // Non-vacuity, and the claim the title makes: the set of verbs driven
+      // is read off the listing the CLI really prints
+      // (`topLevelCommandNames`, `tests/helpers/shippedHelp.ts`), so a verb
+      // added later reds here rather than being silently out of the sweep
+      // (`.claude/rules/engineering.md`, *A green verdict is proven
+      // non-vacuous*).
+      const covered = [...new Set(VERB_REFUSALS.map((row) => row.verb))].sort();
+      expect(covered).toEqual([...topLevelCommandNames()].sort());
+
+      const repo = await makeScratchRepo("flume-cli-repo-", "main");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc({ friction: "friction" }));
+        const flumeDir = join(repo.dir, ".flume");
+
+        for (const row of VERB_REFUSALS) {
+          const undo = await row.arm?.(flumeDir);
+          const before = Date.now();
+          const refused = await runCliStreams(repo.dir, row.args);
+          const after = Date.now();
+          await undo?.();
+
+          const where = `flume ${row.args.join(" ")}`;
+          expect(refused.code, `${where}: ${refused.stderr}`).not.toBe(0);
+          const lines = narratedLines(refused.stderr);
+          // The row drove the arm it names, and the arm wrote something:
+          // a stamped sweep over an empty stream is green over nothing.
+          expect(lines.length, `${where} wrote no refusal`).toBeGreaterThan(0);
+          expect(refused.stderr, where).toContain(row.says);
+          expectStampedDuring(lines, before, after);
+        }
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it(
+    "a chain that fails to load is reported to the operator with the instant it was written",
+    async () => {
+      const repo = await makeScratchRepo("flume-cli-repo-", "main");
+      try {
+        // A chain that throws as it loads — the failure both shared loads
+        // report (`src/cliChainLoad.ts`), reached by the verb that refuses on
+        // it and by the verb that proceeds over it, so neither leg's report
+        // can drift out of the stamp while the other keeps it.
+        await writeRepoConfig(repo.dir, 'throw new Error("chain will not load");\n');
+
+        const before = Date.now();
+        const refusing = await runCliStreams(repo.dir, ["check"]);
+        const observing = await runCliStreams(repo.dir, ["status"]);
+        const after = Date.now();
+
+        expect(refusing.code, refusing.stderr).toBe(EX_MOUNT_DEAD);
+        expect(refusing.stderr).toContain("check: chain failed to load:");
+        expect(refusing.stderr).toContain("chain will not load");
+
+        // Best-effort, so the verb still exits 0 — and still says so, twice:
+        // the failure and what proceeding over it cost.
+        expect(observing.code, observing.stderr).toBe(0);
+        expect(observing.stderr).toContain("status: chain failed to load:");
+        expect(observing.stderr).toContain("proceeding over engine defaults");
+
+        for (const run of [refusing, observing]) {
+          const lines = narratedLines(run.stderr);
+          expect(lines.length).toBeGreaterThan(0);
+          expectStampedDuring(lines, before, after);
+        }
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it(
+    "a verb's own listing carries no stamp",
+    async () => {
+      const repo = await makeScratchRepo("flume-cli-repo-", "main");
+      try {
+        await writeRepoConfig(
+          repo.dir,
+          stubbedAgentChainSrc({ friction: "friction" }),
+        );
+        const flumeDir = join(repo.dir, ".flume");
+        await mkdir(join(flumeDir, "friction"), { recursive: true });
+        await writeFile(join(flumeDir, "friction", "note.md"), "a note\n", "utf8");
+
+        // One tick, so the history verb has a record to print: a listing pin
+        // over an empty listing is the vacuous green this claim is about.
+        new Baton(flumeDir).wake("probe");
+        const ticked = await runCli(repo.dir, ["tick"]);
+        expect(ticked.code, ticked.out).toBe(0);
+
+        // Every verb whose stdout an operator — or a watch loop, or a `jq` —
+        // reads as data rather than as narration.
+        const listings = [
+          ["status"],
+          ["log", "--json"],
+          ["log"],
+          ["friction"],
+          ["friction", "note.md"],
+          ["wake", "probe"],
+          ["sleep", "probe"],
+          ["stop"],
+        ];
+        for (const args of listings) {
+          const run = await runCliStreams(repo.dir, args);
+          const where = `flume ${args.join(" ")}`;
+          expect(run.code, `${where}: ${run.stderr}`).toBe(0);
+          const lines = narratedLines(run.stdout);
+          expect(lines.length, `${where} printed nothing`).toBeGreaterThan(0);
+          for (const line of lines) {
+            expect(
+              STAMPED_LINE.test(line),
+              `${where} stamped a line of its listing: ${line}`,
+            ).toBe(false);
+          }
+        }
+      } finally {
+        await repo.cleanup();
       }
     },
     SPAWN_BUDGET_MS,
