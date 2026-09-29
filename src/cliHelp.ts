@@ -273,6 +273,71 @@ const TICK_TIP_CLAIM_HELD: ExitCauseLabel = {
 export const TICK_TIP_CLAIM_HELD_PHRASE = TICK_TIP_CLAIM_HELD.phrase;
 
 /**
+ * The `render-refused` class, member by member — every way the prompt a
+ * phase would have been handed fails to resolve, which `flume render` spends
+ * one `65` on and a tick spends an invocation to reach
+ * (`NO_COMMIT_MODES`, `src/Prompt.ts`). Three members, each with its own
+ * refusal type: a span that would not run (`InlineExecRenderError`,
+ * `src/Prompt.ts`), a placeholder the merged args had no entry for
+ * (`MissingPlaceholderRenderError`, `src/Prompt.ts`), and the hook that
+ * composes those args throwing (`RenderUnresolvedError`,
+ * `src/Dispatcher.ts`).
+ *
+ * Labelled rather than spelled as flat prose for the reason
+ * {@link SHARED_ROOT_RESOLUTION_CAUSES} is: `docs/CLI.md` and
+ * `docs/CHAIN-AUTHORING.md` each enumerate this class in a register of its
+ * own, and the phrase is what crosses ({@link ExitCauseLabel}). Enumerating
+ * two of the three is what those pages did before the phrases had one home.
+ */
+const RENDER_REFUSED_CAUSES: readonly ExitCauseLabel[] = [
+  {
+    opening: "Either ",
+    phrase: "an inline-exec span that would not resolve",
+    rest:
+      " — a non-zero exit, a spawn that failed, or output past the cap — " +
+      "each failing span named with its stderr.",
+  },
+  {
+    opening: "Or ",
+    phrase: "a `{{KEY}}` no arg filled",
+    rest:
+      " — every such key named at once, so a chain fixes its args in one " +
+      "pass rather than one render at a time.",
+  },
+  {
+    opening: "Or ",
+    phrase: "a `promptArgs` hook that threw",
+    rest: " — the phase named, with what the hook said.",
+  },
+];
+
+/**
+ * The whole clause a `65` row states — every member above, in the order the
+ * render reaches them.
+ */
+const RENDER_REFUSED_CLAUSE = RENDER_REFUSED_CAUSES.map(clauseOf).join(" ");
+
+/** The lead that clause opens under — the code, and what the class is. */
+const RENDER_REFUSED_LEAD =
+  "Data error (EX_DATAERR): the prompt never resolved. The engine calls " +
+  "the class render-refused, and this is the refusal a tick would have " +
+  "bought with an invocation.";
+
+/**
+ * The phrases those members are labelled with — what every surface
+ * enumerating `render-refused` names them under, whatever register it
+ * enumerates them in. Exported for the seam that reads `docs/CLI.md`'s and
+ * `docs/CHAIN-AUTHORING.md`'s copies against the clause this page renders.
+ */
+export const RENDER_REFUSED_PHRASES: readonly string[] =
+  RENDER_REFUSED_CAUSES.map((cause) => cause.phrase);
+
+/** The whole `65` row for `flume render`, the one verb that spends a code on it. */
+function renderRefusedRow(indent: number): string {
+  return exitCodeRow(65, [RENDER_REFUSED_LEAD, RENDER_REFUSED_CLAUSE], indent);
+}
+
+/**
  * The clause above, wrapped into a page's own exit-code block. `indent` is
  * that block's continuation column — a block aligns its rows to the widest
  * code it lists, so `check`'s sits one past everyone else's. The first line
@@ -750,10 +815,7 @@ Exit codes:
       load with the CJS-context refusal — the host repo's package.json (or
       the one beside .flume/chain.ts) lacks "type": "module".
       ${rootResolutionUsageRefusal(6)}
-  65  Data error (EX_DATAERR): the prompt never resolved — an inline-exec
-      span exited non-zero (each failing span named with its stderr), or the
-      phase's promptArgs hook threw. The same refusal a tick would have
-      bought with an invocation; the engine calls the class render-refused.
+${renderRefusedRow(6)}
   69  Mount-dead (EX_UNAVAILABLE): the chain could not be brought up for any
       other reason — it failed to load, the queue at HEAD failed to parse,
       or the declared prompt file is not on disk. Nothing was rendered.

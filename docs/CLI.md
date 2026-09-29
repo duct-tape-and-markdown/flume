@@ -258,8 +258,9 @@ refusal (missing `<phase>`, a stray positional past it, `--entry` with no value,
 an unknown phase, `--entry` against a phase that picks nothing, `--entry` naming
 no entry in the queue at HEAD, a fanout phase with nothing pickable and no
 `--entry`, or the CJS-context chain-load refusal). It exits `65` (`EX_DATAERR`)
-when the prompt never resolved — an inline-exec span that exited non-zero, named
-with its stderr, or a `promptArgs` hook that threw, which is the same
+when the prompt never resolved — an inline-exec span that would not resolve,
+each failing span named with its stderr; a `{{KEY}}` no arg filled, every such
+key named at once; or a `promptArgs` hook that threw — the one
 `render-refused` class a tick would have spent an invocation to reach. It
 exits `69` (`EX_MOUNT_DEAD`) when the chain could not be brought up at all — it
 failed to load, the queue at HEAD failed to parse, or the declared prompt file

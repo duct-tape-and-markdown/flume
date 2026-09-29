@@ -68,6 +68,28 @@ const CHAIN_SRC = `export default () => ({ chain: {
 } });
 `;
 
+/**
+ * The same phase with a `promptArgs` that throws — the `render-refused`
+ * member that never reaches a render stage, spelled whole rather than
+ * patched out of {@link CHAIN_SRC}: a substitution that stopped matching
+ * would leave the case running the chain above and refusing nothing.
+ */
+const THROWING_ARGS_CHAIN_SRC = `export default () => ({ chain: {
+  phases: [{
+    name: "build",
+    description: "",
+    promptPath: "prompts/build.md",
+    concurrency: "fanout",
+    writablePaths: ["src/**"],
+    scopeWritesToEntry: true,
+    gates: [],
+    handoff: () => [],
+    promptArgs: () => { throw new Error("promptargs-probe"); },
+  }],
+  humanOnly: [],
+} });
+`;
+
 /** No inline-exec span, so the tick's worktree cwd and render's repo-root cwd render alike. */
 const PROMPT_SRC = "build the entry\ntag={{TAG}}\npickable={{PICKABLE}}\n";
 
@@ -96,6 +118,7 @@ interface RenderRepo {
 async function makeRenderRepo(
   entries: unknown[],
   promptSrc: string = PROMPT_SRC,
+  chainSrc: string = CHAIN_SRC,
 ): Promise<RenderRepo> {
   const dir = await mkFixtureRoot("flume-render-");
   const opts = { cwd: dir };
@@ -108,7 +131,7 @@ async function makeRenderRepo(
   await mkdir(join(flumeDir, "prompts"), { recursive: true });
   await mkdir(join(flumeDir, "plan", "pending"), { recursive: true });
   await mkdir(join(dir, "src"), { recursive: true });
-  await writeFile(join(flumeDir, "chain.ts"), CHAIN_SRC, "utf8");
+  await writeFile(join(flumeDir, "chain.ts"), chainSrc, "utf8");
   await writeFile(join(flumeDir, "prompts", "build.md"), promptSrc, "utf8");
   await writeFile(join(dir, "src", "seed.ts"), "// seed\n", "utf8");
   await writeFile(
@@ -347,6 +370,38 @@ it("flume render exits EX_DATAERR naming a placeholder no arg filled", async () 
     expect(r.stderr).toContain("UNFILLABLE_PROBE");
     // Total, exactly as the span refusal is — nothing on the prompt's own
     // channel, read on stdout alone for the reason that case states.
+    expect(r.stdout).toBe("");
+  } finally {
+    await repo.cleanup();
+  }
+}, SPAWN_BUDGET_MS);
+
+it("flume render exits EX_DATAERR naming a promptArgs hook that threw", async () => {
+  // The class's third member, and the one that is not a `RenderRefusal`: the
+  // hook throws before any stage of the render runs, so this arm is
+  // `RenderUnresolvedError` (`src/Dispatcher.ts`). Driven here so the roster
+  // the shipped surfaces enumerate the class from is grounded in three
+  // refusals the verb really takes rather than in three phrases
+  // (`RENDER_REFUSED_PHRASES`, `src/cliHelp.ts`).
+  const repo = await makeRenderRepo(
+    [entry("ONLY", "src/only.ts")],
+    "before\nafter\n",
+    THROWING_ARGS_CHAIN_SRC,
+  );
+  try {
+    const r = await runCliStreams(repo.dir, [
+      "render",
+      "build",
+      "--entry",
+      "ONLY",
+    ]);
+    // The same code both `RenderRefusal` stages above exit with: the verb
+    // spends one code on the whole class, so a hook that threw is not dropped
+    // into the mount-dead arm, which means the chain would not come up.
+    expect(r.code).toBe(EX_DATAERR);
+    expect(r.stderr).toContain("promptargs-probe");
+    // Total, exactly as both stage refusals are, read on stdout alone for the
+    // reason those cases state.
     expect(r.stdout).toBe("");
   } finally {
     await repo.cleanup();

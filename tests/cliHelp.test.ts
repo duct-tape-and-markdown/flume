@@ -18,8 +18,13 @@ import { fileURLToPath } from "node:url";
 
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
-import { EX_IOERR, EX_TERMINAL_MISCONFIG } from "../src/exitCodes.ts";
 import {
+  EX_DATAERR,
+  EX_IOERR,
+  EX_TERMINAL_MISCONFIG,
+} from "../src/exitCodes.ts";
+import {
+  RENDER_REFUSED_PHRASES,
   SHARED_ROOT_ONLY_LEAD,
   ROOT_RESOLUTION_USAGE_PHRASES,
   ROOT_ACCESS_PHRASE,
@@ -64,6 +69,7 @@ import { denyDirectory, denyFile } from "./helpers/denial.ts";
 import { hermeticEnv } from "./helpers/gitEnv.ts";
 import { minimalChainSrc, writeRepoConfig } from "./helpers/repoChain.ts";
 import {
+  bulletOf,
   namedExitCodes,
   sectionOf,
   sentencesNamingExitCode,
@@ -2913,4 +2919,99 @@ describe("docs/CLI.md's status I/O refusal causes (CLI-DOC-CHECK-AND-STATUS-IO-R
     );
     expect(unnamed, "artifacts the 74 sentence does not name").toEqual([]);
   }, SPAWN_BUDGET_MS);
+});
+
+/**
+ * THE-RENDER-REFUSED-CLASS-IS-ENUMERATED-WHOLE — three shipped surfaces name
+ * the `render-refused` class and then enumerate its members: the `65` row of
+ * `flume render --help`, the same code's sentence in `docs/CLI.md`, and the
+ * no-commit taxonomy's bullet in `docs/CHAIN-AUTHORING.md`. Each listed two
+ * of the three, dropping the `{{KEY}}` no arg filled — the drift three hand
+ * copies of one enumeration produce, since a copy that names the class reads
+ * as complete whatever it left out.
+ *
+ * The phrases are not hand-spelled here: they come from the roster the
+ * shipped help row renders from (`RENDER_REFUSED_PHRASES`, `src/cliHelp.ts`),
+ * which is the one home the members have now, so a member the class gains
+ * reds every page that did not gain it (`.claude/rules/engineering.md`, *A
+ * seam gate reads what the real writer wrote*). The class the roster
+ * enumerates is the one the verb really refuses on: `tests/cliRender.test.ts`
+ * drives each member to a real `EX_DATAERR`.
+ */
+describe("the render-refused class, enumerated whole wherever it is named (THE-RENDER-REFUSED-CLASS-IS-ENUMERATED-WHOLE)", () => {
+  /**
+   * Non-vacuity for all three cases, asserted once: the roster really carries
+   * more than the pair the pages used to name, and no member's phrase is a
+   * span of another's — a "names every member" read over a roster whose
+   * phrases nest would pass on the one page that named the longest.
+   */
+  it("the render-refused roster carries three members no one of which states another", () => {
+    expect(RENDER_REFUSED_PHRASES.length).toBe(3);
+    const stated = RENDER_REFUSED_PHRASES.map(asStated);
+    expect(new Set(stated).size).toBe(stated.length);
+    const nested = stated.filter((phrase) =>
+      stated.some((other) => other !== phrase && other.includes(phrase)),
+    );
+    expect(nested, "a member's phrase is a span of another's").toEqual([]);
+  });
+
+  it("flume render --help names every member of the render-refused class", async () => {
+    const { out, code } = await runCli(process.cwd(), ["render", "--help"]);
+    expect(code).toBe(0);
+    // The window is the `65` row alone rather than the page: the block above
+    // it states the chain-load refusals and the one below the mount-dead
+    // ones, and a read over the whole page would pass over a row that had
+    // gone silent (`.claude/rules/posture-sweep.md`, *A negative assertion
+    // over a whole rendered artifact*).
+    const opened = out.indexOf("\n  65  ");
+    const closed = out.indexOf("\n  69  ");
+    expect(opened, "the render page spends no row on 65").toBeGreaterThan(-1);
+    expect(closed).toBeGreaterThan(opened);
+    const row = asStated(out.slice(opened, closed));
+    for (const phrase of RENDER_REFUSED_PHRASES) {
+      expect(row, `the 65 row does not name ${phrase}`).toContain(
+        asStated(phrase),
+      );
+    }
+  }, SPAWN_BUDGET_MS);
+
+  it("docs/CLI.md's flume render section names every member of the render-refused class", async () => {
+    const section = sectionOf(await readCliDoc(), /^## `flume render\b/);
+    expect(section.length).toBeGreaterThan(0);
+    const window = asStated(
+      sentencesNamingExitCode(section, EX_DATAERR).join("\n"),
+    );
+    expect(window.length, "the section spends no sentence on 65").toBeGreaterThan(0);
+    for (const phrase of RENDER_REFUSED_PHRASES) {
+      expect(window, `the 65 sentence does not name ${phrase}`).toContain(
+        asStated(phrase),
+      );
+    }
+    // Scoped to the code, not the section: the verb's other exit codes are
+    // documented in the same paragraph, and a window that read them back
+    // would carry their prose into this claim.
+    expect(
+      asStated(section).length,
+      "the 65 window read back the whole section",
+    ).toBeGreaterThan(window.length);
+  });
+
+  it("docs/CHAIN-AUTHORING.md's render-refused bullet names every member of the class", async () => {
+    const page = await readFile(
+      fileURLToPath(new URL("../docs/CHAIN-AUTHORING.md", import.meta.url)),
+      "utf8",
+    );
+    // The bullet, not the page: the taxonomy's siblings quote the render
+    // vocabulary too — `clean-exit` names the agent's own message and
+    // `platform-preempt` the invocation — so a page-wide read would pass over
+    // a bullet that had gone silent.
+    const bullet = asStated(bulletOf(page, "- `render-refused` — "));
+    expect(bullet.length).toBeGreaterThan(0);
+    expect(asStated(page).length).toBeGreaterThan(bullet.length);
+    for (const phrase of RENDER_REFUSED_PHRASES) {
+      expect(bullet, `the bullet does not name ${phrase}`).toContain(
+        asStated(phrase),
+      );
+    }
+  });
 });

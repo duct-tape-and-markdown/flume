@@ -2106,10 +2106,11 @@ per record — and the block renders the variant that fired:
   (rate-limit, auth, per-tick timeout, dispatcher-killed). Carries the failure
   class, marked as explicitly **not** a defect in the prior work — the retry
   resumes rather than treating the cut-off as a wall.
-- `render-refused` — the tick refused before invoking the agent: either one or
-  more inline-exec spans failed to resolve, or a pre-invocation hook
-  (`shouldRun`, `promptArgs`) threw. Carries every failing span's command text
-  and its stderr, or the hook that threw and what it said.
+- `render-refused` — the tick refused before invoking the agent: an inline-exec
+  span that would not resolve, a `{{KEY}}` no arg filled, a `shouldRun` hook
+  that threw, or a `promptArgs` hook that threw. Carries every failing span's
+  command text and its stderr, every key no arg filled, or the hook that threw
+  and what it said.
 - `tip-moved` — the agent's own commits failed the ancestry check: the base its
   private `flume/**` branch started from was no longer an ancestor of the HEAD
   the agent left, so the span was soft-reset away on that branch. Carries both
