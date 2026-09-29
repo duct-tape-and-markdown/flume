@@ -6008,6 +6008,105 @@ describe("Dispatcher — a span trunk already holds is absorbed at the merge (AN
     ]);
   });
 
+  it("the afterMerge gate-revert record over a wholly-absorbed span digests no commit the tick did not make", async () => {
+    // The absorbed span still runs the whole afterMerge stack, so a gate can
+    // fail over it — and then the record's digest is taken off a tip the tick
+    // added nothing to. Read off the head sha it would name the commit
+    // standing there, which belongs to whoever landed it (spec/loop.md
+    // "Prior-outcome feedback to the retrying tick"): the retry would open
+    // its own prior attempt and read a foreign diff.
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const failing: Gate = {
+      name: "merge-wall",
+      when: "afterMerge",
+      async run() {
+        return { ok: false, message: "merge-wall refused", details: "no" };
+      },
+    };
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [failing],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const operatorSubject = "operator: the same content, landed first";
+    let spanHead = "";
+    let trunkSha = "";
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(
+        cwd,
+        "src/plan-output.ts",
+        "derived\n",
+        "plan: derive",
+      );
+      spanHead = await head(cwd);
+      // Byte-identical content reaches trunk mid-tick, so the pick empties
+      // whole and `mergedSha === preCherry`.
+      await writeAndCommit(
+        fx.repo,
+        "src/plan-output.ts",
+        "derived\n",
+        operatorSubject,
+      );
+      trunkSha = await head(fx.repo);
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Non-vacuity, in three parts. The agent really committed a span; trunk
+    // really carried the same content first; and the merge row really bounds
+    // an empty range — without all three this passes over an ordinary revert,
+    // whose digest is unchanged by this fix.
+    expect(spanHead).not.toBe("");
+    expect(trunkSha).not.toBe("");
+    expect(spanHead).not.toBe(trunkSha);
+    expect(outcome.verdict?.mergeOutcomes).toEqual([
+      {
+        outcome: "afterMerge-reverted",
+        footprint: [],
+        baseSha: trunkSha,
+        headSha: trunkSha,
+      },
+    ]);
+    // And the tip the gate failed over really does hold a commit with a
+    // non-empty diffstat of its own — the thing a head-sha digest would have
+    // captured.
+    const tipStat = await exec(
+      "git",
+      ["show", "--stat", "--oneline", "--no-color", trunkSha],
+      { cwd: fx.repo },
+    );
+    expect(tipStat.stdout).toContain("src/plan-output.ts");
+    expect(tipStat.stdout).toContain(operatorSubject);
+
+    const record = JSON.parse(
+      await readFile(
+        join(fx.repo, ".flume", "prior-attempts", "phase", "plan.json"),
+        "utf8",
+      ),
+    ) as { mode: string; when: string; gate: string; diffStat: string };
+    // The record is the afterMerge gate's, so the digest under judgement is
+    // the one this revert wrote.
+    expect(record.mode).toBe("gate-revert");
+    expect(record.when).toBe("afterMerge");
+    expect(record.gate).toBe("merge-wall");
+    // Nothing was added, and the digest says exactly that — never the
+    // operator's commit, and never a blank block a retry would read as a
+    // failed capture.
+    expect(record.diffStat).toBe("(no commit added to the tip)");
+    expect(record.diffStat).not.toContain(operatorSubject);
+    expect(record.diffStat).not.toContain("src/plan-output.ts");
+  });
+
   it("a fanout entry whose span the tip already holds is asked for shipped as for any merge", async () => {
     // Two entries whose agents commit byte-identical content to the shared
     // channel path and nothing else. Whichever pick runs first lands it;

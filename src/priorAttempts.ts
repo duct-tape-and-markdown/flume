@@ -277,6 +277,14 @@ const MAX_PRIOR_DETAILS_TAIL = 1024;
 /** Bound on the persisted `git show --stat` digest. */
 const MAX_PRIOR_DIFFSTAT = 4 * 1024;
 /**
+ * The digest of a span that added nothing to the tip it reverts from — the
+ * tip held the span's content whole, so the pick had no commit to add. Stated
+ * rather than left blank: a retry reading an empty digest cannot tell "added
+ * nothing" from "the capture failed", and either reading beats inferring
+ * one from a foreign commit's diffstat.
+ */
+const NO_SPAN_DIFFSTAT = "(no commit added to the tip)";
+/**
  * Bound on the persisted clean-exit constraint / platform-preempt
  * failure class. Same telegraphic discipline as the gate digest: enough to
  * name the wall, not the transcript.
@@ -704,14 +712,27 @@ export class PriorAttemptStore {
 }
 
 /**
- * Bounded `git show --stat` of the reverted commit — the prior-attempt
- * digest, so the retry does not blindly reconstruct. Must be called while
- * `sha` is still reachable (before the hard reset / commit drop).
- * Best-effort: a failure here must not block the revert path.
+ * Bounded `git show --stat` over the span this tick added — the
+ * prior-attempt digest, so the retry does not blindly reconstruct. The span,
+ * never its head sha alone: over a span the tip already held whole the pick
+ * added no commit, and digesting the head would hand the retry the diff of
+ * whichever writer left that commit standing there as its own prior attempt.
+ * An empty range says so in words rather than falling through as a blank
+ * block (`.claude/rules/engineering.md`, "Loud or nothing").
+ *
+ * Must be called while the span's head is still reachable (before the hard
+ * reset / commit drop). Best-effort: a failure here must not block the revert
+ * path.
  */
-async function capturedDiffStat(cwd: string, sha: string): Promise<string> {
+async function capturedDiffStat(
+  cwd: string,
+  span: { base: string; head: string },
+): Promise<string> {
   try {
-    return bound(await git.showDiffStat(cwd, sha), MAX_PRIOR_DIFFSTAT);
+    const stat = await git.spanDiffStat(cwd, span);
+    return stat.trim() === ""
+      ? NO_SPAN_DIFFSTAT
+      : bound(stat, MAX_PRIOR_DIFFSTAT);
   } catch {
     return "(diff stat unavailable)";
   }
@@ -720,8 +741,8 @@ async function capturedDiffStat(cwd: string, sha: string): Promise<string> {
 /**
  * Build the gate-revert record: an afterCommit/afterMerge gate refused the
  * span and the engine dropped it. Carries the gate's own verdict and its own
- * attribution plus the bounded `git show --stat` of what was reverted, so the
- * retry reads what landed instead of blindly reconstructing it.
+ * attribution plus the bounded `git show --stat` of what the span added, so
+ * the retry reads what landed instead of blindly reconstructing it.
  */
 export async function buildGateRevert(
   when: GateRevertAttempt["when"],
@@ -734,9 +755,15 @@ export async function buildGateRevert(
     blamesSpan?: false;
   },
   diffCwd: string,
-  sha: string,
+  /**
+   * The span the reverted work added, as a pair in the record's own direction
+   * so a caller cannot transpose it: `base` the tip the span landed onto (or
+   * branched from, afterCommit), `head` the tip it reached. Only what lies
+   * between them is this tick's to digest.
+   */
+  span: { base: string; head: string },
 ): Promise<Omit<GateRevertAttempt, "headSha" | "at" | "key" | "keyedAs" | "declaredAs">> {
-  const diffStat = await capturedDiffStat(diffCwd, sha);
+  const diffStat = await capturedDiffStat(diffCwd, span);
   return {
     mode: "gate-revert",
     when,

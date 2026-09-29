@@ -90,6 +90,16 @@ const UNMOVED_SPAN = (tip = "7".repeat(40)) => ({
 });
 
 /**
+ * The span every `buildGateRevert` call below hands the builder: base and head
+ * the same tip, so the digest is the real "added nothing" reading off a real
+ * repo rather than a capture failure over an unresolvable range. Each of those
+ * cases is about the record's keyspace, anchor, or verbatim gate fields rather
+ * than about its digest; the digest's own cases are the Dispatcher suite's,
+ * where a real agent commits a span.
+ */
+const SAME_TIP_SPAN = (tip: string) => ({ base: tip, head: tip });
+
+/**
  * One draft per mode, minted by the real builders in the shape
  * {@link PriorAttemptStore.write} receives them — the input both tests below
  * judge the roster and the reader against.
@@ -103,7 +113,7 @@ async function everyDraft(
       "afterCommit",
       { gate: "tsc", message: "type error", details: "src/seed.ts(1,1)" },
       repo,
-      head,
+      SAME_TIP_SPAN(head),
     ),
     buildCleanExit("refused: the fence excludes spec/", UNMOVED_SPAN(head)),
     buildPlatformPreempt("process-failure"),
@@ -215,7 +225,7 @@ describe("priorAttempts — the record builders (spec/loop.md 'Prior-outcome fee
         details: "spec/chain.md: no section named 'Fences'",
       },
       fx.repo,
-      head,
+      SAME_TIP_SPAN(head),
     );
     const withVerdict = priorAttemptRef({ name: "authored" } as Phase);
     await store.write(withVerdict, authored);
@@ -238,7 +248,7 @@ describe("priorAttempts — the record builders (spec/loop.md 'Prior-outcome fee
       "afterCommit",
       { gate: "tsc", message: "type error" },
       fx.repo,
-      head,
+      SAME_TIP_SPAN(head),
     );
     expect(silentGate).not.toHaveProperty("verdict");
     const noVerdict = priorAttemptRef({ name: "unauthored" } as Phase);

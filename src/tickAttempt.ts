@@ -402,7 +402,7 @@ export async function runAttempt(
       ctx,
       chain,
       wt.path,
-      headSha,
+      { base: spanBase, head: headSha },
       ref,
       label,
       entry,
@@ -704,17 +704,24 @@ async function revertAfterCommitFailure(
   ctx: AttemptContext,
   chain: Chain,
   cwd: string,
-  sha: string,
+  /**
+   * The span the agent committed — `base` the tip it branched from, `head`
+   * the tip it reached. The digest is taken over the pair, so a multi-commit
+   * span is named whole rather than by its last commit alone (spec/loop.md
+   * "The check is ancestry, and N commits are completion"); the drop and the
+   * note are `head`'s, the single commit this leg reverts.
+   */
+  span: { base: string; head: string },
   ref: PriorAttemptRef,
   label: string,
   blamed: PendingEntry | undefined,
   failure: ReportedGateResult,
   touchedPaths: string[],
 ): Promise<{ footprint: string[]; gateFailure: GateFailure }> {
-  const record = await buildGateRevert("afterCommit", failure, cwd, sha);
-  await writeRevertNote(ctx, chain, cwd, sha, label, failure);
-  await ctx.attempts.snapshotReverted(cwd, sha, ref);
-  await git.dropLastCommit(cwd, sha);
+  const record = await buildGateRevert("afterCommit", failure, cwd, span);
+  await writeRevertNote(ctx, chain, cwd, span.head, label, failure);
+  await ctx.attempts.snapshotReverted(cwd, span.head, ref);
+  await git.dropLastCommit(cwd, span.head);
   await ctx.attempts.write(ref, record);
   ctx.log.warn(`[flume] ${label}: commit reverted (${failure.message})`);
   return {

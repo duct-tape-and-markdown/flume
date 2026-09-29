@@ -451,11 +451,17 @@ export async function runSingleton(
           leg.log.warn(
             `[flume] afterMerge gate '${entryFailure.gate}' failed for ${phase.name}; reverting`,
           );
+          // The span the pick added, not `mergedSha` alone: over a span
+          // trunk already held whole the two are equal (the `mergedSha ===
+          // preCherry` arm below), and digesting the tip would hand the
+          // retry whichever writer's commit is standing there as its own
+          // prior attempt (spec/loop.md "Prior-outcome feedback to the
+          // retrying tick"). The same pair the merge row below bounds.
           const record = await buildGateRevert(
             "afterMerge",
             entryFailure,
             repoRoot,
-            mergedSha,
+            { base: preCherry, head: mergedSha },
           );
           await leg.attempts.write(ref, record);
           noCommit = "gate-revert";

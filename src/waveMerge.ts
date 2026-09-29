@@ -789,11 +789,18 @@ async function carrySpan(
     // cherry-picked SHA is still reachable, then drop ONLY this entry's
     // commit (reset to the pre-cherry-pick trunk), not the wave. The
     // entry stays pending; its retry carries this prior-attempt block.
+    //
+    // The digest covers `preCherry..mergedSha` — the span the pick added,
+    // the same pair the merge row below bounds. Not `mergedSha` alone: over
+    // a span trunk already held whole the two are equal, and digesting the
+    // tip would hand the retry a sibling's or an operator's diff as its own
+    // prior attempt (spec/loop.md "Prior-outcome feedback to the retrying
+    // tick").
     const record = await buildGateRevert(
       "afterMerge",
       entryFailure,
       repoRoot,
-      mergedSha,
+      { base: preCherry, head: mergedSha },
     );
     await leg.attempts.write(priorAttemptRef(phase, r.entry), record);
     w.gateFailures.push({

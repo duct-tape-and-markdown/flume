@@ -208,7 +208,13 @@ export interface GateRevertAttempt extends PriorAttemptEnvelope {
   verdict?: string;
   /** Gate's full captured output (`GateResult.details`), bounded. */
   details?: string;
-  /** `git show --stat` digest of the reverted commit, bounded. */
+  /**
+   * `git show --stat` digest of the span the reverted work added, bounded —
+   * every commit between the tip it landed onto and the tip it reached, never
+   * that tip's own diff. Over a span the tip already held whole the span added
+   * no commit, and this says so in words rather than naming the commit another
+   * writer left standing there.
+   */
   diffStat: string;
   /**
    * The gate's own `GateResult.failingFiles` (`./Gate.js`), copied verbatim:

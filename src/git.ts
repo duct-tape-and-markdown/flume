@@ -634,16 +634,26 @@ export async function commitMessage(
 }
 
 /**
- * The diffstat of the commit at `sha` (`git show --stat --oneline`) — what a
- * commit touched and how much, with no hunk content. Bounding the string for
- * a record is the caller's; this leg is the invocation.
+ * The diffstat of every commit a span added — `git show --stat --oneline`
+ * over `base..head`, one oneline plus stat per commit, with no hunk content.
+ * A span, not a single sha: a tick's span may carry N commits (spec/loop.md
+ * "The check is ancestry, and N commits are completion"), and a span whose
+ * content the tip already held whole added no commit at all, so the range is
+ * empty and so is this — the head sha standing there is another writer's
+ * work, never the caller's to digest. Empty output is the honest answer here;
+ * saying so is the caller's (see `capturedDiffStat`, `src/priorAttempts.ts`).
+ * Bounding the string for a record is likewise the caller's; this leg is the
+ * invocation.
  *
  * `--no-color` for the same reason {@link commitMessage} passes it.
  */
-export async function showDiffStat(cwd: string, sha: string): Promise<string> {
+export async function spanDiffStat(
+  cwd: string,
+  span: { base: string; head: string },
+): Promise<string> {
   const { stdout } = await run(
     cwd,
-    ["show", "--stat", "--oneline", "--no-color", sha],
+    ["show", "--stat", "--oneline", "--no-color", `${span.base}..${span.head}`],
     COMMIT_TEXT_CAP,
   );
   return stdout;
