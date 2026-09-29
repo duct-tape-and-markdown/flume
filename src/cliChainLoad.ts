@@ -1,12 +1,20 @@
 /**
- * The two arms every chain-loading CLI surface shares.
+ * The arms every chain-loading CLI surface shares.
  *
  * `refuseCjsContextHost` is the refusal: the one home for the
  * `CjsContextLoadError` -> headline + exit 2 contract (spec/cli.md, "A
- * CJS-context host is refused, never relayed"), reached by `flume check` and
- * `flume friction` alike rather than re-typed in each catch (`.claude/rules/engineering.md`, "The fix lands at
- * the mechanism"). `flume tick` holds the same contract one layer down, where
- * the refusal is a `TickOutcome.usageError` rather than an exit code.
+ * CJS-context host is refused, never relayed"), reached by every surface that
+ * owns an exit code over a chain load rather than re-typed in each catch
+ * (`.claude/rules/engineering.md`, "The fix lands at the mechanism") —
+ * directly by `flume render`, and through `loadChainOrRefuse` below by the
+ * verbs whose whole catch is that arm. `flume tick` holds the same contract
+ * one layer down, where the refusal is a `TickOutcome.usageError` rather than
+ * an exit code.
+ *
+ * `loadChainOrRefuse` is the refusing load: the verbs that can do no work at
+ * all without a chain — `flume check` and `flume friction` (`src/cli.ts`) —
+ * take it before any work of their own, and differ only in the name they give
+ * themselves in the report.
  *
  * `loadChainForObservation` is the best-effort load the read-only surfaces
  * take — `flume status` and `flume wake`/`flume sleep` (`src/cli.ts`). Each
@@ -36,6 +44,7 @@
  */
 
 import { CjsContextLoadError, diskChainLoader } from "./chainLoad.js";
+import { EX_MOUNT_DEAD } from "./exitCodes.js";
 import type { Chain } from "./Phase.js";
 import type { FlumePaths } from "./flumeApi.js";
 
@@ -54,6 +63,59 @@ export function refuseCjsContextHost(err: unknown): number | undefined {
   if (!(err instanceof CjsContextLoadError)) return undefined;
   console.error(`[flume] ${err.message}`);
   return 2;
+}
+
+/**
+ * The headline both loads print when the chain does not come up, and the bare
+ * reason they hand back: one spelling of `[flume] <surface>: chain failed to
+ * load: <reason>` for the refusing leg and the best-effort leg alike, so the
+ * two cannot drift apart in what an operator reads.
+ */
+function reportChainLoadFailure(surface: string, err: unknown): string {
+  const reason = err instanceof Error ? err.message : String(err);
+  console.error(`[flume] ${surface}: chain failed to load: ${reason}`);
+  return reason;
+}
+
+/**
+ * What a refusing load leaves its caller: the chain, or the exit code the verb
+ * returns instead. `exitCode` is present exactly when `chain` is absent, so
+ * the callsite is `if (!chain) return exitCode` and never re-decides a code
+ * the load already chose.
+ *
+ * Module-local for the same reason `ChainObservation` is: both callers read it
+ * at the callsite (`.claude/rules/engineering.md`, "An export earns its
+ * consumer").
+ */
+type ChainOrRefusal =
+  | { readonly chain: Chain; readonly exitCode?: undefined }
+  | { readonly chain: undefined; readonly exitCode: number };
+
+/**
+ * Load the repo-resident chain for a verb that cannot proceed without one.
+ * Returns the chain, or — after reporting the failure on stderr — the exit
+ * code the verb owes: exit 2 for a CJS-context host (the shared refusal
+ * above), `EX_MOUNT_DEAD` for every other load failure — the order spec/cli.md,
+ * "A CJS-context host is refused, never relayed" states for every
+ * chain-loading verb that owns an exit code. Never throws.
+ *
+ * `surface` is the verb naming itself in the report (`check`, `friction`) —
+ * the only thing that differed when each verb spelled this sequence itself
+ * (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
+ */
+export async function loadChainOrRefuse(
+  paths: FlumePaths,
+  surface: string,
+): Promise<ChainOrRefusal> {
+  try {
+    const { chain } = await diskChainLoader(paths)();
+    return { chain };
+  } catch (err) {
+    const cjs = refuseCjsContextHost(err);
+    if (cjs !== undefined) return { chain: undefined, exitCode: cjs };
+    reportChainLoadFailure(surface, err);
+    return { chain: undefined, exitCode: EX_MOUNT_DEAD };
+  }
 }
 
 /**
@@ -96,8 +158,7 @@ export async function loadChainForObservation(
     const { chain } = await diskChainLoader(paths)();
     return { chain };
   } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
-    console.error(`[flume] ${surface}: chain failed to load: ${reason}`);
+    const reason = reportChainLoadFailure(surface, err);
     console.error(
       `[flume] ${surface}: ${degradedCost} \`flume tick\` and \`flume ` +
         `check\` refuse on this same load.`,

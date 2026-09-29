@@ -110,6 +110,7 @@ import {
 import { HELP_TOP, helpPageFor, wantsHelp } from "./cliHelp.js";
 import {
   loadChainForObservation,
+  loadChainOrRefuse,
   refuseCjsContextHost,
 } from "./cliChainLoad.js";
 import type { FlumePaths } from "./flumeApi.js";
@@ -783,17 +784,12 @@ async function main(): Promise<number> {
       console.error("usage: flume check");
       return 2;
     }
-    let chain: Chain;
-    try {
-      ({ chain } = await diskChainLoader(paths)());
-    } catch (err) {
-      const cjs = refuseCjsContextHost(err);
-      if (cjs !== undefined) return cjs;
-      console.error(
-        `[flume] check: chain failed to load: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      return EX_MOUNT_DEAD;
-    }
+    // The shared refusing load (`loadChainOrRefuse`, src/cliChainLoad.ts):
+    // the CJS refusal, the failure line and the mount-dead code have one
+    // home, and this verb supplies only the name it reports under.
+    const loaded = await loadChainOrRefuse(paths, "check");
+    if (!loaded.chain) return loaded.exitCode;
+    const chain = loaded.chain;
 
     // spec/pending.md "The pending queue": the queue directory is
     // Chain.pendingDir (default plan/pending) — the same resolved value the
@@ -881,17 +877,12 @@ async function main(): Promise<number> {
       return 2;
     }
 
-    let chain: Chain;
-    try {
-      ({ chain } = await diskChainLoader(paths)());
-    } catch (err) {
-      const cjs = refuseCjsContextHost(err);
-      if (cjs !== undefined) return cjs;
-      console.error(
-        `[flume] friction: chain failed to load: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      return EX_MOUNT_DEAD;
-    }
+    // The shared refusing load (`loadChainOrRefuse`, src/cliChainLoad.ts):
+    // the CJS refusal, the failure line and the mount-dead code have one
+    // home, and this verb supplies only the name it reports under.
+    const loaded = await loadChainOrRefuse(paths, "friction");
+    if (!loaded.chain) return loaded.exitCode;
+    const chain = loaded.chain;
 
     // Output is never interpreted — the engine's lifecycle guarantee over
     // the channel (spec/chain.md, "Chain.friction — the declared friction
