@@ -72,6 +72,7 @@ import {
 import { existsLoudUnder, statLoud } from "./fsProbe.js";
 import { DEFAULT_KILL_GRACE_MS } from "./processTree.js";
 import { superviseLoop, type SuperviseResult } from "./loopSupervisor.js";
+import { stampedLogger } from "./cliLog.js";
 import { readPackageVersion } from "./selfPackage.js";
 import { claudeCode } from "./claudeCode.js";
 import type { Chain } from "./Phase.js";
@@ -1057,6 +1058,15 @@ async function dispatch(): Promise<number> {
   const quarantinedSlugs = process.env.FLUME_QUARANTINED_SLUGS
     ? new Set(process.env.FLUME_QUARANTINED_SLUGS.split(",").filter(Boolean))
     : undefined;
+  // What the two running verbs narrate through (spec/cli.md, *A log line
+  // carries the instant it was written*): `loop`'s supervisor and `tick`'s
+  // child both open every operator line with the instant it was written, and
+  // the stamp is applied here rather than anywhere under `src/`'s logging
+  // seam — `consoleLogger` stays the unstamped default an embedder's own
+  // `Logger` replaces (`src/cliLog.ts`). The observational verbs above keep
+  // writing straight to the console: their output is a listing an operator
+  // (or a pipe) reads as data, not narration of a run in progress.
+  const operatorLog = stampedLogger();
   // The supervisor's handoff, decoded once for the three facts this run reads
   // off it (`decodeTipClaimHandoff`, above) — and refused here, ahead of the
   // dispatcher and of any tick, when it is present and names no pid.
@@ -1103,6 +1113,12 @@ async function dispatch(): Promise<number> {
     ownTipClaimPid,
     supervisedRun,
     stopSignal: stopTick.signal,
+    // The CLI's own stamp, in place of the engine's unstamped default
+    // (`consoleLogger`, `src/log.ts`): a tick child's harness narration
+    // reaches the operator through this dispatcher, interleaved with the
+    // supervisor's own lines on one inherited stream, and an unstamped line
+    // among stamped ones is the one an operator cannot place.
+    log: operatorLog,
     ...(quarantinedSlugs ? { quarantinedSlugs } : {}),
   });
 
@@ -1198,7 +1214,7 @@ async function dispatch(): Promise<number> {
     // refused before any tick runs, not honored as something the operator
     // never typed.
     if (named === null || words.length > 0) {
-      console.error("usage: flume tick [--phase <name>]");
+      operatorLog.error("usage: flume tick [--phase <name>]");
       return 2;
     }
     // The name goes to the dispatcher unchecked: what a chain declares is
@@ -1227,7 +1243,7 @@ async function dispatch(): Promise<number> {
     // claim here either.
     const tickHeadRef = await currentRefPath(repoRoot);
     if (tickHeadRef.kind !== "ref") {
-      console.error(`[flume] tick refuses: ${describeRefFailure(tickHeadRef)}`);
+      operatorLog.error(`[flume] tick refuses: ${describeRefFailure(tickHeadRef)}`);
       return 1;
     }
     // spec/loop.md "The loop lock and the tip claim": scope is per run. A
@@ -1291,7 +1307,7 @@ async function dispatch(): Promise<number> {
         // ends — and only where there is one: a signal landing ahead of
         // `dispatcher.tick()` takes this process straight out with no tree
         // behind it, and a line about a wait that never happens is noise.
-        console.log(
+        operatorLog.info(
           signalledWaitLine(
             "the agent tree this tick started",
             dispatcher.agentKillGraceMs,
@@ -1318,7 +1334,7 @@ async function dispatch(): Promise<number> {
         );
       } catch (err) {
         if (err instanceof TipClaimHeldError) {
-          console.error(`[flume] tick refuses: ${err.message}`);
+          operatorLog.error(`[flume] tick refuses: ${err.message}`);
           return 1;
         }
         throw err;
@@ -1327,7 +1343,7 @@ async function dispatch(): Promise<number> {
     try {
       tickRun = dispatcher.tick(tickRequest);
       const outcome = await tickRun;
-      console.log(outcome.summary);
+      operatorLog.info(outcome.summary);
       if (outcome.verdict) {
         // The verdict record's own read refusal, mapped at the same boundary
         // as every other stat refusal in this file: `writeTickVerdict` reads
@@ -1344,14 +1360,14 @@ async function dispatch(): Promise<number> {
           await writeTickVerdict(flumeDir, outcome.verdict);
         } catch (err) {
           if (!(err instanceof VerdictHistoryUnreadableError)) throw err;
-          console.error(
+          operatorLog.error(
             `[flume] tick: ${STATE_ROOT_NAMES.tickVerdictsLog} failed to read: ${err.message}`,
           );
           // What the code does *not* mean, said outright: the tick ran, its
           // commits are on the tip, and the summary printed above is its
           // outcome. Only the recording of that outcome failed, so an
           // operator reading 74 never goes looking for work to re-run.
-          console.error(
+          operatorLog.error(
             "[flume] tick: this tick's own work already landed — the summary " +
               "above is its outcome, and recording it is what failed.",
           );
@@ -1377,7 +1393,7 @@ async function dispatch(): Promise<number> {
       const value = rest[maxIdx + 1];
       const parsed = parseMaxValue(value);
       if (parsed === null) {
-        console.error("usage: flume loop [--max N]");
+        operatorLog.error("usage: flume loop [--max N]");
         return 2;
       }
       max = parsed;
@@ -1387,7 +1403,7 @@ async function dispatch(): Promise<number> {
     // `--max N` runs something other than what the operator typed
     // (spec/cli.md "Subcommand surface", gh#1).
     if (words.length > 0) {
-      console.error("usage: flume loop [--max N]");
+      operatorLog.error("usage: flume loop [--max N]");
       return 2;
     }
     // The git floor, read once per run and never per tick: the `flume tick`
@@ -1395,7 +1411,7 @@ async function dispatch(): Promise<number> {
     // a run warns exactly once (spec/chain.md, "The package a chain loads
     // through").
     const gitFloorLine = gitFloorWarning(await readGitVersion(repoRoot));
-    if (gitFloorLine !== undefined) console.error(gitFloorLine);
+    if (gitFloorLine !== undefined) operatorLog.error(gitFloorLine);
     // spec/loop.md "Graceful stop — the stop flag": presence at start
     // refuses the run before any tick — a stale flag must never silently
     // swallow a scheduled run.
@@ -1415,13 +1431,13 @@ async function dispatch(): Promise<number> {
     try {
       loopStopPresent = existsLoudUnder("stop flag", flumeDir, loopStopPath);
     } catch (err) {
-      console.error(
+      operatorLog.error(
         `[flume] loop refuses: stop flag at ${loopStopPath} failed to stat: ${err instanceof Error ? err.message : String(err)}`,
       );
       return EX_IOERR;
     }
     if (loopStopPresent) {
-      console.error(
+      operatorLog.error(
         `[flume] loop refuses: stop flag present at ${loopStopPath} — ` +
           "remove it to acknowledge the stop before starting a new run",
       );
@@ -1431,7 +1447,7 @@ async function dispatch(): Promise<number> {
     // acquired below keys on the ref HEAD resolves to.
     const headRefResult = await currentRefPath(repoRoot);
     if (headRefResult.kind !== "ref") {
-      console.error(`[flume] loop refuses: ${describeRefFailure(headRefResult)}`);
+      operatorLog.error(`[flume] loop refuses: ${describeRefFailure(headRefResult)}`);
       return 1;
     }
     const headRef = headRefResult.path;
@@ -1494,7 +1510,7 @@ async function dispatch(): Promise<number> {
         // The wait, announced before it starts rather than explained after it
         // ends — and only where there is one: before the run starts there is
         // no child to wait for.
-        console.log(
+        operatorLog.info(
           signalledWaitLine(
             "the in-flight tick child and the tree it spawned",
             childKillGraceMs,
@@ -1532,13 +1548,13 @@ async function dispatch(): Promise<number> {
     try {
       lockStake = await stakePidClaim(lockPath);
     } catch (err) {
-      console.error(
+      operatorLog.error(
         `[flume] loop refuses: loop lock at ${lockPath} failed to read: ${err instanceof Error ? err.message : String(err)}`,
       );
       return EX_IOERR;
     }
     if (lockStake.kind === "held") {
-      console.error(
+      operatorLog.error(
         `[flume] another loop (pid ${lockStake.by.pid}) already runs against ${flumeDir}; refusing`,
       );
       return 1;
@@ -1560,7 +1576,7 @@ async function dispatch(): Promise<number> {
     } catch (err) {
       dropLock();
       if (err instanceof TipClaimHeldError) {
-        console.error(`[flume] ${err.message}`);
+        operatorLog.error(`[flume] ${err.message}`);
         return 1;
       }
       throw err;
@@ -1588,10 +1604,10 @@ async function dispatch(): Promise<number> {
     try {
       interrupted = await readMergingMarkers(flumeDir);
     } catch (err) {
-      console.error(
+      operatorLog.error(
         `[flume] loop refuses: merging markers at ${mergingPath} failed to list: ${err instanceof Error ? err.message : String(err)}`,
       );
-      console.error(
+      operatorLog.error(
         "[flume] an unreadable merging dir is not an empty one — a marker " +
           "standing behind it would mean a merge interrupted before its ship " +
           "bookkeeping. Nothing was touched and the startup sweep has not " +
@@ -1600,18 +1616,18 @@ async function dispatch(): Promise<number> {
       return EX_IOERR;
     }
     if (interrupted.length > 0) {
-      console.error(
+      operatorLog.error(
         "[flume] loop refuses: a merge interrupted before its ship " +
           "bookkeeping is unreconciled",
       );
       for (const { path, marker } of interrupted) {
-        console.error(
+        operatorLog.error(
           marker
             ? `[flume]   ${path}: entry ${marker.tag} on branch ${marker.branch} (span ${marker.baseSha}..${marker.branch})`
             : `[flume]   ${path}: unreadable marker — the interrupted merge it names cannot be identified`,
         );
       }
-      console.error(
+      operatorLog.error(
         "[flume] the picked commit may already sit on trunk ungated with its " +
           "entry still open; reconcile (revert the commit, or mark the entry " +
           "shipped), then remove the file to acknowledge. Nothing was " +
@@ -1691,6 +1707,10 @@ async function dispatch(): Promise<number> {
       configDir,
       tickBudget: max,
       stopSignal: stopRun.signal,
+      // As for the dispatcher above: the supervisor narrates through the
+      // CLI's stamp rather than the engine default it would otherwise fall
+      // through to.
+      log: operatorLog,
       ...(phaseOrder !== undefined ? { phaseOrder } : {}),
       ...(chainUnresolved !== undefined ? { chainUnresolved } : {}),
       ...(supervisorPolicy?.quarantineScope !== undefined
@@ -1707,7 +1727,7 @@ async function dispatch(): Promise<number> {
     // Name surfaced tick errors in the completion summary even on a 0 exit
     // (partial success) — they must not vanish silently.
     const completion = loopCompletionSummary(supervised);
-    if (completion) console.log(completion);
+    if (completion) operatorLog.info(completion);
     return loopExitCode(supervised);
   }
 

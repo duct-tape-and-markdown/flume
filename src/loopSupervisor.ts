@@ -436,7 +436,7 @@ export async function superviseLoop(
   const flumeDir = opts.flumeDir ?? defaultStateRoot(opts.repoRoot);
   const configDir = opts.configDir ?? defaultStateRoot(opts.repoRoot);
   const baton = new Baton(flumeDir);
-  const runTick = opts.runTick ?? defaultTickRunner(opts.repoRoot);
+  const runTick = opts.runTick ?? defaultTickRunner(opts.repoRoot, log);
   // A caller with no teardown of its own gets one that never fires, so the
   // runner and both checks below read one shape rather than branching on
   // whether a signal was supplied.
@@ -1036,9 +1036,15 @@ export async function superviseLoop(
  * handler, which holds the run open rather than releasing over a live writer
  * — the operator kills it, and the next acquirer's liveness probe reclaims
  * the claim.
+ *
+ * `log` is the run's own, threaded in rather than reached for: the one line
+ * this runner writes — a spawn that never produced a child — is a supervisor
+ * line like any other, and a logger read here instead would be the one line
+ * of the run a caller's own `Logger` never saw.
  */
 function defaultTickRunner(
   repoRoot: string,
+  log: Logger,
 ): (child: TickChildRequest) => Promise<{ exitCode: number | null }> {
   return ({ phase, quarantinedSlugs, stopSignal }) =>
     new Promise((resolveExit) => {
@@ -1066,7 +1072,7 @@ function defaultTickRunner(
       };
       child.on("exit", (code) => settle({ exitCode: code }));
       child.on("error", (err) => {
-        consoleLogger.error(
+        log.error(
           `[flume] failed to spawn 'flume tick': ${(err as Error).message}`,
         );
         settle({ exitCode: 1 });

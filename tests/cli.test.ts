@@ -6093,3 +6093,117 @@ describe("flume loop — the git floor warning", () => {
     SPAWN_BUDGET_MS,
   );
 });
+
+/**
+ * The spelling `stampLines` (`src/cliLog.ts`) opens a line with, and the one
+ * the tick verdict, the claim file and record filenames already carry:
+ * ISO-8601 UTC to the millisecond. Captured so a case can read the instant
+ * back out and place it against its own wall clock.
+ */
+const STAMPED_LINE = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z) \S/;
+
+/** Every line of a run's output that carried anything, in order. */
+function narratedLines(out: string): string[] {
+  return out.split("\n").filter((line) => line.trim() !== "");
+}
+
+/**
+ * Assert each line opens with a stamp, and that the instant it names falls
+ * inside the run's own wall clock — a constant baked into the renderer, or a
+ * stamp fixed once at logger construction, passes the shape check and fails
+ * here. The bound is widened by a second on each side: the stamp and
+ * `Date.now()` are the same host clock, but the child's first line can be
+ * written before this process observes the spawn returning.
+ */
+function expectStampedDuring(
+  lines: string[],
+  before: number,
+  after: number,
+): void {
+  for (const line of lines) {
+    const match = STAMPED_LINE.exec(line);
+    expect(match, `line reached the operator unstamped: ${line}`).not.toBeNull();
+    const at = Date.parse(match![1]!);
+    expect(at, `stamp outside the run: ${line}`).toBeGreaterThanOrEqual(
+      before - 1000,
+    );
+    expect(at, `stamp outside the run: ${line}`).toBeLessThanOrEqual(
+      after + 1000,
+    );
+  }
+}
+
+describe("the run log (spec/cli.md §A log line carries the instant it was written)", () => {
+  it(
+    "a flume loop run stamps every supervisor line with the instant it was written",
+    async () => {
+      const repo = await makeScratchRepo("flume-cli-repo-", "main");
+      try {
+        await writeRepoConfig(repo.dir, stubbedAgentChainSrc());
+        new Baton(join(repo.dir, ".flume")).wake("probe");
+
+        const before = Date.now();
+        const loop = await runCli(repo.dir, ["loop", "--max", "1"]);
+        const after = Date.now();
+        expect(loop.code).toBe(0);
+
+        const lines = narratedLines(loop.out);
+        // Vacuity, and the supervisor's own half of it: the hibernation
+        // verdict and the run-wide usage total are decided across ticks, so
+        // neither exists inside a tick child to be written there. Their
+        // presence is what makes the sweep below a claim about supervisor
+        // lines rather than about a stream that happened to be all child.
+        const supervisorLines = lines.filter(
+          (line) =>
+            line.includes("[flume] hibernating after") ||
+            line.includes("[flume] agent usage:"),
+        );
+        expect(supervisorLines).toHaveLength(2);
+
+        // Every line, not only those two: the supervisor's stream is what
+        // the operator reads, and one unstamped line in it is the one they
+        // cannot place.
+        expectStampedDuring(lines, before, after);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it(
+    "a flume tick child stamps the lines it writes to the operator",
+    async () => {
+      const repo = await makeScratchRepo("flume-cli-repo-", "main");
+      try {
+        await writeRepoConfig(repo.dir, stubbedAgentChainSrc());
+        new Baton(join(repo.dir, ".flume")).wake("probe");
+
+        const before = Date.now();
+        // A real supervisor spawning a real child, rather than a bare tick
+        // standing in for one: the child inherits these streams, so this is
+        // the stream the operator actually reads a supervised tick off.
+        const loop = await runCli(repo.dir, ["loop", "--max", "1"]);
+        const after = Date.now();
+        expect(loop.code).toBe(0);
+
+        // The child's own lines. The dispatch line is written by
+        // `Dispatcher.tick` and the outcome summary by the `tick` branch of
+        // `src/cli.ts`; a supervisor process runs neither — past its startup
+        // sweep it constructs no tick of its own, and it never holds a
+        // `TickOutcome`.
+        const childLines = narratedLines(loop.out).filter(
+          (line) =>
+            line.includes("[flume] tick → probe (singleton)") ||
+            line.includes("probe no commit (clean-exit) → hibernate"),
+        );
+        expect(childLines).toHaveLength(2);
+
+        expectStampedDuring(childLines, before, after);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+});
