@@ -200,8 +200,15 @@ export async function liveLoopClaim(dir: string): Promise<PidClaim | null> {
 
 /**
  * The live holder's pid alone — {@link liveLoopClaim} for a caller that needs
- * only liveness. Exported for reuse (`flume loop`'s lock claim) rather than a
- * second implementation of the same pid-liveness check.
+ * only liveness, dropping the instant and the state root on the floor.
+ *
+ * Its callers are in the suite: the loop lock's agreement case drives a
+ * chain's agent through this read from inside a child tick, against the file
+ * the real `flume loop` staked (`tests/cli.test.ts`), and the decode's own
+ * cases exercise it beside {@link liveLoopClaim} (`tests/pidClaim.test.ts`).
+ * Exported so that a reader after liveness alone takes the runtime's own read
+ * rather than a further spelling of "parse it, then signal-0 its pid"
+ * (`.claude/rules/engineering.md`, *An export earns its consumer*).
  */
 export async function liveLoopPid(dir: string): Promise<number | null> {
   return (await liveLoopClaim(dir))?.pid ?? null;

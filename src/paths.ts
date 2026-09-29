@@ -398,10 +398,14 @@ export function isDotName(name: string): boolean {
  * and the one every state root defaults into absent `FLUME_DIR`
  * (spec/cli.md, *State-root and config-dir resolution*).
  *
- * Exported for the one consumer that needs the bare name rather than a
- * path: the harness package's `DEFAULT_STATE_ROOT` (`harness/init.ts`),
- * which writes it into a consumer's declaration, ignore set and protocol
- * page. Everything that builds a path takes an accessor below.
+ * Exported because a consumer that needs the bare name has no path to take
+ * it off: an adoption writing the default into a declaration, a probe
+ * comparing a directory's own basename, a refusal quoting the dir it could
+ * not stat. Each such site says at its own site why the name and not an
+ * accessor; which sites those are is the program's answer, not a roster kept
+ * here by hand (`.claude/rules/engineering.md`, *Derived state is computed,
+ * never restated beside its source*). Everything that builds a path takes an
+ * accessor below.
  */
 export const STATE_ROOT_DIRNAME = ".flume";
 
@@ -430,16 +434,19 @@ export function defaultStateRoot(repoRoot: string): string {
  * (`flumeDir`) — the baton dir, the prior-attempt records, the merge-stage
  * markers, the one-supervisor lock, the stop flag, the tick verdicts. Writer and reader of each of these sit in different
  * modules (`flume stop` refuses, the supervisor honors; `flume loop` claims
- * the lock, `liveLoopPid` reads it back), so a copy of the name in each is a
+ * the lock, `liveLoopClaim` reads it back), so a copy of the name in each is a
  * rename away from a silent bypass — this is the one place any of them is
  * spelled (`.claude/rules/engineering.md`, "Derived state is computed, never
  * restated beside its source").
  *
- * Exported for the one consumer that needs a bare name rather than a path:
- * the runtime ignore set (`RUNTIME_IGNORES`, `src/runtimeIgnores.ts`).
- * Everything
- * that builds a path takes an accessor below.
- *
+ * Exported because a consumer that needs a bare name has no path to take it
+ * off: an ignore set spelling these entries as patterns, a probe matching a
+ * bay's own entries against them, a diagnostic quoting the file it could not
+ * read. Each such site says at its own site why the name and not an
+ * accessor; which sites those are is the program's answer, not a roster kept
+ * here by hand (`.claude/rules/engineering.md`, *Derived state is computed,
+ * never restated beside its source*). Everything that builds a path takes an
+ * accessor below.
  */
 export const STATE_ROOT_NAMES = {
   awake: "awake",

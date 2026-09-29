@@ -391,8 +391,11 @@ function beneathTheFloor(declared: Handoff): Handoff {
  * What a declaration does not replace is the floor beneath it
  * ({@link beneathTheFloor}).
  *
- * The default is constructed only where no declaration displaces it, so a
- * consumer that declared a handoff for every phase never meets its refusal.
+ * The default holds nothing a declaration has to satisfy: it names no slice
+ * of its own and requires none present ({@link defaultHandoff}). So a
+ * consumer that declared a handoff for every phase has replaced a
+ * computation, not escaped a requirement — the slice set it passes is simply
+ * unread wherever its own answer stands.
  */
 export function resolveHandoff(options: ResolveHandoffOptions): Handoff {
   const declared = options.declared?.[options.phase];
