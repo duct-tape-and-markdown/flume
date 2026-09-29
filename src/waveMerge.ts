@@ -329,9 +329,10 @@ interface WaveMerge {
   readonly invocations: TickVerdictInvocation[];
   /**
    * Every ledger commit this wave has landed, in the order it landed them —
-   * one per pick whose rewrite actually wrote a commit, empty while every
-   * rewrite so far has been a no-op (a footprint already recorded, an
-   * out-of-tree dock git cannot see). One per pick rather than one per wave,
+   * one per pick whose rewrite reported one, empty while every rewrite so far
+   * wrote no commit (a footprint already recorded, a live foreign tip claim
+   * refusing before the writes, an out-of-tree dock git cannot see). One per
+   * pick rather than one per wave,
    * so the set is what the wave landed and its last element is the tip
    * contribution a handoff reads as `TickResult.commitSha`; both reach a
    * chain, the set as `TickResult.ledgerCommitShas`.
@@ -1024,10 +1025,6 @@ async function commitAttemptLedger(
     await leg.attempts.clear(priorAttemptRef(phase, s));
   }
   const shippedTags = shippedNow.map((s) => s.tag);
-  // The update can no-op (footprint already recorded, nothing shipped):
-  // commitPendingUpdate then returns the pre-existing HEAD, which must not be
-  // reported as a commit this wave made.
-  const preUpdate = await git.revParse(leg.repoRoot);
   // The rewrite can refuse, and every way it does propagates past the wave's
   // worktree cleanup, straight to `tick()`'s catch. Its read is the strict
   // `readPending()` (.claude/rules/engineering.md "Loud or nothing"), so a
@@ -1060,8 +1057,11 @@ async function commitAttemptLedger(
   // Appended, never overwritten: a wave lands one of these per pick, and the
   // handoff reports the set beside the single sha it narrows to
   // (.claude/rules/engineering.md "A fact the engine holds is reported, never
-  // rediscovered").
-  if (update.sha !== preUpdate) w.ledgerShas.push(update.sha);
+  // rediscovered"). Whether there is one to append is the rewrite's own answer
+  // — the same rule, one call down: three of its four exits write no commit,
+  // and a tip comparison around this call cannot tell the wave's own sibling
+  // pick landing beside it from a commit this rewrite made.
+  if (update.commitSha !== undefined) w.ledgerShas.push(update.commitSha);
   if (update.tipMoved) {
     w.tipMoved = true;
     // The refusal's own disk state, from the call that took it rather than
@@ -1079,14 +1079,18 @@ async function commitAttemptLedger(
     );
     return;
   }
+  // Same fact again, so the line an operator reads and the sha the handoff
+  // carries can never disagree: a no-commit exit says so in words, and a sha
+  // is quoted only where the rewrite reported one.
+  const commitSha = update.commitSha;
   leg.log.info(
     shippedTags.length > 0
-      ? update.sha === preUpdate
+      ? commitSha === undefined
         ? `[flume] shipped ${shippedTags.join(", ")}; pending updated on disk, no chore commit (dock outside repo)`
-        : `[flume] ship commit ${update.sha.slice(0, 8)}: ${shippedTags.join(", ")}`
-      : update.sha === preUpdate
+        : `[flume] ship commit ${commitSha.slice(0, 8)}: ${shippedTags.join(", ")}`
+      : commitSha === undefined
         ? `[flume] footprint already recorded, no commit: ${footprintTags.join(", ")}`
-        : `[flume] footprint commit ${update.sha.slice(0, 8)}: ${footprintTags.join(", ")}`,
+        : `[flume] footprint commit ${commitSha.slice(0, 8)}: ${footprintTags.join(", ")}`,
   );
 }
 

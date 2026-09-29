@@ -10135,15 +10135,24 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
     expect(outcome?.summary).toMatch(/partial commit/);
   });
 
-  it("a tip-claim refusal reports no uncommitted rewrite, having refused before the write", async () => {
+  /**
+   * The sibling refusal on the same call as {@link waveRefusedByPausedMerge},
+   * taken one step earlier: a live foreign tip claim, checked *before* the
+   * rewrite is written. The claim path comes from the engine's own accessors —
+   * a second spelling of the tip-claims layout here would pass while the
+   * engine looked somewhere else entirely.
+   *
+   * One arming, two cases: what this refusal reports about the disk it did not
+   * touch, and what the wave reports about the ledger commit it did not land.
+   */
+  async function waveRefusedByTipClaim(): Promise<{
+    outcome: Awaited<ReturnType<Dispatcher["tick"]>>;
+    warnings: string[];
+    armed: boolean;
+  }> {
     await writePending(fx.repo, [makeEntry("SHIP-A", ["src/a.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
 
-    // The sibling refusal on the same call, taken one step earlier: a live
-    // foreign tip claim, checked before the rewrite is written. The claim path
-    // comes from the engine's own accessors — a second spelling of the
-    // tip-claims layout here would pass while the engine looked somewhere else
-    // entirely.
     const ref = await git.currentRefPath(fx.repo);
     expect(ref.kind).toBe("ref");
     const claimPath = git.tipClaimPath(
@@ -10186,6 +10195,11 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
     });
 
     const outcome = await dispatcher.tick();
+    return { outcome, warnings, armed };
+  }
+
+  it("a tip-claim refusal reports no uncommitted rewrite, having refused before the write", async () => {
+    const { outcome, warnings, armed } = await waveRefusedByTipClaim();
 
     // Vacuity pins: the claim was really staked, the entry really shipped
     // before it, and the ledger call really refused over it — without all
@@ -10213,6 +10227,30 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
     expect(line).toContain(
       ".flume/plan/pending is unchanged on disk, no rewrite written",
     );
+  });
+
+  it("a wave whose ledger rewrite a live foreign tip claim refused reports no ledger commit", async () => {
+    const { outcome, armed } = await waveRefusedByTipClaim();
+
+    // Vacuity pins: the claim was really staked, the pick really shipped, and
+    // the rewrite really took its claim exit — so the empty set asserted below
+    // is a refusal reporting nothing rather than a wave that never reached the
+    // ledger call. The queue still carrying SHIP-A at the tip is the same fact
+    // from git's side: no ledger commit exists to be reported.
+    expect(armed).toBe(true);
+    expect(outcome.verdict?.shippedTags).toEqual(["SHIP-A"]);
+    expect(outcome.verdict?.tipMoved).toBe(true);
+    expect(await tipQueueTags()).toEqual(["SHIP-A"]);
+
+    // The claim: the handoff's tip fields are silent, because the exit that
+    // wrote no commit says so itself. The pick's own span did move the tip —
+    // SHIP-A is on trunk — so neither field may be filled from what the ref
+    // does between the rewrite's entry and its return
+    // (.claude/rules/engineering.md, "A fact the engine holds is reported,
+    // never rediscovered").
+    expect(existsSync(join(fx.repo, "src", "a.ts"))).toBe(true);
+    expect(outcome.result?.ledgerCommitShas).toBeUndefined();
+    expect(outcome.result?.commitSha).toBeUndefined();
   });
 });
 

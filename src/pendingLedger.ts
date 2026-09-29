@@ -17,8 +17,9 @@
  *
  * Nothing here interprets what it read. The strict reader refuses, the
  * decide-read hands the refusal to the queue's own writer as a fact, the
- * tolerant one announces and degrades, and the rewrite reports the sha, the
- * tip verdict it got, and where the queue it was moving stands — what a tick
+ * tolerant one announces and degrades, and the rewrite reports the commit it
+ * landed if it landed one, the tip verdict it got, and where the queue it was
+ * moving stands — what a tick
  * does about any of it stays with the dispatcher (`src/Dispatcher.ts`) and the
  * wave (`src/waveMerge.ts`).
  */
@@ -491,8 +492,23 @@ export async function readPendingTolerant(
  * absolute `pendingDir` it would have to re-fold itself.
  */
 export interface PendingRewriteResult {
-  /** The tip after the call: the new ship commit, or the tip that never moved. */
-  readonly sha: string;
+  /**
+   * The ledger commit **this call** landed, and `undefined` when it landed
+   * none — three of the four ways out of this function write no commit (a
+   * footprint already recorded, the tip claim below, an out-of-tree dock git
+   * never sees).
+   *
+   * Stated by the branch that took itself, never left to a caller comparing
+   * the tip before the call against the tip after: the writes here are not the
+   * only thing that can move the ref in that window, so any pick landing
+   * beside this one — or an operator's own commit — reads as this call's
+   * contribution under a comparison, and the whole no-commit set reads as a
+   * commit (`.claude/rules/engineering.md`, *A fact the engine holds is
+   * reported, never rediscovered*). A caller wanting the current tip asks git
+   * for it; what only this call knows is whether the sha it would read is one
+   * this rewrite wrote.
+   */
+  readonly commitSha: string | undefined;
   /**
    * A live foreign tip claim refused the rewrite. Checked before the writes,
    * so nothing on disk moved either: the queue at {@link path} is the one the
@@ -613,7 +629,7 @@ export async function commitPendingUpdate(
   // second time around) — committing an unchanged tree fails, so skip.
   if (removals.length === 0 && writes.length === 0) {
     return {
-      sha: await git.revParse(ctx.repoRoot),
+      commitSha: undefined,
       tipMoved: false,
       path: reportedPendingDir(ctx),
     };
@@ -641,7 +657,7 @@ export async function commitPendingUpdate(
     );
     if (foreignClaim !== null) {
       return {
-        sha: await git.revParse(ctx.repoRoot),
+        commitSha: undefined,
         tipMoved: true,
         path: reportedPendingDir(ctx),
       };
@@ -661,7 +677,7 @@ export async function commitPendingUpdate(
   }
   if (relocated) {
     return {
-      sha: await git.revParse(ctx.repoRoot),
+      commitSha: undefined,
       tipMoved: false,
       path: reportedPendingDir(ctx),
     };
@@ -702,7 +718,7 @@ export async function commitPendingUpdate(
       { cause: err },
     );
   }
-  return { sha, tipMoved: false, path: reportedPendingDir(ctx) };
+  return { commitSha: sha, tipMoved: false, path: reportedPendingDir(ctx) };
 }
 
 /**

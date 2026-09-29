@@ -49,7 +49,7 @@ import { denyDirectory } from "./helpers/denial.ts";
 import { silent } from "./helpers/dispatcherFixture.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { makeScratchRepo } from "./helpers/scratchRepo.ts";
-import { SPAWN_BUDGET_MS, exec } from "./helpers/subprocess.ts";
+import { SPAWN_BUDGET_MS, exec, gitOut } from "./helpers/subprocess.ts";
 
 // The strict-refusal cases below seed a real repository, so this file starts
 // processes and declares the lane's one budget — cases and hooks alike — once
@@ -526,6 +526,102 @@ describe("readPending — what a strict refusal names", () => {
         0,
       );
       expect((rethrown as PendingParseFailure).path).toBe(declared);
+    } finally {
+      await repo.cleanup();
+    }
+  });
+});
+
+/**
+ * And beside the refusals, what the rewrite reports about its **own** call.
+ *
+ * Three of `commitPendingUpdate`'s four exits write no commit, so "did this
+ * call land one" is a fact only the branch that took itself holds — the caller
+ * reading the tip before and after would be reading a ref every other producer
+ * in the repository can move in the same window
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported, never
+ * rediscovered*). Driven over a real repository on a declared `queue/ledger`,
+ * like the refusals above: the landing exit is a git commit, and a fixture
+ * that never commits cannot tell the sha it reports from the tip it read.
+ */
+describe("commitPendingUpdate — the commit it reports is the one it wrote", () => {
+  it("the pending-ledger rewrite names the ledger commit it landed", async () => {
+    const repo = await makeScratchRepo("flume-ledger-reports-", "main");
+    try {
+      const pendingDir = join(repo.dir, "queue", "ledger");
+      await mkdir(pendingDir, { recursive: true });
+      const entryFile = entryFileName("SHIP-ONE");
+      await writeFile(
+        join(pendingDir, entryFile),
+        JSON.stringify(
+          {
+            tag: "SHIP-ONE",
+            gate: { kind: "open" },
+            files: { new: [], edit: [], retire: [] },
+          },
+          null,
+          2,
+        ) + "\n",
+        "utf8",
+      );
+      await exec("git", ["add", "."], { cwd: repo.dir });
+      await exec("git", ["commit", "-q", "-m", "ledger"], { cwd: repo.dir });
+
+      const ctx: PendingLedgerContext = {
+        repoRoot: repo.dir,
+        flumeDir: repo.dir,
+        pendingDir,
+        entryExtension: undefined,
+        log: silent,
+      };
+
+      // Non-vacuity: the tip this call starts from, and the entry it has to
+      // retire to reach the landing exit at all. Without the entry the rewrite
+      // takes its no-op exit and the assertion below would pass over a call
+      // that never committed (`.claude/rules/engineering.md`, *A green verdict
+      // is proven non-vacuous*).
+      const before = await gitOut(repo.dir, ["rev-parse", "HEAD"]);
+      expect(
+        await gitOut(repo.dir, ["ls-tree", "--name-only", "HEAD", "queue/ledger/"]),
+      ).toContain(entryFile);
+
+      const landed = await commitPendingUpdate(ctx, ["SHIP-ONE"], [], []);
+
+      // The claim: the rewrite says which commit it wrote. Not "the tip after
+      // the call" — the sha it names is the ledger commit itself, which git
+      // confirms by its subject and by the entry file it removed.
+      expect(landed.commitSha).toMatch(/^[0-9a-f]{40}$/);
+      expect(landed.commitSha).not.toBe(before);
+      expect(
+        await gitOut(repo.dir, ["log", "-1", "--format=%s", landed.commitSha!]),
+      ).toBe("chore(flume): ship SHIP-ONE");
+      expect(
+        await gitOut(repo.dir, [
+          "show",
+          "--name-only",
+          "--format=",
+          landed.commitSha!,
+        ]),
+      ).toContain(`queue/ledger/${entryFile}`);
+
+      // The other half of the same fact, over the exit that writes nothing:
+      // the same shipped tag again is a no-op now, and a foreign commit lands
+      // on trunk first — so the tip has moved, and a rewrite reporting the tip
+      // it can read would hand back that foreign sha as its own.
+      await writeFile(join(repo.dir, "other.txt"), "foreign\n", "utf8");
+      await exec("git", ["add", "other.txt"], { cwd: repo.dir });
+      await exec("git", ["commit", "-q", "-m", "a foreign producer's commit"], {
+        cwd: repo.dir,
+      });
+      const foreign = await gitOut(repo.dir, ["rev-parse", "HEAD"]);
+      expect(foreign).not.toBe(landed.commitSha);
+
+      const noop = await commitPendingUpdate(ctx, ["SHIP-ONE"], [], []);
+      expect(noop.tipMoved).toBe(false);
+      expect(noop.commitSha).toBeUndefined();
+      // …and the tip really did move under it, so the `undefined` above is the
+      // exit talking rather than a quiet repository.
+      expect(await gitOut(repo.dir, ["rev-parse", "HEAD"])).toBe(foreign);
     } finally {
       await repo.cleanup();
     }
