@@ -624,6 +624,61 @@ describe("worktrees — an occupied path is judged by git's registry", () => {
     expect(existsSync(residue)).toBe(true);
     expect(await registeredWorktrees(fx.repo)).toContain(residue);
   });
+
+  it("the startup sweep is silent on an absent worktree base", async () => {
+    const log = collectingLogger();
+    const { ctx, base } = contextFor(log);
+
+    // Vacuity pin: the base really is absent, which is what the silence
+    // below is about — a run that has provisioned nothing yet.
+    expect(existsSync(base)).toBe(false);
+
+    await expect(sweepStaleWorktrees(ctx)).resolves.toBeUndefined();
+
+    expect(log.warnings).toEqual([]);
+  });
+
+  it("the startup sweep names the obstructed ancestor when a plain file stands above the worktree base", async () => {
+    const log = collectingLogger();
+    const { ctx } = contextFor(log);
+    // A declared base two rungs under the state root, with a plain file at
+    // the rung between: the listing of the base raises `ENOENT` on win32 and
+    // `ENOTDIR` on posix (`.claude/rules/platform-facts.md`, *win32 reports
+    // a path through a non-directory as not found*), so the verdict can only
+    // come from the descent.
+    const obstructed = join(ctx.flumeDir, "trees");
+    const declared = join(obstructed, "live");
+    await mkdir(ctx.flumeDir, { recursive: true });
+    await writeFile(obstructed, "an operator's file, not flume's base\n");
+    const obstructedCtx: WorktreeContext = {
+      ...ctx,
+      declaredWorktreesBase: declared,
+    };
+
+    // Vacuity pin: the obstruction is a plain file standing above a base
+    // that therefore cannot be there — the two facts the refusal is about.
+    expect((await lstat(obstructed)).isFile()).toBe(true);
+    expect(existsSync(declared)).toBe(false);
+
+    // Never throws is the sweep's own bound: the obstruction is reported,
+    // not propagated into the run that called it.
+    await expect(
+      sweepStaleWorktrees(obstructedCtx),
+    ).resolves.toBeUndefined();
+
+    // The rung that obstructed the descent, named as such — not the errno
+    // the listing of the base happened to raise on this host.
+    expect(log.warnings).toContainEqual(
+      expect.stringContaining(
+        `worktree base is unreadable: ${obstructed} is present but is not a directory`,
+      ),
+    );
+
+    // And the operator's file is still theirs.
+    expect(await readFile(obstructed, "utf8")).toBe(
+      "an operator's file, not flume's base\n",
+    );
+  });
 });
 
 /**

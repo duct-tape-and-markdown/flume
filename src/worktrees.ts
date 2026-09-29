@@ -25,7 +25,7 @@ import { dirname, join, resolve, toNamespacedPath } from "node:path";
 
 import type { Logger } from "./log.js";
 import { harvestFriction } from "./friction.js";
-import { existsLoud } from "./fsProbe.js";
+import { existsLoud, isDirectoryOrAbsentUnder } from "./fsProbe.js";
 import * as git from "./git.js";
 import {
   boundedName,
@@ -609,6 +609,15 @@ export async function teardownWorktreeInstance(
 }
 
 /**
+ * The subject the startup sweep's descent names when it refuses
+ * (`isDirectoryOrAbsentUnder`, `src/fsProbe.ts`) — one spelling, so the rung
+ * an operator is told to go fix reads the same whichever ancestor was
+ * obstructed. What is unreadable, not which base: the refusal already
+ * carries the obstructed path itself.
+ */
+const SWEEP_BASE_SUBJECT = "worktree base";
+
+/**
  * Startup sweep (`spec/worktrees.md`, "Startup sweep — a dead wave's
  * residue is removed at the next start"): a killed fanout tick abandons
  * its worktrees and their `flume/**` branches — teardown never ran, and
@@ -682,6 +691,21 @@ export async function teardownWorktreeInstance(
  * could not read removes nothing and says so: an unreadable registry is not a
  * base with nothing registered in it, and the two must not print the same
  * silence.
+ *
+ * That absent base is **proven from the path**, never read off the errno the
+ * listing raised: a plain file anywhere above the base answers the listing
+ * `ENOENT` on win32 and `ENOTDIR` on posix
+ * (`.claude/rules/platform-facts.md`, *win32 reports a path through a
+ * non-directory as not found*), so an errno-keyed silent arm sweeps one
+ * host's obstructed base in silence and warns on the other. So the same
+ * descent `readQueueOnDisk` (`src/pendingLedger.ts`), `frictionNotes`
+ * (`src/friction.ts`) and `PriorAttemptStore.readAll`
+ * (`src/priorAttempts.ts`) run ({@link isDirectoryOrAbsentUnder},
+ * `src/fsProbe.ts`), from the state root down to the base — which the walk
+ * composes wherever a declared base put it, inside that root or above it.
+ * Its refusal names the rung that obstructed the descent, and this sweep
+ * logs it rather than propagating it, because never throwing is this job's
+ * own bound.
  */
 export async function sweepStaleWorktrees(
   ctx: WorktreeContext,
@@ -691,15 +715,22 @@ export async function sweepStaleWorktrees(
 
   let entries: string[];
   try {
+    // An absent base is the normal, silent case, and the descent is what
+    // proves it absent — an obstructed rung throws here and is named below
+    // rather than passing for that silence on one host.
+    if (
+      !isDirectoryOrAbsentUnder(SWEEP_BASE_SUBJECT, ctx.flumeDir, sweepBase)
+    ) {
+      return;
+    }
+    // Every ancestor is proven by now, so a listing failure here is real
+    // (permissions, a base that vanished mid-walk): logged, never aborting
+    // the run.
     entries = await readdir(namespacedJoin(sweepBase));
   } catch (err) {
-    // Absent base is the normal, silent case. Anything else (e.g.
-    // permissions) is logged but never aborts the run.
-    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-      ctx.log.warn(
-        `[flume] startup sweep: could not read ${sweepBase}: ${(err as Error).message}`,
-      );
-    }
+    ctx.log.warn(
+      `[flume] startup sweep: could not read ${sweepBase}: ${(err as Error).message}`,
+    );
     return;
   }
 
