@@ -1093,7 +1093,7 @@ describe("renderSchemaForPrompt", () => {
               | { "kind": "deferred",  "reason": "no consumer yet" }  // carried indefinitely
               | { "kind": "requiresCapability", "capability": "some-env-fact" },  // env gate; pickable iff the chain asserts this capability
         "dependsOnForks": [ "fork-slug", ... ],               // optional; foundational forks this rests on — not picked until the chain resolves every one. Omit if none.
-        "priority": 0,                                        // optional integer, default 0; the queue's one ordering — higher is picked first, ties break on tag ascending. Omit unless this entry must be carried ahead of its siblings.
+        "priority": 0,                                        // optional integer, default 0; the queue's one ordering — higher is picked first, ties break on tag ascending. The engine consumes the number, never what it means.
         "files": {                                            // EVERY path the work legitimately touches — tests and incidentals included. Enforced on fanout: a scoped tick may write ONLY these paths ∪ the phase's channel paths; an under-declared entry trips the write guard.
           "new":  [ { "path": "...", "description": "..." } ],
           "edit": [ { "path": "...", "description": "..." } ],
@@ -1145,6 +1145,20 @@ describe("renderSchemaForPrompt", () => {
     const line = hintLineFor(renderSchemaForPrompt(), "dependsOnForks");
     expect(line).toContain("optional");
     expect(line).not.toMatch(/\bRESOLVED\b/);
+  });
+
+  // The hint is the engine speaking in a prompt the package also writes to:
+  // it states the ordering the selection consumes and stops, so a chain whose
+  // own discipline ranks every entry is not told to omit the field by the
+  // engine in the same render (.claude/rules/engine-boundary.md § Surface,
+  // not prescription). Scoped to the one hint line, never the whole render.
+  it("the rendered schema's priority hint names the ordering it decides and no rule about when to set it", () => {
+    const line = hintLineFor(renderSchemaForPrompt(), "priority");
+    expect(line).toContain("default 0");
+    expect(line).toContain("higher is picked first");
+    expect(line).toContain("ties break on tag ascending");
+    expect(line).not.toMatch(/\bomit\b/i);
+    expect(line).not.toMatch(/\bunless\b/i);
   });
 
   it("the retire hint advertises a path only, never a non-path alternative (.claude/rules/engineering.md § A seam gate reads what the real writer wrote)", () => {
