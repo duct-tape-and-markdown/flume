@@ -3050,6 +3050,86 @@ describe("Dispatcher fanout — a freed slot reads the live queue and the stop f
     // re-picked it would have spent a second agent on the same attempt.
     expect(readPendingFromDisk(fx.repo).map((e) => e.tag)).toEqual(["NP-A"]);
   });
+
+  it("a refill-pulled entry's TickContext names a prior-attempt record written earlier in the same wave", async () => {
+    // One slot wide, so RP-SECOND can only reach an agent as the refill of
+    // the slot RP-FIRST freed — and RP-FIRST's agent commits nothing, so the
+    // engine has filed its clean-exit record before that slot frees. The
+    // refill re-selects over the store as it then stands; the context it
+    // hands the entry it pulled is that same store, never the wave's opening
+    // read (`spec/chain.md`, *What a hook receives*).
+    const first = {
+      ...makeEntry("RP-FIRST", ["src/rp-first.ts"]),
+      priority: 20,
+    };
+    const second = {
+      ...makeEntry("RP-SECOND", ["src/rp-second.ts"]),
+      priority: 10,
+    };
+    await writePending(fx.repo, [first, second]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const seen = new Map<
+      string,
+      ReadonlyMap<string, PriorAttempt> | undefined
+    >();
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [],
+      promptArgs: (ctx) => {
+        seen.set(ctx.assignedEntry!.tag, ctx.priorAttempts);
+        return {};
+      },
+    });
+    const chain: Chain = {
+      phases: [phase],
+      humanOnly: [],
+      supervisorPolicy: { maxParallel: 1 },
+    };
+
+    const agent: Agent = {
+      name: "refill-records-probe",
+      async invoke(inv) {
+        if (basename(inv.cwd) === "rp-second") {
+          await writeAndCommit(
+            inv.cwd,
+            "src/rp-second.ts",
+            "B\n",
+            "build(RP-SECOND): ship",
+          );
+        }
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    }).tick();
+
+    // Non-vacuity: both entries reached `promptArgs` in queue order, the
+    // first one walled, and the record this case is about is on disk.
+    expect([...seen.keys()]).toEqual(["RP-FIRST", "RP-SECOND"]);
+    expect(seen.get("RP-SECOND")).toBeDefined();
+    expect(outcome.result?.shippedTags).toEqual(["RP-SECOND"]);
+    expect(
+      existsSync(
+        priorAttemptPath(join(fx.repo, ".flume"), entryRef("RP-FIRST")),
+      ),
+    ).toBe(true);
+
+    // The wave opened on an empty store, so RP-FIRST's own context carried
+    // nothing — which is what makes the map below a re-read rather than the
+    // opening one handed on.
+    expect([...seen.get("RP-FIRST")!.keys()]).toEqual([]);
+    const refilled = seen.get("RP-SECOND")!;
+    expect([...refilled.keys()]).toEqual([entryAttemptKey(first)]);
+    expect(refilled.get(entryAttemptKey(first))?.mode).toBe("clean-exit");
+  });
 });
 
 

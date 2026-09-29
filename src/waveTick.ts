@@ -96,12 +96,14 @@ export async function runFanout(
   // Foundations governor: resolve the per-tick fork predicate once, then let
   // it gate selection alongside `blockedBy`. Default: every fork resolved.
   const isForkResolved = forkResolver?.(repoRoot) ?? (() => true);
-  // spec/chain.md "What a hook receives": one read of prior-attempts/ for
-  // the whole wave — every entry's TickContext gets the same map, since
-  // the records on disk don't change mid-wave. Read here rather than beside
-  // that use because selection needs it first: a chain's declared per-entry
-  // refusal is judged against each entry's own record and the tip this wave
-  // is about to branch from.
+  // spec/chain.md "What a hook receives": the wave's opening read of
+  // prior-attempts/, taken here rather than beside its use because selection
+  // needs it first — a chain's declared per-entry refusal is judged against
+  // each entry's own record and the tip this wave is about to branch from.
+  // It is the opening fill's map and no further: this wave's own merges
+  // write and clear records as entries settle (`src/waveMerge.ts`), so a
+  // freed slot re-reads the store beside the queue and the tip it re-selects
+  // over (`refillRead` below).
   const priorAttempts = await leg.attempts.readAll();
   // spec/loop.md "Repeated identical failures — quarantine, then abort":
   // `quarantinedTags` is reported on the result (below) so a chain's handoff
@@ -272,12 +274,16 @@ export async function runFanout(
   // stated here rather than left to this wave's own claims, which happen to
   // cover the same set only while the claims directory is readable.
   const attempted = new Set<string>();
-  // What `ctx.pickable`/`ctx.claimed` say for the entry a slot is about to
-  // run: the facts the selection that pulled it was taken over, not the
-  // wave's opening ones — an entry filed mid-wave is absent from those
-  // entirely (`spec/chain.md`, *What a hook receives*).
+  // What `ctx.pickable`/`ctx.claimed`/`ctx.priorAttempts` say for the entry a
+  // slot is about to run: the facts the selection that pulled it was taken
+  // over, not the wave's opening ones — an entry filed mid-wave is absent
+  // from those entirely, and a record a sibling's merge wrote a moment ago is
+  // missing from that map (`spec/chain.md`, *What a hook receives*). The three
+  // move together: a slot handed one world's queue and another world's records
+  // is the half-stale shape this triple exists to prevent.
   let livePickable: readonly PendingEntry[] = pickable;
   let liveClaimedTags: readonly string[] = claimedTags;
+  let livePriorAttempts: ReadonlyMap<string, PriorAttempt> = priorAttempts;
   // The operator's graceful stop, as the last refill read it off disk
   // (`spec/loop.md`, *Graceful stop — the stop flag*). The supervisor reads
   // the same flag through the same probe at its own child boundary; a wave
@@ -323,7 +329,11 @@ export async function runFanout(
   const runSlot = async (
     entry: PendingEntry,
     baseRef: () => Promise<string>,
-    offered: { pickable: readonly PendingEntry[]; claimed: readonly string[] },
+    offered: {
+      pickable: readonly PendingEntry[];
+      claimed: readonly string[];
+      priorAttempts: ReadonlyMap<string, PriorAttempt>;
+    },
   ): Promise<void> => {
     // Staked *before* the worktree exists, which is the whole point of the
     // ordering: from here until this wave lets go, the entry is this tick's
@@ -406,7 +416,7 @@ export async function runFanout(
       extraEnv,
       offered.pickable,
       offered.claimed,
-      priorAttempts,
+      offered.priorAttempts,
     );
     perEntry.push(r);
     if (r.renderFailure) renderFailures.push(r.renderFailure);
@@ -453,8 +463,10 @@ export async function runFanout(
    * than inside {@link fillSlots}, which must stay synchronous.
    *
    * The width and the partition's ignore list are the wave's for its whole
-   * life (`BatchSelection.maxParallel`, `src/selection.ts`), so the
-   * re-selection is read for its pickable set alone.
+   * life (`BatchSelection.maxParallel`, `src/selection.ts`), so what the
+   * re-selection is read for is the triple a refilled slot's `TickContext`
+   * carries — the pickable set, the claimed tags, and the records the
+   * selection was taken over.
    */
   const refillRead = async (): Promise<void> => {
     if (leg.supervisedRun) {
@@ -470,19 +482,18 @@ export async function runFanout(
       );
       return;
     }
+    const records = await leg.attempts.readAll();
     const selection = leg.selection(
       chain,
       live,
       isForkResolved,
-      {
-        priorAttempts: await leg.attempts.readAll(),
-        headSha: await git.revParse(repoRoot),
-      },
+      { priorAttempts: records, headSha: await git.revParse(repoRoot) },
       await leg.claims.readLive(),
     );
     candidates = selection.pickable.filter((e) => !attempted.has(e.tag));
     livePickable = selection.pickable;
     liveClaimedTags = selection.claimedTags;
+    livePriorAttempts = records;
   };
 
   /**
@@ -512,7 +523,11 @@ export async function runFanout(
       candidates = candidates.filter((e) => e.tag !== entry.tag);
       attempted.add(entry.tag);
       inFlight.set(entry.tag, entry);
-      const offered = { pickable: livePickable, claimed: liveClaimedTags };
+      const offered = {
+        pickable: livePickable,
+        claimed: liveClaimedTags,
+        priorAttempts: livePriorAttempts,
+      };
       slots.push(
         (async () => {
           try {
