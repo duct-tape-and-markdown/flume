@@ -1,0 +1,27 @@
+{
+  "tag": "THE-REMAINING-LEDGER-OPERATOR-LINES-READ-A-REAL-REWRITE",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 20,
+  "files": {
+    "edit": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the committing line's two arms and the no-commit footprint subject, beside the two no-commit cases that already drive a real rewrite"
+      }
+    ]
+  },
+  "summary": "The ledger rewrite's two committing lines and the no-commit footprint subject are read by no test, so a swapped arm reports a footprint-only wave as shipped, green",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A seam gate reads what the real writer wrote"
+  },
+  "acceptance": "every operator line the merge stage renders for a ledger rewrite is driven from a real `commitPendingUpdate` call over a real repository and asserted whole — the ship-commit and footprint-commit arms of the committing line, and the `footprints for` subject the no-commit lines compose for a wave that shipped nothing — so no arm can be read into the other without a red; the tip-claim warn line, `src/waveMerge.ts` and every export are unchanged",
+  "pins": [
+    "a ledger rewrite that commits a wave's shipped entries reports that commit to the operator as a ship commit",
+    "a ledger rewrite that commits a footprint-only wave reports that commit to the operator as a footprint commit",
+    "a footprint-only wave whose ledger rewrite wrote no commit names its footprints in the operator's line"
+  ],
+  "notes": "Off note THE-NO-COMMIT-OPERATOR-LINES-READ-A-REAL-REWRITES-EXIT. Verified: `src/waveMerge.ts:1096`-`:1097` composes the committing line's arms and `noCommitLine` (`:1119`) the no-commit subject; none is read by a test — the sibling's cases (`tests/Dispatcher.test.ts:4348`, `:4399`) both take the `shipped <tags>` arm. A footprint-only wave already runs at `:4597` under `log: silent`; that shape against a relocated dock reaches the `footprints for` subject. Properties hold: pins, not tests."
+}
