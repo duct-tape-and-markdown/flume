@@ -38,6 +38,7 @@ import {
   MAX_FAILURE_SIGNATURE,
   reportedGateRow,
   startTiming,
+  unrevertableMergeFailure,
   type GateFailure,
   type MergeFailure,
   type MergeOutcome,
@@ -508,15 +509,17 @@ export async function runSingleton(
               await git.resetKeepTo(repoRoot, preCherry);
             } catch (err) {
               if (!(err instanceof git.ResetKeepRefusedError)) throw err;
-              const message = `${err.message} — afterMerge-failed commit ${mergedSha} stays on trunk, unrevertable to ${preCherry}`;
               leg.log.warn(
                 `[flume] ${phase.name}: revert of ${mergedSha.slice(0, 8)} back to ${preCherry.slice(0, 8)} refused (${err.message}); commit stays on trunk, left for the operator`,
               );
               mergeFate = "afterMerge-revert-refused";
-              gateFailures.push({
-                signature: bound(message.trim(), MAX_FAILURE_SIGNATURE),
-                message,
-              });
+              gateFailures.push(
+                unrevertableMergeFailure({
+                  refusal: err.message,
+                  mergedSha,
+                  preCherry,
+                }),
+              );
             }
           }
           mergeOutcomes.push({

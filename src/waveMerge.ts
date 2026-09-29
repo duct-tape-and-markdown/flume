@@ -66,6 +66,7 @@ import {
   reportedGateRow,
   startTiming,
   throwFacts,
+  unrevertableMergeFailure,
   type GateFailure,
   type MergeFailure,
   type ProvisionFailure,
@@ -874,13 +875,17 @@ async function carrySpan(
     // Both refusals below — trunk having moved out from under the merged
     // commit, and `resetKeepTo` itself refusing — end this entry the same
     // way: the commit stays on trunk for the operator, the entry is reported
-    // refused, and the wave carries on. One spelling, two callers; only the
-    // refusal's own words differ, and each side's words already name the shas
-    // the warning would otherwise repeat (`checkMergedTipUnmoved`
-    // (`src/tipVerify.ts`), `ResetKeepRefusedError` (`src/git.ts`)).
-    const refuseRevert = (message: string): string => {
+    // refused, and the wave carries on. One spelling, two callers; each hands
+    // in the stage failure its own refusal composes, and those words already
+    // name the shas the warning would otherwise repeat
+    // (`checkMergedTipUnmoved` (`src/tipVerify.ts`),
+    // `unrevertableMergeFailure` (`src/tickVerdict.ts`)).
+    const refuseRevert = (failure: {
+      signature: string;
+      message: string;
+    }): string => {
       leg.log.warn(
-        `[flume] ${r.entry.tag}: revert of ${mergedSha.slice(0, 8)} refused (${message}); commit stays on trunk, left for the operator; other entries continue`,
+        `[flume] ${r.entry.tag}: revert of ${mergedSha.slice(0, 8)} refused (${failure.message}); commit stays on trunk, left for the operator; other entries continue`,
       );
       w.revertRefused.push(r.entry);
       w.mergeOutcomes.push({
@@ -890,11 +895,7 @@ async function carrySpan(
         baseSha: preCherry,
         headSha: mergedSha,
       });
-      w.gateFailures.push({
-        ...blame,
-        signature: bound(message.trim(), MAX_FAILURE_SIGNATURE),
-        message,
-      });
+      w.gateFailures.push({ ...blame, ...failure });
       return slug;
     };
     // spec/loop.md "Tip verify — one writer per branch, absorption at
@@ -911,13 +912,21 @@ async function carrySpan(
       preCherry,
       mergedSha,
     );
-    if (foreignTip) return refuseRevert(foreignTip);
+    if (foreignTip)
+      return refuseRevert({
+        signature: bound(foreignTip.trim(), MAX_FAILURE_SIGNATURE),
+        message: foreignTip,
+      });
     try {
       await git.resetKeepTo(repoRoot, preCherry);
     } catch (err) {
       if (!(err instanceof git.ResetKeepRefusedError)) throw err;
       return refuseRevert(
-        `${err.message} — afterMerge-failed commit ${mergedSha} stays on trunk, unrevertable to ${preCherry}`,
+        unrevertableMergeFailure({
+          refusal: err.message,
+          mergedSha,
+          preCherry,
+        }),
       );
     }
     w.mergeReverted.push(r.entry);

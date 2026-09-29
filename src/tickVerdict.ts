@@ -267,6 +267,37 @@ export function gateFailureSignature(failure: {
 }
 
 /**
+ * The {@link GateFailure} an afterMerge revert leaves behind when the reset
+ * back to the pre-cherry-pick tip is itself refused (`ResetKeepRefusedError`,
+ * `src/git.ts`): the gate condemned the commit, and now the commit cannot be
+ * taken off trunk. The message names both shas, because the operator who
+ * inherits the commit is the one who reads it.
+ *
+ * Both legs that can reach this state — a wave's per-entry merge
+ * (`src/waveMerge.ts`) and a singleton phase's (`src/singletonTick.ts`) —
+ * report the same two facts, so the words and the key they are compared by are
+ * built once rather than spelled per leg, where a rewording would diverge
+ * silently (`.claude/rules/engineering.md`, *A module is one job*). The
+ * signature rides along: a key derived beside one leg's copy of the words is
+ * the same duplicate one rung down.
+ *
+ * The blame half is the caller's: a wave attributes the refusal to the entry
+ * whose gate failed unless that gate disowned the span, and a singleton has no
+ * entry to blame at all ({@link GateFailure}).
+ */
+export function unrevertableMergeFailure(facts: {
+  /** The refusal's own words — `ResetKeepRefusedError.message`. */
+  refusal: string;
+  /** The commit left on trunk: the tip the cherry-pick produced. */
+  mergedSha: string;
+  /** The tip the refused reset would have returned trunk to. */
+  preCherry: string;
+}): { signature: string; message: string } {
+  const message = `${facts.refusal} — afterMerge-failed commit ${facts.mergedSha} stays on trunk, unrevertable to ${facts.preCherry}`;
+  return { signature: bound(message.trim(), MAX_FAILURE_SIGNATURE), message };
+}
+
+/**
  * What a throw reports: the message it raised and, when it has one, the stack
  * that raised it. Every seam that answers a throw with a record rather than
  * losing the tick reads it here — a gate's `{ message, details }`
