@@ -371,8 +371,9 @@ export class PriorAttemptStore {
     // than reset that count — the degradations below are for a record that
     // was *read* and found garbled, never for one that was never reached.
     if (!existsLoud(toNamespacedPath(p))) return undefined;
+    const raw = await this.readRecord(p);
     try {
-      const rec = JSON.parse(await readFile(toNamespacedPath(p), "utf8")) as {
+      const rec = JSON.parse(raw) as {
         mode?: unknown;
         headSha?: unknown;
         at?: unknown;
@@ -397,7 +398,42 @@ export class PriorAttemptStore {
       return undefined;
     } catch {
       // A garbled record must not crash the tick — degrade to "no prior".
+      // The parse alone, over bytes already in hand: a statement about the
+      // record's *contents*, never about whether it was read.
       return undefined;
+    }
+  }
+
+  /**
+   * The bytes at a record path the probe above found something at, or a
+   * refusal naming that path.
+   *
+   * Outside {@link read}'s decode arm, because a file that would not open was
+   * never read and so has nothing to be garbled about: a directory standing
+   * at the path, a permission-denied leaf, an I/O error mid-read. Inside that
+   * arm each read as "no prior attempt" and reset the repeated-failure count
+   * spec/loop.md "Repeated identical failures — quarantine, then abort" keeps
+   * (`.claude/rules/engineering.md`, *Loud or nothing*) — the same split
+   * `readTickVerdict` (`src/tickVerdict.ts`) draws between its probe and its
+   * parse.
+   *
+   * The path is this refusal's own to state, because the errno does not carry
+   * it: a `readFile` that opens and then fails on the read reports `EISDIR:
+   * illegal operation on a directory, read` — no `path` property, no path in
+   * the message (measured, node 22) — which would leave an operator a store
+   * of many record files and no file to go fix. The errno's own sentence
+   * rides along as the detail, so nothing about the failure is lost.
+   */
+  private async readRecord(path: string): Promise<string> {
+    try {
+      return await readFile(toNamespacedPath(path), "utf8");
+    } catch (err) {
+      throw new Error(
+        `[flume] prior-attempt record is unreadable: ${path} — ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+        { cause: err },
+      );
     }
   }
 

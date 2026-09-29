@@ -361,6 +361,26 @@ describe("priorAttempts — an unreachable record is not an absent one", () => {
     await fx.cleanup();
   });
 
+  /**
+   * The refusal, not the platform's spelling of it: the errno an obstruction
+   * raises for the paths beneath it is host-dependent
+   * (`.claude/rules/platform-facts.md`, *win32 reports a path through a
+   * non-directory as not found*), and a read that opens and then fails
+   * carries no path at all. Asserting the errno pins one host's accident;
+   * asserting the store's own message pins the behavior these cases are
+   * about.
+   */
+  const refusalOf = async (p: Promise<unknown>): Promise<string> => {
+    const err = await p.then(
+      () => undefined,
+      (e: unknown) => e as Error,
+    );
+    expect(err, "the store resolved where it must refuse").toBeInstanceOf(
+      Error,
+    );
+    return err!.message;
+  };
+
   it("PriorAttempts.read throws on a record present but unstattable, never reporting no prior attempt", async () => {
     const flumeDir = join(fx.repo, ".flume");
     const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
@@ -393,21 +413,37 @@ describe("priorAttempts — an unreachable record is not an absent one", () => {
   });
 
   /**
-   * The refusal, not the platform's spelling of it: the errno a plain file at
-   * the root raises for the paths beneath it is host-dependent
-   * (`.claude/rules/platform-facts.md`, *win32 reports a path through a
-   * non-directory as not found*). Asserting the errno pins one host's
-   * accident; asserting the store's own message pins the behavior these
-   * cases are about.
+   * The stat is not the read: a directory at the record path stats fine, so
+   * the probe above passes it, and the `readFile` past it fails on every host
+   * and for every uid — no permission bit, which denies nothing on win32
+   * (`.claude/rules/platform-facts.md`, *`chmod` denies nothing on win32*).
+   * Decoded inside the parse's catch it read as "no prior attempt", resetting
+   * the repeated-failure count and hiding the record from every `shouldRun`.
+   *
+   * The store's own refusal is what is asserted, not the errno: the message a
+   * failed read carries is the platform's, and it carries no path at all,
+   * which is the whole reason the refusal states one.
    */
-  const refusalOf = async (p: Promise<unknown>): Promise<string> => {
-    const err = await p.then(
-      () => undefined,
-      (e: unknown) => e as Error,
-    );
-    expect(err, "readAll resolved where it must refuse").toBeInstanceOf(Error);
-    return err!.message;
-  };
+  it("a prior-attempt record present and unreadable refuses rather than reading as no prior attempt", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+    const ref: PriorAttemptRef = { key: "build", keyspace: "phase" };
+    const p = priorAttemptPath(flumeDir, ref);
+    // Present at the path the store reads, and not openable as a file.
+    await mkdir(p, { recursive: true });
+
+    // Vacuity pins (`.claude/rules/engineering.md`, "A green verdict is
+    // proven non-vacuous"): something really stands at the record path, the
+    // stat that guards the read really does pass it, and the read that
+    // decides really does fail on it — so the refusal below is the read's.
+    expect((await lstat(p)).isDirectory()).toBe(true);
+    expect(existsSync(p)).toBe(true);
+    await expect(readFile(p, "utf8")).rejects.toThrow();
+
+    const message = await refusalOf(store.read(ref));
+    expect(message).toContain("prior-attempt record is unreadable");
+    expect(message).toContain(p);
+  });
 
   it("readAll refuses when a plain file sits at the prior-attempts root", async () => {
     const flumeDir = join(fx.repo, ".flume");
