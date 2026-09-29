@@ -654,7 +654,7 @@ export class PriorAttemptStore {
   }
 
   /**
-   * Snapshot every non-deleted file the reverted commit touched, verbatim,
+   * Snapshot every non-deleted file the reverted span touched, verbatim,
    * into the durable snapshot dir before the hard reset destroys it.
    *
    * A gate-reverted tick otherwise loses everything the commit carried to
@@ -666,15 +666,25 @@ export class PriorAttemptStore {
    * and counts, never content — it cannot recover findings, which is why
    * this distinct artifact exists.
    *
-   * Generic by construction: it snapshots whatever the reverted commit
+   * **The span, never its head alone.** The digest beside this snapshot is
+   * already taken over `base..head` ({@link capturedDiffStat}), and a tick
+   * that committed more than once wrote prose in commits the head's own diff
+   * never names. Listing one commit there made the artifact narrower than the
+   * digest that advertises it: a finding written in the span's first commit
+   * was named by the stat and recoverable only from a session log, which is
+   * the one outcome spec/worktrees.md "Reverted prose survives the reset"
+   * rules out. Content is read at `head` — the post-image the reset destroys
+   * — so a path the span rewrote is snapshotted once, as it last stood.
+   *
+   * Generic by construction: it snapshots whatever the reverted span
    * changed, so the dispatcher needs no chain-specific notion of which
    * artifact is "prose" vs "machine-checkable", and names no chain's file.
-   * Must run while `sha` is still reachable (before the drop). Best-effort —
-   * a snapshot failure must never block or fail the revert.
+   * Must run while the span is still reachable (before the drop).
+   * Best-effort — a snapshot failure must never block or fail the revert.
    */
   async snapshotReverted(
     cwd: string,
-    sha: string,
+    span: { base: string; head: string },
     ref: PriorAttemptRef,
   ): Promise<void> {
     const dir = this.snapshotDir(ref);
@@ -686,16 +696,17 @@ export class PriorAttemptStore {
       // here (`.claude/rules/engineering.md`, "The fix lands at the
       // mechanism"): the listing through the shared `-z` name-only decode, so
       // a quoted or space-terminated path arrives as git committed it and
-      // still resolves as `<sha>:<path>`; the content through the shared
+      // still resolves as `<head>:<path>`; the content through the shared
       // tip-read.
-      const files = await git.showNameOnly(cwd, sha, { excludeDeleted: true });
+      const files = await git.diffNameOnly(cwd, span.base, span.head, {
+        excludeDeleted: true,
+      });
       for (const rel of files) {
-        // `excludeDeleted` already dropped everything this commit removed, so
-        // a null here means the listing and the tree disagree at one sha —
-        // skip that path rather than abandoning the rest of the snapshot to
-        // the catch below, which is the whole artifact for the sake of one
-        // file.
-        const content = await git.readFileAtRef(cwd, sha, rel);
+        // `excludeDeleted` already dropped everything the span removed, so a
+        // null here means the listing and the head's tree disagree — skip
+        // that path rather than abandoning the rest of the snapshot to the
+        // catch below, which is the whole artifact for the sake of one file.
+        const content = await git.readFileAtRef(cwd, span.head, rel);
         if (content === null) continue;
         const dest = join(dir, rel);
         // win32 MAX_PATH (`.claude/rules/platform-facts.md`): dest depth

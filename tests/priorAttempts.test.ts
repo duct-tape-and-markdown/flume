@@ -30,6 +30,10 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { entryDeclaredKey } from "../src/entryKey.ts";
+// The engine's own range and single-commit listings, spelled here only as the
+// vacuity pins for the span cases below: what a head-only listing names, and
+// what the span's range names before `excludeDeleted` narrows it.
+import { diffNameOnly, showNameOnly } from "../src/git.ts";
 import { slugify } from "../src/paths.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import type { Phase } from "../src/Phase.ts";
@@ -158,7 +162,11 @@ describe("priorAttempts — the record builders (spec/loop.md 'Prior-outcome fee
   it("PriorAttemptStore.read accepts a record for every mode the engine's prior-attempt mode roster names", async () => {
     const flumeDir = join(fx.repo, ".flume");
     const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
-    const head = (await gitOut(fx.repo, ["rev-parse", "HEAD"])).trim();
+    // A span with something in it: `snapshotReverted` writes no directory at
+    // all over a range that touched nothing, which would make the existence
+    // assertions below vacuous.
+    const span = await commitPathsNamed(fx.repo, ["keyed.ts"]);
+    const head = span.head;
     expect(head).toMatch(/^[0-9a-f]{40}$/);
 
     const byMode = new Map<string, PriorAttemptDraft>(
@@ -214,7 +222,11 @@ describe("priorAttempts — the record builders (spec/loop.md 'Prior-outcome fee
   it("a gate-revert prior-attempt record carries the failing gate's verdict beside its message", async () => {
     const flumeDir = join(fx.repo, ".flume");
     const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
-    const head = (await gitOut(fx.repo, ["rev-parse", "HEAD"])).trim();
+    // A span with something in it: `snapshotReverted` writes no directory at
+    // all over a range that touched nothing, which would make the existence
+    // assertions below vacuous.
+    const span = await commitPathsNamed(fx.repo, ["keyed.ts"]);
+    const head = span.head;
 
     const authored = await buildGateRevert(
       "afterCommit",
@@ -270,7 +282,11 @@ describe("priorAttempts — the record builders (spec/loop.md 'Prior-outcome fee
   it("a not-shipped record distinguishes a thrown shipped hook from a returned false", async () => {
     const flumeDir = join(fx.repo, ".flume");
     const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
-    const head = (await gitOut(fx.repo, ["rev-parse", "HEAD"])).trim();
+    // A span with something in it: `snapshotReverted` writes no directory at
+    // all over a range that touched nothing, which would make the existence
+    // assertions below vacuous.
+    const span = await commitPathsNamed(fx.repo, ["keyed.ts"]);
+    const head = span.head;
     const THREW = "TypeError: ctx.gateResults.every is not a function";
 
     const declined = buildNotShipped(head, ["src/seed.ts"]);
@@ -697,7 +713,11 @@ describe("priorAttempts — one stem, two artifacts (`.claude/rules/engineering.
   it("PriorAttemptStore.snapshotDir keys its directory by the same slug priorAttemptPath keys the record JSON by", async () => {
     const flumeDir = join(fx.repo, ".flume");
     const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
-    const head = (await gitOut(fx.repo, ["rev-parse", "HEAD"])).trim();
+    // A span with something in it: `snapshotReverted` writes no directory at
+    // all over a range that touched nothing, which would make the existence
+    // assertions below vacuous.
+    const span = await commitPathsNamed(fx.repo, ["keyed.ts"]);
+    const head = span.head;
 
     // Raw keys a `slugify` actually changes — a phase name the chain spells
     // with an underscore, a tag with the shout-case the queue uses. A key
@@ -711,7 +731,7 @@ describe("priorAttempts — one stem, two artifacts (`.claude/rules/engineering.
       // `snapshotReverted` places the snapshot, each through the store's own
       // keying.
       await store.write(ref, buildTipMoved(head, head));
-      await store.snapshotReverted(fx.repo, head, ref);
+      await store.snapshotReverted(fx.repo, span, ref);
 
       const record = priorAttemptPath(flumeDir, ref);
       const snapshot = store.snapshotDir(ref);
@@ -782,14 +802,15 @@ const SNAP_REF: PriorAttemptRef = { key: "key", keyspace: "phase" };
 async function commitPathsNamed(
   repo: string,
   names: readonly string[],
-): Promise<string> {
+): Promise<{ base: string; head: string }> {
+  const base = (await gitOut(repo, ["rev-parse", "HEAD"])).trim();
   await mkdir(join(repo, "snap"), { recursive: true });
   for (const name of names) {
     await writeFile(join(repo, "snap", name), `content of ${name}\n`);
   }
   await gitOut(repo, ["add", "--all"]);
   await gitOut(repo, ["commit", "-q", "-m", "awkward paths"]);
-  return gitOut(repo, ["rev-parse", "HEAD"]);
+  return { base, head: (await gitOut(repo, ["rev-parse", "HEAD"])).trim() };
 }
 
 it("snapshotReverted writes a non-ASCII path's content into the revert snapshot", async () => {
@@ -800,7 +821,8 @@ it("snapshotReverted writes a non-ASCII path's content into the revert snapshot"
       fx.repo,
       silent,
     );
-    const sha = await commitPathsNamed(fx.repo, ["café.ts", "plain.ts"]);
+    const span = await commitPathsNamed(fx.repo, ["café.ts", "plain.ts"]);
+    const sha = span.head;
 
     // Vacuity pin: the default form really does rewrite this path, so the
     // snapshot below is judged over a listing that a raw `git show
@@ -813,7 +835,7 @@ it("snapshotReverted writes a non-ASCII path's content into the revert snapshot"
     ]);
     expect(quoted).toContain('"snap/caf\\303\\251.ts"');
 
-    await store.snapshotReverted(fx.repo, sha, SNAP_REF);
+    await store.snapshotReverted(fx.repo, span, SNAP_REF);
 
     const dir = store.snapshotDir(SNAP_REF);
     expect(await readFile(join(dir, "snap", "café.ts"), "utf8")).toBe(
@@ -842,7 +864,8 @@ it.runIf(process.platform !== "win32")(
         fx.repo,
         silent,
       );
-      const sha = await commitPathsNamed(fx.repo, ["trailing.ts "]);
+      const span = await commitPathsNamed(fx.repo, ["trailing.ts "]);
+      const sha = span.head;
 
       // Vacuity pin: the space really is part of the committed name, and the
       // trimmed spelling names nothing at this commit — which is what makes a
@@ -856,7 +879,7 @@ it.runIf(process.platform !== "win32")(
         gitOut(fx.repo, ["cat-file", "-e", `${sha}:snap/trailing.ts`]),
       ).rejects.toThrow();
 
-      await store.snapshotReverted(fx.repo, sha, SNAP_REF);
+      await store.snapshotReverted(fx.repo, span, SNAP_REF);
 
       expect(
         await readFile(
@@ -887,11 +910,13 @@ it.runIf(process.platform !== "win32")(
         fx.repo,
         silent,
       );
+      const base = (await gitOut(fx.repo, ["rev-parse", "HEAD"])).trim();
       await writeFile(join(fx.repo, ":colon.ts"), "content of :colon.ts\n");
       await writeFile(join(fx.repo, "plain.ts"), "content of plain.ts\n");
       await gitOut(fx.repo, ["add", "--all"]);
       await gitOut(fx.repo, ["commit", "-q", "-m", "colon-leading path"]);
-      const sha = await gitOut(fx.repo, ["rev-parse", "HEAD"]);
+      const sha = (await gitOut(fx.repo, ["rev-parse", "HEAD"])).trim();
+      const span = { base, head: sha };
 
       // Vacuity pin: git names the path unquoted and resolves it as
       // `<sha>:<path>`, so the listing hands `snapshotReverted` a name that
@@ -907,7 +932,7 @@ it.runIf(process.platform !== "win32")(
         await gitOut(fx.repo, ["cat-file", "-e", `${sha}::colon.ts`]),
       ).toBe("");
 
-      await store.snapshotReverted(fx.repo, sha, SNAP_REF);
+      await store.snapshotReverted(fx.repo, span, SNAP_REF);
 
       const dir = store.snapshotDir(SNAP_REF);
       expect(await readFile(join(dir, ":colon.ts"), "utf8")).toBe(
@@ -944,9 +969,129 @@ it("a snapshotReverted failure leaves the revert path unblocked", async () => {
     // Recovery is best-effort by spec: the caller's next move is the hard
     // reset, and a snapshot that cannot be taken must not stand in its way.
     await expect(
-      store.snapshotReverted(fx.repo, missing, SNAP_REF),
+      store.snapshotReverted(fx.repo, { base: missing, head: missing }, SNAP_REF),
     ).resolves.toBeUndefined();
     expect(existsSync(store.snapshotDir(SNAP_REF))).toBe(false);
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+/**
+ * A real two-commit span, for the snapshot cases below: one prose file is
+ * touched by the first commit alone, one by the second, and one the base
+ * already held is deleted by the second. The shape a tick takes whenever the
+ * agent commits, keeps working, and commits again (spec/loop.md "The check is
+ * ancestry, and N commits are completion").
+ *
+ * The cases it feeds are agreement gates (`.claude/rules/engineering.md`,
+ * *A seam gate reads what the real writer wrote*): git makes the span, the
+ * engine's own range read lists it, the engine's own tip-read reads it back,
+ * and the snapshot on disk is the verdict. No fixture hands the store a file
+ * list by the tester's hand.
+ *
+ * Deliberately top-level rather than inside a `describe`: the case titles
+ * below are the queue entry's own `tests[]` lines, matched on the full name.
+ */
+async function commitTwoStepSpan(
+  repo: string,
+): Promise<{ base: string; head: string }> {
+  // Committed *before* the span: a range diff compares two trees, so a path
+  // created and removed inside the span is named by neither side and never
+  // reaches the listing at all. Only a path the base already held can be a
+  // deletion the range names — which is the selection `excludeDeleted` drops.
+  await mkdir(join(repo, "notes"), { recursive: true });
+  await writeFile(join(repo, "notes", "doomed.md"), "here before the span\n");
+  await gitOut(repo, ["add", "--all"]);
+  await gitOut(repo, ["commit", "-q", "-m", "pre-span state"]);
+  const base = (await gitOut(repo, ["rev-parse", "HEAD"])).trim();
+  await writeFile(join(repo, "notes", "first.md"), "finding from commit one\n");
+  await writeFile(join(repo, "notes", "doomed.md"), "rewritten in the span\n");
+  await gitOut(repo, ["add", "--all"]);
+  await gitOut(repo, ["commit", "-q", "-m", "first of the span"]);
+  await writeFile(join(repo, "notes", "second.md"), "second commit's work\n");
+  await gitOut(repo, ["rm", "-q", join("notes", "doomed.md")]);
+  await gitOut(repo, ["add", "--all"]);
+  await gitOut(repo, ["commit", "-q", "-m", "second of the span"]);
+  return { base, head: (await gitOut(repo, ["rev-parse", "HEAD"])).trim() };
+}
+
+it("the revert snapshot carries a file only the span's first commit touched", async () => {
+  const fx = await makeFixture();
+  try {
+    const store = new PriorAttemptStore(
+      join(fx.repo, ".flume"),
+      fx.repo,
+      silent,
+    );
+    const span = await commitTwoStepSpan(fx.repo);
+
+    // Vacuity pin: the span really is more than one commit, and the head's
+    // own single-commit diff really does not name the first commit's file —
+    // so the assertion below is judged over a file a head-only listing loses,
+    // not over one both spellings happen to reach.
+    expect(
+      (await gitOut(fx.repo, ["rev-list", `${span.base}..${span.head}`]))
+        .trim()
+        .split("\n"),
+    ).toHaveLength(2);
+    expect(await showNameOnly(fx.repo, span.head)).toEqual(
+      expect.not.arrayContaining(["notes/first.md"]),
+    );
+    expect(await showNameOnly(fx.repo, span.head)).toContain(
+      "notes/second.md",
+    );
+
+    await store.snapshotReverted(fx.repo, span, SNAP_REF);
+
+    const dir = store.snapshotDir(SNAP_REF);
+    // Recovery is "open the file" for prose written anywhere in the span —
+    // the whole point of the artifact (spec/worktrees.md "Reverted prose
+    // survives the reset"), and the reset destroys the first commit's work
+    // exactly as it destroys the last's.
+    expect(await readFile(join(dir, "notes", "first.md"), "utf8")).toBe(
+      "finding from commit one\n",
+    );
+    expect(await readFile(join(dir, "notes", "second.md"), "utf8")).toBe(
+      "second commit's work\n",
+    );
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+it("the revert snapshot omits a path the span deleted", async () => {
+  const fx = await makeFixture();
+  try {
+    const store = new PriorAttemptStore(
+      join(fx.repo, ".flume"),
+      fx.repo,
+      silent,
+    );
+    const span = await commitTwoStepSpan(fx.repo);
+
+    // Vacuity pin: the path is genuinely named by the span's own range and
+    // genuinely unreadable at its head, which is the only state under which
+    // `excludeDeleted` over a range has anything to drop.
+    expect(await diffNameOnly(fx.repo, span.base, span.head)).toContain(
+      "notes/doomed.md",
+    );
+    await expect(
+      gitOut(fx.repo, ["cat-file", "-e", `${span.head}:notes/doomed.md`]),
+    ).rejects.toThrow();
+
+    await store.snapshotReverted(fx.repo, span, SNAP_REF);
+
+    // A deleted path has no post-image to snapshot; `excludeDeleted` drops it
+    // at the listing rather than leaving the content read to fail on it, so
+    // the null-skip beside it keeps meaning "the listing and the head's tree
+    // disagree" (`snapshotReverted`, `src/priorAttempts.ts`).
+    expect(
+      existsSync(join(store.snapshotDir(SNAP_REF), "notes", "doomed.md")),
+    ).toBe(false);
+    expect(
+      existsSync(join(store.snapshotDir(SNAP_REF), "notes", "first.md")),
+    ).toBe(true);
   } finally {
     await fx.cleanup();
   }
@@ -1231,7 +1376,11 @@ it("a singleton phase and a fanout entry whose identities slugify alike write di
   try {
     const flumeDir = join(fx.repo, ".flume");
     const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
-    const head = (await gitOut(fx.repo, ["rev-parse", "HEAD"])).trim();
+    // A span with something in it: `snapshotReverted` writes no directory at
+    // all over a range that touched nothing, which would make the existence
+    // assertions below vacuous.
+    const span = await commitPathsNamed(fx.repo, ["keyed.ts"]);
+    const head = span.head;
 
     const phaseRef = priorAttemptRef({ name: COLLIDING_PHASE } as Phase);
     const entryRef = priorAttemptRef(

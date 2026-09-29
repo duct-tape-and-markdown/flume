@@ -252,13 +252,31 @@ export function nameOnlyPaths(stdout: string): string[] {
  * commits are completion"), as opposed to {@link showNameOnly}'s
  * single-commit diff. `from` need not be an ancestor of `to`; git diffs the
  * two trees directly either way.
+ *
+ * `excludeDeleted` drops the paths the range *removed* (`--diff-filter=d`),
+ * leaving only those still readable at `to` — the same selection
+ * {@link showNameOnly} names under that flag, for the same caller shape: one
+ * that goes on to read each path's content at the range's own head
+ * (`PriorAttemptStore.snapshotReverted`, src/priorAttempts.ts). Over a
+ * range the flag is load-bearing in a way it is not over one commit: a path
+ * an earlier commit in the span created and a later one deleted is named by
+ * neither side of the range's trees, and a path the span deleted outright is
+ * named and unreadable.
  */
 export async function diffNameOnly(
   cwd: string,
   from: string,
   to: string,
+  opts: { excludeDeleted?: boolean } = {},
 ): Promise<string[]> {
-  const { stdout } = await run(cwd, ["diff", "--name-only", "-z", from, to]);
+  const { stdout } = await run(cwd, [
+    "diff",
+    "--name-only",
+    ...(opts.excludeDeleted ? ["--diff-filter=d"] : []),
+    "-z",
+    from,
+    to,
+  ]);
   return nameOnlyPaths(stdout);
 }
 

@@ -877,6 +877,29 @@ describe("diffNameOnly (spec/loop.md 'Tip verify', per-entry leg)", () => {
     const sha = await revParse(repo);
     expect(await diffNameOnly(repo, sha, sha)).toEqual([]);
   });
+
+  it("excludeDeleted drops a path the span removed and keeps the rest", async () => {
+    await writeFile(join(repo, "doomed.txt"), "d");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "pre-span"], { cwd: repo });
+    const base = await revParse(repo);
+    await writeFile(join(repo, "kept.txt"), "k");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "add kept"], { cwd: repo });
+    await exec("git", ["rm", "-q", "doomed.txt"], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "remove doomed"], { cwd: repo });
+    const tip = await revParse(repo);
+
+    // Vacuity pin: unfiltered, the range names both — so the filtered read
+    // below is judged over a listing that really had something to drop.
+    expect((await diffNameOnly(repo, base, tip)).sort()).toEqual([
+      "doomed.txt",
+      "kept.txt",
+    ]);
+    expect(
+      await diffNameOnly(repo, base, tip, { excludeDeleted: true }),
+    ).toEqual(["kept.txt"]);
+  });
 });
 
 /**

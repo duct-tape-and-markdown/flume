@@ -9240,10 +9240,21 @@ describe("Dispatcher fanout — entry-scoped write guard", () => {
       },
     ]);
 
-    // The reverted commit's touched paths are computed exactly once — inside
+    // The reverted span's touched paths are computed exactly once — inside
     // runAfterCommitGates' own gate-loop capture — and reused by the fanout
     // caller's trunk-footprint grab, not re-derived via a second git call.
-    expect(diffNameOnlySpy).toHaveBeenCalledTimes(1);
+    //
+    // Counted by argument shape, not by the bare call total: the revert also
+    // reads the same range under `excludeDeleted` to place the prose snapshot
+    // (`PriorAttemptStore.snapshotReverted`, `src/priorAttempts.ts`), which is
+    // a different selection over one range rather than a second copy of this
+    // footprint. A reintroduced duplicate still reds, because it would be a
+    // second unfiltered read.
+    const calls = diffNameOnlySpy.mock.calls;
+    expect(calls.filter((c) => c[3]?.excludeDeleted !== true)).toHaveLength(1);
+    // And the snapshot's own read really did happen on this path, so the
+    // filter above is discriminating rather than vacuously true.
+    expect(calls.filter((c) => c[3]?.excludeDeleted === true)).toHaveLength(1);
   });
 
   it("singleton ticks keep phase-wide scope — undeclared paths inside globs still ship", async () => {
