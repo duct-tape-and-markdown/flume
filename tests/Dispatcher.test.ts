@@ -13605,7 +13605,7 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
     expect(last2.map((v) => v.summary)).toEqual(["tick 3", "tick 4"]);
   });
 
-  it("readTickVerdicts refuses a verdict history log that is present and unreadable", async () => {
+  it("the verdict history read refuses a present-but-unreadable log naming the path it read", async () => {
     const flumeDir = join(fx.repo, ".flume");
     await writeTickVerdict(flumeDir, verdictFixture({ summary: "tick 0" }));
     // Non-vacuity: the log reads, and carries the row, before it is denied.
@@ -13617,14 +13617,20 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
     // its absent arm there.
     denyFile(historyPath());
 
-    let caught: NodeJS.ErrnoException | undefined;
+    let caught: Error | undefined;
     try {
       await readTickVerdicts(flumeDir);
     } catch (err) {
-      caught = err as NodeJS.ErrnoException;
+      caught = err as Error;
     }
     expect(caught).toBeDefined();
-    expect(caught?.code).not.toBe("ENOENT");
+    // The reader's own refusal, naming the log it read — asserted instead of
+    // the errno, which this host happens to spell EISDIR and which carries no
+    // path at all past the open (`.claude/rules/platform-facts.md`, *A read
+    // that fails after the open names no path*). Without the path, an
+    // operator under a relocated state root has nothing to go fix.
+    expect(caught?.message).toContain("tick verdict history log is unreadable");
+    expect(caught?.message).toContain(historyPath());
 
     // The absent arm is untouched: a flumeDir that never ticked still reads
     // as empty history, so the refusal above is the present-but-unreadable
@@ -13634,7 +13640,7 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
     ).toEqual([]);
   });
 
-  it("readTickVerdict refuses a latest-tick verdict file that is present and unreadable", async () => {
+  it("the per-phase verdict read refuses a present-but-unreadable record naming the path it read", async () => {
     const flumeDir = join(fx.repo, ".flume");
     await writeTickVerdict(flumeDir, verdictFixture({ summary: "tick 0" }));
     // Non-vacuity: the latest-tick file reads back before it is denied.
@@ -13642,14 +13648,18 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
 
     denyFile(latestPath());
 
-    let caught: NodeJS.ErrnoException | undefined;
+    let caught: Error | undefined;
     try {
       await readTickVerdict(flumeDir, "build");
     } catch (err) {
-      caught = err as NodeJS.ErrnoException;
+      caught = err as Error;
     }
     expect(caught).toBeDefined();
-    expect(caught?.code).not.toBe("ENOENT");
+    // Same claim, same reason as the history reader above: the refusal is the
+    // reader's and it names the record, so `superviseLoop`'s line quotes a
+    // path rather than a bare errno.
+    expect(caught?.message).toContain("tick verdict record is unreadable");
+    expect(caught?.message).toContain(latestPath());
 
     // `clearTickVerdict` leaves nothing behind, and that absence still reads
     // as "nothing to report" — the one silent arm this reader keeps.
@@ -13757,7 +13767,7 @@ describe("readLatestVerdictsSync — synchronous per-phase anchor read", () => {
     );
   });
 
-  it("readLatestVerdictsSync refuses a verdict history log that is present and unreadable", async () => {
+  it("the sync verdict history read refuses a present-but-unreadable log naming the path it read", async () => {
     const flumeDir = join(fx.repo, ".flume");
     await writeTickVerdict(
       flumeDir,
@@ -13770,14 +13780,17 @@ describe("readLatestVerdictsSync — synchronous per-phase anchor read", () => {
 
     denyFile(tickVerdictsLogPath(flumeDir));
 
-    let caught: NodeJS.ErrnoException | undefined;
+    let caught: Error | undefined;
     try {
       readLatestVerdictsSync(flumeDir);
     } catch (err) {
-      caught = err as NodeJS.ErrnoException;
+      caught = err as Error;
     }
     expect(caught).toBeDefined();
-    expect(caught?.code).not.toBe("ENOENT");
+    // The sync leg names its path too — a chain's `shouldRun`/`handoff` reads
+    // through this one, so its refusal is the only thing an author sees.
+    expect(caught?.message).toContain("tick verdict history log is unreadable");
+    expect(caught?.message).toContain(tickVerdictsLogPath(flumeDir));
   });
 });
 

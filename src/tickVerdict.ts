@@ -940,6 +940,34 @@ function isTickVerdict(rec: unknown): rec is TickVerdict {
 }
 
 /**
+ * The refusal one of the three readers below raises when the artifact it
+ * probed present turns out to be unreadable, naming the path it read.
+ *
+ * Each reader sits past `existsLoud` (`src/fsProbe.ts`), so absence is
+ * already proven and what remains is a read that failed on an open
+ * descriptor — and such a failure carries the syscall, never the path the
+ * caller passed (`.claude/rules/platform-facts.md`, *A read that fails after
+ * the open names no path*). Rethrown bare it reaches a verb, a supervisor
+ * line or an API consumer as `EISDIR: illegal operation on a directory,
+ * read` with nothing to go fix, under a state root a chain may have
+ * relocated. So the reader states the path and the errno's own sentence
+ * rides along as detail; the original stays on `cause` for anyone keying on
+ * it.
+ *
+ * `what` names the subject as a bare noun phrase, the way `isDirectoryOrAbsent`
+ * (`src/fsProbe.ts`) and `readRecord` (`src/priorAttempts.ts`) already spell
+ * it — one vocabulary for "present, and could not be read".
+ */
+function unreadable(what: string, path: string, cause: unknown): Error {
+  return new Error(
+    `[flume] ${what} is unreadable: ${path} — ${
+      cause instanceof Error ? cause.message : String(cause)
+    }`,
+    { cause },
+  );
+}
+
+/**
  * The history log was present and unreadable when a tick went to record its
  * own verdict — the one failure {@link writeTickVerdict} reports as a class
  * of its own rather than letting escape as a bare I/O throw.
@@ -956,13 +984,18 @@ function isTickVerdict(rec: unknown): rec is TickVerdict {
  * Thrown only past the latest-tick write, so a caller holding one has a tick
  * whose work already landed and whose outcome it has already reported; what
  * failed is the recording.
+ *
+ * The message is the cause's, relayed: both refusals {@link readTickVerdicts}
+ * can raise — `existsLoud`'s stat failure, which node spells the path into,
+ * and {@link unreadable}'s, which states it — already name the log, so a
+ * prepend here would print the path twice in one operator line.
  */
 export class VerdictHistoryUnreadableError extends Error {
   /** The history log the read refused on, resolved. */
   readonly path: string;
 
   constructor(path: string, cause: unknown) {
-    super(`${path}: ${cause instanceof Error ? cause.message : String(cause)}`, {
+    super(cause instanceof Error ? cause.message : String(cause), {
       cause,
     });
     this.name = "VerdictHistoryUnreadableError";
@@ -1053,20 +1086,27 @@ export async function clearTickVerdict(
  *
  * Absent is the only silent reading, and it is **proven**: `existsLoud`
  * (`src/fsProbe.ts`) throws on any stat failure but `ENOENT`, and the read
- * past it carries no catch of its own, so a verdict file that is present
+ * past it refuses under {@link unreadable}, so a verdict file that is present
  * and unreadable — a directory in its place, a permission-denied parent, a
  * symlink loop — refuses here instead of reporting the tick that wrote it
  * as one that left nothing behind (`.claude/rules/engineering.md`, *Loud or
- * nothing*). The degrade that remains is the parse alone, which is a
+ * nothing*), and `superviseLoop`'s line quotes a refusal that names the
+ * record. The degrade that remains is the parse alone, which is a
  * statement about the file's *contents*, not about whether it was read.
  */
 export async function readTickVerdict(
   flumeDir: string,
   phase: string,
 ): Promise<TickVerdict | undefined> {
-  const p = namespacedJoin(tickVerdictPath(flumeDir, phase));
+  const path = tickVerdictPath(flumeDir, phase);
+  const p = namespacedJoin(path);
   if (!existsLoud(p)) return undefined;
-  const raw = await readFile(p, "utf8");
+  let raw: string;
+  try {
+    raw = await readFile(p, "utf8");
+  } catch (err) {
+    throw unreadable("tick verdict record", path, err);
+  }
   try {
     const rec: unknown = JSON.parse(raw);
     return isTickVerdict(rec) ? rec : undefined;
@@ -1082,8 +1122,8 @@ export async function readTickVerdict(
  * posture as every other artifact the harness persists.
  *
  * Absent, and nothing else: `existsLoud` (`src/fsProbe.ts`) proves it and
- * the read past it carries no catch, so a history log that is present and
- * unreadable refuses rather than answering "no history" — the one answer
+ * the read past it refuses under {@link unreadable}, so a history log that is
+ * present and unreadable refuses rather than answering "no history" — the one answer
  * that is indistinguishable from a repo that has never ticked
  * (`.claude/rules/engineering.md`, *Loud or nothing*). `flume log`,
  * `flume status` and `flume tick` each classify that refusal as `EX_IOERR`
@@ -1096,9 +1136,15 @@ export async function readTickVerdicts(
   flumeDir: string,
   n: number = MAX_TICK_VERDICTS,
 ): Promise<TickVerdict[]> {
-  const p = namespacedJoin(tickVerdictsLogPath(flumeDir));
+  const path = tickVerdictsLogPath(flumeDir);
+  const p = namespacedJoin(path);
   if (!existsLoud(p)) return [];
-  const raw = await readFile(p, "utf8");
+  let raw: string;
+  try {
+    raw = await readFile(p, "utf8");
+  } catch (err) {
+    throw unreadable("tick verdict history log", path, err);
+  }
   const verdicts: TickVerdict[] = [];
   for (const line of raw.split("\n")) {
     const trimmed = line.trim();
@@ -1122,7 +1168,8 @@ export async function readTickVerdicts(
  * it cannot take. Corrupt lines are skipped, same no-false-signal posture as
  * `readTickVerdicts`; an absent log reads as an empty result, never a throw.
  * Absent is proven the same way its async sibling proves it — `existsLoud`
- * (`src/fsProbe.ts`) and an uncaught read — so a log that is present and
+ * (`src/fsProbe.ts`) and a read refusing under {@link unreadable} — so a log
+ * that is present and
  * unreadable refuses here too, rather than handing a `shouldRun` an empty
  * anchor set that reads as "no phase has ever ticked"
  * (`.claude/rules/engineering.md`, *Loud or nothing*).
@@ -1130,10 +1177,16 @@ export async function readTickVerdicts(
 export function readLatestVerdictsSync(
   flumeDir: string,
 ): Record<string, TickVerdict> {
-  const p = namespacedJoin(tickVerdictsLogPath(flumeDir));
+  const path = tickVerdictsLogPath(flumeDir);
+  const p = namespacedJoin(path);
   const latest: Record<string, TickVerdict> = {};
   if (!existsLoud(p)) return latest;
-  const raw = readFileSync(p, "utf8");
+  let raw: string;
+  try {
+    raw = readFileSync(p, "utf8");
+  } catch (err) {
+    throw unreadable("tick verdict history log", path, err);
+  }
   for (const line of raw.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;

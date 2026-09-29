@@ -15,7 +15,6 @@ import { EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG } from "./exitCodes.js";
 import { consoleLogger, type Logger } from "./log.js";
 import {
   readTickVerdict,
-  tickVerdictPath,
   totalAgentUsageByPhase,
   type PhaseAgentUsage,
   type StageFailureEntry,
@@ -677,6 +676,14 @@ export async function superviseLoop(
       // two children of one run can share.
       verdict = await readTickVerdict(flumeDir, child.phase);
     } catch (err) {
+      // The path rides in `why` and is not recomposed here: both refusals
+      // `readTickVerdict` can raise name the record they read — the stat
+      // failure because node spells a path into a failure at the open, and
+      // the post-open one because the reader states it
+      // (`.claude/rules/platform-facts.md`, *A read that fails after the open
+      // names no path*). A second spelling beside it is the engine's own fact
+      // restated by a consumer (`.claude/rules/engineering.md`, *A fact the
+      // engine holds is reported, never rediscovered*).
       const why = err instanceof Error ? err.message : String(err);
       erroredTicks.push(
         `tick verdict present but unreadable (${why}); run ended before the verdict's facts could be counted`,
@@ -685,7 +692,7 @@ export async function superviseLoop(
         stop: { hibernated: false },
         finish: async () => {
           log.error(
-            `[flume] this tick's verdict at ${tickVerdictPath(flumeDir, child.phase)} is ` +
+            `[flume] this tick's verdict is ` +
               `present but could not be read (${why}); stopping after ${ticks} ` +
               `tick(s) rather than counting the tick as one that reported ` +
               `nothing. Make the path readable, then re-run.`,
