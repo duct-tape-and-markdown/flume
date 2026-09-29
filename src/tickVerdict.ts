@@ -1064,6 +1064,39 @@ export function buildTickVerdict(facts: TickVerdictFacts): TickVerdict {
 }
 
 /**
+ * The facts {@link buildTickVerdict} spreads conditionally — every optional
+ * key of {@link TickVerdict}, computed from the shape rather than listed
+ * against it. Optional on the shape and omitted-when-empty by the builder
+ * are the same set by construction: the builder's return is a
+ * {@link TickVerdict}, so a required field it stopped writing fails the
+ * typecheck and a conditional spread of a required field is one the
+ * typecheck already refuses to leave out.
+ *
+ * Exported for the suite, whose two-producer comparison asserts the wave it
+ * drives reaches each of these — a roster keyed off this type cannot fall
+ * behind a fact the builder grows, and the comparison stops reading complete
+ * over a set narrower than its claim (`.claude/rules/engineering.md`, *A seam
+ * gate reads what the real writer wrote*).
+ */
+export type ConditionalTickVerdictFact = {
+  [K in keyof TickVerdict]-?: Record<string, never> extends Pick<TickVerdict, K>
+    ? K
+    : never;
+}[keyof TickVerdict];
+
+/**
+ * The other half: every field {@link buildTickVerdict} writes on every
+ * verdict, and so every field a decode may require of a row. Read by
+ * {@link ALWAYS_WRITTEN} here, and by the suite's agreement case, which
+ * drives a real verdict through the real history reader one missing field at
+ * a time.
+ */
+export type RequiredTickVerdictField = Exclude<
+  keyof TickVerdict,
+  ConditionalTickVerdictFact
+>;
+
+/**
  * Three files under the state dir, every one a stable path and none a
  * dogfood convention. Their names live in `STATE_ROOT_NAMES`
  * (`src/paths.ts`) with the rest of the state root's layout, so the job
@@ -1135,22 +1168,47 @@ export const MAX_TICK_VERDICTS = 200;
  */
 export const DEFAULT_LOG_VERDICTS = 10;
 
+/** The check every `string`-typed field of the roster below is read with. */
+const isString = (value: unknown): boolean => typeof value === "string";
+
+/**
+ * What the decode requires of each field {@link buildTickVerdict} always
+ * writes — the {@link RequiredTickVerdictField} half, keyed off the shape
+ * rather than listed beside it. A field joining {@link TickVerdict} as
+ * required joins this roster or the typecheck refuses the mapped type,
+ * so the guard below cannot fall behind the builder that feeds it
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ *
+ * Each value is the check that field's own type earns at decode time: a
+ * declared `string` is read as a string, a declared array as an array. The
+ * element types are not walked — a row's arrays are this engine version's
+ * to read, and a stricter probe would decline a history line whose element
+ * shape predates it, which is the truncation {@link writeTickVerdict}'s
+ * line-preserving append exists to avoid.
+ */
+const ALWAYS_WRITTEN: {
+  [K in RequiredTickVerdictField]: (value: unknown) => boolean;
+} = {
+  phaseName: isString,
+  tags: Array.isArray,
+  committed: (value) => typeof value === "boolean",
+  gateResults: Array.isArray,
+  shippedTags: Array.isArray,
+  mergeOutcomes: Array.isArray,
+  invocations: Array.isArray,
+  timings: Array.isArray,
+  summary: isString,
+  headSha: isString,
+  at: isString,
+};
+
 /** Structural check a parsed JSON value is shaped like a {@link TickVerdict} — corrupt or partial input degrades to "not a verdict", never a thrown parse error surfacing as a tick failure. */
 function isTickVerdict(rec: unknown): rec is TickVerdict {
   if (!rec || typeof rec !== "object") return false;
-  const r = rec as Partial<TickVerdict>;
-  return (
-    typeof r.phaseName === "string" &&
-    typeof r.committed === "boolean" &&
-    Array.isArray(r.tags) &&
-    Array.isArray(r.gateResults) &&
-    Array.isArray(r.shippedTags) &&
-    Array.isArray(r.mergeOutcomes) &&
-    Array.isArray(r.invocations) &&
-    Array.isArray(r.timings) &&
-    typeof r.summary === "string" &&
-    typeof r.headSha === "string" &&
-    typeof r.at === "string"
+  const r = rec as Record<string, unknown>;
+  return Object.entries(ALWAYS_WRITTEN).every(([field, holds]) =>
+    holds(r[field]),
   );
 }
 

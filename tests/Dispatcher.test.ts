@@ -52,6 +52,8 @@ import {
   tickVerdictPath,
   tickVerdictsLogPath,
   gateFailureSignature,
+  type ConditionalTickVerdictFact,
+  type RequiredTickVerdictField,
   type TickVerdict,
 } from "../src/tickVerdict.ts";
 import { frictionCountLine } from "../src/friction.ts";
@@ -14377,6 +14379,84 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
   });
 
   /**
+   * The decode's own agreement case. `isTickVerdict` (`src/tickVerdict.ts`)
+   * is the gate every row the history reader hands a chain passes, and what
+   * it requires of a row is exactly what `buildTickVerdict` writes on every
+   * verdict. Two hands spelled that set until the guard's roster was keyed
+   * off `TickVerdict`'s required half; the roster below is the same half,
+   * so a field joining the shape joins both or the typecheck refuses it.
+   *
+   * Both sides are the shipped ones: a dispatcher's own verdict, one field
+   * removed at a time, read back through the real accessor
+   * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+   * wrote*). Removal is the only hand-authoring here, and it is the
+   * degradation under test — a real writer cannot emit a row from before a
+   * field existed.
+   */
+  it("the verdict history read declines a row missing any field buildTickVerdict always writes", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+
+    // The real producer. A quiet singleton tick carries no conditional fact
+    // worth naming, which is the point: the fields below are the ones every
+    // verdict has, whatever the tick did.
+    new Baton(flumeDir).wake("plan");
+    const quiet = await new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [makePhase({ name: "plan", concurrency: "singleton" })],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async () => {}),
+      log: silent,
+    }).tick();
+    const produced = quiet.verdict;
+    expect(produced).toBeDefined();
+
+    const alwaysWritten: { [K in RequiredTickVerdictField]: true } = {
+      phaseName: true,
+      tags: true,
+      committed: true,
+      gateResults: true,
+      shippedTags: true,
+      mergeOutcomes: true,
+      invocations: true,
+      timings: true,
+      summary: true,
+      headSha: true,
+      at: true,
+    };
+    const fields = Object.keys(alwaysWritten);
+
+    // Non-vacuity, and the fixture reaching the whole claim: the producer
+    // really wrote every field the roster names, so each removal below takes
+    // something that was there.
+    expect(fields.length).toBeGreaterThan(0);
+    expect(Object.keys(produced!).sort()).toEqual(
+      expect.arrayContaining([...fields].sort()),
+    );
+
+    await mkdir(flumeDir, { recursive: true });
+    for (const field of fields) {
+      const row = JSON.parse(JSON.stringify(produced)) as Record<
+        string,
+        unknown
+      >;
+      delete row[field];
+      await writeFile(historyPath(), JSON.stringify(row) + "\n", "utf8");
+      expect(
+        await readTickVerdicts(flumeDir),
+        `a row missing ${field} is served`,
+      ).toEqual([]);
+    }
+
+    // …and the same row intact decodes, so the declines above are the missing
+    // field's doing rather than the log's.
+    await writeFile(historyPath(), JSON.stringify(produced) + "\n", "utf8");
+    expect(await readTickVerdicts(flumeDir)).toEqual([produced]);
+  });
+
+  /**
    * spec/prompt.md, *The rendered prompt is persisted before the agent runs*:
    * a prompt lives as long as a retained verdict row names it as
    * `promptPath`. The window slice above is the one place a verdict leaves
@@ -24506,39 +24586,59 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
     );
   });
 
-  it("the wave both verdict comparisons read populates fact fields buildTickVerdict omits when empty", async () => {
+  it("the conditional-fact roster the two-producer verdict comparison reads is every fact buildTickVerdict omits when empty", async () => {
     // Every fact `buildTickVerdict` (`src/tickVerdict.ts`) spreads
-    // conditionally, less the two a wave that shipped a span cannot reach —
-    // asserted absent below rather than left to read as covered.
-    const omittedWhenEmpty = [
-      "declined",
-      "bystanderCheckpointSha",
-      "provisionFailures",
-      "stakeLosses",
-      "renderFailures",
-      "mergeFailures",
-      "gateFailures",
-      "platformFailures",
-      "shipFailures",
-      "clearedPriorAttempts",
-    ];
+    // conditionally, keyed off the shape's own optional half rather than
+    // hand-listed against it: a fact the builder grows joins this roster or
+    // the typecheck refuses it, so the comparison beside this one can never
+    // read complete over a set narrower than its claim.
+    //
+    // A fact classified unreachable is vacuous-by-design, spelled:
+    // `noCommit` classifies a tick that produced no usable commit and
+    // `tipMoved` a span the wave refused to pick, and this wave picked one
+    // and shipped it. Such a fact is asserted absent below, never left to
+    // read as covered.
+    const conditionalFacts: {
+      [K in ConditionalTickVerdictFact]: "populated" | "unreachable";
+    } = {
+      noCommit: "unreachable",
+      tipMoved: "unreachable",
+      declined: "populated",
+      bystanderCheckpointSha: "populated",
+      provisionFailures: "populated",
+      stakeLosses: "populated",
+      renderFailures: "populated",
+      mergeFailures: "populated",
+      gateFailures: "populated",
+      platformFailures: "populated",
+      shipFailures: "populated",
+      clearedPriorAttempts: "populated",
+    };
+    const reach = Object.entries(conditionalFacts);
+    const populated = reach
+      .filter(([, kind]) => kind === "populated")
+      .map(([field]) => field);
+    // Non-vacuity in both directions: the roster reaches conditional facts
+    // this wave really populates, and the unreachable half is a named few
+    // rather than the roster quietly emptying itself.
+    expect(populated.length).toBeGreaterThan(0);
+    expect(reach.length - populated.length).toBe(2);
+
     const legs: [string, WaveLeg][] = [
       ["completing", completing],
       ["refused", refused],
     ];
     for (const [name, leg] of legs) {
       const keys = Object.keys(leg.verdict);
-      for (const field of omittedWhenEmpty) {
-        expect(keys, `${name} verdict names ${field}`).toContain(field);
+      for (const [field, kind] of reach) {
+        if (kind === "populated") {
+          expect(keys, `${name} verdict names ${field}`).toContain(field);
+        } else {
+          expect(keys, `${name} verdict names ${field}`).not.toContain(field);
+        }
       }
-      // Vacuous-by-design, spelled: `noCommit` classifies a tick that produced
-      // no usable commit and `tipMoved` a span the wave refused to pick, and
-      // this wave picked one and shipped it. The field-name comparison beside
-      // this one therefore stands over eight of the ten conditional facts, and
-      // never over these two.
+      // What puts the two unreachable facts out of reach: this wave shipped.
       expect(leg.verdict.committed).toBe(true);
-      expect(leg.verdict.noCommit).toBeUndefined();
-      expect(leg.verdict.tipMoved).toBeUndefined();
     }
   });
 });
