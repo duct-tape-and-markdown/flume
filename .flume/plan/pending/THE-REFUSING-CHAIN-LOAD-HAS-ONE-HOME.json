@@ -1,0 +1,26 @@
+{
+  "tag": "THE-REFUSING-CHAIN-LOAD-HAS-ONE-HOME",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 0,
+  "files": {
+    "edit": [
+      {
+        "path": "src/cliChainLoad.ts",
+        "description": "the refusing load joins its best-effort sibling — one home for the loader call, the CJS arm and the mount-dead report, the verb naming itself"
+      },
+      {
+        "path": "src/cli.ts",
+        "description": "`check` and `friction` call it instead of each spelling the sequence"
+      }
+    ]
+  },
+  "summary": "`check` and `friction` each spell one refusing chain load — same call, same CJS arm, same EX_MOUNT_DEAD report — differing only in the verb name they print",
+  "per": {
+    "path": ".claude/rules/posture-sweep.md",
+    "section": "Routing"
+  },
+  "acceptance": "the refusing chain load a verb takes before any work of its own is one function with two callers, homed beside `loadChainForObservation` in the module whose header already claims the arms every chain-loading CLI surface shares, and each verb's stderr line and exit code is byte-identical to what it prints today",
+  "notes": "Third-note escalation, each body naming this pair: 3f8dec18, 2b19c560, a858807f. Verified on disk here — `src/cli.ts:786`-`:796` (`check`) and `:884`-`:894` (`friction`) are the two legs, identical but for the verb in the message; `:1091` (`render`) and `:1604` (`loop`) take neither shape. `src/cliChainLoad.ts:1` already calls itself \"the two arms every chain-loading CLI surface shares\". Behavior-free, so no property. Seams `src/cli.ts` with five standing entries."
+}
