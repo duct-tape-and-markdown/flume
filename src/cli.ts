@@ -165,6 +165,55 @@ function signalledWaitLine(waitingOn: string, graceMs: number): string {
 }
 
 /**
+ * The supervisor's tip-claim handoff, as one decoded value.
+ *
+ * spec/loop.md, *The loop lock and the tip claim*: the loop runner tells the
+ * children it spawns which pid holds the claim they run under
+ * (`FLUME_TIP_CLAIM_HELD=<pid>`, `defaultTickRunner`, `src/loopSupervisor.ts`)
+ * rather than leaving them to probe pids and infer parentage. Every question
+ * this process asks of that handoff — the pid its wave's tip-verify treats as
+ * its own, whether it acquires a claim itself, and whether it is the
+ * supervised run whose wave reads the stop flag — is answered off this one
+ * decode, because three reads under three predicates disagreed on exactly the
+ * values the writer never produces: an empty string is falsy (no supervisor
+ * pid), defined (a supervised run), and not `undefined` (no claim acquired),
+ * which ran a bare tick over the ref under no claim at all while its wave
+ * honored a stop flag spec/loop.md promises a bare tick ignores.
+ *
+ * So a value that is present and names no pid is refused here rather than read
+ * three ways (`.claude/rules/engineering.md`, *Loud or nothing*): the writer
+ * emits a decimal pid and nothing else, so anything else is an operator's or a
+ * foreign runner's hand on the var, and the one reading that would let the
+ * tick proceed — "no supervisor, take my own claim" — is the reading the
+ * operator can state outright by unsetting it.
+ */
+type TipClaimHandoff =
+  | { kind: "bare" }
+  | { kind: "supervised"; pid: number }
+  | { kind: "malformed"; raw: string };
+
+function decodeTipClaimHandoff(raw: string | undefined): TipClaimHandoff {
+  if (raw === undefined) return { kind: "bare" };
+  // Exactly what the writer spells — `String(process.pid)`. Not `Number`,
+  // which reads an empty string as 0, a signed or fractional literal as a pid
+  // no process bears, and whitespace as the number it surrounds: each is a
+  // value that cannot match the claim file's first line (`liveForeignClaimPid`,
+  // `src/tipVerify.ts`), so decoding it is a silent degrade wearing a number.
+  if (!/^[1-9][0-9]*$/.test(raw)) return { kind: "malformed", raw };
+  return { kind: "supervised", pid: Number(raw) };
+}
+
+/** The operator's sentence for a handoff that names no pid. */
+function tipClaimHandoffRefusal(raw: string): string {
+  return (
+    `[flume] refuses: FLUME_TIP_CLAIM_HELD is set to '${raw}', which names ` +
+    `no pid — the loop supervisor sets it to its own pid on the ticks it ` +
+    `spawns (spec/loop.md, "The loop lock and the tip claim"). Unset it to ` +
+    `run a tick that takes its own tip claim.`
+  );
+}
+
+/**
  * What a run has to say about the git it found, or nothing when that git
  * carries the floor the engine reads at.
  *
@@ -1008,23 +1057,30 @@ async function dispatch(): Promise<number> {
   const quarantinedSlugs = process.env.FLUME_QUARANTINED_SLUGS
     ? new Set(process.env.FLUME_QUARANTINED_SLUGS.split(",").filter(Boolean))
     : undefined;
+  // The supervisor's handoff, decoded once for the three facts this run reads
+  // off it (`decodeTipClaimHandoff`, above) — and refused here, ahead of the
+  // dispatcher and of any tick, when it is present and names no pid.
+  const tipClaimHandoff = decodeTipClaimHandoff(
+    process.env.FLUME_TIP_CLAIM_HELD,
+  );
+  if (tipClaimHandoff.kind === "malformed") {
+    console.error(tipClaimHandoffRefusal(tipClaimHandoff.raw));
+    return 1;
+  }
   // spec/loop.md "The loop lock and the tip claim": which pid the wave's own
   // tip-verify checks (`liveForeignClaimPid`, `src/tipVerify.ts`) treat as
   // this run's own rather than a foreign concurrent engine — a loop-spawned
-  // child's supervisor (told via FLUME_TIP_CLAIM_HELD, set by
-  // `defaultTickRunner`), or this process's own pid otherwise, which is
-  // exactly the pid a bare tick's own claim (acquired below) is filed under.
-  const ownTipClaimPid = process.env.FLUME_TIP_CLAIM_HELD
-    ? Number(process.env.FLUME_TIP_CLAIM_HELD)
-    : process.pid;
+  // child's supervisor, or this process's own pid otherwise, which is exactly
+  // the pid a bare tick's own claim (acquired below) is filed under.
+  const ownTipClaimPid =
+    tipClaimHandoff.kind === "supervised" ? tipClaimHandoff.pid : process.pid;
   // spec/loop.md "Graceful stop — the stop flag": the flag ends a
   // supervisor's iteration and a supervised wave's refill, and a bare tick
-  // ignores it. The same env var the claim read above keys on is what says
-  // which this process is — the supervisor sets it on the children it spawns
-  // — so the CLI states the fact and the wave never infers it from a
-  // quarantine set or a pid match (.claude/rules/engine-boundary.md, "Told,
-  // not inferred").
-  const supervisedRun = process.env.FLUME_TIP_CLAIM_HELD !== undefined;
+  // ignores it. The same handoff says which this process is — the supervisor
+  // sets it on the children it spawns — so the CLI states the fact and the
+  // wave never infers it from a quarantine set or a pid match
+  // (.claude/rules/engine-boundary.md, "Told, not inferred").
+  const supervisedRun = tipClaimHandoff.kind === "supervised";
   // This process's teardown, reaching the agent a tick starts: the tick
   // command's signal handlers abort it and await the tick, so the agent tree
   // is gone before the tip claim drops (spec/loop.md, "The loop lock and the
@@ -1175,11 +1231,10 @@ async function dispatch(): Promise<number> {
       return 1;
     }
     // spec/loop.md "The loop lock and the tip claim": scope is per run. A
-    // loop-spawned child trusts the supervisor's claim — told via
-    // FLUME_TIP_CLAIM_HELD (set by `defaultTickRunner`,
-    // src/loopSupervisor.ts) —
-    // rather than probing pids and inferring parentage, and takes none
-    // itself. A bare tick has no supervisor to trust, so it acquires and
+    // loop-spawned child trusts the supervisor's claim — the handoff decoded
+    // once at the top of this dispatch, never re-read here under a fourth
+    // predicate — rather than probing pids and inferring parentage, and takes
+    // none itself. A bare tick has no supervisor to trust, so it acquires and
     // releases its own claim around this single tick, refusing (exit 1) when
     // another live process already holds it.
     //
@@ -1254,7 +1309,7 @@ async function dispatch(): Promise<number> {
     process.on("exit", dropBareTipClaim);
     process.on("SIGINT", () => void releaseAndExit(130));
     process.on("SIGTERM", () => void releaseAndExit(143));
-    if (process.env.FLUME_TIP_CLAIM_HELD === undefined) {
+    if (tipClaimHandoff.kind === "bare") {
       try {
         bareTipClaim = await acquireTipClaim(
           repoRoot,

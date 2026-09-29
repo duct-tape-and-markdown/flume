@@ -3063,6 +3063,97 @@ describe("flume tick — two state roots on one tip (spec/loop.md \"The loop loc
   );
 });
 
+/**
+ * The supervisor's tip-claim handoff is one decoded value, and a value that
+ * names no pid stops the run rather than being read three ways.
+ *
+ * `FLUME_TIP_CLAIM_HELD` carries a decimal pid and nothing else (spec/loop.md,
+ * *The loop lock and the tip claim*). An empty string is none, and read by
+ * truthiness it named no supervisor pid, read by `!== undefined` it declared a
+ * supervised run, and read by `=== undefined` it skipped the acquire — a bare
+ * tick moving the ref under no claim at all, whose wave then honoured the stop
+ * flag spec/loop.md promises a bare tick ignores. Refused at the decode, none
+ * of the three readings happens.
+ *
+ * Driven through the real CLI, with the control arm the claim rests on: the
+ * same invocation with nothing in the var reaches the agent, so the refusal is
+ * the handoff's doing rather than a fixture that never ticked. "Did a tick
+ * run" is read off a marker the fixture's agent writes, not off the process
+ * output (`.claude/rules/posture-sweep.md`, *Standing lenses*).
+ */
+describe("flume tick — the supervisor's tip-claim handoff (spec/loop.md \"The loop lock and the tip claim\")", () => {
+  it(
+    "a tick refuses when the supervisor tip-claim handoff carries a value that names no pid",
+    async () => {
+      const repo = await makeScratchRepo("flume-tick-handoff-", "main");
+      try {
+        const marker = join(repo.dir, "agent-ran");
+        await writeRepoConfig(repo.dir, markerAgentChainSrc(marker));
+
+        const refused = await runCli(repo.dir, ["tick", "--phase", "probe"], {
+          ...hermeticEnv(),
+          FLUME_TIP_CLAIM_HELD: "",
+        });
+
+        expect(refused.code).toBe(1);
+        // The var by name, the value it carried, and the remedy that states
+        // the one reading which would let the tick proceed.
+        expect(refused.out).toContain("FLUME_TIP_CLAIM_HELD");
+        expect(refused.out).toContain("names no pid");
+        expect(refused.out).toContain("Unset it");
+        // Refused before the tick, not after it: no agent was invoked, and
+        // the ref was never moved under a claim nobody holds.
+        expect(existsSync(marker)).toBe(false);
+        expect(
+          existsSync(
+            tipClaimPath(await gitCommonDir(repo.dir), "refs/heads/main"),
+          ),
+        ).toBe(false);
+
+        // The control: same repo, same invocation, handoff absent — it ticks.
+        // Without this the refusal above could be any of this fixture's
+        // failures wearing exit 1.
+        const control = await runCli(repo.dir, ["tick", "--phase", "probe"]);
+
+        expect(control.code).toBe(0);
+        expect(control.out).not.toContain("names no pid");
+        expect(existsSync(marker)).toBe(true);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it(
+    "a tick refuses a tip-claim handoff whose value is not the decimal pid the supervisor writes",
+    async () => {
+      const repo = await makeScratchRepo("flume-tick-handoff-", "main");
+      try {
+        const marker = join(repo.dir, "agent-ran");
+        await writeRepoConfig(repo.dir, markerAgentChainSrc(marker));
+
+        // Each one `Number` decoded into a value no claim file's first line
+        // can match — a pid nothing bears, silently read as this run's own.
+        for (const raw of ["not-a-pid", "0", "-1", "12.5", " 12 "]) {
+          const r = await runCli(repo.dir, ["tick", "--phase", "probe"], {
+            ...hermeticEnv(),
+            FLUME_TIP_CLAIM_HELD: raw,
+          });
+
+          expect(r.code, raw).toBe(1);
+          expect(r.out, raw).toContain(`'${raw}'`);
+          expect(r.out, raw).toContain("names no pid");
+          expect(existsSync(marker), raw).toBe(false);
+        }
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+});
+
 describe("flume loop — a signalled run takes down its whole tick tree (spec/loop.md \"The loop lock and the tip claim\")", () => {
   afterEach(async () => {
     await reapAll(signalledPids.splice(0));
