@@ -992,8 +992,16 @@ it("the clean-tree gate names a quoted tracked path without its quotes", async (
 
   expect(refused.ok).toBe(false);
   // Named as git spells the path, not as porcelain v1 escapes it for display.
-  expect(refused.details).toContain(`${tracked} (M)`);
-  expect(refused.details).not.toContain(`"`);
+  // The negative reads that one status line, cut out of the verdict: the
+  // details carry a line per residue path, and any other line's own spelling
+  // is not what this case is about (`.claude/rules/posture-sweep.md`, *A
+  // negative assertion over a whole rendered artifact*).
+  const status = (refused.details ?? "")
+    .split("\n")
+    .filter((line) => line.includes(tracked));
+  expect(status).toHaveLength(1);
+  expect(status[0]).toContain(`${tracked} (M)`);
+  expect(status[0]).not.toContain(`"`);
 });
 
 it("the clean-tree gate reads a rename's origin field as its origin, not as a second status line", async () => {

@@ -180,6 +180,7 @@ import {
   type Fixture,
 } from "./helpers/dispatcherFixture.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
+import { priorAttemptBlock } from "./helpers/priorAttemptBlock.ts";
 import { SPAWN_BUDGET_MS, exec } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
@@ -12418,14 +12419,19 @@ describe("Dispatcher — no-commit outcome taxonomy", () => {
 
     // …and the raw NDJSON / cost-usage noise the pre-fix tail forwarded is
     // gone: no event envelopes, no escaped JSON, no cost/usage metadata.
-    expect(retry).not.toContain('"type":"result"');
-    expect(retry).not.toContain('"type":"assistant"');
-    expect(retry).not.toContain('"type":"system"');
-    expect(retry).not.toContain("tool_use");
-    expect(retry).not.toContain("total_cost_usd");
-    expect(retry).not.toContain("cache_read_input_tokens");
-    expect(retry).not.toContain("duration_ms");
-    expect(retry).not.toContain('\\"text\\"');
+    // Read over the block the dispatcher composed, never the prompt entire:
+    // an NDJSON field name is also ordinary text a fence, a queue entry or a
+    // task body may carry.
+    const block = priorAttemptBlock(retry);
+    expect(block).toContain(CLEAN_EXIT_INTRO);
+    expect(block).not.toContain('"type":"result"');
+    expect(block).not.toContain('"type":"assistant"');
+    expect(block).not.toContain('"type":"system"');
+    expect(block).not.toContain("tool_use");
+    expect(block).not.toContain("total_cost_usd");
+    expect(block).not.toContain("cache_read_input_tokens");
+    expect(block).not.toContain("duration_ms");
+    expect(block).not.toContain('\\"text\\"');
   });
 
   it("clean-exit under a stream-json agent with no result/assistant event: falls back to the bounded raw transcript, never an empty final message", async () => {
@@ -21374,17 +21380,13 @@ describe("Dispatcher — a hook that throws is answered the way its sibling seam
     // line by line. That quote is the writer's text and its stack, whose
     // absolute frames are this tick's worktree path, so anything asserted
     // over it judges what the tick is called rather than what the arm says.
-    const open = retry.indexOf("<prior-attempt>");
-    const close = retry.indexOf("</prior-attempt>");
-    expect(close).toBeGreaterThan(open);
     const quotedLines = new Set(
       quoted
         .split("\n")
         .map((l) => l.trim())
         .filter((l) => l.length > 0),
     );
-    const arm = retry
-      .slice(open, close)
+    const arm = priorAttemptBlock(retry)
       .split("\n")
       .filter((l) => !quotedLines.has(l.trim()))
       .join("\n");

@@ -280,11 +280,20 @@ it("flume render exits EX_DATAERR naming an unresolved span", async () => {
     "before\n!`exit 7 # unresolvable-span-probe`\nafter\n",
   );
   try {
-    const r = await runCli(repo.dir, ["render", "build", "--entry", "ONLY"]);
+    const r = await runCliStreams(repo.dir, [
+      "render",
+      "build",
+      "--entry",
+      "ONLY",
+    ]);
     expect(r.code).toBe(EX_DATAERR);
-    expect(r.out).toContain("unresolvable-span-probe");
-    // The refusal is total: no partial prompt reached stdout beside it.
-    expect(r.out).not.toContain("before");
+    expect(r.stderr).toContain("unresolvable-span-probe");
+    // The refusal is total: the prompt's own channel carries nothing at all.
+    // Read as the whole of stdout, and on stdout alone — over the verb's
+    // combined output a word from the prompt is also a word the refusal on
+    // stderr may use (`.claude/rules/posture-sweep.md`, *A negative assertion
+    // over a whole rendered artifact*).
+    expect(r.stdout).toBe("");
   } finally {
     await repo.cleanup();
   }

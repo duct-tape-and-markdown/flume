@@ -319,9 +319,19 @@ describe("loopExitCode / loopCompletionSummary — amended exit-code contract", 
         erroredTicks: [],
         agentUsageByPhase: [],
       });
-      expect(summary).toContain(`${stage}-stage failure`);
-      expect(summary).toContain("SIG-" + stage);
-      expect(summary).not.toContain("worktree provisioning");
+      // The abort segment this arm renders, cut out of the summary the
+      // verb joins from many: the claim is about how *this* stage is named,
+      // and a sibling segment — shipped tags, an errored tick's own text —
+      // is not the arm's to answer for
+      // (`.claude/rules/posture-sweep.md`, *A negative assertion over a
+      // whole rendered artifact*).
+      const aborts = (summary ?? "")
+        .split(" | ")
+        .filter((part) => part.includes("-stage failure"));
+      expect(aborts).toHaveLength(1);
+      expect(aborts[0]).toContain(`${stage}-stage failure`);
+      expect(aborts[0]).toContain("SIG-" + stage);
+      expect(aborts[0]).not.toContain("worktree provisioning");
     }
   });
 

@@ -32,6 +32,7 @@ import type {
 } from "../src/Prompt.ts";
 import type { Phase } from "../src/Phase.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
+import { priorAttemptBlock } from "./helpers/priorAttemptBlock.ts";
 import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
@@ -795,21 +796,21 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     // Vacuity: the record under test actually carries a message to quote.
     expect(cleanExit.finalMessage.length).toBeGreaterThan(0);
 
-    const out = await renderWithPrior(cleanExit);
+    const block = priorAttemptBlock(await renderWithPrior(cleanExit));
 
     // What the engine holds: a clean exit that committed nothing, plus the
     // agent's own closing prose, verbatim under a neutral label.
-    expect(out).toContain("exited cleanly and committed");
-    expect(out).toContain("Prior attempt's final message");
-    expect(out).toContain(cleanExit.finalMessage);
+    expect(block).toContain("exited cleanly and committed");
+    expect(block).toContain("Prior attempt's final message");
+    expect(block).toContain(cleanExit.finalMessage);
 
     // What it must not hold: a reading of why the agent stopped. The old
     // rendering labelled the message a "Refused constraint" and told the
     // retry the prior judgment still held — an intent the engine inferred
     // (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
-    expect(out).not.toMatch(/refused constraint/i);
-    expect(out).not.toMatch(/refused to cross/i);
-    expect(out).not.toMatch(/judgment likely still holds/i);
+    expect(block).not.toMatch(/refused constraint/i);
+    expect(block).not.toMatch(/refused to cross/i);
+    expect(block).not.toMatch(/judgment likely still holds/i);
   }, SPAWN_BUDGET_MS);
 
   it("clean-exit names the span both ways: unmoved for an attempt that never committed, base..head for one whose span's diff was empty", async () => {
@@ -822,24 +823,22 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     };
     expect(emptySpan.spanBase).not.toBe(emptySpan.spanHead);
 
-    const unmovedOut = await renderWithPrior(cleanExit);
-    expect(unmovedOut).toContain(`Span: ${UNMOVED_TIP}, unmoved`);
-    expect(unmovedOut).toContain("committed nothing");
-    expect(unmovedOut).not.toContain(`${UNMOVED_TIP}..`);
+    const unmoved = priorAttemptBlock(await renderWithPrior(cleanExit));
+    expect(unmoved).toContain(`Span: ${UNMOVED_TIP}, unmoved`);
+    expect(unmoved).toContain("committed nothing");
+    expect(unmoved).not.toContain(`${UNMOVED_TIP}..`);
 
     // The empty span's own commits are named as a range, so the retry can
     // read what the prior attempt wrote before redoing it — and the block
     // says plainly that the span never reached the merge stage.
-    const emptyOut = await renderWithPrior(emptySpan);
-    expect(emptyOut).toContain(
-      `Span: ${emptySpan.spanBase}..${emptySpan.spanHead}`,
-    );
-    expect(emptyOut).toContain("diff against its base was empty");
-    expect(emptyOut).toContain("never reached the merge stage");
+    const empty = priorAttemptBlock(await renderWithPrior(emptySpan));
+    expect(empty).toContain(`Span: ${emptySpan.spanBase}..${emptySpan.spanHead}`);
+    expect(empty).toContain("diff against its base was empty");
+    expect(empty).toContain("never reached the merge stage");
     // Neither arm says *why* the agent stopped — that stays the chain's
     // reading of the quoted message (`.claude/rules/engine-boundary.md`,
     // *Told, not inferred*).
-    expect(emptyOut).not.toMatch(/refused/i);
+    expect(empty).not.toMatch(/refused/i);
   }, SPAWN_BUDGET_MS);
 
   it("not-shipped renders the landed sha and every touched path, and states the elision when the writer bounded the list", async () => {
@@ -858,19 +857,19 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     // Vacuity: the record under test carries two distinct shas to name.
     expect(tipMoved.expectedTip).not.toEqual(tipMoved.observedTip);
 
-    const out = await renderWithPrior(tipMoved);
+    const block = priorAttemptBlock(await renderWithPrior(tipMoved));
 
     // Both shas the operator needs, under labels that say which is which
     // (spec/loop.md "Tip verify — one writer per branch, absorption at the
     // merge": the observed HEAD and the recorded base, never the parent).
-    expect(out).toContain(`Recorded base: ${tipMoved.expectedTip}`);
-    expect(out).toContain(`Observed HEAD: ${tipMoved.observedTip}`);
+    expect(block).toContain(`Recorded base: ${tipMoved.expectedTip}`);
+    expect(block).toContain(`Observed HEAD: ${tipMoved.observedTip}`);
 
     // What it must not claim: the leg that writes this record is an ancestry
     // check on the agent's own branch, not a sha comparison against the tip
     // the tick recorded on the ref.
-    expect(out).not.toMatch(/tick start/i);
-    expect(out).not.toMatch(/the ref moved/i);
+    expect(block).not.toMatch(/tick start/i);
+    expect(block).not.toMatch(/the ref moved/i);
   }, SPAWN_BUDGET_MS);
 
   it("absent priorAttempt renders no block and no anchor line at all", async () => {

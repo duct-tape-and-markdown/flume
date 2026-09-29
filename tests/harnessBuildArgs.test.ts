@@ -462,6 +462,25 @@ it("the package's build prompt renders over a real tick with no placeholder left
   expect(rendered).toContain("Every prompt the package renders");
 }, SPAWN_BUDGET_MS);
 
+/**
+ * The `<spec>` block of a rendered build prompt — the block `PER_SECTION_TEXT`
+ * is substituted into, and the whole of the render the data-key guard governs.
+ *
+ * The guard's two arms read this rather than the prompt entire, which also
+ * carries the entry JSON and a resolved `git log` span: over all of it the
+ * arms would turn on what this repository's recent commit subjects happen to
+ * spell (`.claude/rules/posture-sweep.md`, *A negative assertion over a whole
+ * rendered artifact*).
+ */
+function specBlock(rendered: string): string {
+  const lines = rendered.split("\n");
+  const open = lines.findIndex((line) => line.startsWith("<spec "));
+  expect(open, "the render carries no <spec> block").toBeGreaterThanOrEqual(0);
+  const close = lines.indexOf("</spec>", open);
+  expect(close, "the <spec> block is unclosed").toBeGreaterThan(open);
+  return lines.slice(open, close + 1).join("\n");
+}
+
 it("build's per-tick args reach the renderer through a phase carrying the package's declared prompt data keys", async () => {
   const promptFile = promptPath("build");
   const phase = buildPhase(promptFile);
@@ -503,7 +522,7 @@ it("build's per-tick args reach the renderer through a phase carrying the packag
 
   // Through the declared phase: the command text reaches the agent as its
   // author wrote it, and `sh` never saw it.
-  const rendered = await render(phase);
+  const rendered = specBlock(await render(phase));
   expect(rendered).toContain(`\`${SPAN_CMD}\``);
   expect(rendered).not.toContain(SPAN_OUTPUT);
 
@@ -511,7 +530,7 @@ it("build's per-tick args reach the renderer through a phase carrying the packag
   // was before the keys were declared — the same args, the same renderer, and
   // the cited section's span runs. Deliberately executed once, harmlessly, so
   // "never saw it" above is the declaration's doing and not an inert fixture.
-  const unguarded = await render({ ...phase, promptDataKeys: [] });
+  const unguarded = specBlock(await render({ ...phase, promptDataKeys: [] }));
   expect(unguarded).toContain(SPAN_OUTPUT);
   expect(unguarded).not.toContain(`\`${SPAN_CMD}\``);
 }, SPAWN_BUDGET_MS);

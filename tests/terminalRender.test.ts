@@ -20,41 +20,70 @@ describe("withTerminalRenderer", () => {
     return events.map((e) => JSON.stringify(e)).join("\n") + "\n";
   }
 
+  /**
+   * The lines the real decorator emitted for the events it was handed, blanks
+   * dropped.
+   *
+   * A drop claim reads the render of its own event through this, never a
+   * `not.toContain` over the whole transcript's render: that subject also
+   * carries every line the other events produced — the tool summary quotes a
+   * command, the tag quotes the cwd — so the case would turn on what those
+   * happen to spell (`.claude/rules/posture-sweep.md`, *A negative assertion
+   * over a whole rendered artifact*).
+   */
+  async function renderedLines(
+    cwd: string,
+    ...events: unknown[]
+  ): Promise<string[]> {
+    const stream = ndjson(...events);
+    const captured: string[] = [];
+    await withTerminalRenderer({
+      name: "fake",
+      async invoke(inv) {
+        inv.onStdout?.(stream);
+        return { exitCode: 0, stdout: stream, stderr: "" };
+      },
+    }).invoke({ cwd, prompt: "", onStdout: (chunk) => captured.push(chunk) });
+    return captured
+      .join("")
+      .split("\n")
+      .filter((line) => line !== "");
+  }
+
   it("parses NDJSON, renders tool_use + result, drops thinking/text/system/tool_result", async () => {
-    const stream = ndjson(
-      { type: "system", subtype: "init", session_id: "abc" },
-      {
-        type: "assistant",
-        message: {
-          content: [
-            { type: "thinking", thinking: "should-not-appear" },
-            { type: "text", text: "should-not-appear-text" },
-            { type: "tool_use", name: "Bash", input: { command: "ls -la" } },
-          ],
-        },
+    const init = { type: "system", subtype: "init", session_id: "abc" };
+    const mixedTurn = {
+      type: "assistant",
+      message: {
+        content: [
+          { type: "thinking", thinking: "should-not-appear" },
+          { type: "text", text: "should-not-appear-text" },
+          { type: "tool_use", name: "Bash", input: { command: "ls -la" } },
+        ],
       },
-      {
-        type: "assistant",
-        message: {
-          content: [{ type: "text", text: "prose-only turn, drop me" }],
-        },
+    };
+    const proseOnly = {
+      type: "assistant",
+      message: {
+        content: [{ type: "text", text: "prose-only turn, drop me" }],
       },
-      {
-        type: "user",
-        message: {
-          content: [
-            { type: "tool_result", tool_use_id: "x", content: "tool-output" },
-          ],
-        },
+    };
+    const toolResult = {
+      type: "user",
+      message: {
+        content: [
+          { type: "tool_result", tool_use_id: "x", content: "tool-output" },
+        ],
       },
-      {
-        type: "result",
-        num_turns: 3,
-        usage: { input_tokens: 1234, output_tokens: 5678 },
-        total_cost_usd: 0.123,
-        duration_ms: 2500,
-      },
-    );
+    };
+    const result = {
+      type: "result",
+      num_turns: 3,
+      usage: { input_tokens: 1234, output_tokens: 5678 },
+      total_cost_usd: 0.123,
+      duration_ms: 2500,
+    };
+    const stream = ndjson(init, mixedTurn, proseOnly, toolResult, result);
 
     const fake: Agent = {
       name: "fake",
@@ -85,12 +114,21 @@ describe("withTerminalRenderer", () => {
     expect(out).toContain("$0.123");
     expect(out).toContain("2.5s");
 
-    expect(out).not.toContain("should-not-appear");
-    expect(out).not.toContain("prose-only");
-    expect(out).not.toContain("tool_result");
-    expect(out).not.toContain("tool-output");
-    expect(out).not.toContain("session_id");
-    expect(out).not.toContain("\"type\":");
+    // The drops, each read over the lines its own event produced rather than
+    // over `out`. Stated as the whole of that render, so a leak of any kind —
+    // the thinking block, the dropped turn's prose, the tool payload, the
+    // event envelope itself — reds the arm it belongs to: an event the
+    // renderer drops produces nothing at all, and the mixed turn produces its
+    // one kept block and no more.
+    expect(await renderedLines("/work/foo", init)).toEqual([]);
+    expect(await renderedLines("/work/foo", proseOnly)).toEqual([]);
+    expect(await renderedLines("/work/foo", toolResult)).toEqual([]);
+    expect(await renderedLines("/work/foo", mixedTurn)).toEqual([
+      "[foo] Bash(ls -la)",
+    ]);
+    expect(await renderedLines("/work/foo", result)).toEqual([
+      "[foo] result · 3 turns · 1.2k in · 5.7k out · $0.123 · 2.5s",
+    ]);
   });
 
   describe("default tag", () => {

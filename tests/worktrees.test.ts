@@ -365,8 +365,20 @@ describe("worktrees — the base is resolved in one place", () => {
     // resolver, not which field holds their root.
     const worktrees = sources.get("worktrees.ts")!;
     expect(worktrees.match(/worktreesBase\(/g) ?? []).toHaveLength(3);
-    // No hand-rolled default survives beside them.
-    expect(worktrees).not.toMatch(/join\([^)]*[Ff]lumeDir,\s*"worktrees"\)/);
+
+    // No hand-rolled default survives beside them — read over the module's
+    // declarations, with its prose cut out. The module explains the rule in
+    // comments, and a comment spelling the forbidden join is the rule being
+    // stated, not broken: over the whole text this claim would red for the
+    // note that documents it (`.claude/rules/posture-sweep.md`, *A negative
+    // assertion over a whole rendered artifact*).
+    const declarations = worktrees
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/.*$/gm, "$1");
+    // Vacuity: the cut left every call standing, so the negative runs over the
+    // declarations it is about rather than over an emptied string.
+    expect(declarations.match(/worktreesBase\(/g) ?? []).toHaveLength(3);
+    expect(declarations).not.toMatch(/join\([^)]*[Ff]lumeDir,\s*"worktrees"\)/);
   });
 });
 

@@ -322,6 +322,22 @@ function writeFriction(name: string, text: string): string {
 /** The friction channel the cases below declare, and write into. */
 const FRICTION_DIR = "friction";
 
+/**
+ * The two leads a window opens a leg with, as their producers compose them:
+ * the refusal's (`REFUSE: `, `harness/sliceWindow.ts`) and the bootstrap
+ * listing's (`harness/cursorWindow.ts`).
+ *
+ * A case showing a window took neither leg reads these rather than the bare
+ * words `REFUSE` and `bootstrap`. Both are ordinary English a rendered commit
+ * subject, spec diff line or path may carry, so a negative spelling them over
+ * a whole render would turn on what the fixture happened to name rather than
+ * on the leg it is about (`.claude/rules/posture-sweep.md`, *A negative
+ * assertion over a whole rendered artifact*).
+ */
+const REFUSAL_LEAD = "REFUSE:";
+const bootstrapLead = (field: string): string =>
+  `(bootstrap: no \`${field}\` yet`;
+
 it("the derive window is live exactly while commits past the derive cursor touch the declared spec locus", () => {
   commit({ "spec/loop.md": "# Loop\n" }, "spec: the loop");
   writeState();
@@ -959,7 +975,7 @@ it("a tip record listing the wake could not read reaches the inbox slice as a re
   const listed = inbox().args(ctx).RECORDS!;
   expect(listed).toContain(path);
   expect(listed).toContain("Left for the drain.");
-  expect(listed).not.toContain("REFUSE:");
+  expect(listed).not.toContain(REFUSAL_LEAD);
 });
 
 /**
@@ -1032,7 +1048,7 @@ it("the inbox window refuses when the checkout's record queue cannot be listed",
   mkdirSync(obstruction);
   const listed = inbox().args(ctx).RECORDS!;
   expect(listed).toContain("Left for the drain.");
-  expect(listed).not.toContain("REFUSE:");
+  expect(listed).not.toContain(REFUSAL_LEAD);
 });
 
 /**
@@ -1096,7 +1112,7 @@ it("the inbox window refuses when a listed record cannot be read", () => {
   const listed = inbox().args(ctx).RECORDS!;
   expect(listed).toContain("The note the drain can read.");
   expect(listed).toContain("Left for the drain.");
-  expect(listed).not.toContain("REFUSE:");
+  expect(listed).not.toContain(REFUSAL_LEAD);
 });
 
 /**
@@ -1521,7 +1537,7 @@ it("a window refuses a cursor sha that does not resolve in the tick's tree", () 
     ["derivedThrough", spec],
     ["sweptThrough", sweep],
   ] as const) {
-    expect(window).toContain("REFUSE");
+    expect(window).toContain(REFUSAL_LEAD);
     expect(window).toContain(absent);
     expect(window).toContain(`\`${field}\``);
     expect(window).toContain("advance no cursor this tick");
@@ -1563,12 +1579,12 @@ it("a retired-claim cursor that names no commit refuses naming retiredThrough ra
   writeState({ sweptThrough: stamp });
   const readable = windows()["plan-sweep"].args(ctx).SWEEP_WINDOW;
   expect(retiredDelta(readable)).toContain("-A ratified claim.");
-  expect(readable).not.toContain("REFUSE");
+  expect(readable).not.toContain(REFUSAL_LEAD);
 
   writeState({ sweptThrough: stamp, retiredThrough: absent });
   const window = windows()["plan-sweep"].args(ctx).SWEEP_WINDOW;
 
-  expect(window).toContain("REFUSE");
+  expect(window).toContain(REFUSAL_LEAD);
   expect(window).toContain(`\`retiredThrough\` is \`${absent}\``);
   expect(window).toContain("does not resolve to a commit");
   // The repair is the file that field lives in — this slice's own state.
@@ -1626,13 +1642,13 @@ it("a plan window over a tree git cannot read refuses as unreadable rather than 
         flumeDir: stateRoot(),
       })[arg];
       expect(readable).toContain(material);
-      expect(readable).not.toContain("REFUSE");
+      expect(readable).not.toContain(REFUSAL_LEAD);
 
       const window = built[slice].args({
         cwd: notATree,
         flumeDir: stateRoot(),
       })[arg];
-      expect(window).toContain("REFUSE");
+      expect(window).toContain(REFUSAL_LEAD);
       expect(window).toContain(`\`${field}\` window could not be read`);
       // git's own text, carried whole rather than classified.
       expect(window).toContain(fatal);
@@ -1687,14 +1703,14 @@ it("a window render refuses by name when git fails for a reason other than an un
       ["derivedThrough", built["plan-derive"].args(ctx).SPEC_WINDOW],
       ["sweptThrough", built["plan-sweep"].args(ctx).SWEEP_WINDOW],
     ] as const) {
-      expect(window).toContain("REFUSE");
+      expect(window).toContain(REFUSAL_LEAD);
       expect(window).toContain(`\`${field}\``);
       expect(window).toContain("advance no cursor this tick");
       // The failure's own text, carried whole.
       expect(window).toContain(fatal);
       // Nothing of the window itself: a bootstrap listing beside the
       // refusal would read as material the tick may act on.
-      expect(window).not.toContain("bootstrap");
+      expect(window).not.toContain(bootstrapLead(field));
     }
   } finally {
     rmSync(notATree, { recursive: true, force: true });
@@ -2525,8 +2541,12 @@ it("a missing slice state file renders as no state yet", () => {
   // Control: with both files on disk, both windows render past their cursors
   // rather than bootstrapping — so the bootstrap below is the removed file's
   // doing and not the fixture's.
-  expect(built["plan-derive"].args(ctx).SPEC_WINDOW).not.toContain("bootstrap");
-  expect(built["plan-sweep"].args(ctx).SWEEP_WINDOW).not.toContain("bootstrap");
+  expect(built["plan-derive"].args(ctx).SPEC_WINDOW).not.toContain(
+    bootstrapLead("derivedThrough"),
+  );
+  expect(built["plan-sweep"].args(ctx).SWEEP_WINDOW).not.toContain(
+    bootstrapLead("sweptThrough"),
+  );
 
   // Derive's file alone removed: derive reads no state yet and opens over its
   // whole declared corpus, while the sweep still reads the cursor in its own
@@ -2534,13 +2554,13 @@ it("a missing slice state file renders as no state yet", () => {
   rmSync(planStatePath(stateRoot(), "plan-derive"));
   const half = windows();
   const bootstrapped = half["plan-derive"].args(ctx).SPEC_WINDOW;
-  expect(bootstrapped).toContain("bootstrap");
+  expect(bootstrapped).toContain(bootstrapLead("derivedThrough"));
   expect(bootstrapped).toContain("`derivedThrough`");
   expect(bootstrapped).toContain("spec/loop.md");
-  expect(bootstrapped).not.toContain("REFUSE");
+  expect(bootstrapped).not.toContain(REFUSAL_LEAD);
 
   const sweep = half["plan-sweep"].args(ctx).SWEEP_WINDOW;
-  expect(sweep).not.toContain("bootstrap");
+  expect(sweep).not.toContain(bootstrapLead("sweptThrough"));
   expect(sweep).toContain(`touched since ${cursor}`);
 
   // And the liveness leg reads the same absence: a slice with no state file
@@ -2561,7 +2581,7 @@ it("a state root with no plan state opens every window over the whole declared c
     flumeDir: stateRoot(),
   }).SPEC_WINDOW;
 
-  expect(rendered).toContain("bootstrap");
+  expect(rendered).toContain(bootstrapLead("derivedThrough"));
   expect(rendered).toContain("`derivedThrough`");
   expect(rendered).toContain("spec/loop.md");
   // Scoped to the declared locus, never the whole tree.
@@ -2600,7 +2620,7 @@ it("the bootstrap window names the tip it was drawn from rather than telling the
   for (const { field, corpus, rendered } of cases) {
     // Vacuity guard: it is the bootstrap leg, with its corpus listed in it,
     // that ends on the tip below.
-    expect(rendered).toContain("bootstrap");
+    expect(rendered).toContain(bootstrapLead(field));
     expect(rendered).toContain(corpus);
     expect(rendered).not.toContain("stamp HEAD");
     expect(rendered).toMatch(

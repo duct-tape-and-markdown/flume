@@ -607,19 +607,30 @@ async function outcomeOf(
  * That a placeholder is the *whole* content of the block it stands in —
  * asserted as a line directly under an opening tag, so a placeholder
  * appearing anywhere else in the render cannot stand in for it.
+ *
+ * Returns that block, tags included, so a case about what the block carries
+ * reads the block rather than the whole render: a prompt also carries the
+ * `<harness>` fence, the queue and every other slice artifact, and a negative
+ * over all of it turns on what those happen to quote
+ * (`.claude/rules/posture-sweep.md`, *A negative assertion over a whole
+ * rendered artifact*).
  */
 function placeholderIsBlockContent(
   rendered: string,
   placeholder: string,
   label: string,
-): void {
+): string {
   const lines = rendered.split("\n").map((l) => l.trimEnd());
   const at = lines.indexOf(placeholder);
   expect(at, `${label}: no line renders ${placeholder}`).toBeGreaterThan(0);
-  expect(
-    lines[at - 1],
-    `${label}: the placeholder is not the block's content`,
-  ).toMatch(/^<[a-z-]+>$/);
+  const open = lines[at - 1];
+  expect(open, `${label}: the placeholder is not the block's content`).toMatch(
+    /^<[a-z-]+>$/,
+  );
+  const close = `</${open!.slice(1)}`;
+  const end = lines.indexOf(close, at);
+  expect(end, `${label}: the block under ${open} is unclosed`).toBeGreaterThan(at);
+  return lines.slice(at - 1, end + 1).join("\n");
 }
 
 /**
@@ -895,13 +906,14 @@ it("a cold state root renders every plan slice prompt's placeholder as its block
     const rendered = await render(name, root);
     for (const artifact of GUARDED) {
       if (!readers.get(artifact.key)!.includes(name)) continue;
-      placeholderIsBlockContent(
+      const block = placeholderIsBlockContent(
         rendered,
         artifact.placeholder,
         `${name}/${artifact.key}`,
       );
-      // Nothing was read, so nothing the artifact would have carried leaked.
-      expect(rendered).not.toContain(artifact.sentinel);
+      // Nothing was read, so nothing the artifact would have carried leaked
+      // into the block that would have carried it.
+      expect(block).not.toContain(artifact.sentinel);
       asserted++;
     }
   }
