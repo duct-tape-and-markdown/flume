@@ -41,6 +41,7 @@ import type { PendingEntry } from "../src/PendingSchema.ts";
 import type { PriorAttempt } from "../src/Prompt.ts";
 import {
   InlineExecRenderError,
+  PromptTemplateUnreadableError,
   readPhaseTemplate,
   renderPrompt,
 } from "../src/Prompt.ts";
@@ -56,7 +57,12 @@ import {
 } from "../src/flumeApi.ts";
 import { codeLines } from "./helpers/commentCitations.ts";
 import { makeFixture, silent, type Fixture } from "./helpers/dispatcherFixture.ts";
-import { bulletOf, restatementsOf, walkOf } from "./helpers/docSections.ts";
+import {
+  bulletOf,
+  restatementsOf,
+  sectionOf,
+  walkOf,
+} from "./helpers/docSections.ts";
 import { docWalk, type DocWalkRequest } from "./helpers/docWalk.ts";
 import { mkTempDirSync } from "./helpers/fixtureRoot.ts";
 import { SPAWN_BUDGET_MS, exec } from "./helpers/subprocess.ts";
@@ -2175,6 +2181,60 @@ describe("docs/CHAIN-AUTHORING.md — the walkthrough quotes the chain it names"
  * joins it without anyone extending a list, and the third case has already
  * classified every one of them as a gate or the factory for one.
  */
+/**
+ * `.claude/rules/engineering.md`, *A fact the engine holds is reported, never
+ * rediscovered* — §5 hands a chain `api.readPhaseTemplate`, and that loader
+ * has exactly one wall: a declared prompt file that would not read. The engine
+ * raises a named class for it, so a page that hands out the loader and leaves
+ * the class unnamed leaves its reader matching against an `fs` error's message
+ * — prose the engine never authored.
+ *
+ * Read against the interface rather than against a name spelled here: the
+ * identifier and the `api.` half both come off the roster `buildFlumeApi`
+ * really fills, so renaming the class or moving it off the api reds the page
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ */
+describe("docs/CHAIN-AUTHORING.md — the prompt-template section hands out the loader's refusal", () => {
+  /**
+   * §5's preamble: its heading through the first subsection it opens. The
+   * subsections below name the render refusals and `api.RenderRefusal` with
+   * them, so a window carrying them would answer this claim over a preamble
+   * that had gone silent (`.claude/rules/posture-sweep.md`, *Standing
+   * lenses*).
+   */
+  const preamble = (): string => {
+    const section = sectionOf(
+      readFileSync(
+        fileURLToPath(new URL("../docs/CHAIN-AUTHORING.md", import.meta.url)),
+        "utf8",
+      ),
+      /^## 5\. The prompt template format/,
+    );
+    const opened = section.indexOf("\n### ");
+    return opened === -1 ? section : section.slice(0, opened);
+  };
+
+  it("docs/CHAIN-AUTHORING.md's prompt-template section names the class a load that would not read refuses with", () => {
+    const window = preamble();
+    // The cut landed, and on the paragraph that hands out the loader — the
+    // whole reason the class has to be named here rather than anywhere.
+    expect(window.length, "§5 opens a preamble at all").toBeGreaterThan(0);
+    expect(window).toContain("`api.readPhaseTemplate(");
+
+    // The spelling is the engine's on both halves: the key the api roster
+    // really fills with the class `readPhaseTemplate` throws.
+    const api = buildFlumeApi(EXAMPLE_PATHS);
+    const key = Object.keys(api).find(
+      (name) =>
+        (api as unknown as Record<string, unknown>)[name] ===
+        PromptTemplateUnreadableError,
+    );
+    expect(key, "the api roster carries the loader's refusal class").toBeDefined();
+    expect(window).toContain(`api.${key}`);
+  });
+});
+
 describe("docs/CHAIN-AUTHORING.md — the built-ins list walks the gate module", () => {
   /**
    * The gates `src/builtinGates.ts` exports, against the section that lists

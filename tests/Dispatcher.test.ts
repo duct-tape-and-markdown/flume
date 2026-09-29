@@ -131,6 +131,13 @@ import { waitFor } from "./helpers/waitFor.ts";
 import type { ProvisionFailure, TerminalMisconfiguration } from "../src/index.ts";
 
 // Barrel-export pin (.claude/rules/engineering.md "An export earns its
+// consumer"): PromptTemplateUnreadableError is the one wall the public
+// readPhaseTemplate raises, so a caller holding it to report its promptPath /
+// resolvedPath needs to name the type from the package entry point. This
+// import fails tsc if it drops from src/index.ts.
+import type { PromptTemplateUnreadableError as PromptTemplateUnreadableFromEntry } from "../src/index.ts";
+
+// Barrel-export pin (.claude/rules/engineering.md "An export earns its
 // consumer"): NoCommitMode is the field type of TickVerdict.noCommit /
 // TickOutcome .noCommit / TickResult.noCommit, so a chain author needs to be
 // able to name it from the package entry point. This import fails tsc if it
@@ -18811,6 +18818,34 @@ describe("Dispatcher — Chain.friction load-time validation", () => {
     }
   });
 
+  /**
+   * What the two render-refusal probes below attempt: a render the engine
+   * refuses at stage 1, with two keys unsupplied so the refusal carries a set
+   * rather than a single name. One spelling, passed in, so the probe helper
+   * is generic over what the chain reaches for rather than over one call
+   * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+   */
+  const RENDER_ATTEMPT =
+    `      await api.renderPrompt({ phase, template: ` +
+    `"a {{NEVER_SUPPLIED}} b {{ALSO_ABSENT}}", cwd: ".", ` +
+    `flumeDir: "/tmp/flume", args: {} });\n`;
+
+  /**
+   * A config directory nothing creates, so `readPhaseTemplate` beneath it
+   * raises rather than returning bytes. Relative rather than absolute, so the
+   * refusal carries a `resolvedPath` distinct from the address the chain
+   * declared and this case can read both.
+   */
+  const ABSENT_CONFIG_DIR = join(
+    tmpdir(),
+    `flume-absent-config-${process.pid}`,
+  );
+
+  /** The load of a prompt file that is not there, through the same api. */
+  const ABSENT_TEMPLATE_ATTEMPT =
+    `      await api.readPhaseTemplate(` +
+    `${JSON.stringify(ABSENT_CONFIG_DIR)}, "build.md");\n`;
+
   // The roster above pins identity; these two pin the use it exists for.
   // The refusal is thrown by the engine's own `renderPrompt` — the api's,
   // reached through the api — and decoded by the chain, so neither side is
@@ -18818,7 +18853,11 @@ describe("Dispatcher — Chain.friction load-time validation", () => {
   // what the real writer wrote*). The factory stashes a probe into the
   // phase's `gates[]`, the one real `ChainModule` field that survives
   // `loadChainModule`'s return.
-  async function runChainProbe<T>(prefix: string, body: string): Promise<T> {
+  async function runChainProbe<T>(
+    prefix: string,
+    attempt: string,
+    body: string,
+  ): Promise<T> {
     const cfg = await mkTempDir(prefix);
     try {
       await mkdir(cfg, { recursive: true });
@@ -18831,9 +18870,7 @@ describe("Dispatcher — Chain.friction load-time validation", () => {
           `writablePaths: ["**"], gates: [], handoff: () => [] };\n` +
           `  phase.gates = [async () => {\n` +
           `    try {\n` +
-          `      await api.renderPrompt({ phase, template: ` +
-          `"a {{NEVER_SUPPLIED}} b {{ALSO_ABSENT}}", cwd: ".", ` +
-          `flumeDir: "/tmp/flume", args: {} });\n` +
+          attempt +
           `      return { threw: false };\n` +
           `    } catch (err) {\n` +
           body +
@@ -18861,6 +18898,7 @@ describe("Dispatcher — Chain.friction load-time validation", () => {
       signature?: string;
     }>(
       "flume-cfg-api-render-refusal-",
+      RENDER_ATTEMPT,
       // The base alone: the chain names no stage, and classifies the leaf
       // stage 1 threw without knowing stage 1 exists.
       `      return { threw: true, isRefusal: err instanceof api.RenderRefusal, ` +
@@ -18884,6 +18922,7 @@ describe("Dispatcher — Chain.friction load-time validation", () => {
       missing?: string[];
     }>(
       "flume-cfg-api-missing-placeholder-",
+      RENDER_ATTEMPT,
       `      return { threw: true, ` +
         `isMissing: err instanceof api.MissingPlaceholderRenderError, ` +
         `missing: err instanceof api.MissingPlaceholderRenderError ? ` +
@@ -18896,6 +18935,48 @@ describe("Dispatcher — Chain.friction load-time validation", () => {
     // Every unresolved key, sorted — the set the engine computed, not the
     // first one it hit and not a re-scan of the template by the chain.
     expect(seen.missing).toEqual(["ALSO_ABSENT", "NEVER_SUPPLIED"]);
+  });
+
+  /**
+   * The third use, on the other half of the prompt seam: `readPhaseTemplate`
+   * is public on the api, and the one wall it raises was a class on no
+   * exported surface — so a chain loading a template of its own could
+   * classify the refusal only by matching its message
+   * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+   * never rediscovered*). The load is the engine's own, reached through the
+   * api, and decoded by the chain, so neither side is the tester's hand.
+   */
+  it("the chain factory is handed the class a prompt file that would not read is raised as", async () => {
+    // Non-vacuity: the address really is unreadable, so the attempt below
+    // reaches the catch rather than returning bytes.
+    expect(existsSync(ABSENT_CONFIG_DIR)).toBe(false);
+
+    const seen = await runChainProbe<{
+      threw: boolean;
+      isUnreadable?: boolean;
+      isRefusal?: boolean;
+      promptPath?: string;
+      resolvedPath?: string;
+    }>(
+      "flume-cfg-api-prompt-unreadable-",
+      ABSENT_TEMPLATE_ATTEMPT,
+      `      return { threw: true, ` +
+        `isUnreadable: err instanceof api.PromptTemplateUnreadableError, ` +
+        `isRefusal: err instanceof api.RenderRefusal, ` +
+        `promptPath: err.promptPath, resolvedPath: err.resolvedPath };
+`,
+    );
+
+    expect(seen.threw).toBe(true);
+    expect(seen.isUnreadable).toBe(true);
+    // Not a render refusal, and that is the reason this class has to be
+    // handed out separately: a chain branching on the base alone sees a
+    // template that never arrived go past it.
+    expect(seen.isRefusal).toBe(false);
+    // Both halves of the address, as the engine computed them — the chain
+    // reports the file rather than resolving the address a second way.
+    expect(seen.promptPath).toBe("build.md");
+    expect(seen.resolvedPath).toBe(join(ABSENT_CONFIG_DIR, "build.md"));
   });
 
   // Every engine value a chain composes with rides the api param;
@@ -22001,9 +22082,18 @@ describe("Dispatcher — a phase whose declared prompt file will not read", () =
 
     // The same load, the same class — which is what lets `flume render`'s
     // declared bound stay a statement rather than a read of an errno's prose.
-    await expect(dispatcher.render({ phase: "plan" })).rejects.toBeInstanceOf(
-      PromptTemplateUnreadableError,
-    );
+    const wall = await dispatcher
+      .render({ phase: "plan" })
+      .then(() => undefined, (err: unknown) => err);
+    expect(wall).toBeInstanceOf(PromptTemplateUnreadableError);
+
+    // And the pair a caller reports it by, off the class rather than scraped
+    // back out of the message. The annotation is the barrel-export pin above:
+    // the name has to resolve from the package entry point for a caller to
+    // hold the wall at all.
+    const named = wall as PromptTemplateUnreadableFromEntry;
+    expect(named.promptPath).toBe(join("prompts", "absent.md"));
+    expect(named.resolvedPath).toBe(absent);
   });
 });
 

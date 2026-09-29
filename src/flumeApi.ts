@@ -67,6 +67,7 @@ import {
 import {
   InlineExecRenderError,
   MissingPlaceholderRenderError,
+  PromptTemplateUnreadableError,
   readPhaseTemplate,
   renderPrompt,
   RenderRefusal,
@@ -472,6 +473,27 @@ export interface FlumeApi {
    */
   MissingPlaceholderRenderError: typeof MissingPlaceholderRenderError;
   InlineExecRenderError: typeof InlineExecRenderError;
+  /**
+   * What {@link readPhaseTemplate} raises in place of the `fs` error it
+   * wrapped: the address a phase declared its prompt at would not read —
+   * nothing there, a directory standing where the file belongs, a permission
+   * denial. A chain loading a template of its own classifies that wall the
+   * way the engine does, off one `instanceof` rather than off an errno's
+   * prose, which is localized and reworded outside anyone's control
+   * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+   *
+   * Deliberately **not** a {@link RenderRefusal}, so a chain branching on
+   * that base alone does not see it: a refused render ends one slot of a wave
+   * and its siblings carry on, where this load is the whole tick's, made once
+   * beside the chain load and before any worktree is provisioned.
+   *
+   * `promptPath` is the address the chain declared and `resolvedPath` what it
+   * resolved to against the config directory — the pair the engine already
+   * computed, so a chain reporting the wall names the file rather than
+   * re-resolving the address a second way. What the wall means for the loop
+   * stays the chain's (`.claude/rules/engine-boundary.md`).
+   */
+  PromptTemplateUnreadableError: typeof PromptTemplateUnreadableError;
   TipClaimHeldError: typeof TipClaimHeldError;
 }
 
@@ -546,6 +568,7 @@ export function buildFlumeApi(paths: FlumePaths): FlumeApi {
     RenderRefusal,
     MissingPlaceholderRenderError,
     InlineExecRenderError,
+    PromptTemplateUnreadableError,
     TipClaimHeldError,
   };
 }

@@ -167,6 +167,12 @@ export {
   // `InlineExecRenderError`'s own declaration and a heritage clause a
   // consumer can reach must resolve to an exported name.
   type RenderRefusal,
+  // Likewise for `FlumeApi.PromptTemplateUnreadableError`: the one refusal
+  // `readPhaseTemplate` above raises, named here because that loader's hover
+  // text links it and a chain holding the caught wall in a variable — to
+  // report its `promptPath` and `resolvedPath` — needs the name from this
+  // entry point.
+  type PromptTemplateUnreadableError,
   type NoCommitMode,
   type PriorAttempt,
   // The base all six `PriorAttempt` variants extend: it stands in the hover

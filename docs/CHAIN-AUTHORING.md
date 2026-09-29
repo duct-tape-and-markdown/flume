@@ -1951,6 +1951,19 @@ it whenever you need a phase's template yourself — `api.renderPrompt` takes
 the template bytes, never a path, and the address is the engine's to answer
 rather than a `resolve()` your chain keeps in step by hand.
 
+A file that will not read — nothing at the address, a directory standing where
+the file belongs, a permission denial — refuses with
+**`api.PromptTemplateUnreadableError`**, and that class is what to branch on:
+one `instanceof` classifies the wall without matching against an `fs` error's
+message, which is localized and reworded outside anyone's control. It carries
+the `promptPath` you declared and the `resolvedPath` it resolved to, so a
+report of the wall names the file rather than resolving the address a second
+way. It is deliberately **not** an `api.RenderRefusal` — that base covers a
+render that could not resolve what a template asked for, and one refused
+render ends a single slot of a wave while its siblings carry on, where a
+template that never arrived has nothing to render for any slot. Branch on the
+base alone and this one goes past you.
+
 ### Placeholders: `{{KEY}}`
 
 `{{UPPER_SNAKE_CASE}}` is replaced from the phase's `promptArgs(ctx)`
