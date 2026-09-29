@@ -148,6 +148,50 @@ function putDownStatement(phase: HarnessPhase): string {
 }
 
 /**
+ * Where each plan slice's own filed entries sit in the queue's one ordering
+ * (`spec/harness.md`, *The phases*) — one clause per slice, beside the
+ * sentence that frames them, so the thresholds and the reason are stated once
+ * and only the band varies ({@link PUT_DOWN_ACTS} is the same shape for the
+ * same reason).
+ *
+ * **One table, because a number spelled per prompt is three numbers.** The
+ * engine's tie-break is the tag, so an entry filed with no `priority` takes
+ * the schema's default of `0` and the queue is served alphabetically whatever
+ * the work is; the band is what keeps a downstream report ahead of an
+ * insurance finding. A prompt that spelled its own number would be a copy no
+ * gate reads (`.claude/rules/engineering.md`, *Derived state is computed,
+ * never restated beside its source*).
+ *
+ * **Keyed on where the record came from, never on what it says.** The inbox
+ * slice carries two bands because it drains two kinds of queue, and which
+ * kind a record is, is its directory — the fact that slice's prompt already
+ * reads paths for, rather than a judgement about the prose inside.
+ */
+const FILING_BANDS: Record<PlanSlice, string> = {
+  "plan-inbox":
+    "a record from the inbox queue or the friction channel, and a failing title you took out of a red lane, answers a downstream report or an operator's ruling, and files at `30`; a record from the notes queue is a build note, and files at `20`; and you are the drain, so an entry already in the queue is re-ranked here and nowhere else, only on a ruling that its source was misread",
+  "plan-derive":
+    "an entry derived from a spec commit files at `10`, under anything a report or a build note asked for and over the insurance the sweep files",
+  "plan-sweep":
+    "an entry the sweep files carries `0`, under every band a report, a note, or the spec locus files at — insurance is served after the product",
+};
+
+/**
+ * The band a plan slice's own filed entries carry, and why the number is not
+ * a lever (`spec/harness.md`, *The phases*).
+ *
+ * Beside {@link putDownStatement}, and the package's to author for the same
+ * reason: the engine consumes the number and never what it means, so no
+ * engine export holds a reading of it. The shared half of that reading — a
+ * rank is provenance, `blockedBy` inherits none — lives on the discipline
+ * page the slices already open, and this statement points at it rather than
+ * carrying a third copy into each tick.
+ */
+function filingBandStatement(slice: PlanSlice): string {
+  return `**Every entry you file carries a \`priority\`, and its band is where the work came from.** The queue's one ordering is that number descending, ties on the tag, so an entry filed without one takes the default and is served alphabetically whatever it is about. Yours: ${FILING_BANDS[slice]}. A rank is a fact rather than a lever — *A rank is provenance* in the discipline file has the rest.`;
+}
+
+/**
  * Every prompt file the package ships: one per phase it constructs, plus the
  * discipline page. Derived from the phase list rather than spelled beside
  * it, so a phase added without its prompt is a missing file rather than a
@@ -295,6 +339,7 @@ export function sharedPromptArgs(
 export const PLAN_SLICE_PROMPT_DATA_KEYS = [
   "PLAN_STATE_PATH",
   "PLAN_STATE_SHAPE",
+  "FILING_BAND",
   "CLAIMED_ENTRIES",
   "CLAIMED_TAGS",
 ] as const;
@@ -304,8 +349,9 @@ export type PlanSlicePromptArg = (typeof PLAN_SLICE_PROMPT_DATA_KEYS)[number];
 
 /**
  * The arguments one plan slice's prompt is given beyond the shared set: the
- * path of the state file that slice owns, and the entries a build tick holds
- * a claim on as this tick read them.
+ * path of the state file that slice owns, the band its own filed entries
+ * carry, and the entries a build tick holds a claim on as this tick read
+ * them.
  *
  * **Not a shared arg, because the value is not shared.** Plan state is one
  * file per writer (`spec/harness.md`, *Plan state as declared state*), so
@@ -314,7 +360,11 @@ export type PlanSlicePromptArg = (typeof PLAN_SLICE_PROMPT_DATA_KEYS)[number];
  * `cat`s it would read a sibling's cursor and the fence would revert the tick
  * that wrote back what it read. Composed here rather than in each window,
  * because it is a path off the layout and not a scan of a tree
- * (`sliceWindow.ts`). The claimed set is here for the mirror of that reason:
+ * (`sliceWindow.ts`). The band is here for the same reason the path is: the
+ * queue is one queue, but what a slice's own entries rank at is a fact about
+ * that slice, and one shared value would be one provenance handed to all
+ * three ({@link FILING_BANDS}). The claimed set is here for the mirror of
+ * that reason:
  * it is a fact the engine already reported on the tick, not a scan either
  * ({@link claimedBlock}).
  *
@@ -337,6 +387,8 @@ export function planSlicePromptArgs(
   return {
     PLAN_STATE_PATH: planStatePath(stateRoot, slice),
     PLAN_STATE_SHAPE: planStateShape(slice),
+    /** The band this slice's own filed entries carry ({@link FILING_BANDS}). */
+    FILING_BAND: filingBandStatement(slice),
     CLAIMED_ENTRIES: claimedBlock(claimed),
     CLAIMED_TAGS: claimedTagWords(claimed),
   };

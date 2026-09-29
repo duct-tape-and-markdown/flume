@@ -44,6 +44,8 @@ Apply the declared posture pages to code that already exists. Those pages bind t
 
 Findings route by the pages' own bar into this slice's three homes — the queue, a question file, your commit body. Which home a finding takes, and what makes one count as a finding at all, is theirs to say, read whole rather than off this paragraph.
 
+{{FILING_BAND}}
+
 Discipline: `{{DISCIPLINE}}` — read it before writing the queue.
 
 {{PUT_DOWN}}
