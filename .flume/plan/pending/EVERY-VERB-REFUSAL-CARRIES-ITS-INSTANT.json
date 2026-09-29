@@ -1,6 +1,9 @@
 {
   "tag": "EVERY-VERB-REFUSAL-CARRIES-ITS-INSTANT",
-  "gate": { "kind": "open" },
+  "gate": {
+    "kind": "open"
+  },
+  "dependsOnForks": [],
   "priority": 10,
   "files": {
     "new": [],
@@ -61,7 +64,10 @@
     "retire": []
   },
   "summary": "A verb's own refusals — usage, chain-load failure, a degraded read, a schema report — reach the operator unstamped, so only tick and loop narration dates against the run's artifacts",
-  "per": { "path": "spec/cli.md", "section": "A log line carries the instant it was written" },
+  "per": {
+    "path": "spec/cli.md",
+    "section": "A log line carries the instant it was written"
+  },
   "acceptance": "every refusal a verb writes to the operator opens with the instant it was written, through the CLI's one stamped logger — the usage refusals, the chain-load failures, the degraded reads and the violation reports alike; a verb's own listing is untouched, so `flume status` and `flume log --json` read as they did",
   "tests": [
     "every CLI verb's refusal opens with the instant it was written",
@@ -70,5 +76,21 @@
   "pins": [
     "a verb's own listing carries no stamp"
   ],
-  "notes": "Widened by a0ca492b from the supervisor and its tick children to any verb's refusal. THE-PRE-DISPATCH-REFUSALS-CARRY-THEIR-INSTANT stamped the six sites in `src/cli.ts` reachable before the verb branch; the verbs' own `console.error` sites were outside that section as it then read. Seam with READING-THE-BATON-CREATES-NOTHING, in flight: both name `src/cli.ts`, `docs/CLI.md`, `tests/cliHelp.test.ts`."
+  "notes": "Widened by a0ca492b from the supervisor and its tick children to any verb's refusal. THE-PRE-DISPATCH-REFUSALS-CARRY-THEIR-INSTANT stamped the six sites in `src/cli.ts` reachable before the verb branch; the verbs' own `console.error` sites were outside that section as it then read. Seam with READING-THE-BATON-CREATES-NOTHING, in flight: both name `src/cli.ts`, `docs/CLI.md`, `tests/cliHelp.test.ts`.",
+  "observedFiles": [
+    ".flume/plan/notes/EVERY-VERB-REFUSAL-CARRIES-ITS-INSTANT.md",
+    "docs/CLI.md",
+    "src/cli.ts",
+    "src/cliBaton.ts",
+    "src/cliChainLoad.ts",
+    "src/cliCheck.ts",
+    "src/cliFriction.ts",
+    "src/cliHistory.ts",
+    "src/cliLog.ts",
+    "src/cliRender.ts",
+    "src/cliStatus.ts",
+    "tests/cli.test.ts",
+    "tests/cliHelp.test.ts",
+    "tests/helpers/stampedLine.ts"
+  ]
 }
