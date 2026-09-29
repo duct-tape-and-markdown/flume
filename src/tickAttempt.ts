@@ -977,12 +977,14 @@ async function persistHookRefusal(
   );
   return {
     ...(entry ? blamedOn(entry) : {}),
-    // The hook and the message it raised, never the frames: a stack's line
-    // numbers move with any edit to the chain, so keying on them would report
-    // a fresh wall for an unchanged one. The frames are in the record written
-    // above, which the retry reads.
-    signature: bound(wall, MAX_FAILURE_SIGNATURE),
-    message: wall,
+    // The pairing comes from its one home (`stageFailureFacts`,
+    // `src/tickVerdict.ts`), so the bound and the trim it derives are not
+    // respelled here. What this site chooses is the wall it pairs on: the
+    // hook and the message it raised, never the frames, because a stack's
+    // line numbers move with any edit to the chain and keying on them would
+    // report a fresh wall for an unchanged one. The frames are in the record
+    // written above, which the retry reads.
+    ...stageFailureFacts(wall),
   };
 }
 

@@ -343,10 +343,13 @@ export function gateFailureSignature(failure: {
  * transcript-long message is truncated for comparison while `message` keeps
  * the words the log lines print.
  *
- * A stage whose key is *not* its own message builds the pairing from the key
- * it does have and says so at the site — a gate folds in the gate's name
+ * A stage whose pairing is *not* its own full text builds it from the facts it
+ * does have and says so at the site — a gate folds in the gate's name
  * ({@link gateFailureSignature}), a render refusal reads the wall its class
- * already names (`RenderRefusal.signature`, `src/Prompt.ts`).
+ * already names (`RenderRefusal.signature`, `src/Prompt.ts`), and a hook
+ * throw pairs on the wall it raised while the record written beside it keeps
+ * the frames, which move with any edit to the chain
+ * (`persistHookRefusal`, `src/tickAttempt.ts`).
  */
 export function stageFailureFacts(message: string): {
   signature: string;

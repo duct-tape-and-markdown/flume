@@ -22820,6 +22820,77 @@ describe("Dispatcher — a hook that throws is answered the way its sibling seam
     );
   });
 
+  it("a promptArgs hook that throws with a trailing newline keys the same failure signature as one that throws without it", async () => {
+    // The signature is the comparison key a repeated refusal is counted by
+    // (spec/loop.md "Repeated identical failures — quarantine, then abort"),
+    // and a chain that logs before it rethrows raises the same wall with a
+    // trailing newline one tick and without it the next. The pairing comes
+    // from `stageFailureFacts` (`src/tickVerdict.ts`), whose key is trimmed;
+    // spelling the bound beside it here dropped that trim and made one wall
+    // two keys.
+    await writePending(fx.repo, [
+      makeEntry("BARE-THROW", ["src/a.ts"]),
+      makeEntry("NEWLINE-THROW", ["src/b.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      promptArgs: (ctx) => {
+        if (ctx.assignedEntry?.tag === "NEWLINE-THROW") {
+          throw new Error(`${BOOM}\n`);
+        }
+        throw new Error(BOOM);
+      },
+    });
+
+    const prompts: string[] = [];
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: {
+        name: "must-not-run-for-either-entry",
+        async invoke(inv) {
+          prompts.push(inv.prompt);
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      },
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Non-vacuity: the wave really provisioned both entries, the seam really
+    // raised for each, and both refusals reached the surface the key travels
+    // on.
+    expect(prompts).toHaveLength(0);
+    expect(outcome.noCommit).toBe("render-refused");
+    const reported = outcome.verdict?.renderFailures ?? [];
+    expect(reported.map((f) => f.tag).sort()).toEqual([
+      "BARE-THROW",
+      "NEWLINE-THROW",
+    ]);
+    const byTag = new Map(reported.map((f) => [f.tag, f]));
+
+    // The words keep the byte the chain happened to raise…
+    expect(byTag.get("NEWLINE-THROW")!.message).toBe(
+      `promptArgs hook threw: ${BOOM}\n`,
+    );
+    expect(byTag.get("BARE-THROW")!.message).toBe(
+      `promptArgs hook threw: ${BOOM}`,
+    );
+
+    // …and the key does not: one wall, one signature.
+    expect(byTag.get("NEWLINE-THROW")!.signature).toBe(
+      `promptArgs hook threw: ${BOOM}`,
+    );
+    expect(byTag.get("NEWLINE-THROW")!.signature).toBe(
+      byTag.get("BARE-THROW")!.signature,
+    );
+  });
   it("the render-refused prior-attempt block does not send a hook-refused retry to fix an inline-exec span", async () => {
     // The agreement case for the block's one shared arm
     // (.claude/rules/engineering.md "A seam gate reads what the real writer
