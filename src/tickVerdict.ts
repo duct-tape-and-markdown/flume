@@ -31,7 +31,7 @@ import { readFileSync } from "node:fs";
 
 import type { AgentUsage } from "./Agent.js";
 import { bound } from "./bounds.js";
-import { existsLoud, isDirectoryOrAbsentUnder } from "./fsProbe.js";
+import { existsLoudUnder, isDirectoryOrAbsentUnder } from "./fsProbe.js";
 import type { GateResult } from "./Gate.js";
 import {
   invocationsDir,
@@ -1072,11 +1072,13 @@ function isTickVerdict(rec: unknown): rec is TickVerdict {
 }
 
 /**
- * The refusal one of the three readers below raises when the artifact it
+ * The refusal one of the readers below raises when the artifact it
  * probed present turns out to be unreadable, naming the path it read.
  *
- * Each reader sits past `existsLoud` (`src/fsProbe.ts`), so absence is
- * already proven and what remains is a read that failed on an open
+ * Each reader sits past a descent from the state root — `existsLoudUnder`
+ * for a file leaf, `isDirectoryOrAbsentUnder` for a directory
+ * (`src/fsProbe.ts`) — so absence is already proven on either host and what
+ * remains is a read that failed on an open
  * descriptor — and such a failure carries the syscall, never the path the
  * caller passed (`.claude/rules/platform-facts.md`, *A read that fails after
  * the open names no path*). Rethrown bare it reaches a verb, a supervisor
@@ -1118,9 +1120,10 @@ function unreadable(what: string, path: string, cause: unknown): Error {
  * failed is the recording.
  *
  * The message is the cause's, relayed: both refusals {@link readTickVerdicts}
- * can raise — `existsLoud`'s stat failure, which node spells the path into,
- * and {@link unreadable}'s, which states it — already name the log, so a
- * prepend here would print the path twice in one operator line.
+ * can raise — `existsLoudUnder`'s, which states the path its descent stopped
+ * at (or relays the stat error node already spelled the path into), and
+ * {@link unreadable}'s, which states the log it read — already name a path, so
+ * a prepend here would print one twice in a single operator line.
  */
 export class VerdictHistoryUnreadableError extends Error {
   /** The history log the read refused on, resolved. */
@@ -1305,8 +1308,12 @@ export async function appendInvocationRow(
  * beside its source*).
  *
  * Absent reads as no rows — a tick whose agents never ran wrote no file. It
- * is the only silent reading and it is **proven**: `existsLoud`
- * (`src/fsProbe.ts`) throws on any stat failure but `ENOENT`, and the read
+ * is the only silent reading and it is **proven**: `existsLoudUnder`
+ * (`src/fsProbe.ts`) descends from the state root before it stats the leaf,
+ * so a plain file standing anywhere above the rows file refuses rather than
+ * answering that leaf's own stat `ENOENT` on win32
+ * (`.claude/rules/platform-facts.md`, *win32 reports a path through a
+ * non-directory as not found*), and the read
  * past it refuses under {@link unreadable}, so a rows file that is present and
  * unreadable refuses rather than reporting a tick that paid for agents as one
  * that paid for none (`.claude/rules/engineering.md`, *Loud or nothing*). A
@@ -1320,7 +1327,7 @@ export async function readInvocationRows(
 ): Promise<TickVerdictInvocation[]> {
   const path = invocationsPath(flumeDir, phase);
   const p = namespacedJoin(path);
-  if (!existsLoud(p)) return [];
+  if (!existsLoudUnder("tick usage rows", flumeDir, path)) return [];
   let raw: string;
   try {
     raw = await readFile(p, "utf8");
@@ -1415,8 +1422,11 @@ export async function clearInvocationRows(
  * returned) degrades to "nothing to report" — a missing record must never
  * be misread as a prior tick's stale one.
  *
- * Absent is the only silent reading, and it is **proven**: `existsLoud`
- * (`src/fsProbe.ts`) throws on any stat failure but `ENOENT`, and the read
+ * Absent is the only silent reading, and it is **proven**: `existsLoudUnder`
+ * (`src/fsProbe.ts`) descends from the state root before it stats the record,
+ * so an obstructed ancestor refuses rather than answering the record's own
+ * stat `ENOENT` on win32 (`.claude/rules/platform-facts.md`, *win32 reports a
+ * path through a non-directory as not found*), and the read
  * past it refuses under {@link unreadable}, so a verdict file that is present
  * and unreadable — a directory in its place, a permission-denied parent, a
  * symlink loop — refuses here instead of reporting the tick that wrote it
@@ -1431,7 +1441,7 @@ export async function readTickVerdict(
 ): Promise<TickVerdict | undefined> {
   const path = tickVerdictPath(flumeDir, phase);
   const p = namespacedJoin(path);
-  if (!existsLoud(p)) return undefined;
+  if (!existsLoudUnder("tick verdict record", flumeDir, path)) return undefined;
   let raw: string;
   try {
     raw = await readFile(p, "utf8");
@@ -1448,7 +1458,9 @@ export async function readTickVerdict(
 
 /**
  * The history log's lines as its last writer left them — one record per
- * line, blanks dropped, nothing decoded. Absent reads as no lines; present
+ * line, blanks dropped, nothing decoded. Absent reads as no lines, proven by
+ * `existsLoudUnder`'s descent from the state root (`src/fsProbe.ts`) rather
+ * than by one stat of the leaf; present
  * and unreadable refuses under {@link unreadable}, the posture the readers
  * below and {@link writeTickVerdict} share
  * (`.claude/rules/engineering.md`, *Loud or nothing*).
@@ -1460,7 +1472,7 @@ export async function readTickVerdict(
 async function readVerdictLogLines(flumeDir: string): Promise<string[]> {
   const path = tickVerdictsLogPath(flumeDir);
   const p = namespacedJoin(path);
-  if (!existsLoud(p)) return [];
+  if (!existsLoudUnder("tick verdict history log", flumeDir, path)) return [];
   let raw: string;
   try {
     raw = await readFile(p, "utf8");
@@ -1500,7 +1512,11 @@ function decodeVerdictLine(line: string): TickVerdict | undefined {
  * never thrown; an absent log reads as empty history — same no-false-signal
  * posture as every other artifact the harness persists.
  *
- * Absent, and nothing else: `existsLoud` (`src/fsProbe.ts`) proves it and
+ * Absent, and nothing else: `existsLoudUnder`'s descent from the state root
+ * (`src/fsProbe.ts`) proves it — an obstructed ancestor refuses rather than
+ * reading as a repo that has never ticked, which is what one stat of the leaf
+ * answers on win32 (`.claude/rules/platform-facts.md`, *win32 reports a path
+ * through a non-directory as not found*) — and
  * the read past it refuses under {@link unreadable}, so a history log that is
  * present and unreadable refuses rather than answering "no history" — the one answer
  * that is indistinguishable from a repo that has never ticked
@@ -1531,8 +1547,9 @@ export async function readTickVerdicts(
  * from either needs this rather than the async accessor behind an `await`
  * it cannot take. Corrupt lines are skipped, same no-false-signal posture as
  * `readTickVerdicts`; an absent log reads as an empty result, never a throw.
- * Absent is proven the same way its async sibling proves it — `existsLoud`
- * (`src/fsProbe.ts`) and a read refusing under {@link unreadable} — so a log
+ * Absent is proven the same way its async sibling proves it — the descent
+ * `existsLoudUnder` (`src/fsProbe.ts`) runs from the state root, and a read
+ * refusing under {@link unreadable} — so a log
  * that is present and
  * unreadable refuses here too, rather than handing a `shouldRun` an empty
  * anchor set that reads as "no phase has ever ticked"
@@ -1544,7 +1561,8 @@ export function readLatestVerdictsSync(
   const path = tickVerdictsLogPath(flumeDir);
   const p = namespacedJoin(path);
   const latest: Record<string, TickVerdict> = {};
-  if (!existsLoud(p)) return latest;
+  if (!existsLoudUnder("tick verdict history log", flumeDir, path))
+    return latest;
   let raw: string;
   try {
     raw = readFileSync(p, "utf8");

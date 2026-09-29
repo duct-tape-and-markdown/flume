@@ -31,9 +31,9 @@
 
 import type { Agent } from "./Agent.js";
 import { bound } from "./bounds.js";
-import { existsLoud } from "./fsProbe.js";
+import { existsLoudUnder } from "./fsProbe.js";
 import * as git from "./git.js";
-import { namespacedJoin, stopFlagPath } from "./paths.js";
+import { stopFlagPath } from "./paths.js";
 import type { StakedPidClaim } from "./pidClaim.js";
 import {
   readPendingForDecision,
@@ -467,8 +467,9 @@ export async function runFanout(
    * as it then stands, selected under this tick's own holds against the tip
    * and the records as they then stand, minus everything this wave has
    * already attempted. The stop flag is read here too, off the same disk and
-   * through the same loud probe the supervisor spends at its child boundary
-   * (`existsLoud`, `src/fsProbe.ts`).
+   * through the same proven descent the supervisor spends at its child
+   * boundary (`existsLoudUnder`, `src/fsProbe.ts`), so a state root a plain
+   * file stands at refuses here rather than reading as no stop requested.
    *
    * Asynchronous, so it runs in the settling slot's own continuation rather
    * than inside {@link fillSlots}, which must stay synchronous.
@@ -481,7 +482,11 @@ export async function runFanout(
    */
   const refillRead = async (): Promise<void> => {
     if (leg.supervisedRun) {
-      stopFlagSeen ||= existsLoud(namespacedJoin(stopFlagPath(leg.flumeDir)));
+      stopFlagSeen ||= existsLoudUnder(
+        "stop flag",
+        leg.flumeDir,
+        stopFlagPath(leg.flumeDir),
+      );
     }
     if (!wavePulls()) return;
     const { pending: live, queueParseFailure: broken } =

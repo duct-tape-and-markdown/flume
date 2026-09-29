@@ -42,6 +42,7 @@ import type { Logger } from "../src/log.ts";
 import { readMergingMarkers } from "../src/mergingMarkers.ts";
 import {
   MAX_TICK_VERDICTS,
+  appendInvocationRow,
   writeTickVerdict,
   clearTickVerdict,
   readInvocationRows,
@@ -14490,6 +14491,51 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
     ).toEqual([]);
   });
 
+  /**
+   * The same claim one rung out from the denial above. An absent log is what a
+   * repo that has never ticked reads, so a state root a plain file stands at
+   * taking that arm is the one false answer this history can give — and a
+   * bare stat of the leaf takes it on win32, where an obstructed ancestor is
+   * spelled `ENOENT` (`.claude/rules/platform-facts.md`, *win32 reports a
+   * path through a non-directory as not found*). The descent from the root
+   * refuses on both hosts and names the file standing in the root's place,
+   * which is the path an operator has to go fix
+   * (`.claude/rules/engineering.md`, *Loud or nothing*).
+   */
+  it("the verdict history read refuses an obstructed state root, naming the path that is not a directory", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    // Non-vacuity: the log reads, and carries its row, under a sound root —
+    // so the refusal below is the obstruction's and not a reader that answers
+    // nothing anywhere.
+    await writeTickVerdict(flumeDir, verdictFixture({ summary: "tick 0" }));
+    expect(await readTickVerdicts(flumeDir)).toHaveLength(1);
+
+    // A plain file where a state root belongs. The root is what the caller
+    // answers for, so it is where the descent starts and where this stands.
+    const obstructed = join(flumeDir, "obstructed-root");
+    await writeFile(obstructed, "not a directory\n", "utf8");
+    expect(lstatSync(obstructed).isDirectory()).toBe(false);
+
+    let caught: Error | undefined;
+    try {
+      await readTickVerdicts(obstructed);
+    } catch (err) {
+      caught = err as Error;
+    }
+    expect(caught).toBeDefined();
+    expect(caught?.message).toContain("tick verdict history log is unreadable");
+    expect(caught?.message).toContain(
+      `${obstructed} is present but is not a directory`,
+    );
+
+    // The absent arm is untouched: a root that never ticked still reads as
+    // empty history, so the refusal above is the obstruction alone and not a
+    // reader that stopped folding ENOENT.
+    expect(
+      await readTickVerdicts(join(flumeDir, "never-ticked")),
+    ).toEqual([]);
+  });
+
   it("the per-phase verdict read refuses a present-but-unreadable record naming the path it read", async () => {
     const flumeDir = join(fx.repo, ".flume");
     await writeTickVerdict(flumeDir, verdictFixture({ summary: "tick 0" }));
@@ -14986,6 +15032,51 @@ describe("TickVerdict invocations — usage/cost facts (spec/loop.md 'Every agen
       "COMPOSE-B",
     ]);
     expect(outcome.verdict!.invocations).toEqual(rows);
+  });
+
+  /**
+   * What the rows read owes a relocated state root. A plain file standing at
+   * the root is the one obstruction a bare stat of the rows file cannot see —
+   * win32 spells an obstructed ancestor `ENOENT` at the leaf
+   * (`.claude/rules/platform-facts.md`, *win32 reports a path through a
+   * non-directory as not found*) — so a read keyed off that one stat reports a
+   * run that is paying for agents as one that has spent nothing
+   * (`src/runSpend.ts`; `.claude/rules/engineering.md`, *Loud or nothing*).
+   * The descent refuses instead, naming the path that is not a directory
+   * rather than the leaf it never reached.
+   */
+  it("the tick usage rows read refuses an obstructed state root, naming the path that is not a directory", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    // Non-vacuity: a row written by the real writer reads back under a sound
+    // root, so the reader is serving this artifact before the obstruction is
+    // put in front of it.
+    await appendInvocationRow(flumeDir, "build", {
+      promptPath: "rendered-prompts/sound.md",
+      uncommittedTracked: [],
+    });
+    expect(await readInvocationRows(flumeDir, "build")).toHaveLength(1);
+
+    const obstructed = join(flumeDir, "obstructed-root");
+    await writeFile(obstructed, "not a directory\n", "utf8");
+    expect(lstatSync(obstructed).isDirectory()).toBe(false);
+
+    let caught: Error | undefined;
+    try {
+      await readInvocationRows(obstructed, "build");
+    } catch (err) {
+      caught = err as Error;
+    }
+    expect(caught).toBeDefined();
+    expect(caught?.message).toContain("tick usage rows is unreadable");
+    expect(caught?.message).toContain(
+      `${obstructed} is present but is not a directory`,
+    );
+
+    // The absent arm is untouched: a root that never ticked still reads as no
+    // rows, which is the reading a tick whose agents never ran depends on.
+    expect(
+      await readInvocationRows(join(flumeDir, "never-ticked"), "build"),
+    ).toEqual([]);
   });
 });
 

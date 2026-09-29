@@ -21,8 +21,8 @@ import {
   type TickVerdict,
 } from "./tickVerdict.js";
 import { frictionCountLine } from "./friction.js";
-import { existsLoud } from "./fsProbe.js";
-import { defaultStateRoot, namespacedJoin, stopFlagPath } from "./paths.js";
+import { existsLoudUnder } from "./fsProbe.js";
+import { defaultStateRoot, stopFlagPath } from "./paths.js";
 import { signalProcessTree, spawnProcessTree } from "./processTree.js";
 
 /**
@@ -923,15 +923,23 @@ export async function superviseLoop(
     // chance to end it on its own terms. The flag itself is left on disk;
     // there is no unstop verb.
     //
-    // Absent is the only silent reading: `existsLoud` (src/fsProbe.ts) throws
-    // on a stop flag that is present but unstattable (a symlink loop, a
-    // permission-denied parent) rather than reading it as absent and ticking
-    // on over an operator's unacknowledged stop
-    // (`.claude/rules/engineering.md`, "Loud or nothing"). Throwing is the
-    // disposition this boundary already takes for the same failure class —
-    // `baton.hibernating()`'s `readdirSync` in `fill` throws too — and it
-    // surfaces as `flume loop`'s harness-error exit (1), naming the path.
-    if (existsLoud(namespacedJoin(stopFlagPath(flumeDir)))) {
+    // Absent is the only silent reading, and it is proven from the state root
+    // this run holds its lock in: `existsLoudUnder` (src/fsProbe.ts) descends
+    // to the flag rather than stat-ing it alone, so neither a flag that is
+    // present but unstattable (a symlink loop, a permission-denied parent)
+    // nor one beneath a root a plain file stands at reads as absent and ticks
+    // on over an operator's unacknowledged stop — the reading a bare stat
+    // takes on win32, where an obstructed ancestor is spelled `ENOENT`
+    // (`.claude/rules/platform-facts.md`, *win32 reports a path through a
+    // non-directory as not found*; `.claude/rules/engineering.md`, "Loud or
+    // nothing"), and the one this run's own start-of-run guard
+    // (`src/cliLoop.ts`) already ruled out before the first tick.
+    //
+    // Throwing is the disposition this boundary already takes for the same
+    // failure class — `baton.hibernating()`'s `readdirSync` in `fill` throws
+    // too — and it surfaces as `flume loop`'s harness-error exit (1), naming
+    // the path.
+    if (existsLoudUnder("stop flag", flumeDir, stopFlagPath(flumeDir))) {
       // Read where the stop was seen, not after the drain: `hibernated` is
       // the baton's state at the boundary this run stopped taking work at.
       const hibernated = baton.hibernating();
