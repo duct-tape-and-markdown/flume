@@ -28,18 +28,22 @@ const SUBCOMMANDS = [
 type Subcommand = (typeof SUBCOMMANDS)[number];
 
 /**
- * The `EX_IOERR` causes every verb shares, labelled once. Bay discovery and
- * the state-root resolution behind it both run before any verb reaches work
- * of its own, and every way they can fail to hand back a usable root lands
- * here, so every page's `74` row carries them and no page states a narrower
- * range than its own process can return (`spec/loop.md`, *Exit codes — the
- * run never lies to CI*).
+ * The `EX_IOERR` causes the state root's **resolution** takes, labelled once.
+ * Bay discovery and the resolution behind it both run before any verb reaches
+ * work of its own, so every page's `74` row carries them and no page states a
+ * narrower range than its own process can return (`spec/loop.md`, *Exit codes
+ * — the run never lies to CI*).
+ *
+ * These are the ways a root comes back unusable *before it is used*, and not
+ * every way it comes back unusable at all: a root that resolves clean and
+ * still admits nothing made under it is {@link ROOT_WRITE_REFUSAL}, which no
+ * stat here reaches and only a verb that writes can take.
  *
  * Labelled rather than spelled as flat prose because `docs/CLI.md` states
  * these same refusals per verb in a register of its own: each carries the
  * phrase that copy has to state it under ({@link ExitCauseLabel}).
  */
-const SHARED_ROOT_CAUSES: readonly ExitCauseLabel[] = [
+const SHARED_ROOT_RESOLUTION_CAUSES: readonly ExitCauseLabel[] = [
   {
     phrase: `The state root (\`${STATE_ROOT_DIRNAME}\`) is present but will not stat`,
     rest:
@@ -67,38 +71,88 @@ const SHARED_ROOT_CAUSES: readonly ExitCauseLabel[] = [
 ];
 
 /**
- * What closes the shared clause: an absent state root is an ordinary first
+ * The `EX_IOERR` cause a verb's own **write** under the root takes: a root
+ * that stats as a directory — so every check the resolution makes lets it
+ * through — and still admits nothing made under it.
+ *
+ * Raised where the write fails (`StateRootWriteError`,
+ * `src/stateRootWrite.ts`) and classified once at the CLI's own process
+ * boundary, so a verb can take it exactly when its process reaches a write
+ * under the root. That is every verb but the three that only read, and it is
+ * why this cause rides {@link SHARED_ROOT_CLAUSE} rather than the resolution
+ * causes above: a row is the range its own process can return.
+ *
+ * Labelled for the reason those are — `docs/CLI.md` states it again per verb
+ * in a register of its own ({@link ExitCauseLabel}).
+ */
+const ROOT_WRITE_REFUSAL: ExitCauseLabel = {
+  opening: "Or the root ",
+  phrase: "stats as a directory and admits no write",
+  rest:
+    " — permission denied, a plain file standing where the directory this " +
+    "verb makes under the root belongs, a directory standing where its file " +
+    "belongs. No stat ahead of it reaches that, so it is refused at the " +
+    "write itself, naming the state root this process resolved rather than " +
+    "the leaf the errno carried.",
+};
+
+/**
+ * What closes either clause below: an absent state root is an ordinary first
  * run, not one of the refusals above. No surface documents it as a cause of
  * its own, so it carries no label — it is the clause's closing note.
  */
 const ABSENT_ROOT_NOTE =
   "An absent state root is none of these — that is an ordinary first run.";
 
-/** The whole shared clause, as a `74` row states it. */
-const SHARED_ROOT_CLAUSE = [
-  ...SHARED_ROOT_CAUSES.map(clauseOf),
-  ABSENT_ROOT_NOTE,
-].join(" ");
+/** A `74` row's state-root clause over `causes`, closed by the note above. */
+function rootClause(causes: readonly ExitCauseLabel[]): string {
+  return [...causes.map(clauseOf), ABSENT_ROOT_NOTE].join(" ");
+}
 
 /**
- * The phrases those causes are labelled with — what every surface
- * documenting this verb's `74` row states them under, whatever register it
+ * The whole shared state-root clause, as a `74` row states it: the
+ * resolution causes and the write refusal past them. Rendered by every verb
+ * whose process reaches a write under the root; a verb that answers ahead of
+ * its first one renders {@link READ_ONLY_ROOT_CLAUSE} instead.
+ */
+const SHARED_ROOT_CLAUSE = rootClause([
+  ...SHARED_ROOT_RESOLUTION_CAUSES,
+  ROOT_WRITE_REFUSAL,
+]);
+
+/**
+ * The same clause for a verb that only reads under the root — `log`,
+ * `check`, `friction`, each of which answers and returns ahead of the first
+ * write any verb makes. Carrying the write refusal here would state a cause
+ * that verb's own process cannot return.
+ */
+const READ_ONLY_ROOT_CLAUSE = rootClause(SHARED_ROOT_RESOLUTION_CAUSES);
+
+/**
+ * The phrases the resolution causes are labelled with — what every surface
+ * documenting a verb's `74` row states them under, whatever register it
  * states them in. Exported for the seam that reads `docs/CLI.md`'s per-verb
  * copies against this clause.
  */
-export const SHARED_ROOT_PHRASES: readonly string[] = SHARED_ROOT_CAUSES.map(
-  (cause) => cause.phrase,
-);
+export const SHARED_ROOT_RESOLUTION_PHRASES: readonly string[] =
+  SHARED_ROOT_RESOLUTION_CAUSES.map((cause) => cause.phrase);
 
 /**
- * The lead a `74` row takes when the shared causes are the whole of it —
- * the verb reads the state root and nothing else before it answers, so its
+ * The phrase the write refusal is labelled with, exported for the same seam:
+ * the pages that render {@link SHARED_ROOT_CLAUSE} are the ones whose
+ * `docs/CLI.md` section has to state it too.
+ */
+export const ROOT_WRITE_PHRASE = ROOT_WRITE_REFUSAL.phrase;
+
+/**
+ * The lead a `74` row takes when the state root's own refusals are the whole
+ * of it — the verb resolves the root, writes under it, and answers, so its
  * every other refusal is usage-shaped or a chain that would not come up.
  * Exported as the marker for which verbs those are, so nothing restates the
  * list beside {@link HELP_SUB}.
  */
 export const SHARED_ROOT_ONLY_LEAD =
-  "I/O error (EX_IOERR): the refusals every verb shares, and this verb's " +
+  "I/O error (EX_IOERR): the state root's own refusals, and this verb's " +
   "only ones.";
 
 /**
@@ -108,9 +162,10 @@ export const SHARED_ROOT_ONLY_LEAD =
  * loop lock and the tip claim*). Taken in `main` before a `TickOutcome`
  * exists, so no arm of `tickExitCode` carries it and this block owns it.
  *
- * Labelled for the reason {@link SHARED_ROOT_CAUSES} is: `docs/CLI.md` spends
- * one flowing sentence on the whole range and cannot carry this clause whole,
- * so the phrase is what crosses ({@link ExitCauseLabel}).
+ * Labelled for the reason {@link SHARED_ROOT_RESOLUTION_CAUSES} is:
+ * `docs/CLI.md` spends one flowing sentence on the whole range and cannot
+ * carry this clause whole, so the phrase is what crosses
+ * ({@link ExitCauseLabel}).
  */
 const TICK_TIP_CLAIM_HELD: ExitCauseLabel = {
   opening: "Or ",
@@ -148,8 +203,18 @@ function sharedRootRefusal(indent: number): string {
 }
 
 /**
- * The whole `74` row for a verb that reads the state root and nothing else
- * before it answers — `wake`, `sleep`, `stop`, `render`.
+ * {@link sharedRootRefusal} for a verb that only reads under the root, which
+ * is the one difference between the two clauses.
+ */
+function readOnlyRootRefusal(indent: number): string {
+  return wrapClause(READ_ONLY_ROOT_CLAUSE, indent).join(
+    `\n${" ".repeat(indent)}`,
+  );
+}
+
+/**
+ * The whole `74` row for a verb whose refusals under the state root are all
+ * of them — `wake`, `sleep`, `stop`, `render`.
  */
 function sharedRootRow(indent: number): string {
   return exitCodeRow(74, [SHARED_ROOT_ONLY_LEAD, SHARED_ROOT_CLAUSE], indent);
@@ -488,7 +553,7 @@ Exit codes:
       Refused rather than printed as an empty history — exit 0 over silence
       means the log is not there, never that it could not be opened. Naming
       the file and the underlying error.
-      ${sharedRootRefusal(6)}
+      ${readOnlyRootRefusal(6)}
 `,
   check: `Usage: flume check
 
@@ -520,7 +585,7 @@ Exit codes:
   74   I/O error (EX_IOERR): plan/pending/ exists but could not be read
        (permission denied, a path too long for the platform, …). Naming
        the underlying error.
-       ${sharedRootRefusal(7)}
+       ${readOnlyRootRefusal(7)}
 `,
   render: `Usage: flume render <phase> [--entry <tag>]
 
@@ -589,7 +654,7 @@ Exit codes:
       — that reading would tell the operator there is no friction to route
       when there may be some. The bare list prints no rows at all on a
       refusal, never a partial listing.
-      ${sharedRootRefusal(6)}
+      ${readOnlyRootRefusal(6)}
 `,
 };
 

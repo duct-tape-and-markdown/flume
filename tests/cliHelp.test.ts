@@ -21,12 +21,14 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { EX_IOERR, EX_TERMINAL_MISCONFIG } from "../src/exitCodes.ts";
 import {
   SHARED_ROOT_ONLY_LEAD,
-  SHARED_ROOT_PHRASES,
+  ROOT_WRITE_PHRASE,
+  SHARED_ROOT_RESOLUTION_PHRASES,
   TICK_TIP_CLAIM_HELD_PHRASE,
   helpPageFor,
 } from "../src/cliHelp.ts";
 import {
   STATE_ROOT_DIRNAME,
+  awakeDir,
   STATE_ROOT_NAMES,
   loopLockPath,
   mergingDir,
@@ -787,23 +789,28 @@ describe("the per-exit-code window is cut at its own paragraph", () => {
 /**
  * CLI-DOC-SHARED-ROOT-CAUSES-PINNED-PER-VERB — the refusals bay discovery
  * takes before any verb reaches work of its own. The help blocks render them
- * from one clause (`SHARED_ROOT_PHRASES`, `src/cliHelp.ts`); `docs/CLI.md`
+ * from one clause (`SHARED_ROOT_RESOLUTION_PHRASES`, `src/cliHelp.ts`); `docs/CLI.md`
  * spells them again per verb section, in its own register, and those copies
  * had drifted apart from each other and from the clause.
  *
- * Scoped by which rows render the clause, read off the shipped pages rather
+ * Scoped by which rows render those causes, read off the shipped pages rather
  * than listed here, and that is every verb: bay discovery runs ahead of all
  * of them, so the row an operator reads states these causes whether or not
  * the verb has refusals of its own beside them (`.claude/rules/engineering.md`,
  * *A seam gate reads what the real writer wrote*). The shared-only lead is
- * the narrower marker inside that scope — the verbs whose `74` row says these
- * are its only refusals — and it is read here as the witness that the scope
- * is the clause's and not the lead's, never as the scope itself: a page read
- * drawn from the lead leaves every verb that documents refusals of its own
- * unpinned over the same three copies.
+ * the narrower marker inside that scope — the verbs whose `74` row says the
+ * state root's refusals are its only ones — and it is read here as the
+ * witness that the scope is the causes' and not the lead's, never as the
+ * scope itself: a page read drawn from the lead leaves every verb that
+ * documents refusals of its own unpinned over the same three copies.
+ *
+ * The fourth cause the shared clause carries — the write refusal, which only
+ * the verbs that write under the root can take — is scoped by the verbs that
+ * really take it rather than by every verb, and is pinned below
+ * (CLI-VERB-PAGES-NAME-THE-STATE-ROOT-WRITE-REFUSAL).
  */
 describe("docs/CLI.md's per-verb copies of the shared state-root cause (CLI-DOC-SHARED-ROOT-CAUSES-PINNED-PER-VERB)", () => {
-  it("every docs/CLI.md verb section whose 74 row renders the shared state-root clause states all three of its causes", async () => {
+  it("every docs/CLI.md verb section whose 74 row renders the state-root resolution causes states all three of them", async () => {
     const names = topLevelCommandNames();
     const rowOf = (name: string): string => {
       const page = helpPageFor(name);
@@ -813,7 +820,7 @@ describe("docs/CLI.md's per-verb copies of the shared state-root cause (CLI-DOC-
       return asStated(row!);
     };
     const rendered = names.filter((name) =>
-      SHARED_ROOT_PHRASES.every((phrase) => rowOf(name).includes(asStated(phrase))),
+      SHARED_ROOT_RESOLUTION_PHRASES.every((phrase) => rowOf(name).includes(asStated(phrase))),
     );
     const sharedOnly = rendered.filter((name) =>
       rowOf(name).includes(asStated(SHARED_ROOT_ONLY_LEAD)),
@@ -821,7 +828,7 @@ describe("docs/CLI.md's per-verb copies of the shared state-root cause (CLI-DOC-
     // Non-vacuity, and the direction the title claims. The count is asserted
     // because the title names it: "all three" is a claim about the clause,
     // and a clause that lost an arm would leave this green over two.
-    expect(SHARED_ROOT_PHRASES).toHaveLength(3);
+    expect(SHARED_ROOT_RESOLUTION_PHRASES).toHaveLength(3);
     expect(sharedOnly.length).toBeGreaterThan(1);
     // And the scope is the clause's, not the lead's: a row rendering the
     // clause under a lead of its own is what the lead-scoped read left out,
@@ -837,7 +844,7 @@ describe("docs/CLI.md's per-verb copies of the shared state-root cause (CLI-DOC-
       // shipped row really renders, so the page is read against what an
       // operator running `--help` sees.
       const row = asStated(documentedExitCodeRows(helpPageFor(name)!).get(EX_IOERR)!);
-      for (const phrase of SHARED_ROOT_PHRASES) {
+      for (const phrase of SHARED_ROOT_RESOLUTION_PHRASES) {
         expect(
           row,
           `flume ${name} --help's ${EX_IOERR} row does not state one of its own causes`,
@@ -847,7 +854,7 @@ describe("docs/CLI.md's per-verb copies of the shared state-root cause (CLI-DOC-
       const section = sectionOf(doc, new RegExp(`^## \`flume ${name}\\b`));
       expect(section.length, `docs/CLI.md has no \`flume ${name}\` section`).toBeGreaterThan(0);
       const window = asStated(sentencesNamingExitCode(section, EX_IOERR).join("\n"));
-      for (const phrase of SHARED_ROOT_PHRASES) {
+      for (const phrase of SHARED_ROOT_RESOLUTION_PHRASES) {
         expect(
           window,
           `docs/CLI.md's flume ${name} section states no ${EX_IOERR} cause under one of the phrases the row renders`,
@@ -865,10 +872,222 @@ describe("docs/CLI.md's per-verb copies of the shared state-root cause (CLI-DOC-
         .filter((code) => code !== EX_IOERR)
         .flatMap((code) => {
           const window = asStated(sentencesNamingExitCode(section, code).join("\n"));
-          return SHARED_ROOT_PHRASES.filter(
+          return SHARED_ROOT_RESOLUTION_PHRASES.filter(
             (phrase) => !window.includes(asStated(phrase)),
           );
         });
+    });
+    expect(
+      elsewhere.length,
+      "the per-code read handed back the whole section",
+    ).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * CLI-VERB-PAGES-NAME-THE-STATE-ROOT-WRITE-REFUSAL — the cause the resolution
+ * causes above cannot cover: a root that stats as a directory, so every check
+ * the resolution makes lets it through, and still admits nothing made under
+ * it. It is raised at the write (`StateRootWriteError`,
+ * `src/stateRootWrite.ts`) and classified once at the CLI's process boundary,
+ * so the verbs that can return it are exactly the verbs that write under the
+ * root — and no page named it at all, while the shared clause's own doc called
+ * the three resolution causes every way a root comes back unusable.
+ *
+ * Which verbs those are is **driven, never listed**: every verb the top-level
+ * page names is run over one repository whose root is structurally denied, and
+ * the ones that really exit `EX_IOERR` naming the resolved root are the scope
+ * both cases below read (`.claude/rules/engineering.md`, *A seam gate reads
+ * what the real writer wrote*). A list here would be the tester's copy of a
+ * dispatch order that moves whenever a verb grows a write.
+ *
+ * **One pass, not a clean pass and a denied one.** The denial is in place
+ * before the first verb runs, so nothing this describe does writes under the
+ * root and no verb's run can change what a later one sees — and the fixture's
+ * own liveness is read off the same pass rather than off a second one: the
+ * verbs that answer `0` under the denial are the witness that this is not a
+ * fixture refusing whatever it is handed (`.claude/rules/engineering.md`, *A
+ * green verdict is proven non-vacuous*; the read-first order
+ * `tests/helpers/denial.ts` describes is for a case whose subject is a read,
+ * and this one's subject is which process reaches a write). What the scope
+ * keys on is the write refusal's own sentence, which only the arm being
+ * documented prints, so a verb that failed for some other reason cannot enter
+ * the scope — and one that fell out of it reds the page read below rather than
+ * narrowing it silently.
+ *
+ * The lane this runs in is the one every merge pays (`vitest.config.ts`), so
+ * the pass is also the cheapest shape that carries the claim: ten refusals
+ * that never reach an agent, no verb run twice.
+ */
+describe("the state-root write refusal, per verb (CLI-VERB-PAGES-NAME-THE-STATE-ROOT-WRITE-REFUSAL)", () => {
+  /**
+   * The argv that carries each verb past its usage checks and into its own
+   * work — the phase names are the fixture chain's one declared phase, since
+   * an undeclared name is refused ahead of the first write and would read as
+   * a verb that cannot take this refusal.
+   */
+  const VERB_ARGV: Record<string, readonly string[]> = {
+    status: ["status"],
+    tick: ["tick"],
+    loop: ["loop", "--max", "1"],
+    wake: ["wake", "probe"],
+    sleep: ["sleep", "probe"],
+    stop: ["stop"],
+    log: ["log"],
+    check: ["check"],
+    render: ["render", "probe"],
+    friction: ["friction"],
+  };
+
+  /** What the CLI prints when a write under the resolved root refused. */
+  const writeRefusalOf = (stateRoot: string): string =>
+    `state root at ${stateRoot} cannot be written`;
+
+  /** The verbs whose real process took that refusal, and the whole name set. */
+  let refusing: string[];
+  let names: string[];
+
+  beforeAll(async () => {
+    names = topLevelCommandNames();
+    expect(
+      Object.keys(VERB_ARGV).sort(),
+      "the argv table and the shipped command list disagree",
+    ).toEqual([...names].sort());
+
+    const repo = await makeScratchRepo("flume-root-write-refusal-", "main");
+    try {
+      // `Chain.friction` declared, because a chain without it refuses that
+      // verb at usage — ahead of every write — and would read as a verb whose
+      // process cannot take this refusal.
+      await writeRepoConfig(
+        repo.dir,
+        minimalChainSrc({ friction: "friction" }),
+      );
+      const stateRoot = join(repo.dir, STATE_ROOT_DIRNAME);
+      const refusal = writeRefusalOf(stateRoot);
+
+      // Denied by shape, on every host and for every uid: a plain file where
+      // the baton's `mkdir -p` wants a directory, and a directory where
+      // `stop`'s one leaf wants a file — the two writes every verb that
+      // writes under this root makes (`tests/helpers/denial.ts`).
+      denyDirectory(awakeDir(stateRoot));
+      denyFile(stopFlagPath(stateRoot));
+
+      const took: string[] = [];
+      for (const name of names) {
+        const denied = await runCli(repo.dir, [...VERB_ARGV[name]!]);
+        if (!denied.out.includes(refusal)) {
+          // The fixture is live: a verb that answers over the denied root is
+          // one whose process returns ahead of the first write, and it
+          // answers `0` — never a second failure this scope would be reading
+          // as "cannot take the refusal".
+          expect(
+            denied.code,
+            `flume ${name} neither took the write refusal nor answered over the denied root`,
+          ).toBe(0);
+          continue;
+        }
+        // And it is this refusal reaching the operator as the documented
+        // code, not as the raw-stack arm: the row a page spends on it is the
+        // `74` row.
+        expect(denied.code, denied.out).toBe(EX_IOERR);
+        expect(denied.out).not.toContain("    at ");
+        took.push(name);
+      }
+      refusing = took;
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  /** The `74` row of a verb's shipped `--help` page, as a phrase read sees it. */
+  const rowOf = (name: string): string => {
+    const page = helpPageFor(name);
+    expect(page, `the help table answers no page for \`${name}\``).toBeDefined();
+    const row = documentedExitCodeRows(page!).get(EX_IOERR);
+    expect(row, `flume ${name} --help lists no ${EX_IOERR} row`).toBeDefined();
+    return asStated(row!);
+  };
+
+  /** Whether a page's `74` row renders every cause the shared clause carries. */
+  const rendersSharedClause = (name: string): boolean =>
+    [...SHARED_ROOT_RESOLUTION_PHRASES, ROOT_WRITE_PHRASE].every((phrase) =>
+      rowOf(name).includes(asStated(phrase)),
+    );
+
+  it("every help page rendering the shared state-root clause states the write refusal among its 74 causes", () => {
+    // Both directions of the scope, so neither a clause that reached every
+    // page nor one that reached none reads as agreement.
+    expect(refusing.length, "no verb took the write refusal").toBeGreaterThan(1);
+    expect(
+      refusing.length,
+      "every verb took it — the read-only verbs are not a scope",
+    ).toBeLessThan(names.length);
+
+    // The pages that render the clause are exactly the verbs that can take
+    // it. A page rendering it is therefore a page stating the write refusal,
+    // which is what the next loop reads verbatim.
+    expect(
+      names.filter(rendersSharedClause).sort(),
+      "the pages rendering the shared clause are not the verbs that take it",
+    ).toEqual([...refusing].sort());
+
+    for (const name of refusing) {
+      expect(
+        rowOf(name),
+        `flume ${name} --help's ${EX_IOERR} row does not state the write refusal`,
+      ).toContain(asStated(ROOT_WRITE_PHRASE));
+    }
+
+    // And the converse the row owes a reader: a verb that answers and returns
+    // ahead of the first write names no cause its own process cannot return.
+    for (const name of names.filter((name) => !refusing.includes(name))) {
+      expect(
+        rowOf(name),
+        `flume ${name} --help states a refusal its process cannot take`,
+      ).not.toContain(asStated(ROOT_WRITE_PHRASE));
+    }
+  });
+
+  it("docs/CLI.md states the state-root write refusal in every verb section whose 74 row renders it", async () => {
+    expect(refusing.length, "no verb took the write refusal").toBeGreaterThan(1);
+    const doc = await readCliDoc();
+
+    for (const name of refusing) {
+      // The producer's side first: the phrase is a span of the clause the
+      // shipped row really renders, so the page is read against what an
+      // operator running `--help` sees.
+      expect(
+        rowOf(name),
+        `flume ${name} --help's ${EX_IOERR} row does not state the write refusal`,
+      ).toContain(asStated(ROOT_WRITE_PHRASE));
+
+      const section = sectionOf(doc, new RegExp(`^## \`flume ${name}\\b`));
+      expect(section.length, `docs/CLI.md has no \`flume ${name}\` section`).toBeGreaterThan(0);
+      const window = asStated(sentencesNamingExitCode(section, EX_IOERR).join("\n"));
+      expect(
+        window.length,
+        `docs/CLI.md's flume ${name} section spends no sentence on ${EX_IOERR}`,
+      ).toBeGreaterThan(0);
+      expect(
+        window,
+        `docs/CLI.md's flume ${name} section states no ${EX_IOERR} cause under the phrase the row renders`,
+      ).toContain(asStated(ROOT_WRITE_PHRASE));
+    }
+
+    // The window is scoped to this code rather than to the section: each of
+    // these sections documents usage refusals too, so a reader handing back
+    // the whole section could not tell a stated cause from a neighbouring one.
+    const elsewhere = refusing.flatMap((name) => {
+      const section = sectionOf(doc, new RegExp(`^## \`flume ${name}\\b`));
+      return namedExitCodes(section)
+        .filter((code) => code !== EX_IOERR)
+        .filter(
+          (code) =>
+            !asStated(sentencesNamingExitCode(section, code).join("\n")).includes(
+              asStated(ROOT_WRITE_PHRASE),
+            ),
+        );
     });
     expect(
       elsewhere.length,
