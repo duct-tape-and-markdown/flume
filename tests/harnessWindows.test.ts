@@ -213,6 +213,12 @@ const entry = (tag: string): PendingEntry => ({
  * files each under its keyspace and identity together. Both keyspaces, because the
  * window discriminates on the record's own `key` field and a fixture that can
  * only write one of them judges that leg over zero of its subject.
+ *
+ * An entry-keyed record carries the declaration key too, derived from the
+ * entry {@link entry} builds for that tag — the same derivation the writer
+ * takes, and the one the classifier compares against whatever the queue now
+ * declares. A phase's record has no declaration to hash and carries none,
+ * exactly as the writer leaves it.
  */
 function record(
   name: string,
@@ -222,6 +228,9 @@ function record(
   const anchor = {
     key: keyspace,
     keyedAs: keyspace === "entry" ? slugify(name) : name,
+    ...(keyspace === "entry"
+      ? { declaredAs: entryDeclaredKey(entry(name)) }
+      : {}),
     headSha: "0".repeat(40),
     at: "2026-09-14T00:00:00.000Z",
   };
@@ -1397,13 +1406,11 @@ it("the inbox window and the per-entry build refusal agree on every prior-attemp
 
   /**
    * One standing record of `mode`, keyed as the engine keys one and stamped
-   * with the declaration the queue now carries — the key the refusal compares,
-   * read off the engine's own derivation rather than spelled here.
+   * with the declaration the queue now carries — the key the classification
+   * compares, read off the engine's own derivation rather than spelled here.
    */
-  const standing = (mode: PriorAttemptMode): PriorAttempt => ({
-    ...record(queued.tag, mode),
-    declaredAs: entryDeclaredKey(queued),
-  });
+  const standing = (mode: PriorAttemptMode): PriorAttempt =>
+    record(queued.tag, mode);
 
   /** Whether the real inbox window opens over that one record. */
   const wakesTheDrain = (rec: PriorAttempt): boolean =>
@@ -1462,6 +1469,108 @@ it("the inbox window and the per-entry build refusal agree on every prior-attemp
       .map((v) => v.mode)
       .sort(),
   ).toEqual(["clean-exit", "not-shipped"]);
+});
+
+/**
+ * The **reconciliation** those two surfaces are waiting for, read on both.
+ *
+ * A standing refusal keys on the entry as declared and lifts when a producer
+ * answers it — a rewrite hashes to a new key, a drop takes the record with the
+ * entry (`spec/harness.md`, *The phases*). Asked on the wall alone, the wake
+ * leg had only the tag slug to key on, so a rewritten entry lifted the wall
+ * and left the drain woken: every tick from then on ran the slice over a
+ * record with nothing left to reconcile, which is the run-and-file-nothing the
+ * cited section refuses.
+ *
+ * The pair below is one record and one entry, with the declaration the only
+ * fact that moves between them — so each case is the other's control, and
+ * both real readers answer in each.
+ */
+
+/** The entry both cases are about, as a producer first declared it. */
+const RECONCILED_TAG = "HARNESS-RECONCILED-SINCE";
+
+/**
+ * The same entry after a producer re-scoped it — the answer the refusal was
+ * waiting for, which re-keys the declaration without touching the tag.
+ */
+const reconciledRewrite = (): PendingEntry => ({
+  ...entry(RECONCILED_TAG),
+  summary: "re-scoped: the fence the first attempt asked for",
+});
+
+/**
+ * What the two surfaces say about one standing record against one queued
+ * declaration: the real inbox window's liveness leg, and the real per-entry
+ * refusal bound over the state root the chain factory binds it over, driven
+ * through the context the engine composes at selection (`bindEntryRefusal`,
+ * `src/selection.ts`).
+ */
+function reconciliationVerdicts(queued: PendingEntry, rec: PriorAttempt) {
+  const inbox = windows()[INBOX_PHASE];
+  return {
+    drain: inbox.live({
+      flumeDir: stateRoot(),
+      pickable: true,
+      pending: [queued],
+      priorAttempts: new Map([[entryAttemptKey(queued), rec]]),
+    }),
+    wall: defaultRefusesEntry(STATE_ROOT_REL)({
+      entry: queued,
+      priorAttempt: rec,
+      headSha: "0".repeat(40),
+      declaredAs: entryDeclaredKey(queued),
+    }),
+  };
+}
+
+it("the inbox slice's window is not live over a standing record whose entry has been rewritten since", () => {
+  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writeState();
+
+  const declared = entry(RECONCILED_TAG);
+  const rewritten = reconciledRewrite();
+  const walled = record(RECONCILED_TAG, "clean-exit");
+
+  // Vacuity: the rewrite really re-keyed the entry while leaving the tag —
+  // and so the key the walk looks a record up under — alone, and the record
+  // really does stand against the declaration it was written for. So the
+  // verdicts below are the rewrite's doing, and not a record the walk never
+  // reached.
+  expect(entryDeclaredKey(rewritten)).not.toBe(entryDeclaredKey(declared));
+  expect(entryAttemptKey(rewritten)).toBe(entryAttemptKey(declared));
+  expect(walled.declaredAs).toBe(entryDeclaredKey(declared));
+
+  // Nothing left for the drain to reconcile, and nothing left holding the
+  // entry back: one classification, so both lift together.
+  expect(reconciliationVerdicts(rewritten, walled)).toEqual({
+    drain: false,
+    wall: false,
+  });
+});
+
+it("a standing record whose entry is unchanged still makes the inbox slice live", () => {
+  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writeState();
+
+  const declared = entry(RECONCILED_TAG);
+  const walled = record(RECONCILED_TAG, "clean-exit");
+
+  // Vacuity: the record is entry-keyed to the tag the queue carries and
+  // stands against the declaration it carries, so it reaches both readers —
+  // and the window has no other leg open in this fixture, so "live" below is
+  // the refusal's doing and not a record queue or a friction note.
+  expect(walled.declaredAs).toBe(entryDeclaredKey(declared));
+  expect(
+    windows()[INBOX_PHASE].live({ flumeDir: stateRoot(), pickable: true }),
+  ).toBe(false);
+
+  // The producer has not answered: the drain is owed the record and build is
+  // held off the entry until it does.
+  expect(reconciliationVerdicts(declared, walled)).toEqual({
+    drain: true,
+    wall: true,
+  });
 });
 
 it("a rendered window names the sha its cursor may advance to and defers the commits past its budget", () => {

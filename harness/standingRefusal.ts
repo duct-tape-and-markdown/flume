@@ -18,21 +18,26 @@
  * `priorAttempts` at the `shouldRun` consult, `TickResult.pendingAfter`/
  * `priorAttempts` off the window the default handoff builds for the tick that
  * follows (`handoff.ts`). The per-entry refusal asks it over the one record
- * the engine hands it, and adds the declaration key that scopes the wall to
- * the reconciliation it is waiting for — the one thing that surface asks and
- * this module does not.
+ * the engine hands it. Neither asks anything beside it — **the declaration
+ * key is inside the classification**, not a leg one surface adds: keyed on
+ * the tag slug alone, the wake leg stays live over a record whose entry a
+ * producer already rewrote, and wakes the drain every tick with nothing left
+ * to reconcile, while the wall the same record used to hold has lifted.
  *
  * Nothing here re-derives an engine fact. The record's `mode` is the one the
  * engine stamped, its `touchedPaths` are the list the `shipped` predicate was
- * handed, and the key each record is looked up under is the engine's own
- * `entryAttemptKey` (`src/priorAttempts.ts`) — never the two halves of
- * that key respelled here (`.claude/rules/engineering.md`, *A fact the
- * engine holds is reported, never rediscovered*). What the package's own
+ * handed, the key each record is looked up under is the engine's own
+ * `entryAttemptKey` and the declaration each is compared against is the
+ * engine's own `entryDeclaredKey` (`src/priorAttempts.ts`, `src/entryKey.ts`)
+ * — never the halves of either respelled here
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*). What the package's own
  * vocabulary adds is where its build tick was told to say which put-down it
  * meant, and that spelling comes from `putDown.ts` rather than from a second
  * `includes` here.
  */
 
+import { entryDeclaredKey } from "../src/entryKey.js";
 import type { PendingEntry } from "../src/PendingSchema.js";
 import { entryAttemptKey } from "../src/priorAttempts.js";
 import type { PriorAttempt } from "../src/Prompt.js";
@@ -97,17 +102,32 @@ const RESOLVED_BY_A_PRODUCER: Record<PriorAttempt["mode"], boolean> = {
 
 /**
  * Whether one standing record against one entry is a refusal a producer
- * resolves: its mode is one {@link RESOLVED_BY_A_PRODUCER} names, and it is
- * not the one `not-shipped` a build tick declared a continuation
- * ({@link isContinuation}).
+ * resolves: its mode is one {@link RESOLVED_BY_A_PRODUCER} names, it stands
+ * against the entry **as the queue now declares it**, and it is not the one
+ * `not-shipped` a build tick declared a continuation ({@link isContinuation}).
  *
  * The whole classification, so that a surface asking it asks nothing else.
  * The queue walk below filters by it; the per-entry refusal calls it over the
- * record the engine handed it and adds only the declaration-key comparison
- * that is its own (`defaultRefusesEntry`, `handoff.ts`). Both facts it reads
- * are on the record — the mode the engine stamped and the footprint the
- * `shipped` predicate was handed — so no tree is read and neither asker can
- * answer from a second reading of a note path.
+ * record the engine handed it and adds nothing (`defaultRefusesEntry`,
+ * `handoff.ts`).
+ *
+ * **The declaration key is a leg of the classification, not of one asker.**
+ * A refusal is a producer's to answer, so it lifts on exactly that answer: a
+ * rewrite hashes to a new key and a drop takes the record with the entry.
+ * Both surfaces are waiting on the same reconciliation, so both lift on it —
+ * asked on the wall alone, the drain kept being woken for a record the queue
+ * no longer had anything to reconcile against, which is the tick that runs
+ * and files nothing (`spec/harness.md`, *The phases*). The key is the
+ * engine's on both sides: {@link entryDeclaredKey} over the entry the caller
+ * is holding, against the one the writer stamped on the record from the same
+ * derivation (`priorAttemptRef`, `src/priorAttempts.ts`). A record the store
+ * wrote under the entry keyspace always carries one, and one that does not is
+ * read as absent before it reaches here (`PriorAttempt.declaredAs`,
+ * `src/Prompt.ts`).
+ *
+ * Every other fact it reads is on the record — the mode the engine stamped
+ * and the footprint the `shipped` predicate was handed — so no tree is read
+ * and neither asker can answer from a second reading of a note path.
  */
 export function isStandingRefusal(
   stateRoot: string,
@@ -116,6 +136,7 @@ export function isStandingRefusal(
 ): boolean {
   return (
     RESOLVED_BY_A_PRODUCER[record.mode] &&
+    record.declaredAs === entryDeclaredKey(entry) &&
     !isContinuation(stateRoot, entry, record)
   );
 }
@@ -124,9 +145,12 @@ export function isStandingRefusal(
  * The standing prior-attempt records that are refusals a producer resolves
  * **and** are keyed to an entry the queue still carries.
  *
- * Keyed to a live entry is the whole test: a record whose entry has left the
+ * Keyed to a live entry is half the test: a record whose entry has left the
  * queue outlived the work it was about, and routing on it would hold a slice
- * open on nothing. So the walk runs the queue's way — each queued entry
+ * open on nothing. The declaration the entry still carries is the other half,
+ * and it is {@link isStandingRefusal}'s — a rewrite outlives a record exactly
+ * as a drop does, and only one of the two takes the record off the map. So
+ * the walk runs the queue's way — each queued entry
  * looked up under {@link entryAttemptKey}, which is the key the store's own
  * walk filed the record under. Reaching the record through that key rather
  * than re-spelling its two halves here is what keeps the keyspace and the

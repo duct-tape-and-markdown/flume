@@ -95,7 +95,10 @@ export type Handoff = Phase["handoff"];
  * `standingRefusals` of that pair at its `shouldRun` consult
  * (`inboxWindow.ts`); handing it the same pair here is what lets one window
  * answer on both surfaces instead of a compensating arm answering on this
- * one.
+ * one. The queue is half of that answer and not a convenience: the
+ * declaration a record is judged against is on the entry, so a leg handed
+ * the store alone could only key on the tag
+ * ({@link defaultRefusesEntry}, `standingRefusal.ts`).
  */
 export interface SliceWindow {
   /** The tick's resolved state root — `TickResult.flumeDir`. */
@@ -166,42 +169,45 @@ export interface HandoffSlice {
  *
  * Refuses the record a producer has to answer ({@link isStandingRefusal},
  * `harness/standingRefusal.ts`) written against the entry **as the queue now
- * declares it** — a clean exit, and the declined ship that parked. Both halves
- * are the engine's own facts, and neither is composed here — the `mode` it
- * stamped on the record, and the declaration key it reports twice, once on the
- * record it wrote and once for the entry this selection is about
- * (`EntryRefusalContext.declaredAs`, `src/Phase.ts`). Never a heuristic of the
- * package's own over a commit range, a final message, or a tag it has seen
- * before (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ * declares it** — a clean exit, and the declined ship that parked.
  *
- * **Which records those are is not decided here.** Which modes a producer
- * resolves, and which declined ship is the park rather than the continuation,
- * are one table and one split read through {@link isStandingRefusal} — the
- * same predicate the wake set's inbox leg reads, over the record's own `mode`
- * and `touchedPaths`. A second table beside this surface is how one record
- * comes to wall a build wave the drain was never woken for, or to be handed
- * straight back while the drain waits on it
+ * **Nothing is decided here.** Which modes a producer resolves, which
+ * declined ship is the park rather than the continuation, and whether the
+ * record still stands against the declaration the queue carries, are one
+ * table and two comparisons read through {@link isStandingRefusal} — the
+ * same predicate, whole, that the wake set's inbox leg reads. This surface
+ * adds only the engine's own "is there a record at all". A leg asked beside
+ * the classifier rather than inside it is how one record comes to wall a
+ * build wave the drain was never woken for, or to wake the drain after the
+ * wall it was about has already lifted
  * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*). No tree
  * is read either way, which is why the state root is a parameter:
  * where a note lives is a fact of the consumer's layout, and the chain factory
  * holds it in git's own alphabet (`chain.ts`).
  *
+ * Every fact the verdict turns on is the engine's, and none is composed by
+ * the package — the `mode` it stamped on the record, the footprint it handed
+ * the `shipped` predicate, and the declaration key it derives on both sides
+ * of the comparison (`entryDeclaredKey`, `src/entryKey.ts`). Never a
+ * heuristic of the package's own over a commit range, a final message, or a
+ * tag it has seen before (`.claude/rules/engine-boundary.md`, *Told, not
+ * inferred*). `EntryRefusalContext.declaredAs` (`src/Phase.ts`) is that same
+ * key reported for a consumer whose predicate holds no other spelling of it;
+ * this one reaches the derivation, so that both askers compare one value.
+ *
  * A continuation is therefore handed straight back, which is the whole of what
  * putting work down buys: the next build tick starts on the segment the last
  * one declared, from the trunk that segment already landed on.
  *
- * **The declaration key is what keeps this a refusal rather than a drop, and
- * what scopes it to the reconciliation it is waiting for.** A clean exit is a
- * producer's to answer — drop the entry, re-scope it, answer its question — so
- * the refusal lifts on exactly that: a rewrite hashes to a new key, and a drop
- * takes the record with the entry. It does *not* lift on a tip that happened to
- * move, which is what keying on the record's `headSha` anchor made it do — an
- * operator commit, or any sibling entry shipping, re-offered the same
- * unreconciled entry to a build wave with nothing new to read. The entry is
- * meanwhile still in the queue and still `open`, and the standing record wakes
- * the slice that drains records through the same classification
+ * **What this is waiting for is the producer's reconciliation, and nothing
+ * else** ({@link isStandingRefusal}). In particular it does *not* lift on a
+ * tip that happened to move, which is what keying on the record's `headSha`
+ * anchor made it do — an operator commit, or any sibling entry shipping,
+ * re-offered the same unreconciled entry to a build wave with nothing new to
+ * read. The entry is meanwhile still in the queue and still `open`, and the
+ * same classification wakes the slice that drains records
  * (`inboxWindow.ts`), so the producer this waits on is woken by the refusal
- * itself.
+ * itself — and stops being woken when it answers.
  *
  * A first attempt carries no record, so an entry nothing has walled on is
  * never refused here.
@@ -212,10 +218,7 @@ export function defaultRefusesEntry(
   return (ctx) => {
     const prior = ctx.priorAttempt;
     if (prior === undefined) return false;
-    return (
-      isStandingRefusal(stateRoot, ctx.entry, prior) &&
-      prior.declaredAs === ctx.declaredAs
-    );
+    return isStandingRefusal(stateRoot, ctx.entry, prior);
   };
 }
 

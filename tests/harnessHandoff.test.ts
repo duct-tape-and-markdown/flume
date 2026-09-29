@@ -114,7 +114,17 @@ function tickResult(overrides: Partial<TickResult> = {}): TickResult {
 
 /**
  * The anchor the engine stamps on a fanout record (`priorAttemptRef`,
- * `src/priorAttempts.ts`): the `entry` keyspace, keyed by the tag's slug.
+ * `src/priorAttempts.ts`): the `entry` keyspace, keyed by the tag's slug and
+ * stamped with the declaration key of the entry {@link entry} builds for that
+ * tag — which is the declaration every case here queues, so a record this
+ * builds stands against the entry its case puts in `pendingAfter`.
+ *
+ * Both halves through the engine's own derivations rather than spelled here:
+ * the classifier compares the declaration key as well as the identity, so a
+ * record carrying neither, or carrying a hand-written one, would be judged
+ * against a declaration no queue holds
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
  *
  * Its own name because two builders take it — {@link record} for a body
  * written by hand, and the elided case below for one the real writer
@@ -125,6 +135,7 @@ const entryAnchor = (tag: string) =>
   ({
     key: "entry",
     keyedAs: slugify(tag),
+    declaredAs: entryDeclaredKey(entry(tag)),
     headSha: "0".repeat(40),
     at: "2026-09-16T00:00:00.000Z",
   }) as const;

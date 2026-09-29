@@ -119,9 +119,12 @@ import { standingRefusals } from "./standingRefusal.js";
  * order, which is the same economics read at the sweep's queue
  * (`.claude/rules/posture-sweep.md`, *The sweep runs beside build, never
  * ahead of it*; `sweepWindow.ts`). A standing refusal makes that plainest —
- * it is keyed to an entry that is *still pickable*, so standing aside for
- * the queue would hand the baton straight back to the build wave that
- * already walled on it.
+ * the wave it walled is precisely what cannot pick that entry up again until
+ * this slice reconciles it (`defaultRefusesEntry`, `handoff.ts`), so standing
+ * aside for the queue is standing aside for a queue that cannot answer it.
+ * By the same classification the leg goes quiet the moment a producer does
+ * answer, so a reconciled entry is not a drain this slice keeps being woken
+ * for (`standingRefusal.ts`).
  *
  * **The lane leg is asked last, and that ordering is load-bearing.** The
  * refusal leg is a map walk, the friction leg a directory listing, and the
