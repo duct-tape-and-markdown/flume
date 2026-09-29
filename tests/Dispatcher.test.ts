@@ -24281,6 +24281,135 @@ describe("Dispatcher fanout — the per-entry claim", () => {
     // And the settled slot's own claim went with its teardown.
     expect(existsSync(await claimPathFor("SETTLES"))).toBe(false);
   });
+
+  /** The bytes the walling slot lands on the queue: no rewrite can read them. */
+  const UNREADABLE_QUEUE_BYTES = "{ corrupted mid-wave, not json";
+
+  /** What one slot left on disk once the wave it rode had settled. */
+  interface SlotResidue {
+    worktree: string;
+    claim: string;
+  }
+
+  /**
+   * One wave that leaves by throwing with one slot settled behind the wall
+   * and one not (`spec/worktrees.md`, *Every `.git/worktrees` mutation is
+   * serialized; the agent fanout is not*). SETTLED-FIRST ships, tears its own
+   * worktree down and releases its claim; WALL-STANDS then commits bytes onto
+   * the queue that its own pick's ledger rewrite cannot read, so the merge
+   * throws inside WALL-STANDS' slot — before that slot settles, which is the
+   * whole point of the ordering. Both addresses come back through the
+   * engine's own spelling, never a second one composed here.
+   */
+  const waveWalledPastOneSettledSlot = async (): Promise<{
+    outcome: Awaited<ReturnType<Dispatcher["tick"]>>;
+    /** Whether WALL-STANDS saw the sibling's release from inside its own invocation. */
+    sawSettle: boolean;
+    settled: SlotResidue;
+    standing: SlotResidue;
+  }> => {
+    await writePending(fx.repo, [
+      { ...makeEntry("SETTLED-FIRST", ["src/settled-first.ts"]), priority: 20 },
+      { ...makeEntry("WALL-STANDS", ["src/wall-stands.ts"]), priority: 10 },
+    ]);
+    const chain: Chain = {
+      phases: [wakeBuild()],
+      humanOnly: [],
+      supervisorPolicy: { maxParallel: 2 },
+    };
+
+    let sawSettle = false;
+    const agent = fanoutAgent({
+      "settled-first": (cwd) =>
+        writeAndCommit(
+          cwd,
+          "src/settled-first.ts",
+          "ok\n",
+          "build: SETTLED-FIRST",
+        ),
+      "wall-stands": async (cwd) => {
+        // The release is the last thing a settle does, behind the teardown
+        // (`settleSlot`, `src/waveTick.ts`), so waiting it out from inside
+        // this invocation is what makes the wall below provably later than
+        // the sibling's whole settle. A wave that tore down at wave end
+        // could not reach it while this invocation is open, and the wait
+        // would red the case by name instead.
+        await waitFor("SETTLED-FIRST's claim released", async () =>
+          existsSync(await claimPathFor("SETTLED-FIRST")) ? undefined : true,
+        );
+        sawSettle = true;
+        await commitEntryFile(
+          fx.repo,
+          entryFileName("CORRUPT"),
+          UNREADABLE_QUEUE_BYTES,
+        );
+        await writeAndCommit(
+          cwd,
+          "src/wall-stands.ts",
+          "ok\n",
+          "build: WALL-STANDS",
+        );
+      },
+    });
+
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    }).tick();
+
+    const base = worktreesBase(join(fx.repo, ".flume"));
+    const residueOf = async (tag: string): Promise<SlotResidue> => ({
+      worktree: join(base, worktreeDirName(tag)),
+      claim: await claimPathFor(tag),
+    });
+    return {
+      outcome,
+      sawSettle,
+      settled: await residueOf("SETTLED-FIRST"),
+      standing: await residueOf("WALL-STANDS"),
+    };
+  };
+
+  /** The non-vacuity both cases below share: this wave really did wall, and where. */
+  const expectWalledPastASettle = (
+    wave: Awaited<ReturnType<typeof waveWalledPastOneSettledSlot>>,
+  ): void => {
+    expect(wave.sawSettle).toBe(true);
+    expect(wave.outcome.failed).toBe(true);
+    expect(wave.outcome.ledgerRefusal).toBeDefined();
+    // Both spans reached trunk — the wall is the rewrite behind WALL-STANDS'
+    // own pick, so that slot was still open when the wave hit it and its
+    // settle is the one the wall skipped.
+    expect(wave.outcome.verdict?.shippedTags).toEqual([
+      "SETTLED-FIRST",
+      "WALL-STANDS",
+    ]);
+  };
+
+  it("a wave that throws leaves standing the worktree and claim of a slot that had not settled", async () => {
+    const wave = await waveWalledPastOneSettledSlot();
+    expectWalledPastASettle(wave);
+
+    // The claim: the slot the wall caught mid-flight took neither half of its
+    // tail, so both traces of the attempt are still on disk for the operator
+    // — and for the sweep at the next start, which is what removes them.
+    expect(existsSync(wave.standing.worktree)).toBe(true);
+    expect(existsSync(wave.standing.claim)).toBe(true);
+  });
+
+  it("a wave that throws leaves no worktree and no claim for a slot that settled before the wall", async () => {
+    const wave = await waveWalledPastOneSettledSlot();
+    expectWalledPastASettle(wave);
+
+    // The other half of the narrowing: a wall reaches only the slots still
+    // open when it goes up. The slot that had already settled left nothing
+    // for the next start to sweep or the next selection to reclaim.
+    expect(existsSync(wave.settled.worktree)).toBe(false);
+    expect(existsSync(wave.settled.claim)).toBe(false);
+  });
 });
 
 /**

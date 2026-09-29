@@ -491,9 +491,15 @@ export async function runFanout(
    *
    * A wave that has hit a wall takes neither half: the throw waiting below is
    * the operator's to clear, and the worktrees and claim files it leaves
-   * standing are the accepted cost of refusing rather than proceeding — the
-   * next `pruneWorktrees` and the next selection's liveness probe reclaim
-   * them, and the reclaim needs no repair. A slot that threw never reaches
+   * standing are the accepted cost of refusing rather than proceeding. The
+   * claim file is the next selection's liveness probe to reclaim, and needs
+   * no repair. The worktree is not the prune's: a prune drops the metadata of
+   * a directory that has already gone, and this one is still on disk, so it
+   * outlives every per-wave prune until the entry is provisioned again — an
+   * entry that leaves the queue first never is. Its remover is the sweep the
+   * next `flume loop` start runs (`spec/worktrees.md`, *Startup sweep — a
+   * dead wave's residue is removed at the next start*), which takes the
+   * directory and the branch it was cut on. A slot that threw never reaches
    * here at all, which is the same verdict by the same reasoning.
    */
   const settleSlot = async (
