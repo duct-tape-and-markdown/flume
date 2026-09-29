@@ -158,13 +158,15 @@ export type GateFailure = StageFailureEntry & {
 
 /**
  * A render-stage failure (`spec/chain.md`, *What a hook receives*): the prompt
- * never resolved, so no agent was invoked — an inline-exec span that would not
- * run (`InlineExecRenderError`, `src/Prompt.ts`), or a pre-invocation hook
- * (`shouldRun`, `promptArgs`) that threw, which the tick classes as the same
- * `render-refused`. `tag` is the fanout entry whose render refused; absent for
- * a singleton phase's own refusal (no entry to blame — same rationale as
- * {@link StageFailureEntry}, it falls to the consecutive-failure backstop
- * alone).
+ * never resolved, so no agent was invoked — a `{{KEY}}` the merged
+ * `promptArgs` had no entry for, raised by stage 1
+ * (`MissingPlaceholderRenderError`, `src/Prompt.ts`), an inline-exec span
+ * that would not run (`InlineExecRenderError`, `src/Prompt.ts`), or a
+ * pre-invocation hook (`shouldRun`, `promptArgs`) that threw — all three of
+ * which the tick classes as the same `render-refused`. `tag` is the fanout
+ * entry whose render refused; absent for a singleton phase's own refusal (no
+ * entry to blame — same rationale as {@link StageFailureEntry}, it falls to
+ * the consecutive-failure backstop alone).
  *
  * The one stage with no other per-entry trace. A revert leaves a failing
  * `gateResults` row and a conflict leaves a `mergeOutcomes` record, but a

@@ -112,8 +112,10 @@ export type EntryAttempt = AttemptOutcome & {
    * This entry's private worktree branch — the ref its span sits on until
    * the merge stage picks it. Carried out of the per-entry leg because the
    * merge marker (spec/loop.md "Crash equals stop") names the branch an
-   * interrupted pick left standing, and the attempts are filtered out of
-   * index-alignment with `worktrees` before the merge stage reads them.
+   * interrupted pick left standing, and the slot that provisioned the
+   * worktree is the only holder of its branch: the merge stage is fed one
+   * finished attempt at a time, never a wave-wide list it could look the
+   * branch up in.
    */
   branch: string;
   /** `phase.shouldRun` declined this entry before the agent was invoked. */

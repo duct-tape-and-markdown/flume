@@ -99,8 +99,9 @@ async function bayRootDisagreement(
 
 /**
  * The argv split, the roots resolved, and the verb's module called. Wrapped by
- * {@link main}, which owns the one arm that turns a state-root write refusal
- * into this process's exit code.
+ * {@link main}, which owns the one arm that turns a refused state-root access
+ * — a read and a write alike, which is the pair `StateRootAccessError` spells
+ * — into this process's exit code.
  */
 async function dispatch(): Promise<number> {
   const argv = process.argv.slice(2);

@@ -31,7 +31,11 @@ import * as git from "./git.js";
 import { priorAttemptsDir, slugify } from "./paths.js";
 import type { PendingEntry } from "./PendingSchema.js";
 import type { Phase } from "./Phase.js";
-import type { InlineExecRenderError } from "./Prompt.js";
+import type {
+  InlineExecRenderError,
+  MissingPlaceholderRenderError,
+  RenderRefusal,
+} from "./Prompt.js";
 import { isPriorAttemptMode } from "./Prompt.js";
 import type {
   PriorAttempt,
@@ -856,12 +860,14 @@ export function buildPlatformPreempt(
 
 /**
  * Build the render-refused record from the failure text of whatever refused
- * the render. Two writers reach it: an {@link InlineExecRenderError}, whose
- * `message` already names every failing span's command text and stderr, and a
- * pre-invocation hook that threw (`spec/chain.md`, *What a hook receives*),
- * whose text names the hook and the frame that raised. Text rather than the
- * error itself because the two have no error type in common — a hook may
- * throw any value at all.
+ * the render. Three writers reach it: a {@link MissingPlaceholderRenderError},
+ * whose `message` names every `{{KEY}}` no arg filled, an
+ * {@link InlineExecRenderError}, whose `message` already names every failing
+ * span's command text and stderr, and a pre-invocation hook that threw
+ * (`spec/chain.md`, *What a hook receives*), whose text names the hook and the
+ * frame that raised. Text rather than the error itself because the three have
+ * no error type in common — the first two share {@link RenderRefusal} and a
+ * hook may throw any value at all.
  */
 export function buildRenderRefused(
   failures: string,

@@ -20066,10 +20066,11 @@ describe("Dispatcher — CJS-context host chain-load refusal", () => {
 });
 
 /**
- * Teardown harvest. Only the engine is present when a fanout
- * worktree dies, so wave-end teardown must move a worktree-local friction
- * note into the primary friction dir, tag-prefixed, before the worktree is
- * removed. Content-opaque: files only, no read of contents.
+ * Teardown harvest. Only the engine is present when a fanout worktree dies, so
+ * the teardown a slot takes as its own attempt ends must move a worktree-local
+ * friction note into the primary friction dir, tag-prefixed, before that
+ * worktree is removed. The harvest rides each slot's own ending, never the
+ * wave's. Content-opaque: files only, no read of contents.
  */
 describe("Dispatcher fanout — teardown friction harvest", () => {
   it("moves worktree-local friction files into the primary dir, tag-prefixed, before worktree removal", async () => {

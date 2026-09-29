@@ -400,8 +400,9 @@ export async function runFanout(
     //
     // Off the creation queue above, so N slots' hooks still run concurrently.
     // A throw is this entry's provisioning failure: the worktree it already
-    // got still exists and still needs teardown, so `worktrees`/`provisioned`
-    // are untouched; only this entry never reaches the agent.
+    // got still exists and still needs teardown, so the slot answers with it
+    // for its own tail to take down and `provisioned` keeps the entry; only
+    // this entry never reaches the agent.
     let extraEnv: Record<string, string> | undefined;
     if (phase.setupWorktree) {
       try {
@@ -903,8 +904,10 @@ async function runFanoutEntry(
   // Same seam as the singleton callsite, scoped to this entry — sees the
   // same ctx `promptArgs` sees, and answers a throw through the same guard
   // (spec/chain.md, "What a hook receives"). Taken here rather than before
-  // provisioning because a wave's worktrees are created for the batch as a
-  // whole, one entry's decline included.
+  // provisioning because that ctx names this entry's own worktree as its
+  // `cwd`, and nothing names it until the slot that pulled the entry has
+  // provisioned it. A decline costs that one worktree, taken down by the same
+  // slot tail every other ending goes through.
   const consult = await consultShouldRun(
     leg.attemptCtx,
     phase,
