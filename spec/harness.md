@@ -317,8 +317,11 @@ changed. It wakes every slice whose window is live and build whenever anything
 is pickable — all of them in one answer, since which of them run at once is
 the budget's decision and not the handoff's; the one exception is the slice
 that just ran and committed nothing, which is not re-woken into the same wall.
-The exclusion is one tick deep; a wall that outlasts it is the repeated-failure
-backstop's (`spec/loop.md`, *Repeated identical failures — quarantine, then abort*).
+The exclusion is one tick deep. A wall that records a failure fact outlasting
+it is the repeated-failure backstop's (`spec/loop.md`, *Repeated identical
+failures — quarantine, then abort*); a slice that exits clean every tick
+records none, since a clean exit is not a failure, and the run's budget is its
+only bound.
 It never hands build an entry whose latest prior attempt is a refusal a
 producer resolves — a clean exit, a park, a merge the queue must answer —
 while that record stands against the entry **as declared**: the record keys on

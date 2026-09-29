@@ -152,16 +152,22 @@ mid-validation, because git scans every worktree's metadata during validation.
   one half-broken `.git/worktrees/<slug>/` fails `worktree add` for *every* subsequent slug.
 - Worktree creation runs sequentially across the batch — one worktree fully created before the
   next begins — because creating a worktree mutates the shared `.git/worktrees/` directory.
-- Teardown is the same sequential walk, with the chain's `teardownWorktree` hook, the friction
-  harvest, the removal, and the branch delete all riding it. Teardown is off the critical path,
-  so a plain serial walk beats interleaving the git-mutating step out alone.
+- Teardown is per slot: each slot tears its own worktree down as its attempt ends — the
+  chain's `teardownWorktree` hook, the friction harvest, the removal, and the branch delete —
+  on the same queue creation rides, because a removal mutates the metadata a sibling's `add`
+  is validating. A refill's creation waits behind the teardown ahead of it; that is the price
+  of one queue.
 - **The expensive work stays parallel**: per-entry agent invocations run concurrently, and so
   do the chain's `setupWorktree` hooks. Neither touches `.git/worktrees/`.
 
 Provisioning failure is isolated to the entry that hit it: the failed entry stays pending and
-the wave continues with the rest, with `provisioned` and `worktrees` kept index-aligned for
-everything downstream. The run-scoped quarantine and consecutive-failure abort built on top of
-that are `spec/loop.md`.
+the wave continues with the rest. The run-scoped quarantine and consecutive-failure abort
+built on top of that are `spec/loop.md`.
+
+A wave that leaves by throwing leaves standing only the worktrees and claims of slots that had
+not yet settled; every slot that settled first has already torn down and released its claim.
+That residue is the next start's to remove (*Startup sweep — a dead wave's residue is removed
+at the next start*).
 
 Contention on the same metadata dir between two checkouts of one repository is a
 different matter, and is accepted rather than serialized: a race fails a git
@@ -320,8 +326,8 @@ it, and the note plus the snapshot are what remain.
 ## Teardown harvest — the delivery guarantee
 
 Only the engine is present when a fanout worktree dies, so only the engine can guarantee a
-worktree-local friction note survives it. At wave end, for each worktree, **before removal**
-(`harvestFriction`):
+worktree-local friction note survives it. As each worktree's own attempt ends, **before its
+removal** (`harvestFriction`):
 
 - Resolve the worktree-local mirror of the declared channel — the state root's repo-relative
   path, joined inside the worktree, joined with `chain.friction` — and **move** every file in
