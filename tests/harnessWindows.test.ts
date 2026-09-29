@@ -327,12 +327,15 @@ const FRICTION_DIR = "friction";
  * the refusal's (`REFUSE: `, `harness/sliceWindow.ts`) and the bootstrap
  * listing's (`harness/cursorWindow.ts`).
  *
- * A case showing a window took neither leg reads these rather than the bare
- * words `REFUSE` and `bootstrap`. Both are ordinary English a rendered commit
- * subject, spec diff line or path may carry, so a negative spelling them over
- * a whole render would turn on what the fixture happened to name rather than
- * on the leg it is about (`.claude/rules/posture-sweep.md`, *A negative
- * assertion over a whole rendered artifact*).
+ * Each is the marker its own leg is read by. A case showing a window took a
+ * leg asserts the lead its producer wrote; a case showing it took neither cuts
+ * the block that lead opens and is answered `undefined`
+ * ({@link bootstrapCorpus}). Neither spells the bare words `REFUSE` and
+ * `bootstrap`, which are ordinary English a rendered commit subject, spec diff
+ * line or path may carry — and neither takes the whole render as its subject,
+ * where a leak of the other leg's material would turn on what the fixture
+ * happened to name (`.claude/rules/posture-sweep.md`, *A negative assertion
+ * over a whole rendered artifact*).
  */
 const REFUSAL_LEAD = "REFUSE:";
 const bootstrapLead = (field: string): string =>
@@ -759,24 +762,21 @@ it("the inbox slice renders a declared friction directory's files as records", (
   );
   // A dotfile is not a note (`spec/chain.md`), and the skip is the engine's
   // own `isDotName` rather than this package's idea of one.
-  const placeholder = writeFriction(".gitkeep", "");
+  writeFriction(".gitkeep", "");
 
   const rendered = windows({ friction: FRICTION_DIR })[INBOX_PHASE].args({
     cwd: repo,
     flumeDir: stateRoot(),
   }).RECORDS;
 
-  // One record per file, in the one block the drain already routes: the
-  // record queues first, then the channel. Both paths are the `join`-built
+  // The listing whole: one head per file, the record queues first and then
+  // the channel, and the dotfile in neither. Both paths are the `join`-built
   // ones this case wrote at — the window names a file where the tick
-  // draining it can open it.
-  expect(rendered).toContain(`--- ${inboxRecord} ---`);
-  expect(rendered).toContain(`--- ${note} ---`);
+  // draining it can open it. Read as the listing's own total, so the skip is
+  // every head the window wrote rather than one path missing from a render
+  // that also pastes each file's bytes.
+  expect(recordHeads(rendered)).toEqual([inboxRecord, note]);
   expect(rendered).toContain("The tsc gate reverted the span.");
-  // Each negative reads the listing arm it is about: a path this case wrote,
-  // asserted against the block that lists paths, never against whatever else
-  // the render happens to quote.
-  expect(rendered).not.toContain(placeholder);
 
   // The control: one declaration away, the same tree carries the record and
   // not the note.
@@ -784,8 +784,7 @@ it("the inbox slice renders a declared friction directory's files as records", (
     cwd: repo,
     flumeDir: stateRoot(),
   }).RECORDS;
-  expect(undeclared).toContain(`--- ${inboxRecord} ---`);
-  expect(undeclared).not.toContain(note);
+  expect(recordHeads(undeclared)).toEqual([inboxRecord]);
 });
 
 it("the inbox slice is live for a waiting friction file", () => {
@@ -973,9 +972,10 @@ it("a tip record listing the wake could not read reaches the inbox slice as a re
   git("commit", "-q", "-m", "inbox: a finding");
   expect(tipHolds(rel)).toBe(true);
   const listed = inbox().args(ctx).RECORDS!;
-  expect(listed).toContain(path);
+  // The listing whole: the one record, and so no refusal — a window that
+  // refused writes no head at all.
+  expect(recordHeads(listed)).toEqual([path]);
   expect(listed).toContain("Left for the drain.");
-  expect(listed).not.toContain(REFUSAL_LEAD);
 });
 
 /**
@@ -1003,6 +1003,7 @@ it("the inbox window refuses when the checkout's record queue cannot be listed",
   const ctx = { cwd: tree, flumeDir: stateRoot() };
   const inbox = (): PlanSliceWindow => windows()[INBOX_PHASE];
   const treeRoot = join(tree, STATE_ROOT_REL);
+  const carried = join(treeRoot, "plan", "notes", "A-NOTE.md");
   const obstruction = join(treeRoot, "inbox");
 
   // The window's own reader over the window's own tree, so what the refusal
@@ -1015,9 +1016,7 @@ it("the inbox window refuses when the checkout's record queue cannot be listed",
   // Vacuity: the checkout lists the committed record before the obstruction
   // stands, so there is a queue for the refusal to be withholding.
   const before = checkout();
-  expect("files" in before ? [...before.files] : []).toEqual([
-    join(treeRoot, "plan", "notes", "A-NOTE.md"),
-  ]);
+  expect("files" in before ? [...before.files] : []).toEqual([carried]);
 
   writeFileSync(obstruction, "not a directory\n");
   const failed = checkout();
@@ -1047,8 +1046,10 @@ it("the inbox window refuses when the checkout's record queue cannot be listed",
   rmSync(obstruction);
   mkdirSync(obstruction);
   const listed = inbox().args(ctx).RECORDS!;
+  // The listing whole: the checkout's one record, and so no refusal — a
+  // window that refused writes no head at all.
+  expect(recordHeads(listed)).toEqual([carried]);
   expect(listed).toContain("Left for the drain.");
-  expect(listed).not.toContain(REFUSAL_LEAD);
 });
 
 /**
@@ -1110,9 +1111,15 @@ it("the inbox window refuses when a listed record cannot be read", () => {
   rmSync(unreadable, { recursive: true });
   writeFileSync(unreadable, "# A note\n\nThe note the drain can read.\n");
   const listed = inbox().args(ctx).RECORDS!;
+  // The listing whole: the record the failing read stood in front of and the
+  // note that now reads, in the order the queue names its directories — and so
+  // no refusal, which writes no head at all.
+  expect(recordHeads(listed)).toEqual([
+    join(treeRoot, "inbox", "2026-09-25-a-finding.md"),
+    unreadable,
+  ]);
   expect(listed).toContain("The note the drain can read.");
   expect(listed).toContain("Left for the drain.");
-  expect(listed).not.toContain(REFUSAL_LEAD);
 });
 
 /**
@@ -1472,16 +1479,21 @@ it("a rendered window names the sha its cursor may advance to and defers the com
   }).SPEC_WINDOW;
 
   expect(rendered).toContain(`=== 2 commit(s) in the spec locus since ${base}`);
-  expect(rendered).toContain("first line 0");
   expect(rendered).toContain(
     `=== rendered 1 commit(s) in full; \`derivedThrough\` may advance to ${first} ===`,
   );
   expect(rendered).toContain(
     "=== 1 commit(s) beyond this tick's budget re-appear next tick: ===",
   );
-  expect(rendered).toContain(`${second} spec: second`);
-  // The deferred commit's diff is not rendered — only its identity.
-  expect(rendered).not.toContain("second line 0");
+  // The deferred commit's identity, and only its identity: the block that
+  // defers it names it and nothing else, and the additions the window did
+  // render are the first commit's own, whole — so any line of the deferred
+  // diff reaching the render reds the total it belongs to rather than
+  // depending on which line this fixture happened to name.
+  expect(deferredCommits(rendered)).toEqual([`${second} spec: second`]);
+  expect(addedLines(rendered)).toEqual(
+    Array.from({ length: 20 }, (_, i) => `+first line ${i}`),
+  );
 });
 
 /**
@@ -1515,11 +1527,13 @@ it.runIf(process.platform !== "win32")(
     // Vacuity pin: the window is populated, and it is populated *by* the
     // metacharacter path — not by some other commit in the range.
     expect(rendered).toContain(`=== 1 commit(s) in the spec locus since ${base}`);
-    expect(rendered).toContain("+in the locus");
 
-    // The neighbour a pattern read would have swept in is absent.
-    expect(rendered).not.toContain("spec/aliens/x.md");
-    expect(rendered).not.toContain("+outside the locus");
+    // The diff whole, on both halves the narrowing decides: the one path git
+    // was handed, and the one line it added. The neighbour a pattern read
+    // would have swept in is absent from each total, rather than from a needle
+    // over a render that also pastes the commit's subject and its paths.
+    expect(diffPaths(rendered)).toEqual(["spec/a*.md"]);
+    expect(addedLines(rendered)).toEqual(["+in the locus"]);
   },
 );
 
@@ -1541,9 +1555,11 @@ it("a window refuses a cursor sha that does not resolve in the tick's tree", () 
     expect(window).toContain(absent);
     expect(window).toContain(`\`${field}\``);
     expect(window).toContain("advance no cursor this tick");
-    // Nothing of the window itself leaks past the refusal: a partial render
-    // beside it would read as material the tick may act on.
-    expect(window).not.toContain("spec: the loop");
+    // Nothing of the window itself leaks past the refusal: the render is that
+    // one sentence whole (`windowRefusal`, `harness/sliceWindow.ts`), so no
+    // commit roster, listing or diff stands beside it as material the tick may
+    // act on.
+    expect(renderedLines(window)).toHaveLength(1);
   }
 
   // An unreadable window wakes its slice rather than reporting empty — the
@@ -1578,8 +1594,9 @@ it("a retired-claim cursor that names no commit refuses naming retiredThrough ra
   // than a stamp this fixture got wrong.
   writeState({ sweptThrough: stamp });
   const readable = windows()["plan-sweep"].args(ctx).SWEEP_WINDOW;
+  // Read as the delta's own block, which a refusal renders none of — so the
+  // cut is the control, with nothing left to say over the whole render.
   expect(retiredDelta(readable)).toContain("-A ratified claim.");
-  expect(readable).not.toContain(REFUSAL_LEAD);
 
   writeState({ sweptThrough: stamp, retiredThrough: absent });
   const window = windows()["plan-sweep"].args(ctx).SWEEP_WINDOW;
@@ -1590,10 +1607,17 @@ it("a retired-claim cursor that names no commit refuses naming retiredThrough ra
   // The repair is the file that field lives in — this slice's own state.
   expect(window).toContain(planStatePath(stateRoot(), "plan-sweep"));
   expect(window).toContain("advance no cursor this tick");
-  // The whole render is the refusal, so the cursor that was correct is named
-  // by nothing in it: not as a field to repair, not as a sha to doubt.
-  expect(window).not.toContain("sweptThrough");
-  expect(window).not.toContain(stamp);
+  // The whole render is the refusal, and what it names are its totals: every
+  // name it spells is the cursor that failed, and the only sha in it is that
+  // cursor's own value. So the stamp that was correct is named neither as a
+  // field to repair nor as a sha to doubt — by the whole of what the refusal
+  // names, never by one spelling absent from it.
+  expect(backtickedNames(window)).toEqual([
+    "retiredThrough",
+    absent,
+    "retiredThrough",
+  ]);
+  expect(shasNamed(window)).toEqual([absent]);
 });
 
 it("a plan window over a tree git cannot read refuses as unreadable rather than as a cursor to repair", () => {
@@ -1636,13 +1660,14 @@ it("a plan window over a tree git cannot read refuses as unreadable rather than 
     for (const [field, slice, arg, material] of legs) {
       // The control: the same cursor in the tree it was stamped in renders
       // the window's material, so the refusal below is the tree's doing and
-      // not a cursor this fixture got wrong.
+      // not a cursor this fixture got wrong. Material present is the whole
+      // control — a refusal replaces the render rather than standing beside it
+      // (`windowRefusal`, `harness/sliceWindow.ts`).
       const readable = built[slice].args({
         cwd: repo,
         flumeDir: stateRoot(),
       })[arg];
       expect(readable).toContain(material);
-      expect(readable).not.toContain(REFUSAL_LEAD);
 
       const window = built[slice].args({
         cwd: notATree,
@@ -1708,9 +1733,10 @@ it("a window render refuses by name when git fails for a reason other than an un
       expect(window).toContain("advance no cursor this tick");
       // The failure's own text, carried whole.
       expect(window).toContain(fatal);
-      // Nothing of the window itself: a bootstrap listing beside the
-      // refusal would read as material the tick may act on.
-      expect(window).not.toContain(bootstrapLead(field));
+      // Nothing of the window itself: the bootstrap listing this same call
+      // renders over a readable tree is absent as a block, not as a phrase
+      // some other sentence in the render might spell.
+      expect(bootstrapCorpus(window, field)).toBeUndefined();
     }
   } finally {
     rmSync(notATree, { recursive: true, force: true });
@@ -1838,15 +1864,20 @@ it("the frontier lists a path a merge commit changed in neither parent", () => {
   writeState({ sweptThrough: base });
 
   // The arm this case is about, asserted off git rather than assumed: the
-  // merge's tree differs from both its parents on `src/resolved.ts`, and no
-  // commit in either parent's own history past the cursor named it.
-  for (const parent of [`${merge}^1`, `${merge}^2`]) {
+  // merge's tree differs from both its parents on `src/resolved.ts`, and each
+  // parent's own history past the cursor named its one leg's path and nothing
+  // else — read as that listing's total, so the resolved path is outside the
+  // whole of what either parent touched.
+  for (const [parent, own] of [
+    [`${merge}^1`, "src/trunk.ts"],
+    [`${merge}^2`, "src/branch.ts"],
+  ] as const) {
     expect(gitLines("diff", "--name-only", parent, merge)).toContain(
       "src/resolved.ts",
     );
     expect(
       gitLines("log", "--format=", "--name-only", `${base}..${parent}`),
-    ).not.toContain("src/resolved.ts");
+    ).toEqual([own]);
   }
 
   const rendered = windows()["plan-sweep"].args({
@@ -1899,17 +1930,18 @@ it("a merge commit that resolved nothing adds no path to the frontier", () => {
 });
 
 /**
- * The lines of one block of a rendered sweep window — the block whose `===`
- * header `marker` names, up to the blank line that ends it.
+ * The lines of one block of a rendered window — the block whose header
+ * `marker` names, up to the blank line that ends it.
  *
- * Every block the window renders has that shape, so one cut serves the
- * frontier listing, the posture-page callout and the retired-claim delta
- * rather than three that must agree (`.claude/rules/engineering.md`, *A
- * module is one job*). A deleted blank line arrives as a bare `-`, never as
- * `""`, so the first empty line really is the block's end.
+ * Every block every window renders has that shape, so one cut serves the
+ * sweep's frontier listing, posture-page callout and retired-claim delta, the
+ * derive window's deferred commits and either slice's bootstrap corpus, rather
+ * than five that must agree (`.claude/rules/engineering.md`, *A module is one
+ * job*). A deleted blank line arrives as a bare `-`, never as `""`, so the
+ * first empty line really is the block's end.
  *
  * Cases assert against a block rather than against the whole render, which
- * carries two other blocks and a tip line this one has no say over
+ * carries the other blocks and a tip line this one has no say over
  * (`.claude/rules/posture-sweep.md`, *A negative assertion over a whole
  * rendered artifact*).
  */
@@ -1935,14 +1967,99 @@ function blockIfAny(
   rendered: string | undefined,
   marker: string,
 ): string[] | undefined {
-  if (rendered === undefined) throw new Error("the sweep window is unrendered");
-  const lines = rendered.split("\n");
+  const lines = renderedLines(rendered);
   const start = lines.findIndex((line) => line.includes(marker));
   if (start === -1) return undefined;
   const rest = lines.slice(start + 1);
   const end = rest.indexOf("");
   return end === -1 ? rest : rest.slice(0, end);
 }
+
+/**
+ * Every line a window rendered, with the render's own presence proven as it is
+ * read: a window argument is typed optional, and a case that folded an absent
+ * one to `""` would assert its totals over nothing
+ * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
+ *
+ * The root of the cuts below. Each of them answers with a **total** — every
+ * head a listing wrote, every line a diff added, every sha or name a refusal
+ * spells, the block a leg either rendered or did not — because that is what a
+ * case about what a window left out asserts against: a negative naming one
+ * path, tag, sha or commit subject over a whole render turns on what the
+ * fixture happened to spell elsewhere in it
+ * (`.claude/rules/posture-sweep.md`, *Standing lenses*).
+ */
+function renderedLines(rendered: string | undefined): string[] {
+  if (rendered === undefined) throw new Error("the window is unrendered");
+  return rendered.split("\n");
+}
+
+/** The `===` header lines a window rendered, in order. */
+const windowHeaders = (rendered: string | undefined): string[] =>
+  renderedLines(rendered).filter((line) => line.startsWith("==="));
+
+/**
+ * The head lines of a rendered record listing — one per file the window
+ * listed, each the path with whatever mark the renderer put beside it
+ * (`renderFiles`, `harness/inboxWindow.ts`) and the `--- ` fence cut off.
+ *
+ * The listing's own total, so a case about which files a window named reads
+ * every head it wrote rather than one needle over a render that also pastes
+ * each file's bytes.
+ */
+const recordHeads = (rendered: string | undefined): string[] =>
+  renderedLines(rendered)
+    .filter((line) => line.startsWith("--- ") && line.endsWith(" ---"))
+    .map((line) => line.slice(4, -4));
+
+/**
+ * The content lines a rendered window's diffs added — git's own `+` lines,
+ * with its `+++` file headers left to {@link diffPaths}.
+ */
+const addedLines = (rendered: string | undefined): string[] =>
+  renderedLines(rendered).filter(
+    (line) => line.startsWith("+") && !line.startsWith("+++"),
+  );
+
+/** The paths a rendered window's diffs name, off git's own `+++` headers. */
+const diffPaths = (rendered: string | undefined): string[] =>
+  renderedLines(rendered)
+    .filter((line) => line.startsWith("+++ "))
+    .map((line) => line.slice(4).replace(/^b\//, ""));
+
+/** Every 40-hex sha a window named, in order. */
+const shasNamed = (rendered: string | undefined): string[] =>
+  renderedLines(rendered).flatMap(
+    (line) => line.match(/\b[0-9a-f]{40}\b/g) ?? [],
+  );
+
+/** Every backticked span a window named, in order. */
+const backtickedNames = (rendered: string | undefined): string[] =>
+  renderedLines(rendered).flatMap((line) =>
+    [...line.matchAll(/`([^`]+)`/g)].map((hit) => hit[1]!),
+  );
+
+/** The commits a window deferred past this tick's budget, cut out of its block. */
+const deferredCommits = (rendered: string | undefined): string[] =>
+  blockUnder(rendered, "beyond this tick's budget re-appear next tick");
+
+/**
+ * The corpus a bootstrap listing named, cut out of a rendered window —
+ * `undefined` where the window read a cursor instead, which is the whole claim
+ * for a case about a slice that did not bootstrap.
+ */
+const bootstrapCorpus = (
+  rendered: string | undefined,
+  field: string,
+): string[] | undefined => blockIfAny(rendered, bootstrapLead(field));
+
+/**
+ * The queue parse failure a window rendered, cut out of its own block —
+ * `undefined` where the queue resolved, which is that arm's whole claim.
+ */
+const parseFailureBlock = (
+  rendered: string | undefined,
+): string[] | undefined => blockIfAny(rendered, "did not parse");
 
 /** The frontier's own paths, cut out of a rendered sweep window. */
 const frontierPaths = (rendered: string | undefined): string[] =>
@@ -2541,26 +2658,31 @@ it("a missing slice state file renders as no state yet", () => {
   // Control: with both files on disk, both windows render past their cursors
   // rather than bootstrapping — so the bootstrap below is the removed file's
   // doing and not the fixture's.
-  expect(built["plan-derive"].args(ctx).SPEC_WINDOW).not.toContain(
-    bootstrapLead("derivedThrough"),
-  );
-  expect(built["plan-sweep"].args(ctx).SWEEP_WINDOW).not.toContain(
-    bootstrapLead("sweptThrough"),
-  );
+  expect(
+    bootstrapCorpus(
+      built["plan-derive"].args(ctx).SPEC_WINDOW,
+      "derivedThrough",
+    ),
+  ).toBeUndefined();
+  expect(
+    bootstrapCorpus(built["plan-sweep"].args(ctx).SWEEP_WINDOW, "sweptThrough"),
+  ).toBeUndefined();
 
   // Derive's file alone removed: derive reads no state yet and opens over its
   // whole declared corpus, while the sweep still reads the cursor in its own
   // file — the sibling's absence is not its absence.
   rmSync(planStatePath(stateRoot(), "plan-derive"));
   const half = windows();
+  // The corpus whole: the cut proves the bootstrap lead, and under it stands
+  // the declared locus and nothing else — which is also a render carrying no
+  // refusal, since a refusal renders no listing to cut.
   const bootstrapped = half["plan-derive"].args(ctx).SPEC_WINDOW;
-  expect(bootstrapped).toContain(bootstrapLead("derivedThrough"));
-  expect(bootstrapped).toContain("`derivedThrough`");
-  expect(bootstrapped).toContain("spec/loop.md");
-  expect(bootstrapped).not.toContain(REFUSAL_LEAD);
+  expect(bootstrapCorpus(bootstrapped, "derivedThrough")).toEqual([
+    "spec/loop.md",
+  ]);
 
   const sweep = half["plan-sweep"].args(ctx).SWEEP_WINDOW;
-  expect(sweep).not.toContain(bootstrapLead("sweptThrough"));
+  expect(bootstrapCorpus(sweep, "sweptThrough")).toBeUndefined();
   expect(sweep).toContain(`touched since ${cursor}`);
 
   // And the liveness leg reads the same absence: a slice with no state file
@@ -2581,11 +2703,10 @@ it("a state root with no plan state opens every window over the whole declared c
     flumeDir: stateRoot(),
   }).SPEC_WINDOW;
 
-  expect(rendered).toContain(bootstrapLead("derivedThrough"));
-  expect(rendered).toContain("`derivedThrough`");
-  expect(rendered).toContain("spec/loop.md");
-  // Scoped to the declared locus, never the whole tree.
-  expect(rendered).not.toContain("src/a.ts");
+  // The corpus whole: the declared locus and nothing else — scoped to it and
+  // never to the whole tree by the listing's own total, rather than by one path
+  // missing from a render that also names the tip it was drawn from.
+  expect(bootstrapCorpus(rendered, "derivedThrough")).toEqual(["spec/loop.md"]);
   expect(
     windows()["plan-derive"].live({ flumeDir: stateRoot(), pickable: false }),
   ).toBe(true);
@@ -2620,15 +2741,17 @@ it("the bootstrap window names the tip it was drawn from rather than telling the
   for (const { field, corpus, rendered } of cases) {
     // Vacuity guard: it is the bootstrap leg, with its corpus listed in it,
     // that ends on the tip below.
-    expect(rendered).toContain(bootstrapLead(field));
-    expect(rendered).toContain(corpus);
-    expect(rendered).not.toContain("stamp HEAD");
-    expect(rendered).toMatch(
-      new RegExp(
-        `=== this window was drawn from tip ${tip}; the tick that closes it ` +
-          `stamps \`${field}\` at exactly that sha ===\\s*$`,
-      ),
-    );
+    expect(bootstrapCorpus(rendered, field)).toEqual([corpus]);
+
+    // The stamping instruction, whole: the window's one `===` line names the
+    // tip it was drawn from, and it is the render's last. A second sentence
+    // telling the tick to resolve `HEAD` itself would have to be one of those
+    // two, so the totals refuse it however it is spelled.
+    const stamps =
+      `=== this window was drawn from tip ${tip}; the tick that closes it ` +
+      `stamps \`${field}\` at exactly that sha ===`;
+    expect(windowHeaders(rendered)).toEqual([stamps]);
+    expect(renderedLines(rendered).at(-1)).toBe(stamps);
   }
 });
 
@@ -2737,8 +2860,12 @@ it("the inbox render carries the queue's parse failure as the drain's input", ()
   // — the drain is told what to repair, not merely that something is wrong.
   expect(failed).toContain(failure.path);
   expect(failed).toContain(`${failure.errors.length} error(s)`);
-  expect(failed).toContain(`"message": "${failure.errors[0]!.message}"`);
-  expect(failed).toContain(`"path": "${failure.errors[0]!.path}"`);
+  // The block under that header is the engine's own error shape verbatim,
+  // whole — so the drain reads every field the engine reported, not the two a
+  // pair of needles happens to name.
+  expect(parseFailureBlock(failed)?.join("\n")).toBe(
+    JSON.stringify(failure.errors, null, 2),
+  );
 
   // The control, over the same empty `pending`: a queue that resolved says so
   // rather than rendering an empty block, which is the text a tick that failed
@@ -2749,7 +2876,10 @@ it("the inbox render carries the queue's parse failure as the drain's input", ()
     pending: [],
   }).QUEUE_PARSE_FAILURE;
   expect(healthy).toContain("the queue parsed");
-  expect(healthy).not.toContain(failure.path);
+  // And it renders no failure block at all: the absence is that block's, read
+  // through the same cut the populated arm above reads, never a path missing
+  // from a render that would quote one.
+  expect(parseFailureBlock(healthy)).toBeUndefined();
 });
 
 /**

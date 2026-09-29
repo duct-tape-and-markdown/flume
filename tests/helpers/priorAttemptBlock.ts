@@ -20,9 +20,26 @@ const CLOSE = "</prior-attempt>";
  * negative assertion over a whole rendered artifact*).
  */
 export function priorAttemptBlock(rendered: string): string {
+  const block = priorAttemptBlockIfAny(rendered);
+  if (block === undefined) {
+    throw new Error(`the render carries no ${OPEN} block`);
+  }
+  return block;
+}
+
+/**
+ * The same cut with an absent block as an answer rather than a failure — what a
+ * case about a render that must **omit** the block asserts against.
+ *
+ * A `not.toContain` of the tag over the whole render is the same defect as one
+ * over what the block says: the subject is a prompt carrying a fence, an entry
+ * and a task body, so the assertion turns on whatever those quote. This answers
+ * for the block alone (`.claude/rules/posture-sweep.md`, *Standing lenses*).
+ */
+export function priorAttemptBlockIfAny(rendered: string): string | undefined {
   const open = rendered.indexOf(OPEN);
+  if (open < 0) return undefined;
   const close = rendered.indexOf(CLOSE);
-  expect(open, `the render carries no ${OPEN} block`).toBeGreaterThanOrEqual(0);
   expect(close, `the ${OPEN} block is unclosed`).toBeGreaterThan(open);
   return rendered.slice(open, close + CLOSE.length);
 }

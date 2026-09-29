@@ -30,6 +30,7 @@ import {
 import type { Agent, AgentInvocation } from "../src/Agent.ts";
 import { silent } from "./helpers/dispatcherFixture.ts";
 import { mkFixtureRoot } from "./helpers/fixtureRoot.ts";
+import { priorAttemptBlockIfAny } from "./helpers/priorAttemptBlock.ts";
 import {
   SPAWN_BUDGET_MS,
   exec,
@@ -136,6 +137,31 @@ async function makeRenderRepo(
   };
 }
 
+/**
+ * The paths one `<harness>` listing names, cut out of a rendered prompt: the
+ * `  - ` entries under the line `lead` opens, each with its bullet cut off.
+ *
+ * A case about which fence the verb printed reads that listing rather than the
+ * whole render, which also carries the outer ceiling, the assigned entry's own
+ * JSON and the task body (`.claude/rules/posture-sweep.md`, *Standing lenses*).
+ */
+function listingUnder(stdout: string, lead: string): string[] {
+  const lines = stdout.split("\n");
+  const start = lines.findIndex((line) => line.startsWith(lead));
+  if (start < 0) throw new Error(`the render carries no \`${lead}\` listing`);
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex((line) => !line.startsWith("  - "));
+  return (end === -1 ? rest : rest.slice(0, end)).map((line) => line.slice(4));
+}
+
+/**
+ * Every `tag=` line the render carries — the phase's own echo of the assignment
+ * it was handed, which is the subject a case about *which* entry a render
+ * selected asserts a total over.
+ */
+const tagLines = (stdout: string): string[] =>
+  stdout.split("\n").filter((line) => line.startsWith("tag="));
+
 /** Everything the verb wrote to stdout past its notice line. */
 function promptOf(stdout: string): string {
   const nl = stdout.indexOf("\n");
@@ -222,7 +248,9 @@ it("flume render's first line says the prior-attempt block is omitted", async ()
     const first = r.stdout.split("\n")[0]!;
     expect(first).toContain("<prior-attempt>");
     expect(first).toContain("omitted");
-    expect(promptOf(r.stdout)).not.toContain("<prior-attempt>");
+    // Read as the block, not as the tag over a whole prompt: the omission is
+    // this block's absence, whatever else the render quotes.
+    expect(priorAttemptBlockIfAny(promptOf(r.stdout))).toBeUndefined();
   } finally {
     await repo.cleanup();
   }
@@ -238,7 +266,7 @@ it("flume render --entry selects the queue entry a scoped tick would carry", asy
     // — so SECOND below is the flag's doing, not the default's.
     const unscoped = await runCli(repo.dir, ["render", "build"]);
     expect(unscoped.code).toBe(0);
-    expect(unscoped.out).toContain("tag=FIRST");
+    expect(tagLines(unscoped.out)).toEqual(["tag=FIRST"]);
 
     const r = await runCliStreams(repo.dir, [
       "render",
@@ -247,12 +275,16 @@ it("flume render --entry selects the queue entry a scoped tick would carry", asy
       "SECOND",
     ]);
     expect(r.code).toBe(0);
-    expect(r.stdout).toContain("tag=SECOND");
-    expect(r.stdout).not.toContain("tag=FIRST");
+    // The prompt's echo of its assignment, whole: one `tag=` line, and it is
+    // the entry the flag named — so the entry the default would have carried is
+    // absent from the total rather than from one spelling over a render that
+    // also quotes the queue, the fence and the repository's own paths.
+    expect(tagLines(r.stdout)).toEqual(["tag=SECOND"]);
     // The fence in the <harness> block is the scoped one, not the phase's
-    // outer ceiling: SECOND's declared file, not FIRST's.
-    expect(r.stdout).toContain("src/second.ts");
-    expect(r.stdout).not.toContain("src/first.ts");
+    // outer ceiling: SECOND's declared file, whole, and so nothing of FIRST's.
+    expect(listingUnder(r.stdout, "Effective fence")).toEqual([
+      "src/second.ts",
+    ]);
     expect(r.stderr).toContain("scoped to entry SECOND");
   } finally {
     await repo.cleanup();
