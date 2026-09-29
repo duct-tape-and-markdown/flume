@@ -634,6 +634,31 @@ const commentRanges = (sf: ts.SourceFile): readonly ts.CommentRange[] => {
 };
 
 /**
+ * Every doc comment a module states, as the emit carries it: the block's own
+ * source text with its opener and terminator, at the 1-based line it opens
+ * on. Sorted by position, so a finding reported off this reads in file order.
+ *
+ * Off the parser's trivia like every reader here, which is what makes a
+ * verdict about a block's *own* syntax answerable: a `/**` inside a template
+ * literal opens no comment, so the declaration `harness/init.ts` emits — whose
+ * text spells doc comments of its own — states none of them here.
+ */
+export const docCommentBlocks = (sf: ts.SourceFile): readonly ProseLine[] => {
+  const full = sf.getFullText();
+  return [...commentRanges(sf)]
+    .sort((a, b) => a.pos - b.pos)
+    .filter(
+      (range) =>
+        range.kind === ts.SyntaxKind.MultiLineCommentTrivia &&
+        full.startsWith("/**", range.pos),
+    )
+    .map((range) => ({
+      line: sf.getLineAndCharacterOfPosition(range.pos).line + 1,
+      text: full.slice(range.pos, range.end),
+    }));
+};
+
+/**
  * A file's comment text, one entry per line that carries any, in line order.
  * A line holding two comments carries both, concatenated in the order the
  * file spells them.

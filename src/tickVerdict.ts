@@ -33,7 +33,6 @@ import type { PidClaim } from "./pidClaim.js";
 import type { NoCommitMode } from "./Prompt.js";
 
 /**
-/**
  * One pre-tick worktree provisioning failure — the
  * dispatcher never reached the agent for the affected entry (or, for a
  * repo-level failure, for any entry this tick).
@@ -349,13 +348,13 @@ export function startTiming(): () => number {
 /**
  * How a fanout entry's landed worktree commit fared once the wave tried to
  * put it on trunk:
- *  - `merged`                cherry-picked, passed every afterMerge gate,
- *                            and the agent's own termination never stated a
- *                            park — counted shipped. A span the tip already
- *                            held empties against it and is absorbed rather
- *                            than refused (spec/loop.md "Tip verify — one
- *                            writer per branch, absorption at the merge"), so
- *                            a `merged` row whose `baseSha` and `headSha` are
+ *  - `merged`                cherry-picked, passed every afterMerge gate, and
+ *                            the agent's own termination never stated a park
+ *                            — counted shipped. A span the tip already held
+ *                            empties against it and is absorbed rather than
+ *                            refused (spec/loop.md "Tip verify — one writer
+ *                            per branch, absorption at the merge"), so a
+ *                            `merged` row whose `baseSha` and `headSha` are
  *                            equal is a span merged with no commit to add.
  *  - `cherry-pick-conflict`  the cherry-pick itself failed; entry stays
  *                            pending, no commit reached trunk. A commit the
@@ -367,40 +366,60 @@ export function startTiming(): () => number {
  *                            `reset --keep` that would have carried the
  *                            commit back off trunk was itself refused — a
  *                            bystander's uncommitted work collides with the
- * paths the revert needs to touch (spec/loop.md "Tip verify — one writer per
- * branch, absorption at the merge", "dropping it must not take bystanders").
- * The commit stays on trunk, unlike `afterMerge-reverted`; the entry stays
- * pending regardless, so it is never counted shipped. The bounded exception to
- * absorption the same section names for a mid-history refusal — evidence left
- * for the operator rather than a forced wipe. - `afterCommit-reverted`
- * reverted inside the worktree by an afterCommit gate; never reached
- * cherry-pick, so it never touched trunk on its own. - `not-shipped` landed
- * and passed every gate, but the phase's own `shipped` predicate returned
- * false (spec/pending.md "Ship detection trusts the agent's own account") —
- * commit stays on trunk, entry stays pending. The engine records the chain's
- * verdict and holds no vocabulary for its reason. - `tip-moved` the wave's own
- * commit-onto-trunk step refused because a live claim held the ref (a
- * concurrent engine instance, spec/loop.md "Tip verify — one writer per
- * branch, absorption at the merge") — never reached cherry-pick, entry stays
- * pending for a fresh retry once the claim clears. A foreign non-engine commit
- * on the ref, with no live claim, is absorbed instead: git's own conflict
- * detection is the only content arbiter. - `dropped-work` the per-entry
- * tip-verify leg's own ancestry check refused (spec/loop.md "Tip verify — one
- * writer per branch, absorption at the merge", per-entry leg): this entry's
- * worktree commit was soft-reset because its recorded base was no longer an
- * ancestor of the observed HEAD — never reached cherry-pick either, but
- * distinct from `tip-moved` above, which is the *shared trunk* racing during
- * this wave's own merge step. A sibling fact so a dropped per-entry commit
- * never lands as silence a partial ship summary papers over. - `wave-walled`
- * the span passed its afterCommit gates in its own worktree and the wave was
- * already walled when it settled: a ledger rewrite behind an earlier pick
- * refused (`WaveLedgerRefusal`, `src/waveMerge.ts`), so this attempt's facts
- * were folded and its span was never offered to cherry-pick. Distinct from
- * every kind above in what did *not* happen — no pick was attempted, so
- * neither trunk nor this entry's own branch refused anything — and the
- * `baseSha`/`headSha` pair is the whole of its point: the refusal leaves the
- * worktree branch standing, the next start's teardown does not, and the span
- * is re-cherry-pickable from this row alone.
+ *                            paths the revert needs to touch (spec/loop.md
+ *                            "Tip verify — one writer per branch, absorption
+ *                            at the merge", "dropping it must not take
+ *                            bystanders"). The commit stays on trunk, unlike
+ *                            `afterMerge-reverted`; the entry stays pending
+ *                            regardless, so it is never counted shipped. The
+ *                            bounded exception to absorption the same section
+ *                            names for a mid-history refusal — evidence left
+ *                            for the operator rather than a forced wipe.
+ *  - `afterCommit-reverted`  reverted inside the worktree by an afterCommit
+ *                            gate; never reached cherry-pick, so it never
+ *                            touched trunk on its own.
+ *  - `not-shipped`           landed and passed every gate, but the phase's
+ *                            own `shipped` predicate returned false
+ *                            (spec/pending.md "Ship detection trusts the
+ *                            agent's own account") — commit stays on trunk,
+ *                            entry stays pending. The engine records the
+ *                            chain's verdict and holds no vocabulary for its
+ *                            reason.
+ *  - `tip-moved`             the wave's own commit-onto-trunk step refused
+ *                            because a live claim held the ref (a concurrent
+ *                            engine instance, spec/loop.md "Tip verify — one
+ *                            writer per branch, absorption at the merge") —
+ *                            never reached cherry-pick, entry stays pending
+ *                            for a fresh retry once the claim clears. A
+ *                            foreign non-engine commit on the ref, with no
+ *                            live claim, is absorbed instead: git's own
+ *                            conflict detection is the only content arbiter.
+ *  - `dropped-work`          the per-entry tip-verify leg's own ancestry
+ *                            check refused (spec/loop.md "Tip verify — one
+ *                            writer per branch, absorption at the merge",
+ *                            per-entry leg): this entry's worktree commit was
+ *                            soft-reset because its recorded base was no
+ *                            longer an ancestor of the observed HEAD — never
+ *                            reached cherry-pick either, but distinct from
+ *                            `tip-moved` above, which is the *shared trunk*
+ *                            racing during this wave's own merge step. A
+ *                            sibling fact so a dropped per-entry commit never
+ *                            lands as silence a partial ship summary papers
+ *                            over.
+ *  - `wave-walled`           the span passed its afterCommit gates in its own
+ *                            worktree and the wave was already walled when it
+ *                            settled: a ledger rewrite behind an earlier pick
+ *                            refused (`WaveLedgerRefusal`,
+ *                            `src/waveMerge.ts`), so this attempt's facts
+ *                            were folded and its span was never offered to
+ *                            cherry-pick. Distinct from every kind above in
+ *                            what did *not* happen — no pick was attempted,
+ *                            so neither trunk nor this entry's own branch
+ *                            refused anything — and the `baseSha`/`headSha`
+ *                            pair is the whole of its point: the refusal
+ *                            leaves the worktree branch standing, the next
+ *                            start's teardown does not, and the span is
+ *                            re-cherry-pickable from this row alone.
  */
 export type MergeOutcome =
   | "merged"

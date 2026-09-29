@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import ts from "typescript";
 import { expect, it } from "vitest";
 
 import {
@@ -13,8 +14,12 @@ import type { FailureStage } from "../src/loopSupervisor.ts";
 import { DEFAULT_KILL_GRACE_MS } from "../src/processTree.ts";
 import { DEFAULT_LOG_VERDICTS } from "../src/tickVerdict.ts";
 import { expectNoChainVocabulary } from "./helpers/chainVocabulary.ts";
-import { commentProse } from "./helpers/commentCitations.ts";
 import {
+  commentProse,
+  docCommentBlocks,
+} from "./helpers/commentCitations.ts";
+import {
+  expectNoFindings,
   modulesUnder,
   parseScopeless,
   relPath,
@@ -28,11 +33,11 @@ import {
 // (.claude/rules/engine-boundary.md § Capability vs convention): the option
 // describes only what the engine's mechanics consume.
 
+const srcPath = (module: string): string =>
+  fileURLToPath(new URL(`../src/${module}`, import.meta.url));
+
 const srcText = (module: string): string =>
-  readFileSync(
-    fileURLToPath(new URL(`../src/${module}`, import.meta.url)),
-    "utf8",
-  );
+  readFileSync(srcPath(module), "utf8");
 
 /**
  * The doc comment block immediately preceding whatever `decl` (a regex
@@ -600,4 +605,110 @@ it("no comment in src/ or tests/ names two failure stages in a list without nami
   }
 
   expect(stale, stale.join("\n")).toEqual([]);
+});
+
+/**
+ * The trees whose doc comments the declaration emit carries, so every block
+ * in them is hover text a chain author reads (`tsconfig.build.json`). Both,
+ * because the package resolves both — the root subpath and `./harness` — and
+ * a scan over the engine alone would let the opinion's blocks ship malformed.
+ */
+const SHIPPED_TREES: readonly string[] = ["src", "harness"];
+
+/** What a doc comment opens with, and so what its body must not open with. */
+const DOC_OPENER = "/**";
+
+/**
+ * A second opener at the head of a block's own body — the shape a stray line
+ * above the real opener leaves. The parser closes at the first terminator, so
+ * the two blocks the author wrote are one, and the emit carries the inner
+ * opener into the hover text as the body's first word.
+ *
+ * Read at the head rather than anywhere in the body: a block *about* doc
+ * comments may state the opener as prose, and that is a sentence, not a
+ * malformation.
+ */
+const opensWithSecondOpener = (block: string): boolean =>
+  block.slice(DOC_OPENER.length).replace(/^[\s*]+/, "").startsWith(DOC_OPENER);
+
+it("no doc comment the package ships opens with a second doc-comment opener", () => {
+  // Vacuity guard: more than one tree is walked, so neither answers for the
+  // other (`.claude/rules/engineering.md`, *A green verdict is proven
+  // non-vacuous*).
+  expect(SHIPPED_TREES.length).toBeGreaterThan(1);
+
+  const findings: string[] = [];
+  for (const tree of SHIPPED_TREES) {
+    let blocks = 0;
+    for (const path of modulesUnder(REPO_ROOT, { trees: [tree] })) {
+      for (const { line, text } of docCommentBlocks(parseScopeless(path))) {
+        blocks += 1;
+        if (opensWithSecondOpener(text))
+          findings.push(`${relPath(REPO_ROOT, path)}:${line}`);
+      }
+    }
+
+    // Each tree contributed blocks of its own before the verdict over it is
+    // read: a tree walked and found empty is the false green here.
+    expect(
+      blocks,
+      `the scan found no doc comment in any ${tree}/ module`,
+    ).toBeGreaterThan(0);
+  }
+
+  expectNoFindings(findings);
+});
+
+/**
+ * The string-literal members of a union type alias, off the declaration
+ * itself. The roster a doc comment states is judged against what the type
+ * declares, never against a list the test keeps: a member added to the union
+ * reds the pin rather than shipping beside a block that never named it
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ */
+const unionMembers = (module: string, name: string): readonly string[] => {
+  for (const statement of parseScopeless(srcPath(module)).statements) {
+    if (!ts.isTypeAliasDeclaration(statement)) continue;
+    if (statement.name.text !== name) continue;
+    if (!ts.isUnionTypeNode(statement.type))
+      throw new Error(`\`${name}\` is not a union of literals`);
+    return statement.type.types.map((member) => {
+      if (!ts.isLiteralTypeNode(member) || !ts.isStringLiteral(member.literal))
+        throw new Error(`\`${name}\` has a member that is not a string literal`);
+      return member.literal.text;
+    });
+  }
+  throw new Error(`no \`${name}\` type alias in src/${module}`);
+};
+
+/**
+ * A bullet's own head: the member it is about, backticked, at the start of a
+ * comment line. A wrapped continuation sits in the description column and
+ * opens with a word, so only a line the author bulleted answers here.
+ */
+const BULLET_HEAD = /^\s*\*?\s+-\s+`([^`]+)`/gm;
+
+/**
+ * `MergeOutcome` ships from `src/index.ts`, so its block is the hover text a
+ * chain author reads to learn what an outcome on a span means. The block
+ * states one bullet per member and nothing else distinguishes them, so a
+ * member whose bullet ran into the prose of the one above it is a variant the
+ * author never sees as a variant at all.
+ */
+it("MergeOutcome's doc names one bullet per member of the union", () => {
+  const members = unionMembers("tickVerdict.ts", "MergeOutcome");
+  const doc = docCommentBefore(
+    srcText("tickVerdict.ts"),
+    String.raw`export type MergeOutcome\s*=`,
+    "`MergeOutcome`",
+  );
+
+  // Vacuity guard: the union has members to bullet, and the block read is the
+  // roster's — an equality over two empty lists is the false green here.
+  expect(members.length).toBeGreaterThan(1);
+  expect(doc).toContain("fared once the wave tried to");
+
+  const bulleted = [...doc.matchAll(BULLET_HEAD)].map((match) => match[1]);
+  expect(bulleted).toEqual([...members]);
 });
