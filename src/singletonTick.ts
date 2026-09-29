@@ -222,12 +222,12 @@ export async function runSingleton(
         `[flume] ${phase.name}: setupWorktree hook failed (${failure.signature}); no tick this cycle`,
       );
       await teardownWorktreeInstance(
-    phase,
-    chain,
-    wt,
-    phase.name,
-    leg.worktreeCtx,
-  );
+        phase,
+        chain,
+        wt,
+        phase.name,
+        leg.worktreeCtx,
+      );
       provisionFailures.push(failure);
       const failures = [...provisionFailures];
       return {
