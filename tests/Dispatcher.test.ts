@@ -4319,6 +4319,133 @@ describe("Dispatcher fanout — relocated flumeDir: ship bookkeeping skips the c
 });
 
 /**
+ * The two no-commit lines the merge stage renders for an operator, each read
+ * off the exit a real `commitPendingUpdate` call reported over a real
+ * repository (`.claude/rules/engineering.md`, *A seam gate reads what the real
+ * writer wrote*). The exits answer with the same `undefined` sha, so the words
+ * are the only place they differ, and nothing but a line read end to end can
+ * tell the arm that wrote-but-could-not-commit from the arm that had nothing
+ * to write. The wave's third no-commit exit — `tip-claimed` — never reaches
+ * this composer: its caller returns on the warning naming the claim, which is
+ * pinned beside the claim's own case.
+ *
+ * Each case locates its line by the prefix the composer always emits and
+ * asserts the whole string, so a swapped arm reds on the half that differs
+ * rather than going green on the half that does not.
+ */
+describe("Dispatcher fanout — the no-commit ledger exits in the operator's words", () => {
+  /** The one `[flume] shipped …` line a wave's merge stage rendered. */
+  function shippedLine(info: string[]): string {
+    const lines = info.filter((l) => l.startsWith("[flume] shipped "));
+    // Non-vacuity: the subject exists before its wording is judged, so a
+    // stage that logged nothing at all cannot pass as a stage that logged
+    // the right thing (`.claude/rules/engineering.md`, *A green verdict is
+    // proven non-vacuous*).
+    expect(lines).toHaveLength(1);
+    return lines[0]!;
+  }
+
+  it("a ledger rewrite that exits dock-outside-repo is reported to the operator as a dock git cannot see", async () => {
+    const dock = await mkTempDir("flume-dock-line-");
+    try {
+      const pendingDir = join(dock, "plan", "pending");
+      await mkdir(pendingDir, { recursive: true });
+      await writeFile(
+        join(pendingDir, entryFileName("DOCK-LINE")),
+        JSON.stringify(makeEntry("DOCK-LINE", ["src/dock-line.ts"]), null, 2) +
+          "\n",
+        "utf8",
+      );
+      new Baton(dock).wake("build");
+
+      const phase = makePhase({ name: "build", concurrency: "fanout" });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+      const info: string[] = [];
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        flumeDir: dock,
+        agent: fanoutAgent({
+          "dock-line": (cwd) =>
+            writeAndCommit(
+              cwd,
+              "src/dock-line.ts",
+              "dock\n",
+              "build(DOCK-LINE): ship",
+            ),
+        }),
+        log: { info: (l) => info.push(l), warn: () => {}, error: () => {} },
+      });
+
+      const outcome = await dispatcher.tick();
+
+      // The exit this line is the words for: the entry shipped, the rewrite
+      // wrote the relocated queue, and no chore commit carries it.
+      expect(outcome.result?.shippedTags).toEqual(["DOCK-LINE"]);
+      expect(outcome.result?.commitSha).toBeUndefined();
+      expect(existsSync(join(pendingDir, entryFileName("DOCK-LINE")))).toBe(
+        false,
+      );
+
+      expect(shippedLine(info)).toBe(
+        "[flume] shipped DOCK-LINE; pending updated on disk, " +
+          "no chore commit (dock outside repo)",
+      );
+    } finally {
+      await rm(dock, { recursive: true, force: true });
+    }
+  });
+
+  it("a ledger rewrite that exits nothing-to-write is reported to the operator as a queue already up to date", async () => {
+    await writePending(fx.repo, [makeEntry("NOTHING-LINE", ["src/nothing-line.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const info: string[] = [];
+
+    const entryFile = `.flume/plan/pending/${entryFileName("NOTHING-LINE")}`;
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      // The span retires its own entry file — the fence is `**`, so this
+      // phase is the queue's declared writer. However the file left, the
+      // rewrite's fresh re-read of the tip is what decides: it finds the
+      // shipped tag already gone, derives no removal and no write, and exits
+      // with the queue untouched.
+      agent: fanoutAgent({
+        "nothing-line": async (cwd) => {
+          await mkdir(join(cwd, "src"), { recursive: true });
+          await writeFile(join(cwd, "src/nothing-line.ts"), "nothing\n");
+          await exec("git", ["rm", "-q", "--", entryFile], { cwd });
+          await exec("git", ["add", "--", "src/nothing-line.ts"], { cwd });
+          await exec("git", ["commit", "-q", "-m", "build(NOTHING-LINE): ship"], {
+            cwd,
+          });
+        },
+      }),
+      log: { info: (l) => info.push(l), warn: () => {}, error: () => {} },
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // The exit this line is the words for: the entry shipped, and the queue
+    // on the tip already said what the rewrite would have said, so there was
+    // nothing to commit.
+    expect(outcome.result?.shippedTags).toEqual(["NOTHING-LINE"]);
+    expect(outcome.result?.commitSha).toBeUndefined();
+    expect(readPendingFromDisk(fx.repo)).toEqual([]);
+
+    expect(shippedLine(info)).toBe(
+      "[flume] shipped NOTHING-LINE; pending already up to date, no commit",
+    );
+  });
+});
+
+/**
  * The relocated branch of the strict `readPending()` is the one dispatch read
  * that still probes disk — an out-of-tree state root has no tip to read. Its
  * existence probe must split absent from unreachable: `existsSync` collapses
