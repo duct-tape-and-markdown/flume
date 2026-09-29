@@ -323,6 +323,31 @@ async function chainRefusesPhase(
 }
 
 /**
+ * Every operator line this file writes, stamped (`spec/cli.md`, *A log line
+ * carries the instant it was written*): `loop`'s supervisor, `tick`'s child,
+ * and the refusals either can take before reaching that narration — bay
+ * discovery, the bay/root disagreement, state-root resolution, the obstructed
+ * root, the malformed tip-claim handoff, and the write refusal {@link main}
+ * classifies. The stamp is applied here rather than anywhere under `src/`'s
+ * logging seam: `consoleLogger` stays the unstamped default an embedder's own
+ * `Logger` replaces (`src/cliLog.ts`).
+ *
+ * Module scope, and unbranched by verb, because the first of those refusals is
+ * reached before this process has decided which verb it is running, and the
+ * last is caught past that frame entirely. A `flume loop` that takes one
+ * writes the only line of its run, which is the line an operator most needs
+ * placed against the rest of the artifacts the run left. Every one of them is
+ * stderr, so nothing an observational verb pipes as data is touched: those
+ * verbs' own listings still go straight to the console, a listing being read
+ * rather than a run being narrated.
+ *
+ * One construction per process is exact rather than a shortcut:
+ * `stampedLogger` reads the instant per call, never at construction
+ * (`src/cliLog.ts`).
+ */
+const operatorLog = stampedLogger();
+
+/**
  * Every verb's dispatch. Wrapped by {@link main}, which owns the one arm that
  * turns a state-root write refusal into this process's exit code.
  */
@@ -342,7 +367,7 @@ async function dispatch(): Promise<number> {
   try {
     repoRoot = resolveRepoRoot(process.cwd());
   } catch (err) {
-    console.error(
+    operatorLog.error(
       `[flume] bay discovery from ${process.cwd()} failed to stat an ancestor bay: ${err instanceof Error ? err.message : String(err)}`,
     );
     return EX_IOERR;
@@ -401,7 +426,7 @@ async function dispatch(): Promise<number> {
   // answered is unusable for the same reason an unstattable bay is.
   const disagreement = await bayRootDisagreement(repoRoot);
   if (disagreement !== undefined) {
-    console.error(disagreement);
+    operatorLog.error(disagreement);
     return EX_IOERR;
   }
 
@@ -424,7 +449,7 @@ async function dispatch(): Promise<number> {
     // the operator's sentence and exit 2, never a stack
     // (`StateRootResolutionError`, `src/cliStateDirs.ts`).
     if (err instanceof StateRootResolutionError) {
-      console.error(`[flume] ${err.message}`);
+      operatorLog.error(`[flume] ${err.message}`);
       return 2;
     }
     throw err;
@@ -473,7 +498,7 @@ async function dispatch(): Promise<number> {
     // The root this process resolved, not the leaf an errno would have
     // carried: `<root>/.flume/awake` alone leaves the operator to infer which
     // state root a walk — or a relocating `FLUME_DIR` — picked.
-    console.error(
+    operatorLog.error(
       `[flume] state root at ${flumeDir} failed to open: ${rootObstruction}`,
     );
     return EX_IOERR;
@@ -1058,15 +1083,6 @@ async function dispatch(): Promise<number> {
   const quarantinedSlugs = process.env.FLUME_QUARANTINED_SLUGS
     ? new Set(process.env.FLUME_QUARANTINED_SLUGS.split(",").filter(Boolean))
     : undefined;
-  // What the two running verbs narrate through (spec/cli.md, *A log line
-  // carries the instant it was written*): `loop`'s supervisor and `tick`'s
-  // child both open every operator line with the instant it was written, and
-  // the stamp is applied here rather than anywhere under `src/`'s logging
-  // seam — `consoleLogger` stays the unstamped default an embedder's own
-  // `Logger` replaces (`src/cliLog.ts`). The observational verbs above keep
-  // writing straight to the console: their output is a listing an operator
-  // (or a pipe) reads as data, not narration of a run in progress.
-  const operatorLog = stampedLogger();
   // The supervisor's handoff, decoded once for the three facts this run reads
   // off it (`decodeTipClaimHandoff`, above) — and refused here, ahead of the
   // dispatcher and of any tick, when it is present and names no pid.
@@ -1074,7 +1090,7 @@ async function dispatch(): Promise<number> {
     process.env.FLUME_TIP_CLAIM_HELD,
   );
   if (tipClaimHandoff.kind === "malformed") {
-    console.error(tipClaimHandoffRefusal(tipClaimHandoff.raw));
+    operatorLog.error(tipClaimHandoffRefusal(tipClaimHandoff.raw));
     return 1;
   }
   // spec/loop.md "The loop lock and the tip claim": which pid the wave's own
@@ -1758,7 +1774,7 @@ async function main(): Promise<number> {
     return await dispatch();
   } catch (err) {
     if (err instanceof StateRootWriteError) {
-      console.error(`[flume] ${err.message}`);
+      operatorLog.error(`[flume] ${err.message}`);
       return EX_IOERR;
     }
     throw err;

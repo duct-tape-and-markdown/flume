@@ -82,6 +82,10 @@ import {
 } from "./helpers/repoChain.ts";
 import { makeScratchRepo, type ScratchRepo } from "./helpers/scratchRepo.ts";
 import {
+  expectStampedDuring,
+  narratedLines,
+} from "./helpers/stampedLine.ts";
+import {
   CLI,
   SPAWN_BUDGET_MS,
   TSX_CLI,
@@ -6099,45 +6103,6 @@ describe("flume loop — the git floor warning", () => {
   );
 });
 
-/**
- * The spelling `stampLines` (`src/cliLog.ts`) opens a line with, and the one
- * the tick verdict, the claim file and record filenames already carry:
- * ISO-8601 UTC to the millisecond. Captured so a case can read the instant
- * back out and place it against its own wall clock.
- */
-const STAMPED_LINE = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z) \S/;
-
-/** Every line of a run's output that carried anything, in order. */
-function narratedLines(out: string): string[] {
-  return out.split("\n").filter((line) => line.trim() !== "");
-}
-
-/**
- * Assert each line opens with a stamp, and that the instant it names falls
- * inside the run's own wall clock — a constant baked into the renderer, or a
- * stamp fixed once at logger construction, passes the shape check and fails
- * here. The bound is widened by a second on each side: the stamp and
- * `Date.now()` are the same host clock, but the child's first line can be
- * written before this process observes the spawn returning.
- */
-function expectStampedDuring(
-  lines: string[],
-  before: number,
-  after: number,
-): void {
-  for (const line of lines) {
-    const match = STAMPED_LINE.exec(line);
-    expect(match, `line reached the operator unstamped: ${line}`).not.toBeNull();
-    const at = Date.parse(match![1]!);
-    expect(at, `stamp outside the run: ${line}`).toBeGreaterThanOrEqual(
-      before - 1000,
-    );
-    expect(at, `stamp outside the run: ${line}`).toBeLessThanOrEqual(
-      after + 1000,
-    );
-  }
-}
-
 describe("the run log (spec/cli.md §A log line carries the instant it was written)", () => {
   it(
     "a flume loop run stamps every supervisor line with the instant it was written",
@@ -6207,6 +6172,80 @@ describe("the run log (spec/cli.md §A log line carries the instant it was writt
         expectStampedDuring(childLines, before, after);
       } finally {
         await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it(
+    "flume loop refused at state-root resolution stamps the refusal with the instant it was written",
+    async () => {
+      const repo = await makeScratchRepo("flume-cli-repo-", "main");
+      const elsewhere = await mkFixtureRoot("flume-cli-other-checkout-");
+      try {
+        await writeRepoConfig(repo.dir, stubbedAgentChainSrc());
+        new Baton(join(repo.dir, ".flume")).wake("probe");
+
+        const before = Date.now();
+        // An inherited provenance stamp naming another checkout: resolution
+        // refuses it ahead of the write-back, so this run publishes no root,
+        // spawns no tick, and writes nothing else — the refusal is the whole
+        // output, which is why an unstamped one leaves the operator a `loop`
+        // they cannot place against any other artifact of the run.
+        const refused = await runCli(repo.dir, ["loop", "--max", "1"], {
+          ...hermeticEnv(),
+          FLUME_DIR_RESOLVED_FOR: elsewhere,
+        });
+        const after = Date.now();
+        expect(refused.code, refused.out).toBe(2);
+
+        const lines = narratedLines(refused.out);
+        // Vacuity, and that the stamped line is *this* refusal rather than
+        // some other line of a run that got further: the one line the run
+        // wrote is resolution's sentence, and the stamp sits ahead of the
+        // text it always carried.
+        expect(lines).toHaveLength(1);
+        expect(lines[0]).toContain(
+          `an inherited FLUME_DIR_RESOLVED_FOR stamp names repo ${elsewhere}`,
+        );
+        expect(lines[0]).toContain("refusing to write there");
+        expectStampedDuring(lines, before, after);
+      } finally {
+        await rm(elsewhere, { recursive: true, force: true });
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it(
+    "flume tick refused at bay discovery stamps the refusal with the instant it was written",
+    async () => {
+      // The earliest refusal in the file — ahead of the verb branch, so this
+      // process never learns which verb it is running, and ahead of any
+      // logger a verb builds for itself.
+      const bay = await mkFixtureRoot("flume-cli-bay-stamp-");
+      try {
+        // The planted bay replaced by a self-referential link: ELOOP at the
+        // first stat discovery makes, which no chain load or baton read is
+        // reached past.
+        const bayPath = join(bay, STATE_ROOT_DIRNAME);
+        await rm(bayPath, { recursive: true, force: true });
+        await symlink(STATE_ROOT_DIRNAME, bayPath);
+
+        const before = Date.now();
+        const refused = await runCli(bay, ["tick"]);
+        const after = Date.now();
+        expect(refused.code, refused.out).toBe(EX_IOERR);
+
+        const lines = narratedLines(refused.out);
+        expect(lines).toHaveLength(1);
+        expect(lines[0]).toContain(
+          `bay discovery from ${bay} failed to stat an ancestor bay`,
+        );
+        expectStampedDuring(lines, before, after);
+      } finally {
+        await rm(bay, { recursive: true, force: true });
       }
     },
     SPAWN_BUDGET_MS,
