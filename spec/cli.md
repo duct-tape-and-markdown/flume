@@ -53,8 +53,10 @@ chain declarations the CLI reads in `spec/chain.md`.
   earlier verb that previewed its own approximation of all three was removed
   for it. The `<prior-attempt>` block is omitted, and the output's first line
   says so, since a render outside a tick has no attempt to carry; it is never
-  reconstructed. An unresolved span exits `EX_DATAERR` naming it, the refusal a
-  tick would have bought with an invocation. No `--out`: stdout is the surface,
+  reconstructed. A render that does not resolve — any `render-refused`: an
+  unresolved span, a placeholder no arg filled, a `promptArgs` hook that threw —
+  exits `EX_DATAERR` naming what refused, the refusal a tick would have bought
+  with an invocation. No `--out`: stdout is the surface,
   and a tick's own record of what it sent stays `rendered-prompts/`.
 - `check` — validates the working tree's ledger without spending an
   agent: the real parse (`parsePendingQueue`, the same decode a tick's resolution

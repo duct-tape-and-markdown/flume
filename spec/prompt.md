@@ -10,10 +10,10 @@ engine's.
 
 ## The render pipeline
 
-`renderPrompt` reads the prompt file its caller resolved — `phase.promptPath`
-resolved against `configDir`, a relative path beneath it and an absolute one as
-given, passed as `RenderOptions.promptFile` — and applies four
-transformations in fixed order:
+The prompt file — `phase.promptPath` resolved against `configDir`, a relative
+path beneath it and an absolute one as given — is read once per tick, with the
+chain (`spec/loop.md`, *One tick is one fresh process*), and the render applies
+four transformations to those bytes in fixed order:
 
 1. `{{KEY}}` placeholders — matched as `[A-Z][A-Z0-9_]*` only (`PLACEHOLDER_RE`) — are
    substituted from the phase's `promptArgs(ctx)` map, merged with the reserved
