@@ -328,13 +328,15 @@ interface WaveMerge {
    */
   readonly invocations: TickVerdictInvocation[];
   /**
-   * The most recent ledger commit this wave landed, or `undefined` while
-   * every rewrite so far has been a no-op (a footprint already recorded, an
-   * out-of-tree dock git cannot see). One per pick now rather than one per
-   * wave, so this is the last of them — the tip contribution a handoff reads
-   * as `TickResult.commitSha`.
+   * Every ledger commit this wave has landed, in the order it landed them —
+   * one per pick whose rewrite actually wrote a commit, empty while every
+   * rewrite so far has been a no-op (a footprint already recorded, an
+   * out-of-tree dock git cannot see). One per pick rather than one per wave,
+   * so the set is what the wave landed and its last element is the tip
+   * contribution a handoff reads as `TickResult.commitSha`; both reach a
+   * chain, the set as `TickResult.ledgerCommitShas`.
    */
-  chorSha: string | undefined;
+  ledgerShas: string[];
   /** A tip claim or a per-entry ancestry refusal stopped at least one span. */
   tipMoved: boolean;
   /** `shouldRun` declined at least one entry. */
@@ -379,8 +381,8 @@ interface WaveMergeResult {
   readonly timings: TickVerdictTiming[];
   /** Whether anything shipped. */
   readonly committedWave: boolean;
-  /** The last ledger commit this wave landed, when any rewrite made one. */
-  readonly chorSha?: string;
+  /** See {@link WaveMerge.ledgerShas}. */
+  readonly ledgerShas: readonly string[];
   readonly mergeOutcomes: TickVerdictMergeOutcome[];
   readonly mergeFailures: MergeFailure[];
   readonly gateFailures: GateFailure[];
@@ -410,7 +412,7 @@ export function openWaveMerge(setup: WaveMergeSetup): WaveMerge {
     mergeFailures: [],
     gateFailures: [],
     invocations: [],
-    chorSha: undefined,
+    ledgerShas: [],
     tipMoved: false,
     declined: false,
     checkpointAttempted: false,
@@ -955,7 +957,7 @@ export function closeWaveMerge(w: WaveMerge): WaveMergeResult {
     allGateResults: waveGateResults(w),
     timings: w.timings,
     committedWave: waveCommitted(w),
-    ...(w.chorSha ? { chorSha: w.chorSha } : {}),
+    ledgerShas: w.ledgerShas,
     mergeOutcomes: w.mergeOutcomes,
     mergeFailures: w.mergeFailures,
     gateFailures: w.gateFailures,
@@ -1055,7 +1057,11 @@ async function commitAttemptLedger(
     w.refusal = { cause: err };
     throw err;
   }
-  if (update.sha !== preUpdate) w.chorSha = update.sha;
+  // Appended, never overwritten: a wave lands one of these per pick, and the
+  // handoff reports the set beside the single sha it narrows to
+  // (.claude/rules/engineering.md "A fact the engine holds is reported, never
+  // rediscovered").
+  if (update.sha !== preUpdate) w.ledgerShas.push(update.sha);
   if (update.tipMoved) {
     w.tipMoved = true;
     // The refusal's own disk state, from the call that took it rather than

@@ -334,8 +334,34 @@ export interface TickResult {
   phaseName: string;
   /** True if the tick produced a commit. False on a clean exit or no-op. */
   committed: boolean;
-  /** SHA of the produced commit, when present. */
+  /**
+   * The tip contribution this tick made, when it made one — and which commit
+   * that is depends on the concurrency that ran.
+   *
+   * Under `singleton` it is the phase's own span as it landed on trunk: the
+   * cherry-picked commit its agent wrote.
+   *
+   * Under `fanout` it is the **last** ledger commit the wave landed. A wave
+   * lands one per pick rather than one per wave, so on a wave that shipped
+   * two entries this is the second of two and never the wave's whole ship —
+   * {@link TickResult.ledgerCommitShas} is that set. A `handoff` routing on
+   * one sha reads this; one routing on what the wave landed reads that.
+   */
   commitSha?: string;
+  /**
+   * Every ledger commit a fanout wave landed, in the order it landed them —
+   * one per pick whose queue rewrite wrote a commit, which is a pick that
+   * shipped or one whose failed merge recorded a footprint. A rewrite that
+   * no-ops (the footprint already recorded, an out-of-tree dock git cannot
+   * see) contributes no sha, so this set stands in no fixed arithmetic
+   * against {@link TickResult.shippedTags} and is read as the commits it
+   * names.
+   *
+   * Absent on a singleton tick, which lands no ledger commit of its own, and
+   * on a wave whose every rewrite no-opped. `commitSha` above is this set's
+   * last element, kept as the one-sha field every concurrency answers.
+   */
+  ledgerCommitShas?: readonly string[];
   /**
    * All gates that ran, in order, with their results — the same
    * {@link ReportedGateResult} row the tick verdict persists, so a `handoff`

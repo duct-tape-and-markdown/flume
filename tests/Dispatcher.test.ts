@@ -6439,6 +6439,79 @@ describe("Dispatcher fanout — the ledger commit lands with its own merge", () 
       .filter((s) => wanted.includes(s));
     expect(order).toEqual(wanted);
   });
+
+  it("a fanout wave that shipped two entries reports both ledger commits it landed", async () => {
+    await writePending(fx.repo, [
+      makeEntry("LEDGER-SET-A", ["src/ledger-set-a.ts"]),
+      makeEntry("LEDGER-SET-B", ["src/ledger-set-b.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [makePhase({ name: "build", concurrency: "fanout" })],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "ledger-set-a": (cwd) =>
+          writeAndCommit(
+            cwd,
+            "src/ledger-set-a.ts",
+            "a\n",
+            "build: LEDGER-SET-A",
+          ),
+        // Fixed order, by the event rather than by a sleep: B does not commit
+        // until A's span is on the trunk, so the ledger commits land in the
+        // order this case reads them back in.
+        "ledger-set-b": async (cwd) => {
+          await awaitOnTrunk(fx.repo, "build: LEDGER-SET-A");
+          await writeAndCommit(
+            cwd,
+            "src/ledger-set-b.ts",
+            "b\n",
+            "build: LEDGER-SET-B",
+          );
+        },
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Vacuity: "both ledger commits" means nothing over a wave that shipped
+    // one entry, so the two-entry ship is asserted before the set is.
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
+      "LEDGER-SET-A",
+      "LEDGER-SET-B",
+    ]);
+
+    // The ship commits as the trunk holds them, oldest first — read out of
+    // git rather than out of the field under test.
+    const { stdout } = await exec(
+      "git",
+      ["log", "--format=%H%x09%s", "-n", "20"],
+      { cwd: fx.repo },
+    );
+    const onTrunk = stdout
+      .trim()
+      .split("\n")
+      .reverse()
+      .map((line) => line.split("\t"))
+      .filter(([, subject]) => subject?.startsWith("chore(flume): ship "))
+      .map(([sha]) => sha);
+    expect(onTrunk).toEqual([
+      expect.any(String),
+      expect.any(String),
+    ]);
+
+    // Every one of them, in landing order — not the last of two.
+    expect(outcome.result?.ledgerCommitShas).toEqual(onTrunk);
+    // And the one-sha field still answers, as the last of that set.
+    expect(outcome.result?.commitSha).toBe(onTrunk[1]);
+  });
 });
 
 describe("Dispatcher fanout — the merge-stage crash marker", () => {

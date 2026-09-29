@@ -680,7 +680,18 @@ export async function runFanout(
     result: {
       phaseName: phase.name,
       committed: mergeStage.committedWave,
-      ...(mergeStage.chorSha ? { commitSha: mergeStage.chorSha } : {}),
+      // The set the wave landed, and the one sha `commitSha` has always
+      // carried — its last element, computed here rather than kept as a
+      // second field on the stage (.claude/rules/engineering.md "Derived
+      // state is computed, never restated beside its source"). A wave lands
+      // one ledger commit per pick, so the narrow field is the last of N and
+      // the set beside it is what a handoff reads to see the rest.
+      ...(mergeStage.ledgerShas.length > 0
+        ? {
+            commitSha: mergeStage.ledgerShas[mergeStage.ledgerShas.length - 1],
+            ledgerCommitShas: mergeStage.ledgerShas,
+          }
+        : {}),
       gateResults: mergeStage.allGateResults,
       pendingAfter: pendingAfterWave,
       pickableAfter: postSelection.pickable,

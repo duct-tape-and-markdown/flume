@@ -643,7 +643,12 @@ Things to notice:
   calls `api.matchesAny(path, globs)`, the engine's own `*`/`**` matcher and
   the one the write guard judges by, rather than a second implementation that
   agrees on the easy cases and parts from it at the edges.
-- **`handoff` reads the `TickResult`.** Fields: `committed`, `commitSha`,
+- **`handoff` reads the `TickResult`.** Fields: `committed`, `commitSha`
+  (the tick's tip contribution — a singleton's own cherry-picked span, or the
+  *last* ledger commit a fanout wave landed), `ledgerCommitShas` (fanout only:
+  every ledger commit the wave landed, in landing order — a wave writes one
+  per pick, so a handoff asking what the whole wave retired reads this rather
+  than `commitSha`, which is the last of them),
   `gateResults` (the same `ReportedGateResult` rows the verdict persists —
   `details`, `verdict` and `skipped` included, so a handoff keys on the field
   rather than re-reading `message`), `pendingAfter`, `priorAttempts` (the
