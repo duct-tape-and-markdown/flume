@@ -65,16 +65,37 @@ import { isDirectInvocation } from "./directInvocation.mjs";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, "..");
 /**
- * Whether a step on `platform` runs through a shell — and so through
- * `cmd.exe`'s re-parse. Windows requires `shell: true` to invoke .cmd/.bat
- * targets (npm itself, and the generated flume.cmd shim under test) — Node no
- * longer auto-invokes cmd.exe for them.
- *
- * One spelling, read by the step runner below and by the generated shims'
- * filenames, which npm suffixes `.cmd` on exactly the platform that needs the
- * shell.
+ * The extension npm gives a generated bin shim: `.cmd` on win32, where the
+ * shim is a batch file, and none elsewhere, where it is a script node spawns
+ * directly. One spelling, read by the shim paths `main` composes and by the
+ * shell decision below — the same suffix is what makes a target need a shell.
  */
-const needsShell = (platform) => platform === "win32";
+const WIN32_SHIM_EXT = ".cmd";
+const shimExt = (platform) => (platform === "win32" ? WIN32_SHIM_EXT : "");
+
+/**
+ * Whether the step spawning `target` on `platform` runs through a shell — and
+ * so through `cmd.exe`'s re-parse, and the argv refusal that brings with it.
+ *
+ * Decided from the target the step names, never from the platform alone.
+ * `shell: true` is what Node needs to reach a batch file, which it no longer
+ * invokes on its own (`.claude/rules/platform-facts.md`, *Node refuses to
+ * spawn a `.cmd` shim without a shell*) — and a batch file is exactly what a
+ * win32 bin shim is: the generated `flume.cmd` and `flume-harness.cmd` under
+ * test, and `npm` itself, which arrives off PATH as `npm.cmd`. A bare name
+ * does not tell those apart from the rest — `git` is `git.exe` — so npm is
+ * named here, at the one site that decides, rather than inferred from the
+ * spelling.
+ *
+ * Every other target this script spawns node spawns directly on every
+ * platform, and shelling one buys nothing while costing the re-parse:
+ * `process.execPath` under a default win32 install is
+ * `C:\Program Files\nodejs\node.exe`, whose space the refusal below would
+ * otherwise stop the run on, before the acceptance it guards was reached.
+ */
+const needsShell = (platform, target) =>
+  platform === "win32" &&
+  (target === "npm" || target.endsWith(WIN32_SHIM_EXT));
 
 // Strip FLUME_* from the child env: this script itself may run under a
 // flume tick (flume-on-flume dogfooding), which sets FLUME_DIR /
@@ -107,9 +128,9 @@ const STEP_OUTPUT_CAP_BYTES = 64 << 20;
  * it spawns through, and the argv refusal that shell brings with it.
  *
  * The platform is a parameter rather than this module's own read of
- * `process.platform`, because the refusal below is the whole of the win32
- * argv fence and a fence only the win32 lane can reach is a fence no lane
- * holds — `tests/bin.test.ts` drives it on any host by asking for a `win32`
+ * `process.platform`, because the shell decision and the refusal below are the
+ * whole of the win32 argv fence, and a fence only the win32 lane can reach is
+ * a fence no lane holds — `tests/bin.test.ts` drives it on any host by asking for a `win32`
  * runner (`.claude/rules/engineering.md`, *A fix ships the test that would
  * have caught it*).
  *
@@ -119,11 +140,15 @@ const STEP_OUTPUT_CAP_BYTES = 64 << 20;
  * arrives without it, and a word carrying `&` is not argv at all by the time
  * the binary runs. Nor is this argv fixed: every step below is handed a path
  * this run composed — the scratch dir, the tarball `npm pack` named under it,
- * the generated shims under the consumer — or a `--from-registry` spec its
- * caller did.
+ * the generated shims under the consumer — a `--from-registry` spec its
+ * caller did, a bare name resolved off PATH (`npm`, `git`), or a path node
+ * reported for itself (`process.execPath`). The last two are the targets no
+ * shell is taken for, so no re-parse reaches them.
  *
- * So a step whose argv that line would rewrite **refuses**, naming the word
- * and the step, rather than installing whatever the re-parse produced
+ * So a step that takes the shell — `needsShell` above, asked per step about
+ * the target that step names — and whose argv that line would rewrite
+ * **refuses**, naming the word and the step, rather than installing whatever
+ * the re-parse produced
  * (`.claude/rules/engineering.md`, "Loud or nothing"). The decision is the
  * engine's own — `wordShimRetryWouldRewrite` (`src/spawnShim.ts`), read here
  * exactly as the shim retry reads it, never a second spelling of the
@@ -131,9 +156,9 @@ const STEP_OUTPUT_CAP_BYTES = 64 << 20;
  * is read by is the step that stopped.
  */
 export function stepRunner(platform) {
-  const shell = needsShell(platform);
   return function run(step, cmd, args, opts = {}) {
     console.log(`[smoke-install] ${step}: ${cmd} ${args.join(" ")}`);
+    const shell = needsShell(platform, cmd);
     if (shell) {
       const rewritten = wordShimRetryWouldRewrite([cmd, ...args]);
       if (rewritten !== undefined) {
@@ -318,7 +343,7 @@ function main() {
     // on win32 and an extensionless script elsewhere, and the package ships two
     // (`spec/cli.md`, *Distribution*).
     const shimFor = (bin) =>
-      join(consumerDir, "node_modules", ".bin", needsShell(platform) ? `${bin}.cmd` : bin);
+      join(consumerDir, "node_modules", ".bin", `${bin}${shimExt(platform)}`);
     const shimPath = shimFor("flume");
     const harnessShimPath = shimFor("flume-harness");
 

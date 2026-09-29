@@ -561,12 +561,51 @@ it("the smoke step runner refuses an argv cmd.exe would re-parse when the platfo
         `the word \`${tarball}\``,
     );
 
+    // The other target that takes the shell: a generated shim, which npm
+    // writes as a batch file on exactly this platform. Refused for the shim
+    // path itself here, which is the command word of the `cmd /d /s /c` line.
+    const shim = join("/smoke scratch", "node_modules", ".bin", "flume.cmd");
+    expect(() =>
+      stepRunner("win32")("generated shim --version", shim, ["--version"]),
+    ).toThrow(
+      `generated shim --version: this step takes a shell on win32, and ` +
+        `cmd.exe would re-parse the word \`${shim}\``,
+    );
+
     // The refusal is the platform's, not the argv's. The same words handed a
     // posix runner reach the spawn — which is the one place a missing binary
     // can be reported from, so this arm also proves the win32 arm above threw
     // *before* spawning anything.
     expect(() =>
       stepRunner("linux")(step, "flume-smoke-no-such-binary", ["install", tarball]),
+    ).toThrow(/ENOENT/);
+  } finally {
+    log.mockRestore();
+  }
+});
+
+/**
+ * The other half of that fence: the steps it must *not* bound.
+ *
+ * The shell is what brings the re-parse, and only a batch file needs one — the
+ * generated shims and `npm`, which the step runner decides from the target the
+ * step names. `process.execPath` and `git` are binaries node spawns directly on
+ * every platform, so their argv reaches them verbatim and no word in it is the
+ * refusal's business. Decided from the platform alone, as it was, the fence
+ * swallowed them too: `process.execPath` under a default win32 node install is
+ * `C:\Program Files\nodejs\node.exe`, so the windows-latest lane refused its
+ * own `exports subpaths` step over a space in a path the run never composed,
+ * and never reached the acceptance the steps past it carry.
+ *
+ * The target here does not exist, so the spawn is the one thing that can be
+ * reported from beyond the fence — a refusal would have thrown before it.
+ */
+it("the smoke step runner reaches the spawn on win32 for a step whose target is not a generated shim", () => {
+  const node = join("/Program Files", "nodejs", "flume-smoke-no-such-node.exe");
+  const log = vi.spyOn(console, "log").mockImplementation(() => {});
+  try {
+    expect(() =>
+      stepRunner("win32")("exports subpaths", node, ["subpaths.mjs"]),
     ).toThrow(/ENOENT/);
   } finally {
     log.mockRestore();
