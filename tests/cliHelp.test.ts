@@ -265,6 +265,10 @@ const TICK_OUTCOME_SPACE: {
     ABSENT,
     { requested: "ghost", declared: ["plan", "build"] },
   ],
+  promptUnreadable: [
+    ABSENT,
+    { promptPath: "prompts/plan.md", resolvedPath: "/repo/.flume/prompts/plan.md" },
+  ],
   phaseName: [ABSENT, "plan"],
   result: [ABSENT, A_TICK_RESULT],
   noCommit: [ABSENT, "clean-exit"],

@@ -82,6 +82,24 @@ const TICK_EXIT_ARMS: readonly TickExitArm[] = [
     when: (outcome) => outcome.usageError === true,
   },
   {
+    // The mount-dead class with a path to name, so it is an arm rather than
+    // the otherwise below: the chain mounted, the phase is declared, and one
+    // declared input on disk is what the tick could not get. Read here with
+    // the other narrowing arms — ahead of every `failed` read, which would
+    // hand it a cause naming a chain that loaded fine.
+    code: EX_MOUNT_DEAD,
+    opening: "The chain mounted and ",
+    phrase: "the selected phase's declared prompt file would not read",
+    rest:
+      " — nothing at the address, a directory, a denial. The refusal names " +
+      "the resolved path and the `promptPath` the chain declared; no " +
+      "worktree was provisioned, no agent ran, and the phase is left awake. " +
+      "A fresh process reads that same path until the file is restored, " +
+      "which is why it is this class and not a retryable harness error — " +
+      "the fate `flume render` already gives the same chain.",
+    when: (outcome) => outcome.promptUnreadable !== undefined,
+  },
+  {
     code: 0,
     opening: "Success, or ",
     phrase: "hibernation",

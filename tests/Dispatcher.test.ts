@@ -113,6 +113,7 @@ import { readQueueAtRef, readQueueOnDisk } from "../src/pendingLedger.ts";
 import {
   InlineExecRenderError as realInlineExecRenderError,
   MissingPlaceholderRenderError as realMissingPlaceholderRenderError,
+  PromptTemplateUnreadableError,
   RenderRefusal as realRenderRefusal,
   type CleanExitAttempt,
   type PriorAttempt,
@@ -21901,6 +21902,111 @@ describe('phase.promptPath resolves against configDir (spec/chain.md "Chain resi
     expect(prompts[0]).not.toContain("shipped-by-the-package");
   });
 });
+
+// ---------- a declared prompt file that will not read
+// (`.claude/rules/engineering.md`, *Loud or nothing*) ----------
+
+describe("Dispatcher — a phase whose declared prompt file will not read", () => {
+  let fx: Fixture;
+
+  beforeEach(async () => {
+    fx = await makeFixture();
+  });
+
+  afterEach(async () => {
+    await fx.cleanup();
+  });
+
+  it("a tick whose phase declares an absent prompt file reports both paths and invokes no agent", async () => {
+    const absent = join(fx.configDir, "prompts", "absent.md");
+    // Vacuity guard: the address really is empty, so the load below can only
+    // refuse — and the refusal is the address's, not a config dir that never
+    // materialized.
+    expect(existsSync(fx.configDir)).toBe(true);
+    expect(existsSync(absent)).toBe(false);
+
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+    const chain: Chain = {
+      phases: [
+        makePhase({
+          name: "plan",
+          concurrency: "singleton",
+          promptPath: join("prompts", "absent.md"),
+        }),
+      ],
+      humanOnly: [],
+    };
+
+    const invocations: string[] = [];
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: {
+        name: "never-invoked",
+        async invoke(inv) {
+          invocations.push(inv.prompt);
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      },
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+    // The fact, not a stack: the phase that was selected, the address the
+    // chain declared, and what it resolved to.
+    expect(outcome.failed).toBe(true);
+    expect(outcome.phaseName).toBe("plan");
+    expect(outcome.promptUnreadable).toEqual({
+      promptPath: join("prompts", "absent.md"),
+      resolvedPath: absent,
+    });
+    // Before the invocation and before the sleep: no agent was paid for, and
+    // the phase still owes the work this tick did not do.
+    expect(invocations).toEqual([]);
+    expect(outcome.awakeAfter).toEqual(["plan"]);
+    expect(baton.isAwake("plan")).toBe(true);
+    // And the classification a verb reads off it is the mount-dead one
+    // `flume render` already gives the same chain (`src/cliVerdict.ts`).
+    expect(tickExitCode(outcome)).toBe(EX_MOUNT_DEAD);
+  });
+
+  it("Dispatcher.render over the same phase refuses with the load's own class", async () => {
+    const absent = join(fx.configDir, "prompts", "absent.md");
+    expect(existsSync(absent)).toBe(false);
+
+    const chain: Chain = {
+      phases: [
+        makePhase({
+          name: "plan",
+          concurrency: "singleton",
+          promptPath: join("prompts", "absent.md"),
+        }),
+      ],
+      humanOnly: [],
+    };
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: {
+        name: "never-invoked",
+        async invoke() {
+          throw new Error("render invokes nothing");
+        },
+      },
+      log: silent,
+    });
+
+    // The same load, the same class — which is what lets `flume render`'s
+    // declared bound stay a statement rather than a read of an errno's prose.
+    await expect(dispatcher.render({ phase: "plan" })).rejects.toBeInstanceOf(
+      PromptTemplateUnreadableError,
+    );
+  });
+});
+
 
 // ---------- a hook that throws (spec/chain.md "What a hook receives")
 // ----------

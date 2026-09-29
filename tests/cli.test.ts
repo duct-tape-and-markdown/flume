@@ -6651,3 +6651,109 @@ describe("the run log (spec/cli.md §A log line carries the instant it was writt
     SPAWN_BUDGET_MS,
   );
 });
+
+/**
+ * AN-UNREADABLE-PROMPT-IS-A-MOUNT-DEAD-TICK — a phase whose declared
+ * `promptPath` names nothing on disk. The load is the tick's own, made beside
+ * the chain load and before any worktree is provisioned, and it used to throw
+ * a raw `ENOENT` out of `Dispatcher.tick()`: `flume tick` printed a stack and
+ * exited 1, and `flume loop` read that 1 as an ordinary harness error and
+ * spent its remaining children on an input that resolves the same way every
+ * time — where `flume render` already called the same chain mount-dead
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * All three cases drive the real verbs over **one** chain, so the two exit
+ * codes and the run-level halt are read off the same declaration rather than
+ * three fixtures that could disagree about what is broken.
+ */
+interface AbsentPromptRepo extends ScratchRepo {
+  flumeDir: string;
+  /** Where the chain's declared `promptPath` resolves — nothing is there. */
+  absent: string;
+}
+
+/**
+ * A repo whose one singleton phase declares an absent prompt under the config
+ * dir's own prompts directory. That dir is otherwise whole —
+ * `writeRepoConfig` materializes it with a real prompt file beside the absent
+ * one — so what the verbs below refuse is the declared address and not a bay
+ * that failed to come up.
+ */
+async function makeAbsentPromptRepo(): Promise<AbsentPromptRepo> {
+  const repo = await makeScratchRepo("flume-absent-prompt-", "main");
+  const flumeDir = await writeRepoConfig(
+    repo.dir,
+    minimalChainSrc({ promptPath: "prompts/absent.md" }),
+  );
+  const absent = join(flumeDir, "prompts", "absent.md");
+  // Vacuity guard: the declared address is empty and its sibling is not, so a
+  // refusal below is the address's own rather than an unmaterialized fixture.
+  expect(existsSync(absent)).toBe(false);
+  expect(existsSync(join(flumeDir, "prompts", "prompt.md"))).toBe(true);
+  return { ...repo, flumeDir, absent };
+}
+
+it(
+  "flume tick over a phase whose declared prompt file is absent exits mount-dead naming the path",
+  async () => {
+    const repo = await makeAbsentPromptRepo();
+    try {
+      const r = await runCli(repo.dir, ["tick", "--phase", "probe"]);
+      expect(r.code, r.out).toBe(EX_MOUNT_DEAD);
+      // Both paths the engine holds, reported rather than left to an errno:
+      // where the address resolved, and the address as the chain declared it.
+      expect(r.out).toContain(repo.absent);
+      expect(r.out).toContain("(promptPath: prompts/absent.md)");
+      // And it is the selected phase's refusal, named as such.
+      expect(r.out).toContain("probe: declared prompt file could not be read");
+    } finally {
+      await repo.cleanup();
+    }
+  },
+  SPAWN_BUDGET_MS,
+);
+
+it(
+  "flume loop halts on a phase whose declared prompt file is absent rather than spending its remaining ticks",
+  async () => {
+    const repo = await makeAbsentPromptRepo();
+    try {
+      const baton = new Baton(repo.flumeDir);
+      baton.wake("probe");
+
+      const r = await runCli(repo.dir, ["loop", "--max", "3"]);
+      expect(r.code, r.out).toBe(EX_MOUNT_DEAD);
+      // One child spent, not three: the dispatcher logs this line once per
+      // tick that hit the wall, and the run had budget for two more. Counted
+      // on the engine-prefixed form, since the verb prints the same refusal a
+      // second time as the outcome's summary.
+      expect(
+        r.out.match(/\[flume\] probe: declared prompt file could not be read/g),
+        r.out,
+      ).toHaveLength(1);
+      expect(r.out).toContain("aborting after 1 tick(s)");
+      // The flag still stands — nothing this run did was work, so the phase
+      // still owes it, which is also why an unhalted run would have burned
+      // every remaining child on the same wall.
+      expect(baton.isAwake("probe")).toBe(true);
+    } finally {
+      await repo.cleanup();
+    }
+  },
+  SPAWN_BUDGET_MS,
+);
+
+it(
+  "flume render over a phase whose declared prompt file is absent exits mount-dead",
+  async () => {
+    const repo = await makeAbsentPromptRepo();
+    try {
+      const r = await runCli(repo.dir, ["render", "probe"]);
+      expect(r.code, r.out).toBe(EX_MOUNT_DEAD);
+      expect(r.out).toContain(repo.absent);
+    } finally {
+      await repo.cleanup();
+    }
+  },
+  SPAWN_BUDGET_MS,
+);

@@ -870,19 +870,24 @@ export async function superviseLoop(
       continue;
     }
     if (exitCode === EX_MOUNT_DEAD) {
-      // Mount-dead fail-fast: the child could not resolve a chain
-      // at all — no agent ran, nothing here is retryable by waiting. A chain
-      // that fails to load now is exactly as unloadable next tick as this
-      // one, so continuing would only burn the remaining budget re-hitting
-      // the same wall instead of surfacing the failure to CI.
+      // Mount-dead fail-fast: the child never got a runnable chain up — it
+      // would not load, its queue would not parse, the phase's declared
+      // prompt file would not read. No agent ran, and nothing in that class
+      // is retryable by waiting: an input that resolved that way once
+      // resolves the same way next tick, so continuing would only burn the
+      // remaining budget re-hitting the same wall instead of surfacing the
+      // failure to CI. Which wall it was is the child's to say and it already
+      // said it — restating a cause this process never read would be a guess
+      // (`.claude/rules/engineering.md`, *Derived state is computed, never
+      // restated beside its source*).
       ending ??= {
         stop: { hibernated: false, mountDead: true },
         finish: async () => {
           log.error(
-            `[flume] tick exited ${exitCode} (mount-dead): the chain failed to ` +
-              `load; aborting after ${ticks} tick(s) instead of burning the ` +
-              `remaining ticks against the same failure. Inspect and restore ` +
-              `the chain (or its state root), then re-run.`,
+            `[flume] tick exited ${exitCode} (mount-dead): the child named ` +
+              `its cause above; aborting after ${ticks} tick(s) instead of ` +
+              `burning the remaining ticks against the same failure. ` +
+              `Restore what it named, then re-run.`,
           );
         },
       };

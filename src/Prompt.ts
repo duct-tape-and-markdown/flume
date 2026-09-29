@@ -448,6 +448,40 @@ export interface RenderOptions {
 }
 
 /**
+ * A phase's declared prompt file could not be read — nothing at the address,
+ * a directory standing where the file belongs, a permission denial. Raised by
+ * {@link readPhaseTemplate} in place of the `fs` error it wrapped, so every
+ * caller classifies this wall off a type rather than off an errno's prose
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ *
+ * Deliberately not a {@link RenderRefusal}: that class ends one slot of a wave
+ * and its siblings carry on, where this load is the whole tick's, made once
+ * beside the chain load and before any worktree is provisioned. A phase whose
+ * prompt will not read has nothing to render for any slot, so the refusal is
+ * the tick's — reported as `TickOutcome.promptUnreadable` (`src/Dispatcher.ts`)
+ * and classified mount-dead by `tickExitCode` (`src/cliVerdict.ts`), which is
+ * what `flume render` already answers the same input with.
+ */
+export class PromptTemplateUnreadableError extends Error {
+  /** `Phase.promptPath` exactly as the chain declared it. */
+  readonly promptPath: string;
+  /** What that address resolved to against the chain's config directory. */
+  readonly resolvedPath: string;
+
+  constructor(promptPath: string, resolvedPath: string, cause: unknown) {
+    super(
+      `declared prompt file could not be read: ${resolvedPath} ` +
+        `(promptPath: ${promptPath}) — ` +
+        (cause instanceof Error ? cause.message : String(cause)),
+      { cause },
+    );
+    this.name = "PromptTemplateUnreadableError";
+    this.promptPath = promptPath;
+    this.resolvedPath = resolvedPath;
+  }
+}
+
+/**
  * Load a phase's prompt template: the bytes at `phase.promptPath` resolved
  * against the chain's config directory (`phasePromptPath`, `src/paths.ts`).
  *
@@ -457,18 +491,21 @@ export interface RenderOptions {
  * after the process started reaches no slot of the tick, a refilled one
  * included (spec/loop.md, *One tick is one fresh process*).
  *
- * A file that cannot be read throws here, before any worktree is provisioned:
- * a phase whose prompt is missing has nothing to render for any slot, and the
- * refusal is the whole tick's rather than one slot's.
+ * A file that cannot be read raises {@link PromptTemplateUnreadableError}
+ * here, before any worktree is provisioned: a phase whose prompt is missing
+ * has nothing to render for any slot, and the refusal is the whole tick's
+ * rather than one slot's.
  */
 export async function readPhaseTemplate(
   configDir: string,
   promptPath: string,
 ): Promise<string> {
-  return readFile(
-    toNamespacedPath(phasePromptPath(configDir, promptPath)),
-    "utf8",
-  );
+  const resolvedPath = phasePromptPath(configDir, promptPath);
+  try {
+    return await readFile(toNamespacedPath(resolvedPath), "utf8");
+  } catch (cause) {
+    throw new PromptTemplateUnreadableError(promptPath, resolvedPath, cause);
+  }
 }
 
 /**

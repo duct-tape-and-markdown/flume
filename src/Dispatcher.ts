@@ -62,7 +62,11 @@ import { PriorAttemptStore } from "./priorAttempts.js";
 import { PendingParseFailure } from "./PendingSchema.js";
 import type { EntryExtension, PendingEntry } from "./PendingSchema.js";
 import type { Chain, TickContext, TickResult } from "./Phase.js";
-import { readPhaseTemplate, renderPrompt } from "./Prompt.js";
+import {
+  PromptTemplateUnreadableError,
+  readPhaseTemplate,
+  renderPrompt,
+} from "./Prompt.js";
 import type { NoCommitMode } from "./Prompt.js";
 import {
   selectBatch,
@@ -360,6 +364,23 @@ export interface TickOutcome {
    * reachable only through an explicit name.
    */
   undeclaredPhase?: { requested: string; declared: readonly string[] };
+  /**
+   * Set when the phase this tick selected declares a prompt file that could
+   * not be read — nothing at the address, a directory, a denial. Rides
+   * `failed` and narrows it the way {@link undeclaredPhase} does: the chain
+   * mounted and the phase is declared, so what is dead is one input on disk,
+   * and `tickExitCode` (`src/cliVerdict.ts`) classifies it mount-dead with a
+   * cause that names the path rather than leaving it to the arm that has no
+   * shape of its own.
+   *
+   * Both paths are facts, never a verdict: the address the chain declared and
+   * what it resolved to, so a chain names the file it must restore without
+   * re-resolving the join the engine already made (`.claude/rules/engineering.md`,
+   * *A fact the engine holds is reported, never rediscovered*). The load runs
+   * beside the chain load, so no agent ran, no worktree was provisioned, and
+   * the selected phase is left awake — this tick owes the work it did not do.
+   */
+  promptUnreadable?: { promptPath: string; resolvedPath: string };
   /**
    * Set when chain resolution failed with the CJS-context
    * signature — a usage error (the host repo's package.json is missing
@@ -962,12 +983,41 @@ export class Dispatcher {
     // can outlast a ship that rewrote this file on trunk; taking the bytes
     // now is what keeps the words an agent is handed and the code that filled
     // them one version, rather than re-reading the primary checkout at each
-    // slot. A prompt file that cannot be read throws out of the tick, before
-    // any worktree is provisioned: no slot of this phase had a prompt.
-    const promptTemplate = await readPhaseTemplate(
-      this.opts.configDir,
-      phase.promptPath,
-    );
+    // slot.
+    //
+    // A prompt file that cannot be read ends the tick here, before any
+    // worktree is provisioned: no slot of this phase had a prompt, so the
+    // refusal is the whole tick's. Reported rather than thrown — a raw stack
+    // out of this call reached `main().catch` and exited 1, which told the
+    // supervisor to spend its remaining children on an input that resolved
+    // once and resolves the same way every time. The narrowing is read off
+    // the load's own class, never guessed from an errno's prose
+    // (`PromptTemplateUnreadableError`, `src/Prompt.ts`); everything else out
+    // of the call is an ordinary throw and keeps propagating.
+    let promptTemplate: string;
+    try {
+      promptTemplate = await readPhaseTemplate(
+        this.opts.configDir,
+        phase.promptPath,
+      );
+    } catch (err) {
+      if (!(err instanceof PromptTemplateUnreadableError)) throw err;
+      const msg = `${phase.name}: ${err.message}; this tick does no work`;
+      this.log.error(`[flume] ${msg}`);
+      return {
+        hibernated: false,
+        failed: true,
+        phaseName: phase.name,
+        promptUnreadable: {
+          promptPath: err.promptPath,
+          resolvedPath: err.resolvedPath,
+        },
+        // Nothing moved the baton: the phase this tick selected is still
+        // awake, and the work it owes is still owed.
+        awakeAfter: awake,
+        summary: msg,
+      };
+    }
     const legCtx = this.legCtxFor(promptTemplate);
 
     // spec/loop.md "Every agent invocation leaves a usage row": a row reaches
