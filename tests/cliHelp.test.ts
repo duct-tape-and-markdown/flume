@@ -3076,7 +3076,7 @@ describe("the render-refused class, enumerated whole wherever it is named (THE-R
    * nothing — so it is read against the array the bullet is, and a member
    * either roster gains reaches it too.
    */
-  it("TickResult.noCommit's render-refused line names every member of the tick's class", () => {
+  it("TickOutcome.noCommit's render-refused line names every member of the tick's class", () => {
     const doc = docProse(docCommentFor(srcText("Dispatcher.ts"), "noCommit"));
     // The bullet, not the block: its siblings quote the render vocabulary too
     // — `clean-exit` names the agent's own message, and the precedence
