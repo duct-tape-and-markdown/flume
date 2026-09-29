@@ -43,5 +43,5 @@
     "flume status over a state root with no awake-flag directory prints hibernating and writes nothing"
   ],
   "pins": [],
-  "notes": "Operator's ruling; the constructor pin retires with it. Verified: `mkdirUnderStateRoot` at `src/Baton.ts:87`, `awake()` (`:92`) readdirs the dir, `wake()` (`:140`) writes the flag alone. Copies: `docs/CLI.md:33`, `:221`. Blocked, not seamed on the gate: THE-VERB-PAGES-NAME-THE-STATE-ROOT-WRITE-REFUSAL is in flight adding that refusal to every verb reachable from `new Baton` — this narrows that set, so it lands after."
+  "notes": "Operator's ruling; the constructor pin retires with it. Verified: `mkdirUnderStateRoot` at `src/Baton.ts:87`, `awake()` (`:92`) readdirs the dir, `wake()` (`:140`) writes the flag alone. Copies: `docs/CLI.md:33`, `:221`. The blocker it waited on — THE-VERB-PAGES-NAME-THE-STATE-ROOT-WRITE-REFUSAL, which added that refusal to every verb reachable from `new Baton` — shipped at 1615b10f, so this narrowing now lands on top of it."
 }

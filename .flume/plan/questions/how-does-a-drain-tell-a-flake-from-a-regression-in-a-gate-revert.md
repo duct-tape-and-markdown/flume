@@ -65,6 +65,55 @@ alternative I would want ruled alongside is whether that `Dispatcher` case
 should be reduced to a repro first — if it is genuinely racy, 1 hides a real
 defect behind a retry.
 
+## The mechanism, added at the next drain
+
+The entry re-carried and shipped (1615b10f), and its note supplies the load
+account this file said it lacked — not a reproduced firing, but enough to name
+the suspect mechanically.
+
+The failing case holds MARK-C's agent on `waitFor("MARK-B's merge marker", ...)`
+(`tests/Dispatcher.test.ts:7092`) — a wait on a sibling entry's whole
+serialized merge, not on a spawned process. Nominal cost of the case is 654ms
+measured this tick. The reverted attempt's own seam `beforeAll` added ~9s of 20
+CLI spawns to the same lane, two of them starting further node+tsx children,
+against `maxWorkers: 4`. The case declares `testTimeout: SPAWN_BUDGET_MS`
+(`:188`), so the 10s `waitFor` ceiling fires first and throws *inside the agent
+body*, which surfaces as an entry that did not commit — the three-entry
+`committed`/`noCommit` deep-equal the record reports. That is consistent, and
+nothing cliHelp renders reaches that assertion.
+
+Two facts came out of re-verifying it, and they change the fork above.
+
+**One is now queued, not asked.** `WAIT_TIMEOUT_MS`'s whole sizing warrant is
+"well inside the 30s per-case budget the lane's spawning sites declare"
+(`tests/helpers/waitFor.ts:29`). No 30s budget exists: the sites declare
+`SPAWN_BUDGET_MS` = 120_000 (`tests/helpers/subprocess.ts:131`), documented as
+the default lane's own, and sized because "a gate timeout there reverts an
+innocent entry". So the ceiling refuses at 10s while its host case has 120s of
+budget left — 110s of declared headroom converted into a thrown wait, by a
+stale restatement rather than a decision anyone made. Filed as
+THE-WAIT-CEILING-IS-SIZED-AGAINST-THE-BUDGET-ITS-CALLERS-DECLARE, `per`
+*Derived state is computed, never restated beside its source*; it needs no
+repro, because the defect is the restatement.
+
+**The other is still a fork, and it is narrower than the one above.** The
+helper promises that "a blown wait reds with its own message rather than
+degrading into a bare `expect(false).toBe(true)` at the assertion downstream"
+(`.claude/rules/engineering.md`, *Loud or nothing*, cited at the site). For a
+hold inside a fanout agent body that promise is false — the dispatcher absorbs
+the throw into "did not commit", which is precisely the confident wrong answer
+the citation disclaims, and precisely where this revert happened. Either the
+helper's refusal has to reach past an agent body, or the sites where it cannot
+are declared and cited as the bounded exception that rule asks for.
+
+**How this bears on the fork above.** If the ceiling was simply mis-sized by a
+stale copy, then option 1 — a chain-side re-run on every `afterMerge` red —
+would have been paying one extra suite per red to absorb a defect with a
+mechanical fix. I would rule the queued entry first and re-measure before
+ratifying 1: a ceiling sized against the budget its callers actually declare
+may leave nothing for the re-run to discriminate. If reverts continue after
+it, 1 stands on its own merits and my lean above is unchanged.
+
 ## Not part of this question
 
 Whether the marker case is racy at all. That needs a repro, and nobody has
