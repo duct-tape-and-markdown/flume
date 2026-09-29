@@ -55,3 +55,28 @@ hours, and if that is the intended shape then "claimed for the wave" is the
 honest statement. But (3) is the answer that accepts a park waiting out a
 multi-hour wave, and whether that is acceptable is a loop-economics call rather
 than a mechanical one — which is why this is here and not an entry.
+
+## Re-measured 2026-09-29T21:23Z — the bound is hours, and it is still running
+
+The same claim, unchanged: staked 19:26:55.493Z, attempt ended 19:28:11.707Z,
+still standing at 21:23:35Z — **1h55m past the end of the attempt it was taken
+for**, with wave pid 1949728 alive 1h56m and still refilling. This is the second
+consecutive `plan-inbox` tick woken over it (1d3f224c, then this one), each
+finding the same record it may not touch and filing nothing against it.
+
+So the latency in the cost line above is not a short tail. "Bounded by however
+long a refilling wave runs" is, on this tree, bounded by hours and not yet
+closed, and the drain pays a tick per cycle for the whole of it. That is the
+number option (3) asks a human to accept.
+
+Two facts that are *not* defects, checked this tick so the next reader does not
+re-check them:
+
+- 55 files under `.git/flume/claims/primary/`, 41 naming pid 801933 — a dead
+  run's. `readLive` drops a dead pid's claim, and `stake` unlinks the stale file
+  on its way to taking the slug (`src/entryClaims.ts`), so the residue is lazy
+  cleanup, declared at the site, not a leak that reads as live.
+- Liveness is `process.kill(pid, 0)` alone (`livePidClaimAt`, `src/pidClaim.ts`),
+  which is the probe `spec/pending.md`, *Claims — an entry in flight is left
+  alone* rules for. The claim already carries its instant if a recycled-pid
+  disambiguation is ever wanted; nothing here asks for one.
