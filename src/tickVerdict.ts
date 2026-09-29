@@ -917,7 +917,13 @@ export function buildTickVerdict(facts: TickVerdictFacts): TickVerdict {
  */
 export { tickVerdictDir, tickVerdictPath, tickVerdictsLogPath };
 
-/** Bound on {@link tickVerdictsLogPath}'s file — a rolling window, not an unbounded log. */
+/**
+ * Bound on {@link tickVerdictsLogPath}'s file — a rolling window, not an
+ * unbounded log. Over the file's *lines*, not over the records this engine
+ * version can decode: {@link writeTickVerdict} carries every line forward
+ * verbatim, so a row {@link isTickVerdict} declines occupies the window the
+ * same way a decodable one does.
+ */
 const MAX_TICK_VERDICTS = 200;
 
 /**
@@ -1021,6 +1027,16 @@ export class VerdictHistoryUnreadableError extends Error {
  * the CLI's `tick` command, once per real process, from the `TickVerdict`
  * its own `dispatcher.tick()` call returned.
  *
+ * The append carries the log's existing lines forward **verbatim** rather
+ * than re-serializing the records {@link isTickVerdict} accepted. That check
+ * is this engine version's reading of the shape, and a row written before a
+ * field joined {@link TickVerdict} is one it declines — re-serializing the
+ * decoded set would delete every such row on the next tick, which is the one
+ * thing a log the spec calls history, never cleared, must not do
+ * (spec/loop.md, *The tick verdict — one facts artifact*). Declining a row is
+ * a statement about what a reader can hand a chain, never a licence to drop
+ * it from the file.
+ *
  * Throws {@link VerdictHistoryUnreadableError} when the history read below
  * refuses — the append cannot proceed over a log it never resolved, and
  * treating the refusal as an empty history would overwrite every record the
@@ -1045,16 +1061,16 @@ export async function writeTickVerdict(
     JSON.stringify(verdict),
     "utf8",
   );
-  let history: TickVerdict[];
+  let lines: string[];
   try {
-    history = await readTickVerdicts(flumeDir);
+    lines = await readVerdictLogLines(flumeDir);
   } catch (err) {
     throw new VerdictHistoryUnreadableError(tickVerdictsLogPath(flumeDir), err);
   }
-  const bounded = [...history, verdict].slice(-MAX_TICK_VERDICTS);
+  const bounded = [...lines, JSON.stringify(verdict)].slice(-MAX_TICK_VERDICTS);
   await writeFile(
     namespacedJoin(tickVerdictsLogPath(flumeDir)),
-    bounded.map((v) => JSON.stringify(v)).join("\n") + "\n",
+    bounded.join("\n") + "\n",
     "utf8",
   );
 }
@@ -1127,6 +1143,54 @@ export async function readTickVerdict(
 }
 
 /**
+ * The history log's lines as its last writer left them — one record per
+ * line, blanks dropped, nothing decoded. Absent reads as no lines; present
+ * and unreadable refuses under {@link unreadable}, the posture the readers
+ * below and {@link writeTickVerdict} share
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * The append and the read part ways here because they want different things
+ * from the same bytes: a read wants the records this engine version
+ * understands, the append wants every line the file holds.
+ */
+async function readVerdictLogLines(flumeDir: string): Promise<string[]> {
+  const path = tickVerdictsLogPath(flumeDir);
+  const p = namespacedJoin(path);
+  if (!existsLoud(p)) return [];
+  let raw: string;
+  try {
+    raw = await readFile(p, "utf8");
+  } catch (err) {
+    throw unreadable("tick verdict history log", path, err);
+  }
+  return verdictLogLines(raw);
+}
+
+/** A history log's contents split into its non-empty lines, trimmed — one spelling for {@link readVerdictLogLines} and the sync reader that cannot await it. */
+function verdictLogLines(raw: string): string[] {
+  return raw
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+/**
+ * One history line as a verdict, or `undefined` when it will not parse or is
+ * not a record {@link isTickVerdict} accepts — a line a reader skips rather
+ * than throws on, and one {@link writeTickVerdict} carries forward
+ * regardless.
+ */
+function decodeVerdictLine(line: string): TickVerdict | undefined {
+  try {
+    const rec: unknown = JSON.parse(line);
+    return isTickVerdict(rec) ? rec : undefined;
+  } catch {
+    // a corrupt line is skipped, not fatal to the rest of the history
+    return undefined;
+  }
+}
+
+/**
  * Read up to the last `n` verdicts (oldest first), for a chain to render
  * recent tick history into a prompt. Corrupt lines are skipped,
  * never thrown; an absent log reads as empty history — same no-false-signal
@@ -1147,25 +1211,10 @@ export async function readTickVerdicts(
   flumeDir: string,
   n: number = MAX_TICK_VERDICTS,
 ): Promise<TickVerdict[]> {
-  const path = tickVerdictsLogPath(flumeDir);
-  const p = namespacedJoin(path);
-  if (!existsLoud(p)) return [];
-  let raw: string;
-  try {
-    raw = await readFile(p, "utf8");
-  } catch (err) {
-    throw unreadable("tick verdict history log", path, err);
-  }
   const verdicts: TickVerdict[] = [];
-  for (const line of raw.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      const rec: unknown = JSON.parse(trimmed);
-      if (isTickVerdict(rec)) verdicts.push(rec);
-    } catch {
-      // a corrupt line is skipped, not fatal to the rest of the history
-    }
+  for (const line of await readVerdictLogLines(flumeDir)) {
+    const rec = decodeVerdictLine(line);
+    if (rec) verdicts.push(rec);
   }
   return n === 0 ? [] : verdicts.slice(-n);
 }
@@ -1198,18 +1247,12 @@ export function readLatestVerdictsSync(
   } catch (err) {
     throw unreadable("tick verdict history log", path, err);
   }
-  for (const line of raw.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      const rec: unknown = JSON.parse(trimmed);
-      // Log order is chronological (append-only), so the last record parsed
-      // for a given phaseName is the most recent — no timestamp comparison
-      // needed.
-      if (isTickVerdict(rec)) latest[rec.phaseName] = rec;
-    } catch {
-      // a corrupt line is skipped, not fatal to the rest of the history
-    }
+  for (const line of verdictLogLines(raw)) {
+    // Log order is chronological (append-only), so the last record parsed
+    // for a given phaseName is the most recent — no timestamp comparison
+    // needed.
+    const rec = decodeVerdictLine(line);
+    if (rec) latest[rec.phaseName] = rec;
   }
   return latest;
 }

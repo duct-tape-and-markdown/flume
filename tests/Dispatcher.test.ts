@@ -13760,6 +13760,52 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
     expect(last2.map((v) => v.summary)).toEqual(["tick 3", "tick 4"]);
   });
 
+  /**
+   * The log is history, never cleared (spec/loop.md, *The tick verdict — one
+   * facts artifact*), and the structural check is only this engine version's
+   * reading of the shape. A verdict written before a field joined
+   * `TickVerdict` is one the check declines, so an append that re-serialized
+   * the decoded set deleted it — every field ever added silently truncated
+   * the history to the ticks that ran after it. The append preserves lines,
+   * not records.
+   *
+   * The declined row is hand-authored because the real writer can only emit
+   * the shape this tree declares; that it cannot produce a prior shape is the
+   * defect, not a gap in the fixture
+   * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+   * wrote* — refusal and shape cases keep their hand-authored input).
+   */
+  it("the verdict history append keeps a record the structural check declines", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    // A verdict from before `timings` joined the shape: every other field the
+    // check reads is present, so the row is well-formed JSON this version
+    // still declines.
+    const priorShape = JSON.parse(
+      JSON.stringify(verdictFixture({ summary: "tick 0" })),
+    ) as Record<string, unknown>;
+    delete priorShape["timings"];
+    const priorLine = JSON.stringify(priorShape);
+    await mkdir(flumeDir, { recursive: true });
+    await writeFile(historyPath(), priorLine + "\n", "utf8");
+
+    // Non-vacuity: the row is on disk and the reader declines it — which is
+    // the state the next append has to survive, not an empty log.
+    expect(await readTickVerdicts(flumeDir)).toEqual([]);
+
+    // The real writer, over that log.
+    const v = verdictFixture({ summary: "tick 1" });
+    await writeTickVerdict(flumeDir, v);
+
+    const lines = (await readFile(historyPath(), "utf8"))
+      .split("\n")
+      .filter((l) => l.length > 0);
+    expect(lines).toEqual([priorLine, JSON.stringify(v)]);
+
+    // And declining stays a statement about what a reader hands a chain: the
+    // accessor still serves only the decodable row.
+    expect(await readTickVerdicts(flumeDir)).toEqual([v]);
+  });
+
   it("the verdict history read refuses a present-but-unreadable log naming the path it read", async () => {
     const flumeDir = join(fx.repo, ".flume");
     await writeTickVerdict(flumeDir, verdictFixture({ summary: "tick 0" }));
