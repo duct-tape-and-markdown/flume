@@ -26,11 +26,24 @@ Every item was verified against the tree this tick.
    gate-revert digest "a `git show --stat` digest of the reverted commit"; the
    engine digests the span (`base..head`). **`spec/worktrees.md`, *Reverted
    prose survives the reset*** has the same wording — "every non-deleted file
-   the reverted commit touched" — and this tick filed
-   THE-REVERT-SNAPSHOT-COVERS-THE-SPAN-IT-DIGESTS to widen the snapshot to the
-   span on the strength of that section's *guarantee* ("recovery must never
-   require reading session logs"). → "the span the tick added" in both, or rule
-   the snapshot head-only, which retires that entry.
+   the reverted commit touched" — and
+   THE-REVERT-SNAPSHOT-COVERS-THE-SPAN-IT-DIGESTS has since **shipped**
+   (`5a499e00`), widening the snapshot to the span on the strength of that
+   section's *guarantee* ("recovery must never require reading session logs").
+   → "the span the tick added" in both, or rule the snapshot head-only, which
+   is now a revert of shipped code rather than a dropped entry.
+
+   **And one boundary the guarantee does not state either way.** Measured on
+   git 2.43.0: `git diff --name-only base head` compares the two end trees, so
+   a path an earlier commit in the span created and a later one deleted is
+   named by *neither* side and never reaches the listing — and it has no
+   post-image at `head` to read, so it is unrecoverable however the listing is
+   taken (`git log --name-only base..head` names it and still offers nothing).
+   `--diff-filter=d` therefore only ever drops paths the base already held. So
+   what ships is "every file the span's **head still holds**", not "every file
+   the span touched". → if the ruling widens the sentence to the span, say
+   which of those two it means; the fact itself is asked separately at
+   `does-the-range-diff-sees-two-trees-fact-get-a-platform-facts-section.md`.
 
 4. **`spec/pending.md`, *Queue reads are strict*** lists the strict reads as
    "the singleton and fanout decide-reads and the wave-end rewrite read". A wave
