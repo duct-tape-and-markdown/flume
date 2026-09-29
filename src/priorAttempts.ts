@@ -465,7 +465,10 @@ export class PriorAttemptStore {
    * count spec/loop.md "Repeated identical failures — quarantine, then
    * abort" keeps — the same refusal {@link read} makes per file, where the
    * degrade to "no prior" is only ever for a record that was *read* and
-   * found garbled.
+   * found garbled. Per file the refusal is {@link read}'s whole: a record
+   * this listing finds and cannot open escapes here exactly as it does
+   * there, because the walk selects by name and leaves the reading to the
+   * reader.
    *
    * Hence the descent: the state root, then `prior-attempts/`, then each
    * keyspace directory, each proven a directory before the next is probed.
@@ -491,12 +494,21 @@ export class PriorAttemptStore {
       if (!isDirectoryOrAbsent(STORE_SUBJECT, dir)) continue;
       // Every ancestor is proven above, so a listing failure here is real:
       // a keyspace dir that vanished mid-walk, or one that cannot be read.
-      const entries = await readdir(toNamespacedPath(dir), {
-        withFileTypes: true,
-      });
-      for (const e of entries) {
-        if (!e.isFile() || !e.name.endsWith(".json")) continue;
-        const stem = e.name.slice(0, -".json".length);
+      //
+      // Names, not dirents: what a listed entry *is* has no bearing on
+      // whether this store must answer for it, and asking would only give
+      // the walk a second chance to decide something `read` already
+      // decides. Whether a record opens is the read's alone — a dirent type
+      // consulted here drops a directory, a symlink, anything but a plain
+      // file at a record path ahead of the read that refuses on it, and
+      // files it under the one reading that read never makes: no prior
+      // attempt (`.claude/rules/engineering.md`, *Loud or nothing*).
+      const names = await readdir(toNamespacedPath(dir));
+      for (const name of names) {
+        // The name is the whole filter, and the only silent skip: something
+        // not named like a record was never this store's to answer for.
+        if (!name.endsWith(".json")) continue;
+        const stem = name.slice(0, -".json".length);
         const rec = await this.read({ key: stem, keyspace });
         if (rec) out.set(recordAttemptKey(rec), rec);
       }

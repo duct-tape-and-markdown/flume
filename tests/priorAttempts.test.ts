@@ -445,6 +445,48 @@ describe("priorAttempts — an unreachable record is not an absent one", () => {
     expect(message).toContain(p);
   });
 
+  /**
+   * The listing's own arm of the case above. `readAll` is what every surface
+   * a phase leg reaches goes through — the selection map, a chain's
+   * `TickContext.priorAttempts`, `clearStale` — and a dirent filter deciding
+   * readability drops the record before the read that refuses on it ever
+   * runs, so the refusal `read` makes lands nowhere a leg would see it and
+   * the record reads as no prior attempt instead
+   * (`.claude/rules/engineering.md`, *Loud or nothing*).
+   */
+  it("the prior-attempt listing refuses a record present and unreadable rather than omitting it", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+    // A readable record beside the obstruction: the keyspace the listing
+    // must walk holds something it can answer for, so an omission here
+    // would come back as a populated map rather than an empty store.
+    const readable: PriorAttemptRef = { key: "build", keyspace: "phase" };
+    await store.write(readable, buildCleanExit("no commit", UNMOVED_SPAN()));
+    const unreadable: PriorAttemptRef = { key: "plan", keyspace: "phase" };
+    const p = priorAttemptPath(flumeDir, unreadable);
+    // Present at a record path and not openable as a file — structural, so
+    // it fails for every uid and on every host
+    // (`.claude/rules/platform-facts.md`, *`chmod` denies nothing on
+    // win32*).
+    await mkdir(p, { recursive: true });
+
+    // Vacuity pins (`.claude/rules/engineering.md`, "A green verdict is
+    // proven non-vacuous"): both records really sit in the directory the
+    // listing enumerates, the obstruction really is named like a record and
+    // really is not a file, and `read` really does refuse it — so what is
+    // under test is only whether the listing carries that refusal out.
+    expect(existsSync(priorAttemptPath(flumeDir, readable))).toBe(true);
+    expect((await lstat(p)).isDirectory()).toBe(true);
+    expect(basename(p)).toBe("plan.json");
+    await expect(store.read(unreadable)).rejects.toThrow(
+      /prior-attempt record is unreadable/,
+    );
+
+    const message = await refusalOf(store.readAll());
+    expect(message).toContain("prior-attempt record is unreadable");
+    expect(message).toContain(p);
+  });
+
   it("readAll refuses when a plain file sits at the prior-attempts root", async () => {
     const flumeDir = join(fx.repo, ".flume");
     const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
