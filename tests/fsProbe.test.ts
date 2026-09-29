@@ -26,6 +26,7 @@ import {
   existsLoud,
   existsLoudUnder,
   isDirectoryOrAbsent,
+  isDirectoryOrAbsentUnder,
   statLoud,
 } from "../src/fsProbe.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
@@ -209,6 +210,54 @@ describe("fsProbe — the descent, where absence is proven from the path", () =>
     // And the silent arm is still silent from the same root.
     expect(isDirectoryOrAbsent("store", join(root, "gone"))).toBe(false);
   });
+
+  /*
+   * The composition's own arm, which the variadic form cannot have: the
+   * rooted descent is handed both ends of a walk, so it is the one place that
+   * can see them disagree. `relative` answers a walk up-and-back for a path
+   * outside the root, so the rungs would be the *root's* ancestors and the
+   * verdict theirs — a proven absence over a directory that is standing
+   * (`.claude/rules/engineering.md`, *Loud or nothing*).
+   */
+  it("the rooted descent refuses a root the directory does not sit under", async () => {
+    const base = await scratch();
+    const root = join(base, "state");
+    const inside = join(root, "queue");
+    const outside = join(base, "elsewhere", "queue");
+    mkdirSync(inside, { recursive: true });
+    mkdirSync(outside, { recursive: true });
+
+    // Non-vacuity, both arms, from the root under test: the descent really
+    // clears a directory beneath it and really folds an absence beneath it,
+    // so the refusals below are the disagreement talking and not a probe
+    // that throws on everything (`.claude/rules/engineering.md`, *A green
+    // verdict is proven non-vacuous*).
+    expect(isDirectoryOrAbsentUnder("inbox queue", root, inside)).toBe(true);
+    expect(isDirectoryOrAbsentUnder("inbox queue", root, join(root, "gone"))).toBe(
+      false,
+    );
+
+    // A sibling of the root, standing. The walk out of `root` and back down
+    // would clear every rung and answer `true` about a tree the caller never
+    // named.
+    expect(() =>
+      isDirectoryOrAbsentUnder("inbox queue", root, outside),
+    ).toThrow(
+      `inbox queue is unreadable: ${outside} does not sit under ${root}`,
+    );
+
+    // And the shape the defect wore: the root absent while a directory
+    // stands at `path`. The walk's first rung is that root, so its absence
+    // short-circuited and was reported as the *subject's*.
+    const absentRoot = join(base, "never-made");
+    expect(existsLoud(outside)).toBe(true);
+    expect(existsLoud(absentRoot)).toBe(false);
+    expect(() =>
+      isDirectoryOrAbsentUnder("inbox queue", absentRoot, outside),
+    ).toThrow(
+      `inbox queue is unreadable: ${outside} does not sit under ${absentRoot}`,
+    );
+  });
 });
 
 /**
@@ -272,6 +321,42 @@ describe("fsProbe — the descent to a file, where absence is proven from the pa
       existsLoudUnder("loop lock", sealedRoot, join(sealedRoot, "loop.pid")),
     ).toThrow(
       `loop lock is unreadable: ${sealedRoot} is present but is not a directory`,
+    );
+  });
+
+  /*
+   * The bound the file-leaf form inherits from the walk it composes. It
+   * descends to the file's *directory*, so the disagreement it refuses on is
+   * that directory's — which is also why the root handed as its own leaf is
+   * refused: a root is not a file beneath itself.
+   */
+  it("the file-leaf descent refuses a root the file does not sit under", async () => {
+    const base = await scratch();
+    const root = join(base, "flume");
+    const inside = join(root, "loop.pid");
+    const outsideDir = join(base, "elsewhere");
+    const outside = join(outsideDir, "loop.pid");
+    mkdirSync(root, { recursive: true });
+    mkdirSync(outsideDir, { recursive: true });
+    writeFileSync(inside, "4242\n");
+    writeFileSync(outside, "4242\n");
+
+    // Non-vacuity, both arms, from the root under test.
+    expect(existsLoudUnder("loop lock", root, inside)).toBe(true);
+    expect(existsLoudUnder("loop lock", root, join(root, "gone"))).toBe(false);
+
+    // A file under a sibling of the root: present, reachable, and nothing
+    // the caller's root answers for — so `true` off the walk up-and-back is
+    // a verdict about someone else's tree.
+    expect(() => existsLoudUnder("loop lock", root, outside)).toThrow(
+      `loop lock is unreadable: ${outsideDir} does not sit under ${root}`,
+    );
+
+    // The root as its own leaf: the walk runs to `dirname`, which is above
+    // the root, so this is the same disagreement rather than a shortest
+    // legal walk.
+    expect(() => existsLoudUnder("loop lock", root, root)).toThrow(
+      `loop lock is unreadable: ${base} does not sit under ${root}`,
     );
   });
 });

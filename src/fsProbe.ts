@@ -9,7 +9,14 @@
  */
 
 import { statSync, type Stats } from "node:fs";
-import { dirname, join, relative, sep, toNamespacedPath } from "node:path";
+import {
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  sep,
+  toNamespacedPath,
+} from "node:path";
 
 /**
  * `path`'s `Stats` iff it exists, `undefined` only when it is absent
@@ -132,17 +139,32 @@ export function isDirectoryOrAbsent(
  * path through a non-directory as not found*). A reader whose rungs are not
  * one contiguous walk — a fan of sibling directories under one proven root —
  * calls {@link isDirectoryOrAbsent} with its own list instead.
+ *
+ * A `path` that does not sit under `root` is **refused**, never answered:
+ * there is no descent from a root a path is not beneath, so the rungs would
+ * be `root`'s own ancestors walked up and back down, and the verdict would be
+ * one of *their* dispositions — `false` off an absent root while a directory
+ * stands at `path`, `true` off a tree the caller never named
+ * (`.claude/rules/engineering.md`, *Loud or nothing*). The two arguments
+ * disagreeing is the caller's bug, and it is the one thing this composition
+ * can see that its delegate cannot. `root` itself is under `root`, so the
+ * zero-rung walk is the shortest legal one, not the first illegal one.
  */
 export function isDirectoryOrAbsentUnder(
   what: string,
   root: string,
   path: string,
 ): boolean {
+  const rel = relative(root, path);
+  if (isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`))
+    throw new Error(
+      `[flume] ${what} is unreadable: ${path} does not sit under ${root}`,
+    );
   const descent: [string, ...string[]] = [root];
   let at = root;
-  // `relative` answers in the host's dialect and `join` normalizes each rung,
-  // so a `..` leg of an escaping path still lands on `path` itself last.
-  for (const segment of relative(root, path).split(sep)) {
+  // `relative` answers in the host's dialect, and past the refusal above every
+  // leg of it descends, so `join` walking each segment lands on `path` last.
+  for (const segment of rel.split(sep)) {
     if (segment === "") continue;
     at = join(at, segment);
     descent.push(at);
@@ -174,6 +196,11 @@ export function isDirectoryOrAbsentUnder(
  * itself. Every path is namespaced here, the rungs by the walk and the leaf
  * because it arrived whole, so a caller hands plain paths and the refusal
  * names the path an operator has to go fix.
+ *
+ * The bound the descent declares is inherited whole: a `path` that does not
+ * sit under `root` is refused rather than answered, and because the walk runs
+ * to the file's directory, `root` handed as the `path` is refused too — the
+ * root is not a file beneath itself.
  */
 export function existsLoudUnder(
   what: string,

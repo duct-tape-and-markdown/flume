@@ -238,6 +238,14 @@ export interface FlumeApi {
    * is walked (`.claude/rules/engineering.md`, *A fact the engine holds is
    * reported, never rediscovered*).
    *
+   * A directory that does not sit under the root handed with it is a
+   * **refusal**, not a `false`: the two arguments disagree, so there is no
+   * descent to run, and answering one would hand back a verdict read off
+   * paths the chain never named — a drained queue over a directory that is
+   * there (`.claude/rules/engineering.md`, *Loud or nothing*). A chain
+   * pairing a declared base with a directory it composed from somewhere else
+   * hears about it at the probe rather than in the silent arm.
+   *
    * Reported as a **fact**: the directory stands, or is provably absent, or
    * the read cannot be made. What a drained queue means for the tick stays
    * the chain's (`.claude/rules/engine-boundary.md`).
