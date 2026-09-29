@@ -1,0 +1,31 @@
+{
+  "tag": "THE-VERDICT-READS-NAME-THE-PATH-THEY-READ",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 10,
+  "files": {
+    "edit": [
+      {
+        "path": "src/tickVerdict.ts",
+        "description": "each of the three readers' post-probe reads refuses under its own message naming the path it read, the errno's sentence riding along as detail, the way `readRecord` (`src/priorAttempts.ts`) already does"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the three present-but-unreadable cases assert the reader's refusal instead of the errno, beside the tick-verdict artifact block's own history cases"
+      }
+    ]
+  },
+  "summary": "`readTickVerdict`, `readTickVerdicts` and `readLatestVerdictsSync` rethrow a post-open read failure bare, so the operator and a chain get `EISDIR ... read` with no path",
+  "per": {
+    "path": ".claude/rules/platform-facts.md",
+    "section": "A read that fails after the open names no path"
+  },
+  "acceptance": "each of the three verdict readers refuses a present-but-unreadable artifact under its own message naming the path it read, with the errno's own sentence as detail, so no verb, supervisor line or API consumer is handed a pathless errno under a state root that may be relocated; the absent arms and the parse degrades are unchanged, and the cases assert the reader's refusal rather than the errno",
+  "tests": [
+    "the verdict history read refuses a present-but-unreadable log naming the path it read",
+    "the per-phase verdict read refuses a present-but-unreadable record naming the path it read",
+    "the sync verdict history read refuses a present-but-unreadable log naming the path it read"
+  ],
+  "notes": "Measured: `readFileSync` on a directory raises `EISDIR ... read`, `err.path` undefined (node 22). The reads sit past `existsLoud` uncaught (`src/tickVerdict.ts:1062`, `:1094`, `:1129`); the three CLI relays name `tick-verdicts.jsonl` alone (`src/cli.ts:700`, `:814`, `:1348`) where the sibling lock and claim relays name paths, and `src/loopSupervisor.ts:688` recomposes it. The cases key on `caught?.code` (`tests/Dispatcher.test.ts:13352`, `:13377`, `:13505`)."
+}
