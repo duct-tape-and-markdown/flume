@@ -247,16 +247,17 @@ sent stays in `rendered-prompts/`. Read-only apart from the one filesystem effec
 absent. No baton flag is set, no worktree is provisioned, no `rendered-prompts/`
 record is written, and no hook refusal is persisted.
 
-Exits `0` once the prompt is on stdout; `2` on any usage-shaped refusal (missing
-`<phase>`, a stray positional past it, `--entry` with no value, an unknown phase,
-`--entry` against a phase that picks nothing, `--entry` naming no entry in the
-queue at HEAD, a fanout phase with nothing pickable and no `--entry`, or the
-CJS-context chain-load refusal); `65` (`EX_DATAERR`) when the prompt never
-resolved — an inline-exec span that exited non-zero, named with its stderr, or a
-`promptArgs` hook that threw, which is the same `render-refused` class a tick
-would have spent an invocation to reach; `69` (`EX_MOUNT_DEAD`) when the chain
-could not be brought up at all — it failed to load, the queue at HEAD failed to
-parse, or the declared prompt file is not on disk. And it exits `74`
+Exits `0` once the prompt is on stdout. It exits `2` on any usage-shaped
+refusal (missing `<phase>`, a stray positional past it, `--entry` with no value,
+an unknown phase, `--entry` against a phase that picks nothing, `--entry` naming
+no entry in the queue at HEAD, a fanout phase with nothing pickable and no
+`--entry`, or the CJS-context chain-load refusal). It exits `65` (`EX_DATAERR`)
+when the prompt never resolved — an inline-exec span that exited non-zero, named
+with its stderr, or a `promptArgs` hook that threw, which is the same
+`render-refused` class a tick would have spent an invocation to reach. It
+exits `69` (`EX_MOUNT_DEAD`) when the chain could not be brought up at all — it
+failed to load, the queue at HEAD failed to parse, or the declared prompt file
+is not on disk. And it exits `74`
 (`EX_IOERR`) — the state root's own refusals, and this verb's only ones —
 when the bay discovery every verb starts with cannot hand back a usable root:
 the state root (`.flume`) is present but will not stat, an unstattable bay

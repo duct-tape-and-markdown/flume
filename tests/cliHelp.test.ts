@@ -1594,6 +1594,157 @@ describe("docs/CLI.md's status and log sections against the codes those verbs re
 });
 
 /**
+ * THE-RENDER-PAGE-NAMES-EVERY-CODE-IT-RETURNS — `docs/CLI.md` § `flume
+ * render` is the third prose copy of a verb's exit-code range this page
+ * carried with nothing reading it against the verb, and it had drifted in
+ * the one way the page's own convention makes invisible: `65` and `69` were
+ * stated trailing a sibling under one leading "Exits" (*Reading the exit
+ * codes*), so the range its readers see was 0, 2 and 74 while the verb
+ * returns five codes.
+ *
+ * Driven the way `status` and `log` are, and for the same reason: `render`
+ * decides its code inside its own control flow rather than through a
+ * classifier a candidate space can be run over, so the producer is the
+ * **process** — one real `flume render` run per arm, against a fixture
+ * built to reach it — and the section is compared to the set those runs
+ * returned, never to the verb's `--help` block, which is the other prose
+ * copy and moves with the page (`.claude/rules/engineering.md`, *A seam
+ * gate reads what the real writer wrote*).
+ *
+ * Both directions are asserted, one case each, because they are not the
+ * same claim: the page understating its verb is what shipped here, while
+ * the page naming a code the verb cannot return is the drift the other way.
+ * The bound is {@link driveRunExitCodes}'s — a code reached by an arm
+ * nobody wrote is invisible to either.
+ */
+
+/** A chain whose factory throws, for the mount-dead arm. */
+const RENDER_DEAD_CHAIN_SRC =
+  `export default () => { throw new Error("render chain factory exploded"); };\n`;
+
+/** A prompt whose one inline-exec span exits non-zero, for the `EX_DATAERR` arm. */
+const RENDER_UNRESOLVED_PROMPT =
+  "before\n!`exit 7 # render-range-span-probe`\nafter\n";
+
+/**
+ * Every exit code a real `flume render` returns, ascending.
+ *
+ * Two repositories, because the arms are about two different things: four
+ * are about the chain this verb resolves against, and the fifth is about
+ * where the process was started — a bay whose `.flume` is present and
+ * unstattable, below the fixture root's own, which is the discovery read
+ * every verb makes before dispatch (`tests/cliStateDirs.test.ts` holds the
+ * walk's side of that shape).
+ */
+async function driveRenderExitCodes(): Promise<number[]> {
+  const repo = await makeScratchRepo("flume-doc-render-exits-", "main");
+  const configDir = join(repo.dir, STATE_ROOT_DIRNAME);
+  const walkup = await mkFixtureRoot("flume-doc-render-walkup-");
+  const bay = join(walkup, "bay");
+  const deep = join(bay, "src", "deep");
+  try {
+    return await driveRunExitCodes([
+      {
+        arm: "a prompt it resolved and printed",
+        evidence: "probe prompt",
+        run: async () => {
+          await writeRepoConfig(repo.dir, minimalChainSrc());
+          return runCli(repo.dir, ["render", "probe"]);
+        },
+      },
+      {
+        arm: "--entry against a phase that picks nothing",
+        evidence: "picks no entry from the queue",
+        run: () => runCli(repo.dir, ["render", "probe", "--entry", "ABSENT"]),
+      },
+      {
+        arm: "an inline-exec span that exited non-zero",
+        evidence: "render-range-span-probe",
+        run: async () => {
+          await writeFile(
+            join(configDir, "prompts", "prompt.md"),
+            RENDER_UNRESOLVED_PROMPT,
+            "utf8",
+          );
+          return runCli(repo.dir, ["render", "probe"]);
+        },
+      },
+      {
+        // Last of the arms this repository carries: it replaces the chain
+        // the three above resolve through, so each of them has already run
+        // over the one that loads.
+        arm: "a chain that will not load",
+        evidence: "render chain factory exploded",
+        run: async () => {
+          await writeFile(
+            join(configDir, "chain.ts"),
+            RENDER_DEAD_CHAIN_SRC,
+            "utf8",
+          );
+          return runCli(repo.dir, ["render", "probe"]);
+        },
+      },
+      {
+        arm: "a bay discovery that cannot stat the state root it meets",
+        evidence: "failed to stat an ancestor bay",
+        run: async () => {
+          await mkdir(deep, { recursive: true });
+          // ELOOP — present, unstattable. Not a permission bit: a root-run
+          // lane would bypass that (`tests/helpers/denial.ts`).
+          await symlink(STATE_ROOT_DIRNAME, join(bay, STATE_ROOT_DIRNAME));
+          return runCli(deep, ["render", "probe"]);
+        },
+      },
+    ]);
+  } finally {
+    await rm(walkup, { recursive: true, force: true });
+    await repo.cleanup();
+  }
+}
+
+/** The section both directions below read, with the cut's own emptiness pinned. */
+async function renderSection(): Promise<string> {
+  const section = sectionOf(await readCliDoc(), /^## `flume render\b/);
+  expect(section.length).toBeGreaterThan(0);
+  return section;
+}
+
+it("docs/CLI.md's flume render section names every exit code the verb returns", async () => {
+  const driven = await driveRenderExitCodes();
+  const named = namedExitCodes(await renderSection());
+  // Vacuity: a section whose range was not read at all — a heading that
+  // moved, a phrasing {@link namedExitCodes} no longer keys on — would hold
+  // the membership below over the empty set.
+  expect(named.length).toBeGreaterThan(1);
+
+  const missing = driven.filter((code) => !named.includes(code));
+  // What a red here means, in the page's own vocabulary: either the row is
+  // missing outright, or it is stated where every reader of this page is
+  // blind to it.
+  expect(
+    missing,
+    `docs/CLI.md's flume render section names no exit ${missing.join(", ")} — ` +
+      `either it lists no such row, or the row trails a sibling under one ` +
+      `leading "Exits" instead of carrying its own introducing verb ("exits ` +
+      `\`65\`"), the convention the page's intro states`,
+  ).toEqual([]);
+}, SPAWN_BUDGET_MS);
+
+it("every exit code docs/CLI.md's flume render section names is one the verb really returns", async () => {
+  const driven = await driveRenderExitCodes();
+  const named = namedExitCodes(await renderSection());
+  // Vacuity, as above: a section whose range was not read at all would hold
+  // the membership below over the empty set, which no code can fail.
+  expect(named.length).toBeGreaterThan(1);
+
+  // Unlike the sections above, every backticked integer this one carries is
+  // a code — it documents no `--max`-shaped default — so there is no
+  // non-code denominator to assert beside this, and a value that drifted in
+  // later would red here as a code the verb cannot return.
+  expect(named.filter((code) => !driven.includes(code))).toEqual([]);
+}, SPAWN_BUDGET_MS);
+
+/**
  * JOB-HELP-NAMES-THE-WHOLE-LOOP-RANGE — the loop range's *runtime* prose
  * copy. `flume loop --help`'s block owes exactly the loop range — and it
  * named 0, 1, 2 and 78 alone: an operator hitting a child tick's mount-dead
