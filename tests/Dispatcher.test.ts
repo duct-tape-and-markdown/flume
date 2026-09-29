@@ -4319,13 +4319,16 @@ describe("Dispatcher fanout — relocated flumeDir: ship bookkeeping skips the c
 });
 
 /**
- * The two no-commit lines the merge stage renders for an operator, each read
- * off the exit a real `commitPendingUpdate` call reported over a real
- * repository (`.claude/rules/engineering.md`, *A seam gate reads what the real
- * writer wrote*). The exits answer with the same `undefined` sha, so the words
- * are the only place they differ, and nothing but a line read end to end can
- * tell the arm that wrote-but-could-not-commit from the arm that had nothing
- * to write. The wave's third no-commit exit — `tip-claimed` — never reaches
+ * Every no-commit line the merge stage renders for an operator, each read off
+ * the exit a real `commitPendingUpdate` call reported over a real repository
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*). The line is composed from two independent halves: the exit's own
+ * clause — the exits answer with the same `undefined` sha, so the words are
+ * the only place they differ, and nothing but a line read end to end can tell
+ * the arm that wrote-but-could-not-commit from the arm that had nothing to
+ * write — and the subject naming what the wave was moving, which is the
+ * shipped tags where a wave shipped and the footprint tags where it shipped
+ * nothing. The wave's third no-commit exit — `tip-claimed` — never reaches
  * this composer: its caller returns on the warning naming the claim, which is
  * pinned beside the claim's own case.
  *
@@ -4334,9 +4337,15 @@ describe("Dispatcher fanout — relocated flumeDir: ship bookkeeping skips the c
  * rather than going green on the half that does not.
  */
 describe("Dispatcher fanout — the no-commit ledger exits in the operator's words", () => {
-  /** The one `[flume] shipped …` line a wave's merge stage rendered. */
-  function shippedLine(info: string[]): string {
-    const lines = info.filter((l) => l.startsWith("[flume] shipped "));
+  /**
+   * The one no-commit line a wave's merge stage rendered — located by the two
+   * subjects the composer can open with, so a case claiming either one reds on
+   * a stage that rendered the other rather than finding nothing to read.
+   */
+  function noCommitLine(info: string[]): string {
+    const lines = info.filter((l) =>
+      /^\[flume\] (?:shipped|footprints for) /.test(l),
+    );
     // Non-vacuity: the subject exists before its wording is judged, so a
     // stage that logged nothing at all cannot pass as a stage that logged
     // the right thing (`.claude/rules/engineering.md`, *A green verdict is
@@ -4389,7 +4398,7 @@ describe("Dispatcher fanout — the no-commit ledger exits in the operator's wor
         false,
       );
 
-      expect(shippedLine(info)).toBe(
+      expect(noCommitLine(info)).toBe(
         "[flume] shipped DOCK-LINE; pending updated on disk, " +
           "no chore commit (dock outside repo)",
       );
@@ -4439,8 +4448,203 @@ describe("Dispatcher fanout — the no-commit ledger exits in the operator's wor
     expect(outcome.result?.commitSha).toBeUndefined();
     expect(readPendingFromDisk(fx.repo)).toEqual([]);
 
-    expect(shippedLine(info)).toBe(
+    expect(noCommitLine(info)).toBe(
       "[flume] shipped NOTHING-LINE; pending already up to date, no commit",
+    );
+  });
+
+  it("a footprint-only wave whose ledger rewrite wrote no commit names its footprints in the operator's line", async () => {
+    // The subject half of the same `dock-outside-repo` line the first case
+    // reads, driven from the one wave shape that has no shipped tag to name:
+    // the entry-fence overreach reverts the whole in-worktree commit, so the
+    // footprint is all the rewrite has to carry, and the relocated dock is
+    // what strands that write with no commit behind it.
+    const dock = await mkTempDir("flume-dock-footprint-line-");
+    try {
+      const pendingDir = join(dock, "plan", "pending");
+      await mkdir(pendingDir, { recursive: true });
+      await writeFile(
+        join(pendingDir, entryFileName("FOOT-DOCK-LINE")),
+        JSON.stringify(makeEntry("FOOT-DOCK-LINE", ["src/a.ts"]), null, 2) +
+          "\n",
+        "utf8",
+      );
+      new Baton(dock).wake("build");
+
+      const phase = makePhase({
+        name: "build",
+        concurrency: "fanout",
+        writablePaths: ["src/**"],
+        scopeWritesToEntry: true,
+      });
+      const chain: Chain = { phases: [phase], humanOnly: [] };
+      const info: string[] = [];
+
+      const dispatcher = new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        flumeDir: dock,
+        agent: fanoutAgent({
+          "foot-dock-line": async (cwd) => {
+            await writeFile(join(cwd, "src", "a.ts"), "a\n");
+            await writeFile(join(cwd, "src", "stray.ts"), "stray\n");
+            await exec("git", ["add", "."], { cwd });
+            await exec(
+              "git",
+              ["commit", "-q", "-m", "build(FOOT-DOCK-LINE): overreach"],
+              { cwd },
+            );
+          },
+        }),
+        log: { info: (l) => info.push(l), warn: () => {}, error: () => {} },
+      });
+
+      const outcome = await dispatcher.tick();
+
+      // The wave this line is the words for: nothing shipped, the entry is
+      // still queued, and the footprint the rewrite recorded is on the
+      // relocated queue with no commit carrying it.
+      expect(outcome.result?.shippedTags).toEqual([]);
+      expect(outcome.result?.commitSha).toBeUndefined();
+      const parsed = parsePendingQueue(readQueueOnDisk(dock, pendingDir) ?? []);
+      expect(parsed.ok).toBe(true);
+      if (parsed.ok) {
+        expect(parsed.entries.map((e) => e.tag)).toEqual(["FOOT-DOCK-LINE"]);
+        expect(parsed.entries[0]!.observedFiles).toEqual(
+          expect.arrayContaining(["src/a.ts", "src/stray.ts"]),
+        );
+      }
+
+      expect(noCommitLine(info)).toBe(
+        "[flume] footprints for FOOT-DOCK-LINE; pending updated on disk, " +
+          "no chore commit (dock outside repo)",
+      );
+    } finally {
+      await rm(dock, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * The two lines the merge stage renders for the ledger rewrite's one
+ * *committing* exit, each read off a real `commitPendingUpdate` call over a
+ * real repository (`.claude/rules/engineering.md`, *A seam gate reads what the
+ * real writer wrote*). One exit, two arms: which arm runs is decided by
+ * whether the wave shipped anything, and both quote the same sha in the same
+ * position, so the sha proves nothing about which arm ran — only the line read
+ * end to end does. The no-commit exits' own lines are pinned above.
+ */
+describe("Dispatcher fanout — the committing ledger exit in the operator's words", () => {
+  /** The one `[flume] … commit <sha>: …` line a wave's merge stage rendered. */
+  function committingLine(info: string[]): string {
+    const lines = info.filter((l) =>
+      /^\[flume\] (?:ship|footprint) commit /.test(l),
+    );
+    // Non-vacuity: the subject exists before its wording is judged, so a
+    // stage that logged nothing at all cannot pass as a stage that logged
+    // the right thing (`.claude/rules/engineering.md`, *A green verdict is
+    // proven non-vacuous*).
+    expect(lines).toHaveLength(1);
+    return lines[0]!;
+  }
+
+  it("a ledger rewrite that commits a wave's shipped entries reports that commit to the operator as a ship commit", async () => {
+    await writePending(fx.repo, [
+      makeEntry("SHIP-COMMIT-LINE", ["src/ship-commit-line.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({ name: "build", concurrency: "fanout" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const info: string[] = [];
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "ship-commit-line": (cwd) =>
+          writeAndCommit(
+            cwd,
+            "src/ship-commit-line.ts",
+            "ship\n",
+            "build(SHIP-COMMIT-LINE): ship",
+          ),
+      }),
+      log: { info: (l) => info.push(l), warn: () => {}, error: () => {} },
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // The wave this line is the words for: the entry shipped and the rewrite
+    // committed the queue that drops it, so the sha the line quotes is the
+    // one the handoff carries and the one on trunk.
+    expect(outcome.result?.shippedTags).toEqual(["SHIP-COMMIT-LINE"]);
+    expect(readPendingFromDisk(fx.repo)).toEqual([]);
+    const sha = outcome.result?.commitSha;
+    expect(sha).toMatch(/^[0-9a-f]{40}$/);
+    expect(outcome.result?.ledgerCommitShas).toEqual([sha]);
+    expect(await head(fx.repo)).toBe(sha);
+
+    expect(committingLine(info)).toBe(
+      `[flume] ship commit ${sha!.slice(0, 8)}: SHIP-COMMIT-LINE`,
+    );
+  });
+
+  it("a ledger rewrite that commits a footprint-only wave reports that commit to the operator as a footprint commit", async () => {
+    // The entry-fence overreach reverts the whole in-worktree commit, so the
+    // wave ships nothing and the footprint is the only thing the rewrite has
+    // to commit — the other arm of the same `committed` exit.
+    await writePending(fx.repo, [makeEntry("FOOT-COMMIT-LINE", ["src/a.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      scopeWritesToEntry: true,
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const info: string[] = [];
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "foot-commit-line": async (cwd) => {
+          await writeFile(join(cwd, "src", "a.ts"), "a\n");
+          await writeFile(join(cwd, "src", "stray.ts"), "stray\n");
+          await exec("git", ["add", "."], { cwd });
+          await exec(
+            "git",
+            ["commit", "-q", "-m", "build(FOOT-COMMIT-LINE): overreach"],
+            { cwd },
+          );
+        },
+      }),
+      log: { info: (l) => info.push(l), warn: () => {}, error: () => {} },
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // The wave this line is the words for: nothing shipped, the entry stays
+    // queued carrying the footprint, and trunk advanced by exactly the chore
+    // commit the line quotes.
+    expect(outcome.result?.shippedTags).toEqual([]);
+    const onDisk = readPendingFromDisk(fx.repo);
+    expect(onDisk.map((e) => e.tag)).toEqual(["FOOT-COMMIT-LINE"]);
+    expect(onDisk[0]!.observedFiles).toEqual(
+      expect.arrayContaining(["src/a.ts", "src/stray.ts"]),
+    );
+    const sha = outcome.result?.commitSha;
+    expect(sha).toMatch(/^[0-9a-f]{40}$/);
+    expect(outcome.result?.ledgerCommitShas).toEqual([sha]);
+    expect(await head(fx.repo)).toBe(sha);
+
+    expect(committingLine(info)).toBe(
+      `[flume] footprint commit ${sha!.slice(0, 8)}: FOOT-COMMIT-LINE`,
     );
   });
 });
