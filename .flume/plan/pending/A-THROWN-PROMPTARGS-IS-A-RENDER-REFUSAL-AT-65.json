@@ -1,0 +1,22 @@
+{
+  "tag": "A-THROWN-PROMPTARGS-IS-A-RENDER-REFUSAL-AT-65",
+  "gate": { "kind": "open" },
+  "priority": 10,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "tests/cliRender.test.ts",
+        "description": "the third member's case, beside the span and placeholder arms it shares an exit code with; the fixture's chain source gains a throwing `promptArgs`"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "The render verb's third render-refused member — a promptArgs hook that threw — exits 65 with no test naming it, while the span and placeholder arms are each pinned",
+  "per": { "path": "spec/cli.md", "section": "Subcommand surface" },
+  "acceptance": "the `render` verb's `EX_DATAERR` arm is pinned for a `promptArgs` hook that threw, driven through the real verb as the span and placeholder cases are — no source change, typecheck and suite green",
+  "pins": [
+    "flume render exits EX_DATAERR naming a promptArgs hook that threw"
+  ],
+  "notes": "Armed by 6bc7edfc, which made the render bullet name the whole `render-refused` class. Verified this tick: `src/cliRender.ts:61` folds `RenderUnresolvedError` (`src/Dispatcher.ts:1385`, the promptArgs throw) into `EX_DATAERR`, and `tests/cliRender.test.ts` pins only the span (:305) and placeholder (:330) arms. The property holds — a pin, never a test. Sibling of THE-RENDER-REFUSED-CLASS-IS-ENUMERATED-WHOLE, cut from the same bullet; that half is docs-side and shares no file."
+}
