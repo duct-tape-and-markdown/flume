@@ -23,7 +23,7 @@ import { bound, headTailBound, tailBound } from "./bounds.js";
 import { entryDeclaredKey } from "./entryKey.js";
 import type { Logger } from "./log.js";
 import {
-  existsLoud,
+  existsLoudUnder,
   isDirectoryOrAbsent,
   isDirectoryOrAbsentUnder,
 } from "./fsProbe.js";
@@ -91,11 +91,13 @@ const KEYSPACES: Record<PriorAttemptKeyspace, true> = {
 };
 
 /**
- * The subject {@link PriorAttemptStore.readAll}'s descent names when it
- * refuses — one spelling for every rung, whichever probe walks it
+ * The subject this store's descents name when they refuse — one spelling for
+ * every rung, whichever probe walks it and whichever reader runs it
  * (`isDirectoryOrAbsentUnder` down to `prior-attempts/`,
- * `isDirectoryOrAbsent` across the keyspace fan; `src/fsProbe.ts`), so the
- * state root and a keyspace dir refuse alike.
+ * `isDirectoryOrAbsent` across the keyspace fan, `existsLoudUnder` down to
+ * one record; `src/fsProbe.ts`), so the state root and a keyspace dir refuse
+ * alike whether {@link PriorAttemptStore.read} or
+ * {@link PriorAttemptStore.readAll} walked into them.
  */
 const STORE_SUBJECT = "prior-attempt store";
 
@@ -372,13 +374,20 @@ export class PriorAttemptStore {
    */
   async read(ref: PriorAttemptRef): Promise<PriorAttempt | undefined> {
     const p = priorAttemptPath(this.flumeDir, ref);
-    // Absent is the only silent reading: `existsLoud` (src/fsProbe.ts) throws
-    // on a record that is present but unstattable. "No prior attempt" is the
+    // Absent is the only silent reading, and it is *proven from the state
+    // root* this store was constructed with: `existsLoudUnder`
+    // (`src/fsProbe.ts`) asserts `prior-attempts/` and the keyspace dir are
+    // directories before it stats the record — the same rungs `readAll`
+    // descends, so the fan read and the single read prove one absence. A bare
+    // stat cannot: an obstructed ancestor answers the leaf's own stat `ENOENT`
+    // on win32 (`.claude/rules/platform-facts.md`, *win32 reports a path
+    // through a non-directory as not found*), and the probe throws on a record
+    // that is present but unstattable either way. "No prior attempt" is the
     // signal spec/loop.md "Repeated identical failures — quarantine, then
     // abort" counts on, so a record the probe cannot reach must refuse rather
     // than reset that count — the degradations below are for a record that
     // was *read* and found garbled, never for one that was never reached.
-    if (!existsLoud(toNamespacedPath(p))) return undefined;
+    if (!existsLoudUnder(STORE_SUBJECT, this.flumeDir, p)) return undefined;
     const raw = await this.readRecord(p);
     try {
       const rec = JSON.parse(raw) as {

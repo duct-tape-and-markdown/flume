@@ -434,6 +434,42 @@ describe("priorAttempts — an unreachable record is not an absent one", () => {
     await expect(store.read(ref)).rejects.toThrow(/ELOOP/);
   });
 
+  /**
+   * The obstruction is an *ancestor* of the record path, which a single stat
+   * cannot tell from an absent leaf: win32 answers that lookup `ENOENT`
+   * (`.claude/rules/platform-facts.md`, *win32 reports a path through a
+   * non-directory as not found*), so a bare probe reads an obstructed store
+   * as "no prior attempt" there and resets the repeated-failure count
+   * spec/loop.md "Repeated identical failures — quarantine, then abort"
+   * keeps. Only the descent `readAll` already runs answers alike on both
+   * hosts, and only it names the rung an operator has to go fix — which is
+   * what is asserted here, never the errno one host happens to raise.
+   */
+  it("the prior-attempt read refuses an obstructed state root, naming the path that is not a directory", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+    const ref: PriorAttemptRef = { key: "build", keyspace: "phase" };
+    // Structural, not a permission bit: a root-run test would bypass that,
+    // and a bit denies nothing on the other host anyway
+    // (`.claude/rules/platform-facts.md`, *`chmod` denies nothing on win32*).
+    await writeFile(flumeDir, "not a directory");
+
+    // Vacuity pins (`.claude/rules/engineering.md`, "A green verdict is
+    // proven non-vacuous"): the state root the store was constructed with
+    // really is occupied by something that is not a directory, and nothing
+    // stands at the record path — so "no prior attempt" is exactly the
+    // reading the descent has to refuse rather than give.
+    expect((await lstat(flumeDir)).isDirectory()).toBe(false);
+    expect(existsSync(priorAttemptPath(flumeDir, ref))).toBe(false);
+
+    const message = await refusalOf(store.read(ref));
+    // The store's own refusal, naming the obstructed rung — not the record
+    // path an errno happens to name, which sits under `flumeDir` and so would
+    // satisfy a bare containment check on the root's own text.
+    expect(message).toContain("prior-attempt store is unreadable");
+    expect(message).toContain(`${flumeDir} is present but is not a directory`);
+  });
+
   it("PriorAttemptStore.read still reports no prior attempt for a record it read and could not decode", async () => {
     const flumeDir = join(fx.repo, ".flume");
     const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
