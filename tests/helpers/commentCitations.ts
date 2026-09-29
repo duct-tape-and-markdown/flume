@@ -711,6 +711,50 @@ export const commentProse = (sf: ts.SourceFile): readonly ProseLine[] =>
     }));
 
 /**
+ * The comment-stripped counterpart of `commentProse`: every line of a text
+ * that carries code, verbatim but for the comment spans blanked out of it, in
+ * line order. A line left holding only whitespace — a whole-line comment, a
+ * block comment's own lines, a blank — is not a code line and is dropped.
+ *
+ * Off the same trivia (`commentRanges`) the prose read above groups, and for
+ * the same reason read from there rather than matched out of the text: a `/*`
+ * inside a string literal opens no comment, so a `"src/**"` glob deletes no
+ * code line, and a comment carrying a `/` is not closed early by it. The two
+ * readings are one mechanism seen from its two sides — what a comment says,
+ * and what the program says once the comments are off
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ *
+ * Blanked rather than excised, and the text kept untrimmed, because a caller
+ * anchors on the line: an `import` at column zero is the module's, while the
+ * one a template literal indents is prompt text. A caller comparing code
+ * across two files trims for itself.
+ *
+ * Takes the text and parses it here, because the callers hold a snippet a
+ * fenced block quoted rather than a module on disk, and the verdict is
+ * syntactic — the filename reaches no resolution (contrast `parseScopeless`,
+ * `tests/helpers/repoProgram.ts`, which has a path to answer with).
+ */
+export const codeLines = (text: string): readonly ProseLine[] => {
+  const sf = ts.createSourceFile(
+    "snippet.ts",
+    text,
+    ts.ScriptTarget.ESNext,
+    true,
+  );
+  const chars = text.split("");
+  for (const range of commentRanges(sf)) {
+    for (let at = range.pos; at < range.end; at += 1) {
+      if (chars[at] !== "\n" && chars[at] !== "\r") chars[at] = " ";
+    }
+  }
+  return chars
+    .join("")
+    .split(/\r?\n/)
+    .map((line, offset) => ({ line: offset + 1, text: line }))
+    .filter((entry) => entry.text.trim().length > 0);
+};
+
+/**
  * The comment furniture a line opens with — a block comment's `/**` opening or
  * `*` margin, the `//` of a line comment. Markdown never renders any of it, so
  * neither a span a wrap carried across the break nor the rendered run below

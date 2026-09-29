@@ -50,6 +50,7 @@ import {
   type FlumeApi,
   type FlumePaths,
 } from "../src/flumeApi.ts";
+import { codeLines } from "./helpers/commentCitations.ts";
 import { makeFixture, silent, type Fixture } from "./helpers/dispatcherFixture.ts";
 import { bulletOf, restatementsOf, walkOf } from "./helpers/docSections.ts";
 import { docWalk, type DocWalkRequest } from "./helpers/docWalk.ts";
@@ -872,11 +873,18 @@ describe("example chains — the engine arrives on the api, never through a valu
   /** `"flume"` and every relative spelling of the in-repo public entry. */
   const ENGINE = /^(?:flume|(?:\.\.?\/)+src\/index\.ts)$/;
 
-  /** Every `import <clause> from "<spec>"`, comments stripped first. */
+  /**
+   * Every `import <clause> from "<spec>"` the module states, off the code the
+   * parser's own trivia leaves (`codeLines`,
+   * `tests/helpers/commentCitations.ts`). A text-matched strip read the `/*`
+   * inside a `"src/**"` fence glob as a comment opening and dropped every line
+   * from there to the next terminator — and the case below is an absence
+   * verdict, so a value import those lines hid would have read green.
+   */
   function importsOf(src: string): Array<{ clause: string; spec: string }> {
-    const code = src
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/^[ \t]*\/\/.*$/gm, "");
+    const code = codeLines(src)
+      .map((entry) => entry.text)
+      .join("\n");
     return [...code.matchAll(/^import\s+([\s\S]*?)\bfrom\s+"([^"]+)";/gm)].map(
       (m) => ({ clause: m[1]!.trim(), spec: m[2]! }),
     );
@@ -910,6 +918,33 @@ describe("example chains — the engine arrives on the api, never through a valu
     }
 
     expect(valueImports).toEqual([]);
+  });
+
+  // The strip's own case, on a chain shaped like the ones above: a fence glob
+  // spelling `/*`, a value import below it, and a doc comment whose terminator
+  // a text-matched strip closed its phantom block at — swallowing the import
+  // the case above exists to catch.
+  it("the example-chain import scan reads a value import placed below a writable-path glob", () => {
+    const chain = [
+      'import type { Chain } from "flume";',
+      "",
+      "const build = {",
+      '  writablePaths: ["src/**"],',
+      "};",
+      "",
+      'import { Baton } from "flume";',
+      "",
+      "/** The terminator the phantom block closed at. */",
+      "export default build;",
+      "",
+    ].join("\n");
+
+    const engine = importsOf(chain).filter((i) => ENGINE.test(i.spec));
+    expect(engine.map((i) => i.clause)).toEqual([
+      "type { Chain }",
+      "{ Baton }",
+    ]);
+    expect(engine.filter((i) => !i.clause.startsWith("type"))).toHaveLength(1);
   });
 });
 
@@ -2007,10 +2042,17 @@ describe("cascade-chain.ts — build's prompt quotes the declaration it is judge
  * real declaration rather than kept in step by discipline.
  *
  * Normalized away on both sides: indentation (the quote sits at column 0, the
- * source inside a factory) and whole-line comments, which diverge
- * deliberately — the doc annotates for a reader who has no surrounding file.
- * Everything else must match. A trailing `//` comment added to one side alone
- * reds this pin rather than being carved out: it fails toward loud.
+ * source inside a factory) and comments of every kind, which diverge
+ * deliberately — the doc annotates for a reader who has no surrounding file,
+ * and the quote's own annotations are already rewritten for one. Everything
+ * else must match.
+ *
+ * The strip reads the parser's trivia (`codeLines`,
+ * `tests/helpers/commentCitations.ts`), so a trailing comment comes off with
+ * the rest of them. The earlier split — a trailing comment compared, a
+ * whole-line one ignored — was the line anchor of a text-matched regex rather
+ * than a carve-out anyone chose, and that regex read the `/*` of a
+ * `"src/**"` glob as a comment opening and deleted the declaration's middle.
  */
 describe("docs/CHAIN-AUTHORING.md — the walkthrough quotes the chain it names", () => {
   /**
@@ -2032,14 +2074,14 @@ describe("docs/CHAIN-AUTHORING.md — the walkthrough quotes the chain it names"
     return lines.slice(start, end + 1);
   };
 
-  /** Indentation and comments away; the code lines that remain, in order. */
+  /**
+   * Indentation and comments away; the code lines that remain, in order. The
+   * comments come off the parser's trivia (`codeLines`,
+   * `tests/helpers/commentCitations.ts`), so the `/*` a `"src/**"` glob spells
+   * opens no comment and deletes none of the declaration below it.
+   */
   const normalize = (lines: string[]): string[] =>
-    lines
-      .join("\n")
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .split("\n")
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0 && !l.startsWith("//"));
+    codeLines(lines.join("\n")).map((entry) => entry.text.trim());
 
   it("the CHAIN-AUTHORING slicePhase quote matches examples/cascade-chain.ts modulo indentation and comments", () => {
     const doc = readFileSync(
@@ -2076,6 +2118,35 @@ describe("docs/CHAIN-AUTHORING.md — the walkthrough quotes the chain it names"
     expect(fromSource).toContain("`${stateRoot}/plan/pending/*.json`,");
 
     expect(fromDoc).toEqual(fromSource);
+  });
+
+  // The normalization's own case: a code line sitting between the `/*` a
+  // `"src/**"` glob spells and the next block-comment terminator. A
+  // text-matched strip deleted every line between the two, so the comparison
+  // above agreed over a declaration with its middle missing.
+  it("the slicePhase quote comparison reads a code line between a glob and a block-comment terminator", () => {
+    const block = [
+      "const slicePhase = (slice: PlanSlice): Phase => ({",
+      "  name: slice.name,",
+      '  writablePaths: ["src/**"],',
+      "  gates: [pendingGate({ targetFence: build })],",
+      "  /** The terminator the phantom block closed at. */",
+      "  promptArgs() {",
+      "    return { SLICE_JOB: slice.job };",
+      "  },",
+      "});",
+    ];
+
+    expect(normalize(block)).toEqual([
+      "const slicePhase = (slice: PlanSlice): Phase => ({",
+      "name: slice.name,",
+      'writablePaths: ["src/**"],',
+      "gates: [pendingGate({ targetFence: build })],",
+      "promptArgs() {",
+      "return { SLICE_JOB: slice.job };",
+      "},",
+      "});",
+    ]);
   });
 });
 
