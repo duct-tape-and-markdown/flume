@@ -274,15 +274,17 @@ findings that exist nowhere else — a plan tick's `state.md` / `open-questions.
 with the schema-failing entry that tripped the gate. **Recovery must never require
 reading session logs.**
 
-Before the drop, every non-deleted file the reverted commit touched is snapshotted verbatim —
+Before the drop, every file the reverted span touched that its head still holds is
+snapshotted verbatim — a path the span deleted, or created and deleted again, has no
+post-image to keep —
 post-image content, under a mirror of its repo path — into
 `<flumeDir>/prior-attempts/<key>.reverted/`.
 
 - It is a sibling of the prior-attempt JSON, under the state root and gitignored, **not** in
   the worktree — so it outlives both the reset and worktree teardown.
-- Recovery is "open the file". The prior-attempt digest is `git show --stat`: filenames and
+- Recovery is "open the file". The prior-attempt digest is a stat digest: filenames and
   counts, never content, so it cannot recover findings. That is why this is a distinct artifact.
-- **Generic by construction.** It snapshots whatever the commit changed, so the engine needs no
+- **Generic by construction.** It snapshots whatever the span changed, so the engine needs no
   chain-specific notion of which artifact is "prose" and which is "machine-checkable".
 - Best-effort: a snapshot failure never blocks or fails the revert.
 - A later clean commit under the same key clears both the JSON and the snapshot, so a shipped

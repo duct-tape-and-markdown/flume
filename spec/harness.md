@@ -141,6 +141,9 @@ a commit that edits or removes an entry a build tick holds
 collision is not in. There is no duplicate gate: two producers filing one
 finding is a shape every legitimate decomposition shares, so the drain folds
 a duplicate rather than a gate refusing it (*The phases*).
+And the **filing band** gate: every entry a package producer adds carries the
+priority its slice's band states (*The phases*), refused otherwise, because a
+rank is a fact about provenance and one a producer chose would be a lever.
 The record byte cap is not the gate's: a note over the cap ships with its entry,
 and the drain that reads it says so in the plan commit body — a shape rule on
 a prose channel refuses the prose, never the code it rode in with.

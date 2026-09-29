@@ -515,7 +515,10 @@ engine cannot force a chain's reads, only its own.
 
 `Dispatcher.readPending` throws `PendingParseFailure`, naming the file, on a parse error rather
 than degrading to `[]`. It backs every read the dispatcher **acts** on: the singleton and fanout decide-reads and
-the wave-end rewrite read — each resolved from the tip (above). A decision or a rewrite must
+the wave-end rewrite read — each resolved from the tip (above). A wave takes the fanout
+decide-read again each time a freed slot refills, and a refusal there lands with the
+wave's earlier spans already on trunk: the wave stops pulling, and its verdict still names
+every span it landed. A decision or a rewrite must
 never derive from an input that failed to resolve.
 
 The one phase the strict read must not stop is the one that rewrites the queue. A phase

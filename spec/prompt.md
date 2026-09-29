@@ -47,18 +47,15 @@ Both structural blocks are **dispatcher-owned and structural** — there is no `
 for either in the prompt file, and no `promptArgs` key names, positions, or suppresses
 one. A chain cannot opt out; a prompt file that never mentions them still gets them.
 
-A placeholder with no matching arg is left verbatim in the text and then
-`substitutePlaceholders` throws, naming every missing key. The prompt is never sent with
-an unsubstituted *placeholder*.
+A placeholder with no matching arg refuses the render, naming every missing key, and
+the prompt is never sent with an unsubstituted *placeholder*. The refusal is
+`render-refused`, classified exactly as an unresolved span is: the entry's slot ends with
+a persisted prior-attempt record and its siblings carry on — a render that does not
+resolve is one outcome whatever refused it, and it never tears down the tick. A template
+no arg can fill fails identically for every entry, which the repeated-failure backstop
+answers (`spec/loop.md`, *Repeated identical failures — quarantine, then abort*).
 
-> **Gap:** the placeholder failure and the inline-exec failure are not classified alike.
-> An unresolved span becomes a `render-refused` no-commit outcome with a persisted
-> prior-attempt record; a missing arg throws a plain `Error` that the dispatcher
-> rethrows (`Dispatcher` catches only `InlineExecRenderError`), so it escapes the
-> tick uncaught and leaves no record for the retry. The corpus never states the intended
-> placeholder-failure semantics.
->
-> The same asymmetry runs the other way, outside the grammar: a `{{token}}` that is not
+> **Gap:** outside the grammar, a `{{token}}` that is not
 > all-caps (`{{lower}}`, `{{Mixed}}`, `{{1ST}}`) is never a placeholder at all — never
 > matched, never counted missing, shipped to the agent verbatim with no error — and a
 > `promptArgs` key outside `[A-Z][A-Z0-9_]*` silently has no effect on the prompt.

@@ -22,7 +22,8 @@ chain declarations the CLI reads in `spec/chain.md`.
 - `tick [--phase <name>]` — one phase × one tick: the first awake phase in
   declared order, or the named one (`spec/loop.md`, *Baton — presence wakes,
   absence hibernates*).
-- `loop [--max N]` — ticks until hibernation or the cap (default 50), under a
+- `loop [--max N]` — ticks until hibernation or the cap (the declared default
+  `--help` prints), under a
   supervisor that spawns one fresh `flume tick` process per phase it starts,
   each told its phase, up to `supervisorPolicy.maxTicks` at once.
 - `wake <phase>` / `sleep <phase>` — add / remove `<flumeDir>/awake/<phase>`.
@@ -35,7 +36,8 @@ chain declarations the CLI reads in `spec/chain.md`.
   no `unstop`/`resume` verb — removing the flag is the operator's acknowledgement,
   and an engine verb that removes it would let a script ack a stop no human saw.
 - `log [-n N] [--json]` — observational; prints the last N tick verdicts
-  (default 10) from `tick-verdicts.jsonl` via `readTickVerdicts`, oldest
+  (the declared default `--help` prints) from `tick-verdicts.jsonl` via
+  `readTickVerdicts`, oldest
   first. The human form is fixed-format lines carrying only fields the
   verdict record already holds (phase, committed, gate results, shipped
   tags, merge outcomes); `--json` emits the records verbatim as JSONL, one
@@ -146,8 +148,10 @@ In printed order:
    and one line per pending entry blocked on a `requiresCapability` the chain
    has not asserted.
 7. **The live run's spend so far** — when a supervisor is live, agent usage
-   totalled by phase from the verdict rows written since the instant the lock
-   states it started; absent a
+   totalled by phase from the usage rows written since the instant the lock
+   states it started — each agent's row lands when that agent returns, so a
+   tick still running is counted up to its last returned agent, and the line
+   names how many agents are still in flight; absent a
    live supervisor, nothing extra. The number that decides whether a loop
    keeps running is read where the operator looks first.
 
@@ -170,8 +174,9 @@ never reads it; the declaration and its validation are in `spec/chain.md`.
 
 ## A log line carries the instant it was written
 
-Every line the CLI's supervisor and its tick children write to the operator
-opens with the instant it was written, as an ISO-8601 UTC timestamp — the
+Every narration line the CLI writes to the operator — the supervisor's, its
+tick children's, and any verb's refusal — opens with the instant it was
+written, as an ISO-8601 UTC timestamp — the
 spelling the tick verdict, the claim file, and record filenames already use,
 so a log lines up against every other artifact of the run. The stamp is the
 CLI's, not the engine's: `consoleLogger` writes the line unstamped, and an

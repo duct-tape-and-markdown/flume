@@ -488,3 +488,34 @@ directly, and take the top-level-await arm when a verb must be driven. A
 different claim from *tsx decides a module's interop shape from the nearest
 `package.json` `type`*, which is the shape of a load that succeeds; this one
 expires when a registered loader starts honouring `type`.
+
+## git records a worktree's realpath, whatever spelling `add` reached it through
+
+`git worktree add <path>` resolves `<path>` and stores the realpath in
+`.git/worktrees/<name>/gitdir`: adding `/tmp/p/alias/wt` where `alias -> real`
+records `/tmp/p/real/wt/.git`. `git worktree list --porcelain` then prints only
+that realpath — for the main worktree too, and even when `list` itself runs
+through the other spelling — while `git worktree remove` accepts either. Git
+resolves on the way in, reports resolved paths on the way out, and its own write
+verbs forgive the second spelling, so the asymmetry reaches only a caller that
+compares a path it composed against one git printed. Measured, git 2.43 on
+linux. So a state root reached under a second name — a `FLUME_DIR` typed
+through a link, a linked checkout — composes worktree paths git never prints:
+decide membership by canonicalizing both sides, never by matching a composed
+key against the registry. The fact expires when git stops resolving at `add`.
+
+## A range diff compares two trees, so a path born and died inside the span is named by neither
+
+`git diff --name-only <base> <head>` compares the two end trees, not the
+commits between them: a path an earlier commit in the span created and a later
+one deleted is absent from both trees and never listed, and `--diff-filter=d`
+over a range can only drop a path the base already held — "deleted since the
+base", never "deleted by the span". `git log --pretty=format: --name-only
+<base>..<head>` does name it, because it unions each commit's own diff, but the
+path has no post-image at `<head>`, so the wider listing buys a caller reading
+content at `<head>` nothing. Over a single commit none of this arises. Measured,
+git 2.43 on linux, a two-commit span. So a snapshot or digest of a span covers
+the files its head still holds, and a fixture exercising the deleted-path arm
+commits the doomed path before the span, or the range never names it and the
+case is vacuous. The fact expires when `git diff` stops being a two-tree
+comparison.

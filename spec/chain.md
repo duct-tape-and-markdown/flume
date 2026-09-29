@@ -130,7 +130,9 @@ including a `chain.ts` change that rides a same-commit `src/` change.
   consumer's `.flume/chain.ts` is a `.ts` file regardless of where flume lives.
   The published `dist/cli.js` needs no node loader flag as a result.
 - `DispatcherOptions` accepts **no prebuilt `Chain`**; the dispatcher resolves
-  its own. `DispatcherOptions.chainLoader?: () => Promise<ChainModule>` replaces
+  its own. `DispatcherOptions.chainLoader?: () => Promise<LoadedChain>` — the
+  module beside the worktree base its load resolved, which stays off `ChainModule` because
+  that is a factory's return and a factory-filled base would be dropped — replaces
   the disk resolver wholesale and exists for **in-process test injection only**
   (unit tests that call `tick()` directly, no subprocess), defaulting to
   `diskChainLoader(configDir)`.

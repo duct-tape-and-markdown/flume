@@ -18,7 +18,9 @@ carries is the wake token the handoff bullet below describes. No daemon, no
 database, no in-memory carry. Disk is truth, including the baton. A relocated
 `flumeDir` carries the baton with it. The directory is created by the first
 `wake`; until then its absence is the empty baton, so reading the baton creates
-nothing.
+nothing. Absence is the only failure that reads as empty: a baton directory that
+is present and cannot be read — obstructed by a file, or denied — refuses at
+`EX_IOERR` (`74`) naming the path, the same code an unwritable flag refuses at.
 
 - **`wake`/`sleep` are idempotent.** Repeated calls and missing flags are tolerated,
   so concurrent ticks and partial crashes cannot corrupt baton state.
@@ -89,6 +91,12 @@ chain may mechanize this on existing surface — its build handoff writing the s
 flag after shipping an entry plan marked contract-touching — before any engine
 version-fence is considered; the condition that would justify the engine owning it
 is a second livelock despite the documented rule.
+
+One pair never splits across that skew: a tick renders its prompts from the
+templates it loaded with its chain, never from the tree a refilled slot was cut
+from, so the words an agent is handed and the code that filled them are always
+one version. A refill that outlasts a template change hands its entry the older
+prompt, exactly as it runs the older code.
 
 ## The engine records, never navigates
 
@@ -183,6 +191,10 @@ other.
     child (`FLUME_TIP_CLAIM_HELD=<pid>` in the child env) rather than the child
     probing pids and inferring parentage. A bare `flume tick` acquires and releases
     around its single tick, refusing (exit 1) when another live process holds it.
+    A `FLUME_TIP_CLAIM_HELD` that is present and names no decimal pid refuses the
+    same way, before any work, naming the variable, its value, and the remedy;
+    the supervisor sets it on every child it spawns, so only a bare tick reading
+    its operator's shell can see one.
     Claimless ticks left the startup sweep (`spec/worktrees.md`, *Startup sweep*)
     no way to know a live wave owns the worktree base, and left concurrent bare
     ticks to collide with only optimistic verify between them.
@@ -603,8 +615,9 @@ receives a **`PriorAttempt` record** — a mode-tagged union, exactly one varian
 dispatcher-owned `<prior-attempt>` block:
 
 - `gate-revert` — which gate phase reverted (`afterCommit` or `afterMerge`), the gate's
-  `name`, its one-line `message`, its full `details`, and a `git show --stat` digest of
-  the reverted commit. Fires for `afterMerge` as well as `afterCommit`: a merge-time
+  `name`, its one-line `message`, its full `details`, and a stat digest of the
+  reverted span — every commit the tick added, base to head. Fires for `afterMerge`
+  as well as `afterCommit`: a merge-time
   failure that dies with the dispatcher process is the anti-pattern this closes.
 - `clean-exit` — the tail of `AgentResult.finalMessage` (the adapter's field,
   `spec/chain.md`, *The agent seam*). The engine names no intent: a refused constraint,
@@ -658,7 +671,8 @@ each gate result in run order (what a gate returns, persisted verbatim under the
 gate's name — `spec/chain.md`, *What a gate returns*; `writablePathsGate`'s details
 list the violating paths,
 `spec/chain.md`, *What a gate returns*), shipped tags,
-each provisioned span's cherry-pick/merge fate with its footprint, **its base sha,
+each provisioned span's cherry-pick/merge fate (one kind of the exported
+`MergeOutcome`, whose roster is the type's own) with its footprint, **its base sha,
 and its head sha** — per entry under fanout, the phase's own single span under
 singleton — any provisioning failures, the tick's own one-line summary, and,
 beside the gate list the way `invocations[]` sits beside it, **one timing row
@@ -711,7 +725,10 @@ store until gc, and the verdict is the only place their sha outlives the branch.
   cache-read, each as its own field, because cost is unrecoverable without the cache
   split; and the cost the agent reports, `costUsd`, lifted at the same decode. Recorded when the agent emits them, absent per field when it does not; a chain
   wanting cost telemetry reads the verdict rather than re-parsing the agent's stream in a
-  decorator beside it.
+  decorator beside it. A row reaches disk when its agent returns, not when its tick
+  ends, so a tick that dies after paying for an agent keeps that agent's row — spend
+  already paid is state on disk, never a total held in memory until the tick
+  settles (*Crash equals stop*).
 
   Each row also carries **`promptPath`**: the state-root-relative file holding the prompt
   that invocation was handed, byte for byte — the renderer's output after every
