@@ -1,11 +1,12 @@
 {
   "tag": "THE-ENTRIES-A-SLICE-ADDS-CARRY-ITS-OWN-BAND",
   "gate": {
-    "kind": "blockedBy",
-    "tags": ["THE-SLICE-PROMPTS-NAME-THE-BAND-THEY-FILE-AT"]
+    "kind": "open"
   },
+  "dependsOnForks": [],
   "priority": 10,
   "files": {
+    "new": [],
     "edit": [
       {
         "path": "harness/gates.ts",
@@ -27,15 +28,20 @@
         "path": "tests/harnessChain.test.ts",
         "description": "the discipline gate roster every phase leads with"
       }
-    ]
+    ],
+    "retire": []
   },
   "summary": "A rank set by provenance is held by prompt prose alone, so an entry filed at the default is served behind every sweep finding and no drain may re-rank it without a ruling",
-  "per": { "path": "spec/harness.md", "section": "The phases" },
+  "per": {
+    "path": "spec/harness.md",
+    "section": "The phases"
+  },
   "acceptance": "a plan commit that added an entry file whose `priority` is outside the adding slice's declared band is refused naming the tag, the rank and the band; an entry the commit only amended is not read; and a commit that added none says so as a spelled skip",
   "tests": [
     "the band gate refuses a plan commit that added an entry outside the filing slice's band",
     "the band gate passes a plan commit that amended an entry it did not add",
     "the band gate skips a plan commit that added no entry"
   ],
+  "pins": [],
   "notes": "The rung above the prose its parent files (`.claude/rules/engineering.md`, *Narration is the ladder's bottom rung*); the gate reads entry JSON, never prompt text, so that section's harness-prose carve-out does not reach it. Added is decidable at the seam the `per` gate already uses: `readGatedQueue` (`harness/gates.ts:216`) for the bytes, `ctx.baseSha` for absent-means-added. The sweep's band is the engine default, so only derive and inbox can red."
 }
