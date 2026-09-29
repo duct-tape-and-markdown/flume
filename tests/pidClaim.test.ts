@@ -154,8 +154,8 @@ describe("liveLoopClaim / liveLoopPid — the loop lock's two-line statement", (
  * A guard file is a shared address, not the holder's private one. The stake
  * that took it is released twice by design in the callers that install a
  * signal handler beside a `finally` (`flume tick`'s bare tip claim and
- * `flume loop`'s, `src/cli.ts`), and between the two calls the path may have
- * been staked again by a later holder — the next tick, a sibling run. An
+ * `flume loop`'s, `src/cliLoop.ts`), and between the two calls the path may
+ * have been staked again by a later holder — the next tick, a sibling run. An
  * unlink on that second call deletes a live claim this process does not hold,
  * which is why the guard rides the stake rather than a `held` flag each
  * caller spells for itself (`.claude/rules/engineering.md`, *The fix lands at

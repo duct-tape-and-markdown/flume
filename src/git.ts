@@ -1216,10 +1216,10 @@ async function withWorktreeLock<T>(
  *
  * The whole claim, not the pid alone: the tip is the one resource two state
  * roots in one checkout contend for, so the root on its third line is what
- * `flume status`'s claim row names beside the holder (`src/cli.ts`, spec/cli.md,
- * *`flume status` owes exactly this*) — the same fact the refusal names off
- * the stake ({@link acquireTipClaim}). A caller after liveness alone takes
- * the pid and drops the rest.
+ * `flume status`'s claim row names beside the holder (`src/cliStatus.ts`,
+ * spec/cli.md, *`flume status` owes exactly this*) — the same fact the
+ * refusal names off the stake ({@link acquireTipClaim}). A caller after
+ * liveness alone takes the pid and drops the rest.
  */
 export async function liveTipClaim(
   claimPath: string,

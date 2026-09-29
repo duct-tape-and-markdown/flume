@@ -5,7 +5,7 @@
  * append that writes any of it to disk.
  *
  * spec/jobs.md "Runtime ignores" is the contract. Two adopters merge through
- * here — the engine's own state-root sweep at `loop` start (`src/cli.ts`) and
+ * here — the engine's own state-root sweep at `loop` start (`src/cliLoop.ts`) and
  * `flume-harness init` (`harness/init.ts`) over a repository's root file — so
  * the detection is spelled once (`.claude/rules/engineering.md`, *The fix
  * lands at the mechanism*).
@@ -125,7 +125,7 @@ export async function ensureRuntimeIgnores(
  * for the ignore line).
  *
  * Exported so the friction entry is spelled once for every state root the
- * runtime set is merged into — the `loop` start in `src/cli.ts` today. A
+ * runtime set is merged into — the `loop` start in `src/cliLoop.ts` today. A
  * second adopter re-spelling the normalization would be re-derived detection
  * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
  */

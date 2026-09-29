@@ -41,7 +41,7 @@ import type { Chain } from "./Phase.js";
  * phrase `isDirectoryOrAbsentUnder` (`src/fsProbe.ts`) names an obstructed
  * ancestor with. Every read of the channel comes through
  * {@link frictionNotes} below — the primary dir, a worktree mirror, the
- * count, and both arms of the `friction` verb (`src/cli.ts`) — so one
+ * count, and both arms of the `friction` verb (`src/cliFriction.ts`) — so one
  * spelling here tells every operator the same thing about the same rung, and
  * the constant needs no home outside this module.
  */
@@ -72,10 +72,10 @@ export function validateFrictionDeclaration(chain: Chain): void {
  * What the friction channel at `dir` holds: its direct-child files,
  * dot-prefixed names skipped, as plain names sorted by name. This is the
  * engine's **one** answer to that question — the `friction` verb
- * (`src/cli.ts`), bare and named alike, {@link countFrictionFiles} below,
- * {@link harvestFriction}'s mirror read, and the harness package's
- * `frictionFiles` (`harness/friction.ts`) all read it rather than walking the
- * dir again (`.claude/rules/engineering.md`, "A fact the engine holds is
+ * (`src/cliFriction.ts`), bare and named alike, {@link countFrictionFiles}
+ * below, {@link harvestFriction}'s mirror read, and the harness package's
+ * `frictionFiles` (`harness/friction.ts`) all read it rather than walking
+ * the dir again (`.claude/rules/engineering.md`, "A fact the engine holds is
  * reported, never rediscovered"). A second walk is a surface that can
  * disagree with the `friction: N` line about what is waiting, and a second
  * *predicate* — a note test spelled beside this filter rather than taken from

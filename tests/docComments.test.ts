@@ -231,7 +231,7 @@ it("the loop verb and the top-level help page restate no DEFAULT_TICK_BUDGET lit
   const cap = String(DEFAULT_TICK_BUDGET);
 
   const verbDefault = soleLineMatching(
-    srcText("cli.ts"),
+    srcText("cliLoop.ts"),
     /let max =/,
     "the `loop` verb's `--max` default",
   );

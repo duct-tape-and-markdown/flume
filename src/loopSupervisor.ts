@@ -198,7 +198,7 @@ interface SuperviseLoopOptions {
    * the run: the in-flight tick child is signalled, awaited with no bound of
    * this level's, and only then does `superviseLoop` resolve — so a caller
    * that releases a resource the run held (the loop lock and the tip claim,
-   * `src/cli.ts`) releases it with no process of this run's still writing
+   * `src/cliLoop.ts`) releases it with no process of this run's still writing
    * under it. No further child is spawned once it has aborted.
    *
    * A caller that declines one gets a signal that never aborts: the run is
@@ -1025,7 +1025,7 @@ export async function superviseLoop(
  * join round-trips by construction.
  * `FLUME_TIP_CLAIM_HELD` (spec/loop.md "The loop lock and the tip claim")
  * carries this supervisor process's own pid — the one that acquired the tip
- * claim in `src/cli.ts`'s `loop` command — so the child tick trusts the
+ * claim in the `loop` verb (`src/cliLoop.ts`) — so the child tick trusts the
  * claim already held instead of acquiring (and colliding on) its own.
  *
  * `stopSignal` is the run's teardown reaching this child: on abort the child's

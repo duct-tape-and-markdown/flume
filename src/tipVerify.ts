@@ -48,7 +48,7 @@ export async function liveForeignClaimPid(
   // No claim is a **proven** absence before it reads as an unclaimed ref:
   // `existsLoudUnder` (`src/fsProbe.ts`) descends from the common dir git
   // just resolved, which is the descent `flume status` already takes over
-  // this same path (`src/cli.ts`) rather than a second one spelled here
+  // this same path (`src/cliStatus.ts`) rather than a second one spelled here
   // (`.claude/rules/engineering.md`, *The fix lands at the mechanism*). The
   // claim nests four segments under that root, and a plain file at any of
   // them answers the leaf's own stat `ENOENT` on win32

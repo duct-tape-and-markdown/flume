@@ -5105,7 +5105,7 @@ describe("Dispatcher fanout — stale-slug N≥2 wave: serialized worktree creat
  * queue entirely leaked its worktree and branch indefinitely. `flume loop`
  * closes that gap by calling
  * `Dispatcher.sweepStaleWorktrees()` once, after the tip claim, before the
- * first tick (`src/cli.ts`). These tests call the method directly — the
+ * first tick (`src/cliLoop.ts`). These tests call the method directly — the
  * CLI wiring is a one-line call site, and this is where the removal
  * mechanics actually live.
  */
@@ -6920,7 +6920,8 @@ describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entr
 // never resumed": the merge stage stakes `<flumeDir>/merging/<slug>.json`
 // before it picks an entry's span onto trunk and retires it once the queue
 // rewrite lands, so a death anywhere in between leaves the fact on disk for
-// the next start to refuse over (`src/cli.ts`; pinned in tests/cli.test.ts).
+// the next start to refuse over (`src/cliLoop.ts`; pinned in
+// tests/cli.test.ts).
 /**
  * SIBLING-TICKS-TAKE-TURNS-AT-GIT — the two guards a tick takes around a git
  * mutation, seen from the tick that takes them (spec/loop.md, "The ship lock

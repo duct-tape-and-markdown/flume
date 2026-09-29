@@ -143,9 +143,9 @@ export function parsePidClaim(raw: string): PidClaim | null {
  *
  * One spelling, because both readers of that third line state the same fact
  * about it: the tip claim's refusal (`TipClaimHeldError`, `src/git.ts`) and
- * `flume status`'s claim row (`src/cli.ts`). Takes the field rather than the
- * whole claim, so a reader holding only the root it decoded — the refusal,
- * which carries the holder's root as its own field — reaches it too.
+ * `flume status`'s claim row (`src/cliStatus.ts`). Takes the field rather
+ * than the whole claim, so a reader holding only the root it decoded — the
+ * refusal, which carries the holder's root as its own field — reaches it too.
  */
 export function statedStateRoot(stateRoot: string | undefined): string {
   return stateRoot ?? "a state root it did not state";
@@ -213,9 +213,10 @@ export async function liveLoopPid(dir: string): Promise<number | null> {
  *
  * A guard file is a shared address, not the holder's private one. A holder is
  * released twice by design wherever an exit handler stands beside a `finally`
- * (`flume tick`'s bare tip claim and `flume loop`'s, `src/cli.ts`), and by the
- * second call a later holder — the next tick, a sibling run — may have taken
- * the same path. An unconditional unlink there deletes a live claim this
+ * (`flume tick`'s bare tip claim, `src/cliTick.ts`, and `flume loop`'s,
+ * `src/cliLoop.ts`), and by the second call a later holder — the next tick,
+ * a sibling run — may have taken the same path. An unconditional unlink there
+ * deletes a live claim this
  * process does not hold, so the guard rides the drop rather than each guard's
  * own `held` flag beside it (`.claude/rules/engineering.md`, *The fix lands at
  * the mechanism*).

@@ -708,7 +708,7 @@ const SWEEP_BASE_SUBJECT = "worktree base";
  * an entry being re-provisioned, never one that left the queue entirely.
  * `flume loop` calls this once through
  * `Dispatcher.sweepStaleWorktrees`, after the tip claim is
- * acquired and before the first tick (`src/cli.ts`) — holding the claim
+ * acquired and before the first tick (`src/cliLoop.ts`) — holding the claim
  * is the guard, and it reaches exactly this state root: one flume writer
  * per ref means no live sibling of *this* root owns anything it
  * provisioned. It says nothing about a second checkout of the same

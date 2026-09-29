@@ -217,7 +217,7 @@ describe("entryWriteScope — the one scoped-or-not decision", () => {
 
 // Mechanism pin (QUEUE-FENCE-PRECHECK-ONE-DERIVATION, per
 // .claude/rules/engineering.md "The fix lands at the mechanism"):
-// `pendingGate` (src/builtinGates.ts) and `flume check` (src/cli.ts) each
+// `pendingGate` (src/builtinGates.ts) and `flume check` (src/cliCheck.ts) each
 // used to spell the `writablePaths ∪ entryChannelPaths` union and the
 // `declaredPaths(e).filter(...)` scan for themselves, so a one-sided edit
 // could make the gate and the verb name different offending paths for one

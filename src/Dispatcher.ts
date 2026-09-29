@@ -782,7 +782,7 @@ export class Dispatcher {
    * Reported rather than kept (`.claude/rules/engineering.md`, *A fact the
    * engine holds is reported, never rediscovered*): the caller that must name
    * this number is the `flume tick` signal handler, which writes it into the
-   * line it prints at receipt (`src/cli.ts`), and reading it here instead of
+   * line it prints at receipt (`src/cliTick.ts`), and reading it here instead of
    * resolving a chain of its own is what keeps a tick process to the single
    * chain-factory application {@link tick} makes.
    */
@@ -1311,7 +1311,7 @@ export class Dispatcher {
    * ({@link sweepStaleWorktrees}, `src/worktrees.ts` — what it removes, and
    * what it deliberately leaves standing, is documented there). Stays a
    * method because `flume loop` reaches it through the
-   * Dispatcher they already hold (`src/cli.ts`), after the tip claim is
+   * Dispatcher they already hold (`src/cliLoop.ts`), after the tip claim is
    * acquired and before the first tick.
    */
   async sweepStaleWorktrees(): Promise<void> {

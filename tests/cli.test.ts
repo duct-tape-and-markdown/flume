@@ -104,7 +104,26 @@ import {
 // (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`).
 vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
 
-const CLI_SRC_PATH = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
+/**
+ * Every `src/cli*.ts` module read as one text, in one traversal of the
+ * directory rather than from a list spelled here.
+ *
+ * The CLI is a family: `src/cli.ts` splits argv, resolves the roots and
+ * dispatches, and each verb's body is a module of its own. So a shape pin
+ * whose claim is "wherever this CLI spells X" reads the family — a list
+ * naming today's modules would go green the moment a verb moved house, which
+ * is the one event these pins exist to survive.
+ */
+const cliFamilySource = (): string => {
+  const dir = fileURLToPath(new URL("../src", import.meta.url));
+  const modules = readdirSync(dir)
+    .filter((name) => /^cli.*\.ts$/.test(name))
+    .sort();
+  // Vacuity: the family is the subject of every pin reading this, so an
+  // empty or single-module read is a pin over nothing.
+  expect(modules.length).toBeGreaterThan(1);
+  return modules.map((name) => readFileSync(join(dir, name), "utf8")).join("\n");
+};
 
 /**
  * The provider module a fixture chain imports the real `claudeCode` from —
@@ -5415,9 +5434,9 @@ describe("flume friction (spec/cli.md §Subcommand surface)", () => {
   }, SPAWN_BUDGET_MS);
 });
 
-describe("cli.ts — loop.pid win32 MAX_PATH fix (.claude/rules/platform-facts.md)", () => {
+describe("the CLI's loop.pid win32 MAX_PATH fix (.claude/rules/platform-facts.md)", () => {
   // toNamespacedPath is a no-op on POSIX, so any roundtrip test of loop.pid
-  // behavior passes identically whether cli.ts routes through namespacedJoin
+  // behavior passes identically whether the CLI routes through namespacedJoin
   // or a bare join. Pin the source shape directly, mirroring
   // Baton.test.ts's "win32 MAX_PATH fix" precedent — `livePidClaimAt`
   // (`src/pidClaim.ts`) is the reference shape every loop.pid call site here
@@ -5430,7 +5449,7 @@ describe("cli.ts — loop.pid win32 MAX_PATH fix (.claude/rules/platform-facts.m
   // rungs it walks and the leaf it stats), so what these cases hold is that
   // each binding reaches a callee that owns the fold and no fs call of this
   // file's own.
-  const src = readFileSync(CLI_SRC_PATH, "utf8");
+  const src = cliFamilySource();
 
   it("reads the status-check loop-lock path (statusLockPath) off loopLockPath and probes it under the state root, which folds it", () => {
     expect(src).toMatch(/const statusLockPath = loopLockPath\(flumeDir\);/);
@@ -5460,7 +5479,7 @@ describe("cli.ts — loop.pid win32 MAX_PATH fix (.claude/rules/platform-facts.m
     expect(releases!.length).toBe(1);
   });
 
-  it("every loopLockPath call in cli.ts binds a path a callee folds — the stake or the descent probe", () => {
+  it("every loopLockPath call in the CLI binds a path a callee folds — the stake or the descent probe", () => {
     const uses = [...src.matchAll(/\bloopLockPath\(\w+\)/g)];
     expect(uses.length).toBeGreaterThan(1);
     let staked = 0;

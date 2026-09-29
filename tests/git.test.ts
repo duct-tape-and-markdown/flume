@@ -1512,8 +1512,9 @@ describe("acquireTipClaim / liveTipClaim — advisory per-ref tip claim", () => 
   /**
    * The state root a case hands the claim: the root its caller resolved, which
    * `flume tick` and `flume loop` hand over rather than have the claim derive
-   * (`src/cli.ts`). A name per effort, because the cases that matter are the
-   * ones where two efforts under two roots meet on one tip.
+   * (`src/cliTick.ts`, `src/cliLoop.ts`). A name per effort, because the
+   * cases that matter are the ones where two efforts under two roots meet on
+   * one tip.
    */
   const stateRootOf = (effort: string): string => join(repo, effort);
 

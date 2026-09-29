@@ -342,7 +342,7 @@ describe("flume loop/tick — tip claim wiring", () => {
 
         if (process.platform === "win32") {
           // Tip claim, amended: SIGTERM maps to TerminateProcess on win32,
-          // which runs no handler — dropLock (src/cli.ts) never fires, so
+          // which runs no handler — dropLock (src/cliLoop.ts) never fires, so
           // both the tip claim and loop.pid survive the kill exactly as a
           // `kill -9` would. Release-on-signal is a POSIX guarantee only;
           // the cross-platform guarantee is stale-reclaim — the claim's
