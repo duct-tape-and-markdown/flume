@@ -367,7 +367,7 @@ async function renderPriorBlock(
       handoff: () => [],
     },
     flumeDir,
-    promptFile,
+    template: await readFile(promptFile, "utf8"),
     cwd: repo,
     args: {},
     priorAttempt: prior,

@@ -9,7 +9,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { rm, writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -95,7 +95,7 @@ async function render(promptBody: string): Promise<string> {
   return renderPrompt({
     phase: phase(),
     flumeDir: "/state-root",
-    promptFile,
+    template: await readFile(promptFile, "utf8"),
     cwd: dir,
     args: {},
   });
@@ -109,7 +109,7 @@ describe("renderPrompt — reserved {{FLUME_DIR}} arg", () => {
     const out = await renderPrompt({
       phase: phase(),
       flumeDir: "/abs/state-root",
-      promptFile,
+      template: await readFile(promptFile, "utf8"),
       cwd: dir,
       args: {}, // chain supplies nothing
     });
@@ -127,7 +127,7 @@ describe("renderPrompt — reserved {{FLUME_DIR}} arg", () => {
     const out = await renderPrompt({
       phase: phase(),
       flumeDir: "/resolved",
-      promptFile,
+      template: await readFile(promptFile, "utf8"),
       cwd: dir,
       args: { FLUME_DIR: "/chain-supplied-WRONG" },
     });
@@ -159,7 +159,7 @@ describe("renderPrompt — <harness> states the effective fence", () => {
     return renderPrompt({
       phase: p,
       flumeDir: "/state-root",
-      promptFile,
+      template: await readFile(promptFile, "utf8"),
       cwd: dir,
       args: {},
       ...(assignedEntry ? { assignedEntry } : {}),
@@ -316,7 +316,7 @@ describe("renderPrompt <harness> gate list names every declared gate regardless 
     return renderPrompt({
       phase: p,
       flumeDir: "/state-root",
-      promptFile,
+      template: await readFile(promptFile, "utf8"),
       cwd: dir,
       args: {},
     });
@@ -363,7 +363,7 @@ describe("renderPrompt <harness> gate list renders a declared command (spec/chai
     return renderPrompt({
       phase: p,
       flumeDir: "/state-root",
-      promptFile,
+      template: await readFile(promptFile, "utf8"),
       cwd: dir,
       args: {},
     });
@@ -449,7 +449,7 @@ describe("renderPrompt effective fence agrees with writablePathsGate's accepted 
     const out = await renderPrompt({
       phase: p,
       flumeDir: "/state-root",
-      promptFile,
+      template: await readFile(promptFile, "utf8"),
       cwd: dir,
       args: {},
       assignedEntry: e,
@@ -534,7 +534,7 @@ describe("renderPrompt — an unresolved {{KEY}} refuses the render", () => {
       renderPrompt({
         phase: phase(),
         flumeDir: "/state-root",
-        promptFile,
+        template: await readFile(promptFile, "utf8"),
         cwd: dir,
         args: { HERE: "resolved-value" },
       }),
@@ -585,7 +585,7 @@ describe("renderPrompt — a span's substituted value is shell text (spec/prompt
     const out = await renderPrompt({
       phase: phase(),
       flumeDir: "/state-root",
-      promptFile,
+      template: await readFile(promptFile, "utf8"),
       cwd: dir,
       // A space and a backslash: the two bytes `sh` acts on when a word is
       // unquoted, which is what a state root path routinely carries.
@@ -711,7 +711,7 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     return renderPrompt({
       phase: phase(),
       flumeDir: "/state-root",
-      promptFile,
+      template: await readFile(promptFile, "utf8"),
       cwd: dir,
       args: {},
       priorAttempt: prior,
@@ -923,7 +923,7 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     const out = await renderPrompt({
       phase: phase(),
       flumeDir: "/state-root",
-      promptFile,
+      template: await readFile(promptFile, "utf8"),
       cwd: dir,
       args: {},
     });
@@ -975,7 +975,7 @@ describe("renderPrompt — Phase.promptDataKeys neutralizes substituted spans (P
     return renderPrompt({
       phase: phase(opts.dataKeys ? { promptDataKeys: opts.dataKeys } : {}),
       flumeDir: "/state-root",
-      promptFile,
+      template: await readFile(promptFile, "utf8"),
       cwd: dir,
       args: opts.args,
     });

@@ -2791,6 +2791,94 @@ describe("Dispatcher fanout — a freed slot pulls the next disjoint entry (WAVE
     expect(sawFromA).toBe("tb-a\n");
   });
 
+  it("a prompt template edited on trunk mid-wave does not reach a slot the wave refilled", async () => {
+    // spec/loop.md, *One tick is one fresh process*: a wave that refills can
+    // outlast a ship that rewrote the phase's prompt, and the pair that never
+    // splits is the template and the code that fills it. The process holds the
+    // `promptArgs` builder it started on, so a refilled slot handed a newer
+    // template would be filling this tick's words with the last tick's code.
+    const entries = [
+      makeEntry("PT-A", ["src/pt-a.ts"]),
+      makeEntry("PT-B", ["src/pt-b.ts"]),
+    ];
+    await writePending(fx.repo, entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    // One slot wide, so PT-B can only run as the refill of the slot PT-A's
+    // merge freed — after PT-A's agent rewrote the file below.
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates: [],
+    });
+    const chain: Chain = {
+      phases: [phase],
+      humanOnly: [],
+      supervisorPolicy: { maxParallel: 1 },
+    };
+
+    // The file the render resolves — `phase.promptPath` against the config
+    // dir — as the primary checkout holds it. A ship rewriting the prompt is
+    // this write: what the next *process* would read, landing while this one
+    // still has a slot to fill.
+    const templateFile = join(fx.configDir, "prompt.md");
+    const before = await readFile(templateFile, "utf8");
+    const AFTER = "REWRITTEN TEMPLATE: a line the wave's own process never loaded\n";
+
+    const promptBySlug: Record<string, string> = {};
+    const agent: Agent = {
+      name: "template-refill-probe",
+      async invoke(inv) {
+        const slug = basename(inv.cwd);
+        promptBySlug[slug] = inv.prompt;
+        if (slug === "pt-a") await writeFile(templateFile, AFTER, "utf8");
+        await writeAndCommit(
+          inv.cwd,
+          slug === "pt-a" ? "src/pt-a.ts" : "src/pt-b.ts",
+          `${slug}\n`,
+          `build(${slug}): ship`,
+        );
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Non-vacuity, three ways: both slots ran, PT-B really was the refill of
+    // the freed slot rather than a second initial fill, and the edit really
+    // landed on the file a render resolves.
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
+      "PT-A",
+      "PT-B",
+    ]);
+    expect(Object.keys(promptBySlug).sort()).toEqual(["pt-a", "pt-b"]);
+    expect(await readFile(templateFile, "utf8")).toBe(AFTER);
+    expect(before).not.toBe(AFTER);
+    // The task body each slot was handed: the template alone, sliced past the
+    // dispatcher-owned `<harness>` block, so the negative below reads the
+    // block the case is about rather than whatever else the prompt quotes.
+    const taskBody = (slug: string): string => {
+      const prompt = promptBySlug[slug]!;
+      const end = prompt.indexOf("</harness>");
+      expect(end, `${slug}'s prompt carries a harness block`).toBeGreaterThan(-1);
+      return prompt.slice(end + "</harness>".length);
+    };
+    expect(taskBody("pt-a")).toContain(before.trim());
+
+    // And the refilled slot was handed the same one: the template this
+    // process loaded, not the one on disk when its worktree was cut.
+    expect(taskBody("pt-b")).toContain(before.trim());
+    expect(taskBody("pt-b")).not.toContain("REWRITTEN TEMPLATE");
+  });
+
   it("a wave keeps pulling pickable entries until none remain rather than ending with its first batch", async () => {
     // Three entries all colliding on one file: the partition puts exactly one
     // in each batch, so a wave that ended with its first batch shipped one and

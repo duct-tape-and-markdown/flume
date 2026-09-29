@@ -467,7 +467,7 @@ describe("examples/prompts — the spans read the injected state root", () => {
       ),
       ...overrides,
     };
-    return renderPrompt({ phase, promptFile, cwd: at, flumeDir: root, args });
+    return renderPrompt({ phase, template: raw, cwd: at, flumeDir: root, args });
   }
 
   /** A state root carrying every artifact the templates' spans read. */
@@ -2877,7 +2877,7 @@ describe("backlog-groomer-chain.ts — the prompt names its artifacts through th
 
     const rendered = await renderPrompt({
       phase: groom!,
-      promptFile,
+      template,
       cwd: EXAMPLE_PATHS.repoRoot,
       flumeDir: EXAMPLE_PATHS.flumeDir,
       args,

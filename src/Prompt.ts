@@ -1,7 +1,14 @@
 /**
- * Prompt — renders a phase's prompt file for one tick.
+ * Prompt — renders a phase's prompt template for one tick.
  *
- * Two transformations are applied to the raw file:
+ * The template is taken as bytes, not as an address: `readPhaseTemplate`
+ * loads a phase's prompt file once, where the tick loads its chain, and every
+ * slot that tick renders is handed that same string. A render that re-read the
+ * file would hand a refilled slot whatever the primary checkout held at
+ * refill time — a template edited on trunk mid-wave, filled by the code the
+ * process started on (spec/loop.md, *One tick is one fresh process*).
+ *
+ * Two transformations are applied to the raw template:
  *
  *   1. `{{KEY}}` placeholders are replaced from the promptArgs map.
  *   2. `` !`shell command` `` inline-exec blocks are evaluated in the tick's
@@ -33,7 +40,7 @@ import { readFile } from "node:fs/promises";
 import { toNamespacedPath } from "node:path";
 
 import type { Phase } from "./Phase.js";
-import { entryWriteScope } from "./paths.js";
+import { entryWriteScope, phasePromptPath } from "./paths.js";
 import type { PendingEntry } from "./PendingSchema.js";
 
 const PLACEHOLDER_RE = /\{\{([A-Z][A-Z0-9_]*)\}\}/g;
@@ -393,19 +400,20 @@ export type PriorAttempt =
   | NotShippedAttempt;
 
 /**
- * Inputs to `renderPrompt`. The dispatcher resolves `promptFile` by
- * resolving `phase.promptPath` against the chain's config directory; `args`
- * and `cwd` come from the per-tick `TickContext` and the phase's
- * `promptArgs` builder.
+ * Inputs to `renderPrompt`. The dispatcher loads `template` once per tick
+ * through {@link readPhaseTemplate}; `args` and `cwd` come from the per-tick
+ * `TickContext` and the phase's `promptArgs` builder.
  */
 export interface RenderOptions {
   phase: Phase;
   /**
-   * The prompt file to read, already resolved against the chain's config
-   * directory — absolute when `phase.promptPath` was, beneath the config dir
-   * when it was relative.
+   * The prompt template's bytes, as {@link readPhaseTemplate} loaded them for
+   * this tick. Bytes rather than a path because the load is the tick's, made
+   * once beside the chain resolution and reused for every slot: a render that
+   * took an address would re-read the file per slot, and a refilled slot would
+   * be handed a template the process's own code never matched.
    */
-  promptFile: string;
+  template: string;
   /** Working directory for inline-exec evaluation. */
   cwd: string;
   /**
@@ -440,7 +448,32 @@ export interface RenderOptions {
 }
 
 /**
- * Resolve a phase's prompt file for one tick: substitute `{{KEY}}`
+ * Load a phase's prompt template: the bytes at `phase.promptPath` resolved
+ * against the chain's config directory (`phasePromptPath`, `src/paths.ts`).
+ *
+ * One call per tick, made where the chain is loaded, and its result is what
+ * every slot of that tick renders with — so the words an agent is handed and
+ * the code that filled them are one version, and a template edited on trunk
+ * after the process started reaches no slot of the tick, a refilled one
+ * included (spec/loop.md, *One tick is one fresh process*).
+ *
+ * A file that cannot be read throws here, before any worktree is provisioned:
+ * a phase whose prompt is missing has nothing to render for any slot, and the
+ * refusal is the whole tick's rather than one slot's.
+ */
+export async function readPhaseTemplate(
+  configDir: string,
+  promptPath: string,
+): Promise<string> {
+  return readFile(
+    toNamespacedPath(phasePromptPath(configDir, promptPath)),
+    "utf8",
+  );
+}
+
+/**
+ * Render a phase's prompt for one tick from the template bytes it was handed
+ * ({@link readPhaseTemplate}): substitute `{{KEY}}`
  * placeholders from `args` — with the spans in every key the phase declared
  * in {@link Phase.promptDataKeys} neutralized first — evaluate `` !`cmd` ``
  * inline-exec blocks in `cwd`, prepend the optional `<prior-attempt>` block, then prepend the
@@ -450,7 +483,7 @@ export interface RenderOptions {
  * what is enforced, then what failed last time, then the work.
  */
 export async function renderPrompt(opts: RenderOptions): Promise<string> {
-  const raw = await readFile(toNamespacedPath(opts.promptFile), "utf8");
+  const raw = opts.template;
   // FLUME_DIR is reserved and dispatcher-authoritative: merge it last so a
   // chain-supplied arg of the same name cannot shadow the resolved root.
   const args = {

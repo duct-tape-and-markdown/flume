@@ -51,7 +51,6 @@ import { consoleLogger, type Logger } from "./log.js";
 import {
   computeStateRootRel,
   defaultStateRoot,
-  phasePromptPath,
   resolvePendingDir,
 } from "./paths.js";
 import {
@@ -63,7 +62,7 @@ import { PriorAttemptStore } from "./priorAttempts.js";
 import { PendingParseFailure } from "./PendingSchema.js";
 import type { EntryExtension, PendingEntry } from "./PendingSchema.js";
 import type { Chain, TickContext, TickResult } from "./Phase.js";
-import { renderPrompt } from "./Prompt.js";
+import { readPhaseTemplate, renderPrompt } from "./Prompt.js";
 import type { NoCommitMode } from "./Prompt.js";
 import {
   selectBatch,
@@ -661,10 +660,16 @@ export class Dispatcher {
    * {@link worktreeCtx} is — it carries that context, whose last field the
    * per-tick chain load supplies — and never stored, so no attempt can run
    * against a snapshot taken before the tick resolved its chain.
+   *
+   * `promptTemplate` is a parameter rather than a field for the same reason:
+   * the tick loads it once beside its chain, and passing it through the
+   * composition is what makes an attempt that renders from anything else
+   * unrepresentable.
    */
-  private get attemptCtx(): AttemptContext {
+  private attemptCtxFor(promptTemplate: string): AttemptContext {
     return {
       configDir: this.opts.configDir,
+      promptTemplate,
       configDirRel: computeStateRootRel(
         this.opts.repoRoot,
         this.opts.configDir,
@@ -723,20 +728,21 @@ export class Dispatcher {
    * this class owns.
    *
    * Composed on read for the same reason {@link worktreeCtx} is — it carries
-   * the three contexts whose last fields the per-tick chain load supplies —
+   * the three contexts whose last fields the per-tick chain load supplies,
+   * and the prompt template the tick loaded with them —
    * and `selection` is bound to `this` rather than copied, so a leg cannot
    * answer "what is pickable" differently from the preview that shows the
    * same wave (`.claude/rules/engineering.md`, *Derived state is computed,
    * never restated beside its source*).
    */
-  private get legCtx(): TickLegContext {
+  private legCtxFor(promptTemplate: string): TickLegContext {
     return {
       ...this.ledgerCtx,
       configDir: this.opts.configDir,
       stateRootRel: this.stateRootRel,
       attempts: this.attempts,
       claims: this.claims,
-      attemptCtx: this.attemptCtx,
+      attemptCtx: this.attemptCtxFor(promptTemplate),
       worktreeCtx: this.worktreeCtx,
       gateScope: this.gateScope,
       ...(this.opts.quarantinedSlugs !== undefined
@@ -945,14 +951,28 @@ export class Dispatcher {
     // scope of the chain-level override chain.
     const agent = phase.agent ?? chainModule.agent ?? this.opts.agent;
 
+    // The tick's prompt template, loaded here — one read, beside the one
+    // chain load above, and the string every slot below renders from
+    // (spec/loop.md, *One tick is one fresh process*). A wave that refills
+    // can outlast a ship that rewrote this file on trunk; taking the bytes
+    // now is what keeps the words an agent is handed and the code that filled
+    // them one version, rather than re-reading the primary checkout at each
+    // slot. A prompt file that cannot be read throws out of the tick, before
+    // any worktree is provisioned: no slot of this phase had a prompt.
+    const promptTemplate = await readPhaseTemplate(
+      this.opts.configDir,
+      phase.promptPath,
+    );
+    const legCtx = this.legCtxFor(promptTemplate);
+
     this.log.info(`[flume] tick → ${phase.name} (${phase.concurrency})`);
 
     let phaseOutcome: PhaseTickOutcome;
     try {
       phaseOutcome =
         phase.concurrency === "singleton"
-          ? await runSingleton(this.legCtx, phase, agent, chain, forkResolver)
-          : await runFanout(this.legCtx, phase, agent, chain, forkResolver);
+          ? await runSingleton(legCtx, phase, agent, chain, forkResolver)
+          : await runFanout(legCtx, phase, agent, chain, forkResolver);
     } catch (err) {
       // Two throws reach here, and neither leaves this tick any more work to
       // do. A bare `PendingParseFailure` is the *opening* decide-read
@@ -1167,7 +1187,7 @@ export class Dispatcher {
    * Every step below is the tick's own: `chainLoader`,
    * `readPendingForDecision` (`src/pendingLedger.ts`),
    * `pickableSelection`, `partitionByFileOverlap`, `attempts.readAll`,
-   * `phasePromptPath`, `renderPrompt`. The verb this replaces re-derived
+   * `readPhaseTemplate`, `renderPrompt`. The verb this replaces re-derived
    * three of them beside the dispatcher and disagreed with it on all three
    * (operator ruling 2026-08-03), which is the failure this method exists to
    * make unrepresentable: there is one resolution, and a preview is it run
@@ -1301,7 +1321,8 @@ export class Dispatcher {
     const prompt = await renderPrompt({
       phase,
       flumeDir: this.flumeDir,
-      promptFile: phasePromptPath(this.opts.configDir, phase.promptPath),
+      // The same load a tick makes, one call short of the same render.
+      template: await readPhaseTemplate(this.opts.configDir, phase.promptPath),
       cwd: this.opts.repoRoot,
       args,
       ...(entry !== undefined ? { assignedEntry: entry } : {}),

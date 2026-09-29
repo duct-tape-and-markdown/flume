@@ -33,7 +33,6 @@ import {
   entryWriteScope,
   fsStamp,
   namespacedJoin,
-  phasePromptPath,
   renderedPromptsDir,
   slugify,
   STATE_ROOT_NAMES,
@@ -77,8 +76,17 @@ import type { WorktreeContext } from "./worktrees.js";
  * reported, never rediscovered*).
  */
 export interface AttemptContext {
-  /** Resolved against the primary checkout — the prompt file's root, and the gate context's `configDir` before rebasing. */
+  /** Resolved against the primary checkout — the gate context's `configDir` before rebasing. */
   readonly configDir: string;
+  /**
+   * The phase's prompt template as this tick loaded it, beside its chain
+   * (`readPhaseTemplate`, `src/Prompt.ts`). Bytes, not the address they came
+   * from: every attempt of the tick renders from this one string, so a
+   * template edited on trunk while the wave runs reaches no slot of it — a
+   * refilled one included, which is the pairing spec/loop.md, *One tick is one
+   * fresh process* holds to the code the process started on.
+   */
+  readonly promptTemplate: string;
   /** `configDir` relative to the repo root in git's alphabet, or `undefined` when it escapes the repo. */
   readonly configDirRel: string | undefined;
   /** The state root — where rendered prompts and friction notes are written. */
@@ -270,7 +278,7 @@ export async function runAttempt(
     prompt = await renderPrompt({
       phase,
       flumeDir: ctx.flumeDir,
-      promptFile: phasePromptPath(ctx.configDir, phase.promptPath),
+      template: ctx.promptTemplate,
       cwd: wt.path,
       args: argsResult.args,
       ...(entry ? { assignedEntry: entry } : {}),

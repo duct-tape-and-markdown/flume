@@ -430,7 +430,7 @@ it("the package's build prompt renders over a real tick with no placeholder left
 
   const rendered = await renderPrompt({
     phase: buildPhase(promptFile),
-    promptFile,
+    template: raw,
     // The repo itself, so the prompt's `git log` span resolves against a real
     // history and the cite resolves against the real spec.
     cwd: REPO_ROOT,
@@ -484,6 +484,7 @@ function specBlock(rendered: string): string {
 it("build's per-tick args reach the renderer through a phase carrying the package's declared prompt data keys", async () => {
   const promptFile = promptPath("build");
   const phase = buildPhase(promptFile);
+  const raw = await readFile(promptFile, "utf8");
   const flumeDir = join(REPO_ROOT, ".flume");
 
   // The consumer this file drives is configured as a tick configures it: the
@@ -512,7 +513,7 @@ it("build's per-tick args reach the renderer through a phase carrying the packag
   const render = (through: Phase): Promise<string> =>
     renderPrompt({
       phase: through,
-      promptFile,
+      template: raw,
       // The repo itself, so the prompt's own `git log` span resolves; the
       // cite is read from the tick's tree, as `argsFor` reads it.
       cwd: REPO_ROOT,
@@ -594,7 +595,7 @@ async function renderOver(ctx: BuildTickContext): Promise<string> {
   const promptFile = promptPath("build");
   return renderPrompt({
     phase: buildPhase(promptFile),
-    promptFile,
+    template: await readFile(promptFile, "utf8"),
     cwd: ctx.cwd,
     flumeDir: ctx.flumeDir,
     args: {

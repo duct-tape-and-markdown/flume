@@ -193,7 +193,7 @@ async function render(
   );
   return renderPrompt({
     phase: phase(name),
-    promptFile,
+    template: raw,
     // The repo itself, so build's `git log` span resolves against a real
     // history rather than an empty scratch directory.
     cwd: REPO_ROOT,

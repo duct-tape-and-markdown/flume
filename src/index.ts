@@ -153,6 +153,10 @@ export {
 
 export {
   renderPrompt,
+  // The bytes half of the render seam: `renderPrompt` takes a template, not
+  // an address, so the loader that turns a phase's `promptPath` into one is
+  // public beside it.
+  readPhaseTemplate,
   NO_COMMIT_MODES,
   PRIOR_ATTEMPT_MODES,
   // The value rides `FlumeApi.InlineExecRenderError`; only the shape of its

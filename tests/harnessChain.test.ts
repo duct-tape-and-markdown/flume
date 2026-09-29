@@ -660,7 +660,7 @@ it("the inbox drain leaves the derive cursor untouched", async () => {
   // agree after the key left both.
   const rendered = await renderPrompt({
     phase: inbox,
-    promptFile: promptPath(INBOX_PHASE as PromptName),
+    template: await readFile(promptPath(INBOX_PHASE as PromptName), "utf8"),
     cwd: repo,
     flumeDir,
     args,
@@ -933,7 +933,7 @@ it("every placeholder the package's prompts name is supplied by the phase the fa
     const args = phase.promptArgs?.(ctx) ?? {};
     const rendered = await renderPrompt({
       phase,
-      promptFile: phase.promptPath,
+      template: await readFile(phase.promptPath, "utf8"),
       cwd: ctx.cwd,
       flumeDir: ctx.flumeDir,
       args,
@@ -984,6 +984,7 @@ it("every prompt-arg key the package's producers return is declared in its phase
 
 it("a substituted value carrying an inline-exec span reaches the agent inert", async () => {
   const build = phaseNamed(chainFor(), BUILD_PHASE);
+  const buildTemplate = await readFile(build.promptPath, "utf8");
   const spanned: PendingEntry = {
     ...entry("SPANNED-ENTRY"),
     summary: `one line ${SPAN}`,
@@ -1002,7 +1003,7 @@ it("a substituted value carrying an inline-exec span reaches the agent inert", a
   const render = (phase: Phase, overrides: Record<string, string> = {}) =>
     renderPrompt({
       phase,
-      promptFile: build.promptPath,
+      template: buildTemplate,
       cwd: repo,
       flumeDir,
       args: { ...args, ...overrides },
