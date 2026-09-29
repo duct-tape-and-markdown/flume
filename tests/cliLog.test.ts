@@ -14,13 +14,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Logger } from "../src/log.ts";
 import { stampLines, stampedLogger } from "../src/cliLog.ts";
-
-/**
- * ISO-8601 UTC to the millisecond — the spelling the tick verdict, the claim
- * file and record filenames already carry, and the one a line has to open
- * with for a log to line up against them.
- */
-const STAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z /;
+import { STAMPED_LINE, stampedContent } from "./helpers/stampedLine.ts";
 
 /** A `Logger` that keeps what it was handed, per level. */
 function recordingLogger(): { sink: Logger; lines: string[] } {
@@ -54,8 +48,8 @@ describe(
         // to stdout would move it off the stream an operator greps.
         expect(line.startsWith(`${level} `)).toBe(true);
         const stamped = line.slice(level.length + 1);
-        expect(stamped).toMatch(STAMP);
-        const at = Date.parse(stamped.slice(0, stamped.indexOf(" ")));
+        expect(stamped).toMatch(STAMPED_LINE);
+        const at = Date.parse(STAMPED_LINE.exec(stamped)![1]!);
         expect(at).toBeGreaterThanOrEqual(before);
         expect(at).toBeLessThanOrEqual(after);
       }
@@ -72,8 +66,9 @@ describe(
         expect(line.startsWith("2026-09-28T12:34:56.789Z ")).toBe(true);
       }
       // The message itself crosses intact — the stamp is a prefix, not a
-      // rewrite.
-      expect(lines.map((l) => l.slice("2026-09-28T12:34:56.789Z ".length))).toEqual([
+      // rewrite. Read back through the suite's one reader of a stamped line
+      // (`tests/helpers/stampedLine.ts`) rather than a width spelled here.
+      expect(lines.map(stampedContent)).toEqual([
         "first line",
         "second line",
         "third line",

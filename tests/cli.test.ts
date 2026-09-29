@@ -95,6 +95,7 @@ import {
   STAMPED_LINE,
   expectStampedDuring,
   narratedLines,
+  stampedContent,
 } from "./helpers/stampedLine.ts";
 import {
   CLI,
@@ -6827,6 +6828,109 @@ describe("the run log (spec/cli.md §A log line carries the instant it was writt
           expect(lines.length).toBeGreaterThan(0);
           expectStampedDuring(lines, before, after);
         }
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  /**
+   * `flume check`'s two reports are a headline over indented detail rows, and
+   * every one of those lines goes through `operatorLog` (`src/cliLog.ts`), so
+   * every one of them opens with its instant. The rows are what makes this
+   * worth its own case: a reader that took a line's own indentation for a
+   * missing stamp would read the whole body of both reports as unstamped and
+   * still pass the sweep above, whose refusals are all one line
+   * (`.claude/rules/engineering.md`, *A green verdict is proven
+   * non-vacuous*). Each case reads the report **whole** — the line count is
+   * asserted against the rows it found, so a row this reader skipped is a
+   * red rather than a narrower green.
+   */
+  async function expectStampedReport(
+    repoDir: string,
+    headline: string,
+  ): Promise<void> {
+    const before = Date.now();
+    const run = await runCliStreams(repoDir, ["check"]);
+    const after = Date.now();
+
+    expect(run.code, run.stderr).toBe(EX_DATAERR);
+    const lines = narratedLines(run.stderr);
+    const rows = lines.filter((line) => stampedContent(line)?.startsWith("  ["));
+    // Vacuity: the queue really did produce a multi-row report, and the
+    // headline plus those rows is the whole of what reached stderr — no line
+    // of the report escaped the sweep below by not looking like a row.
+    expect(rows.length, run.stderr).toBeGreaterThan(1);
+    expect(lines.length, run.stderr).toBe(rows.length + 1);
+    expect(stampedContent(lines[0]!), run.stderr).toContain(headline);
+    expectStampedDuring(lines, before, after);
+  }
+
+  it(
+    "flume check's schema-violation detail rows open with the instant they were written",
+    async () => {
+      const repo = await makeScratchRepo("flume-cli-repo-", "main");
+      try {
+        await writeRepoConfig(repo.dir, fanoutCheckChainSrc(["src/**"]));
+        // Two entries, so the report is a headline over more than one row.
+        await writeCheckPending(repo.dir, [
+          {
+            tag: "BAD-GATE",
+            gate: { kind: "bogus" },
+            dependsOnForks: [],
+            files: { new: [], edit: [], retire: [] },
+          },
+          {
+            tag: "NO-FILES",
+            gate: { kind: "open" },
+            dependsOnForks: [],
+          },
+        ]);
+
+        await expectStampedReport(repo.dir, "schema violation(s)");
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it(
+    "flume check's fence-violation detail rows open with the instant they were written",
+    async () => {
+      const repo = await makeScratchRepo("flume-cli-repo-", "main");
+      try {
+        await writeRepoConfig(repo.dir, fanoutCheckChainSrc(["src/**"]));
+        // Two entries past the schema, each declaring a path the consumer
+        // phase's fence excludes — the verb's other report, one row apiece.
+        await writeCheckPending(repo.dir, [
+          {
+            tag: "OUTSIDE-ONE",
+            gate: { kind: "open" },
+            dependsOnForks: [],
+            files: {
+              new: [],
+              edit: [{ path: "docs/one.md", description: "outside" }],
+              retire: [],
+            },
+          },
+          {
+            tag: "OUTSIDE-TWO",
+            gate: { kind: "open" },
+            dependsOnForks: [],
+            files: {
+              new: [{ path: "docs/two.md", description: "outside" }],
+              edit: [],
+              retire: [],
+            },
+          },
+        ]);
+
+        await expectStampedReport(
+          repo.dir,
+          "declare files outside the consumer phase's fence",
+        );
       } finally {
         await repo.cleanup();
       }
