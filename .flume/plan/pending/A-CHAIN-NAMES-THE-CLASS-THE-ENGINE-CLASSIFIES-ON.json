@@ -1,0 +1,37 @@
+{
+  "tag": "A-CHAIN-NAMES-THE-CLASS-THE-ENGINE-CLASSIFIES-ON",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 0,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/flumeApi.ts",
+        "description": "`RenderRefusal` and `MissingPlaceholderRenderError` join the error-class block, on the interface and on the built object"
+      },
+      {
+        "path": "src/index.ts",
+        "description": "the barrel's `RenderRefusal` note, as it reads once the value rides the api, beside the `InlineExecFailure` one it then matches"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the api error-class roster over the two additions, in the identity-same case that already states the rule"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "`FlumeApi` hands out `InlineExecRenderError` but not `RenderRefusal`, the class the engine's own two catches branch on, so a chain classifying a refused render can only enumerate or match prose",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A fact the engine holds is reported, never rediscovered"
+  },
+  "acceptance": "the class the engine classifies a refused render on rides `FlumeApi` beside `InlineExecRenderError`, identity-same with the engine's own, and the placeholder leaf whose `missing` set a chain reads rides it too — so a chain catching a refused render names the class rather than enumerating the stages it can reach or reading the message. The four classes already on the api read as they did.",
+  "tests": [
+    "a chain branches on the render-refusal base through the api it was handed",
+    "a chain reads a missing-placeholder refusal's keys through the api it was handed"
+  ],
+  "pins": [],
+  "notes": "Verified this tick: `src/tickAttempt.ts:288` and `src/cliRender.ts:61` both branch on `RenderRefusal`; `src/flumeApi.ts:413` lists four classes and not it, and `src/index.ts:168` exports it type-only, for the heritage clause alone. The roster's own pin states the rule (`tests/Dispatcher.test.ts:18605`). `MissingPlaceholderRenderError` (`src/Prompt.ts:536`) reaches no consumer at all. Collides on `src/flumeApi.ts` with THE-RENDER-SEAMS-LOADER-REACHES-THE-CHAINS-OWN-SURFACE."
+}
