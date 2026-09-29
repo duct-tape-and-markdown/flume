@@ -431,13 +431,13 @@ export function defaultStateRoot(repoRoot: string): string {
 
 /**
  * The names the runtime itself owns directly under a flume state root
- * (`flumeDir`) — the baton dir, the prior-attempt records, the merge-stage
- * markers, the one-supervisor lock, the stop flag, the tick verdicts. Writer and reader of each of these sit in different
- * modules (`flume stop` refuses, the supervisor honors; `flume loop` claims
- * the lock, `liveLoopClaim` reads it back), so a copy of the name in each is a
- * rename away from a silent bypass — this is the one place any of them is
- * spelled (`.claude/rules/engineering.md`, "Derived state is computed, never
- * restated beside its source").
+ * (`flumeDir`) — every entry the engine writes there, which is the literal
+ * below and not a list repeated in this sentence. Writer and reader of each
+ * of them sit in different modules (`flume stop` refuses, the supervisor
+ * honors; `flume loop` claims the lock, `liveLoopClaim` reads it back), so a
+ * copy of the name in each is a rename away from a silent bypass — this is
+ * the one place any of them is spelled (`.claude/rules/engineering.md`,
+ * "Derived state is computed, never restated beside its source").
  *
  * Exported because a consumer that needs a bare name has no path to take it
  * off: an ignore set spelling these entries as patterns, a probe matching a

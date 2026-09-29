@@ -656,8 +656,9 @@ it("the records gate refuses a parked note written under another tick's tag", as
   const own = parkedNotePath(STATE_ROOT, "MINE");
 
   // The tick's own park is a record this gate admits like any other: which of
-  // its two notes a tick wrote is the park verdict, and that is the chain's to
-  // read (`harness/chain.ts`), never this gate's to judge.
+  // the note homes `notePaths` renders a tick wrote is the park verdict, and
+  // that is the chain's to read (`harness/chain.ts`), never this gate's to
+  // judge.
   await write(own, "# why it could not ship\n\nThe premise is gone.\n");
   const span = commitAll("build: park into my own note");
   // Non-vacuity: git named the parked note, so the verdict below is the gate
@@ -682,8 +683,9 @@ it("the records gate refuses a parked note written under another tick's tag", as
 
   expect(refused.ok).toBe(false);
   expect(refused.details).toContain(parkedNotePath(STATE_ROOT, "OTHER"));
-  // And the refusal names both notes this tick may write, so a tick that
-  // wrote the wrong tag is told where its own two are.
+  // And the refusal names the note paths this tick may write — `notePaths`'
+  // whole answer for the tag, spot-checked here at two of them — so a tick
+  // that wrote the wrong tag is told where its own are.
   expect(refused.details).toContain(own);
   expect(refused.details).toContain(notePath(STATE_ROOT, "MINE"));
 });

@@ -1,9 +1,10 @@
 /**
  * Where every plan artifact sits under a state root — the queue, each plan
- * slice's own state file, the questions directory, the record queues,
- * build's two notes and the protocol page adoption writes beside them —
- * and the fence that is their list (`spec/harness.md`, *Committed-path discipline*:
- * every mechanic the package wires addresses a path some commit holds).
+ * slice's own state file, the questions directory, the record queues, build's
+ * note homes ({@link NOTE_DIR_RELS}) and the protocol page adoption writes
+ * beside them — and the fence that is their list (`spec/harness.md`,
+ * *Committed-path discipline*: every mechanic the package wires addresses a
+ * path some commit holds).
  *
  * **One home, because a fence, a seed, a gate, a prompt and an accessor all
  * address one layout.** A path spelled a second time at any of them is a

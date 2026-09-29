@@ -63,19 +63,20 @@ export function stampedLogger(sink: Logger = consoleLogger): Logger {
 /**
  * Every operator line this process writes, stamped (`spec/cli.md`, *A log line
  * carries the instant it was written*): `loop`'s supervisor, `tick`'s child,
- * the refusals either can take before reaching that narration — bay discovery,
- * the bay/root disagreement, state-root resolution, the obstructed root, the
- * malformed tip-claim handoff, and the write refusal `src/cli.ts` classifies —
- * and every verb's own refusal past that branch: a usage line, a chain that
- * would not load, a read that would not resolve, a queue that would not parse.
+ * every refusal either can take before reaching that narration, and every
+ * verb's own refusal past that branch. Which refusals those are is the set of
+ * sites that import this logger, never a list kept beside it — a refusal added
+ * at one of them leaves no sentence here to update
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
+ * beside its source*).
  *
  * Module scope here rather than in `src/cli.ts`, and unbranched by verb,
  * because the earliest of those refusals is reached before this process has
  * decided which verb it is running, the last is caught past that frame
- * entirely, and the ones between are written from eight modules that would
- * each otherwise construct their own. A verb that takes one may write the only
- * line of its run, which is the line an operator most needs placed against the
- * rest of the artifacts the run left.
+ * entirely, and the ones between are written from every verb module that
+ * imports it, each of which would otherwise construct its own. A verb that
+ * takes one may write the only line of its run, which is the line an operator
+ * most needs placed against the rest of the artifacts the run left.
  *
  * Refusals only — every line through here is stderr, so nothing an
  * observational verb pipes as data is touched: a verb's own listing still goes

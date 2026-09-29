@@ -85,11 +85,15 @@ export interface AgentInvocation {
 
 /**
  * Cost/telemetry facts read off a `claude -p --output-format stream-json`
- * `result` event, and the values `formatResult` (`src/terminalRender.ts`)
- * renders that event's terminal line from (spec/loop.md "The tick verdict — one facts
- * artifact"). Each field is present only when the event reported it; a
- * field the agent's result didn't carry is absent, never coerced to zero,
- * on both surfaces.
+ * `result` event — the whole of the one decode of that event
+ * (`extractResultUsage`, `src/terminalRender.ts`), which the terminal's
+ * result line is then rendered from (spec/loop.md "The tick verdict — one
+ * facts artifact"). Which of these fields that line spells is
+ * `formatResult`'s own answer, never a roster kept here: a chain reads the
+ * shape off {@link AgentResult} whether the terminal printed a given figure
+ * or not. Each field is present only when the event reported it; a field the
+ * agent's result didn't carry is absent, never coerced to zero, on both
+ * surfaces.
  */
 export interface AgentUsage {
   /**
