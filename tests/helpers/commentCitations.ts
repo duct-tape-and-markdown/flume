@@ -663,6 +663,54 @@ const commentLines = (sf: ts.SourceFile): readonly ProseLine[] => {
 };
 
 /**
+ * A file's comment lines grouped the way markdown groups them: one run per
+ * stretch of consecutive lines carrying comment text, in line order. A blank
+ * line or a line of code ends a run, and a block comment's own lines are one
+ * run whatever furniture each carries.
+ *
+ * The grouping is the pairing unit every comment reader here works in, so it
+ * is spelled once (`.claude/rules/engineering.md`, *A module is one job*). The
+ * trailing empty run is kept: a file holding no comment still hands its reader
+ * one call, which is where a reader states its own verdict over nothing.
+ */
+const commentRuns = (
+  sf: ts.SourceFile,
+): readonly (readonly ProseLine[])[] => {
+  const runs: ProseLine[][] = [];
+  let run: ProseLine[] = [];
+  for (const entry of commentLines(sf)) {
+    const previous = run[run.length - 1];
+    if (previous && entry.line !== previous.line + 1) {
+      runs.push(run);
+      run = [];
+    }
+    run.push(entry);
+  }
+  runs.push(run);
+  return runs;
+};
+
+/**
+ * Every comment a module states, one entry per run, rendered as a reader sees
+ * it: furniture off, breaks folded to the one space the wrapping stands for,
+ * at the line the run opens on.
+ *
+ * Read off the parser's own trivia ranges, which is the whole point of reading
+ * them here rather than matching `/*` out of the file text: a `/*` inside a
+ * string literal opens no comment, so no code is read as comment prose, and a
+ * comment carrying a `/` is not closed early by it. A scan that matched the
+ * text instead swallowed every line between a `"src/**"` glob and the next
+ * comment terminator and judged them as prose.
+ */
+export const commentProse = (sf: ts.SourceFile): readonly ProseLine[] =>
+  commentRuns(sf)
+    .filter((run) => run.length > 0)
+    .map((run) => ({
+      line: run[0]?.line ?? 0,
+      text: renderRun(run, renderComment).text,
+    }));
+
+/**
  * The comment furniture a line opens with — a block comment's `/**` opening or
  * `*` margin, the `//` of a line comment. Markdown never renders any of it, so
  * neither a span a wrap carried across the break nor the rendered run below
@@ -1059,16 +1107,7 @@ const commentSpans = (
     }
   };
 
-  let run: ProseLine[] = [];
-  for (const entry of commentLines(sf)) {
-    const previous = run[run.length - 1];
-    if (previous && entry.line !== previous.line + 1) {
-      read(run);
-      run = [];
-    }
-    run.push(entry);
-  }
-  read(run);
+  for (const run of commentRuns(sf)) read(run);
 
   return { closed, bare, wrapped, paired, sections, links };
 };

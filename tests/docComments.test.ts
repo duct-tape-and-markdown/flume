@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { expect, it } from "vitest";
@@ -11,6 +11,13 @@ import {
 import type { FailureStage } from "../src/loopSupervisor.ts";
 import { DEFAULT_KILL_GRACE_MS } from "../src/processTree.ts";
 import { expectNoChainVocabulary } from "./helpers/chainVocabulary.ts";
+import { commentProse } from "./helpers/commentCitations.ts";
+import {
+  modulesUnder,
+  parseScopeless,
+  relPath,
+  REPO_ROOT,
+} from "./helpers/repoProgram.ts";
 
 // Declarations ship (tsconfig.build.json), so a doc comment on a chain-facing
 // option is the hover text every consumer reads — engine surface, injected into
@@ -365,9 +372,9 @@ it("the src/ entry module's header names every subpath the package's exports map
  * per-entry failure record can come from, and the supervisor's fold is
  * exhaustive over it by type — so a member added there is a compile error
  * until its verdict list is named. Prose is the rung the compiler does not
- * reach: eight comments spelled the roster out by hand, and the member added
- * for a prompt that refused to render reached none of them — two of the eight
- * being the shipped `Chain.supervisorPolicy` hover a chain author reads
+ * reach: comments across the engine spelled the roster out by hand, and the
+ * member added for a prompt that refused to render reached none of them —
+ * among them the shipped `Chain.supervisorPolicy` hover a chain author reads
  * before turning quarantine off (`.claude/rules/engineering.md` § Derived
  * state is computed, never restated beside its source).
  *
@@ -376,13 +383,24 @@ it("the src/ entry module's header names every subpath the package's exports map
  * that deliberately names a subset — the lift set's, whose three holds each
  * judge a tree — says so at the site, and saying so names the member it
  * leaves out, which is what this scan reads.
+ *
+ * The suite is read beside the engine, because a roster restated in a test
+ * goes stale the same way and reads as authoritative the same way. Two were
+ * standing when this domain widened: one in a test file, a wave after the
+ * same drift had been fixed by hand in a sibling with nothing left behind to
+ * catch the next, and one in the engine that the scan's own extractor had
+ * been blind to — a roster written across a line break of a `//` run, which
+ * a match over the file text read as two lists with a comment marker between
+ * them.
  */
 
-/** The `src/` modules whose comments the roster scan reads. */
-const srcModules = (): readonly string[] =>
-  readdirSync(fileURLToPath(new URL("../src", import.meta.url)))
-    .filter((name) => name.endsWith(".ts"))
-    .sort();
+/**
+ * The trees the scan walks, each whole. `harness/` states no roster, and the
+ * vacuity pin below holds every tree walked to a roster of its own, so a
+ * tree holding none would red for the scan's reach rather than for prose
+ * gone stale.
+ */
+const ROSTER_TREES: readonly string[] = ["src", "tests"];
 
 /**
  * How a stage's name is spelled in prose: `provision` also appears as the
@@ -415,28 +433,24 @@ const CONTEXT_WINDOW = 120;
 const LIST_CONTINUES = new RegExp(String.raw`^${LIST_SEPARATOR}\w`);
 
 /**
- * Every comment in `source`, flattened to one line each: a block comment with
- * its leading `*` gutter stripped, and a run of adjacent `//` lines read as
- * the one comment a reader reads it as. Backticks are dropped so a
- * backticked stage name reads as the word it is.
+ * Every comment one module states, as this scan reads prose: furniture off,
+ * a run of adjacent lines folded into the one comment a reader reads, and
+ * backticks dropped so a backticked stage name reads as the word it is.
+ *
+ * The runs come off the parser's trivia (`commentProse`,
+ * `tests/helpers/commentCitations.ts`) rather than off a match over the file
+ * text, so a comment opener inside a string literal opens nothing: matched out
+ * of the text, the `src/**` a phase's writable paths are declared with opened
+ * a block that ran to the next comment terminator, and every line of code
+ * between was judged as prose.
  */
 const commentsIn = (
-  source: string,
-): readonly { readonly text: string; readonly line: number }[] => {
-  const found: { text: string; line: number }[] = [];
-  const at = (index: number): number =>
-    source.slice(0, index).split("\n").length;
-  for (const m of source.matchAll(/\/\*[\s\S]*?\*\//g)) {
-    found.push({ text: m[0], line: at(m.index) });
-  }
-  for (const m of source.matchAll(/(?:^[ \t]*\/\/[^\n]*\n?)+/gm)) {
-    found.push({ text: m[0], line: at(m.index) });
-  }
-  return found.map(({ text, line }) => ({
+  path: string,
+): readonly { readonly text: string; readonly line: number }[] =>
+  commentProse(parseScopeless(path)).map(({ line, text }) => ({
     line,
-    text: text.replace(/`/g, "").replace(/\n[ \t]*\*?[ \t]?/g, " "),
+    text: text.replace(/`/g, ""),
   }));
-};
 
 /** The roster members `text` names anywhere. */
 const stagesNamedIn = (text: string): readonly FailureStage[] =>
@@ -471,38 +485,42 @@ const rosterListsIn = (text: string): readonly string[] => {
   return lists;
 };
 
-it("no comment in src/ names two failure stages in a list without naming every FAILURE_STAGES member", () => {
-  // Vacuity guards: the roster is populated, and the scan is over the real
-  // modules — a scan that read no module, or judged against an empty roster,
-  // passes over nothing (`.claude/rules/engineering.md` § A green verdict is
-  // proven non-vacuous).
+it("no comment in src/ or tests/ names two failure stages in a list without naming every FAILURE_STAGES member", () => {
+  // Vacuity guard: the roster the scan judges against is populated, and the
+  // scan walks more than one tree — a scan over an empty roster, or over the
+  // one tree the roster lives in, passes over what it exists to reach
+  // (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
   expect(FAILURE_STAGES.length).toBeGreaterThan(1);
-  const modules = srcModules();
-  expect(modules.length).toBeGreaterThan(0);
+  expect(ROSTER_TREES.length).toBeGreaterThan(1);
 
   const stale: string[] = [];
-  let rosters = 0;
-  for (const module of modules) {
-    const source = srcText(module);
-    for (const { text, line } of commentsIn(source)) {
-      const lists = rosterListsIn(text);
-      if (lists.length === 0) continue;
-      rosters += lists.length;
-      const missing = FAILURE_STAGES.filter(
-        (stage) => !stagesNamedIn(text).includes(stage),
-      );
-      if (missing.length > 0) {
-        stale.push(
-          `src/${module}:${line} lists "${lists[0]}" and never names ${missing.join(", ")}`,
+  for (const tree of ROSTER_TREES) {
+    let rosters = 0;
+    for (const path of modulesUnder(REPO_ROOT, { trees: [tree] })) {
+      const module = relPath(REPO_ROOT, path);
+      for (const { text, line } of commentsIn(path)) {
+        const lists = rosterListsIn(text);
+        if (lists.length === 0) continue;
+        rosters += lists.length;
+        const missing = FAILURE_STAGES.filter(
+          (stage) => !stagesNamedIn(text).includes(stage),
         );
+        if (missing.length > 0) {
+          stale.push(
+            `${module}:${line} lists "${lists[0]}" and never names ${missing.join(", ")}`,
+          );
+        }
       }
     }
+
+    // Each tree contributed a roster of its own before the verdict over it is
+    // read: a tree walked and found empty is the false green here, and a
+    // count summed across the trees would let `src/` alone answer for both.
+    expect(
+      rosters,
+      `the scan found no stage roster in any ${tree}/ comment`,
+    ).toBeGreaterThan(0);
   }
 
-  // The scan found the rosters it exists to judge before the verdict over
-  // them is read: an empty scan is the false green here, not a clean tree.
-  expect(rosters, "the scan found no stage roster in any src/ comment").toBeGreaterThan(
-    FAILURE_STAGES.length,
-  );
   expect(stale, stale.join("\n")).toEqual([]);
 });
