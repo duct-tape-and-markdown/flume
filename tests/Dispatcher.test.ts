@@ -43,6 +43,7 @@ import { readMergingMarkers } from "../src/mergingMarkers.ts";
 import {
   writeTickVerdict,
   clearTickVerdict,
+  readInvocationRows,
   readTickVerdict,
   readTickVerdicts,
   readLatestVerdictsSync,
@@ -59,6 +60,7 @@ import {
 } from "../src/worktrees.ts";
 import {
   defaultStateRoot,
+  invocationsPath,
   mergingDir,
   slugify,
   stopFlagPath,
@@ -14647,6 +14649,173 @@ describe("TickVerdict invocations — usage/cost facts (spec/loop.md 'Every agen
       turns: 3,
       outputTokens: 50,
     });
+  });
+
+  // The rows are on disk as the spend is paid, not at the tick's end: a wave
+  // that ran four hours and paid for four agents was invisible to every
+  // reader — the operator, `flume status`, a chain — until it settled, and a
+  // tick that died in between took the whole bill with it. The write rides
+  // each agent's return; the verdict composes from what is on disk.
+  it("an agent's usage row reaches disk when that agent returns rather than when its tick ends", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    // Read from inside the tick, past the agent and before the verdict: an
+    // afterMerge gate runs after the row's write and before `tick()` returns,
+    // so what it sees is what a reader looking at this tick mid-flight sees.
+    let midTick: Awaited<ReturnType<typeof readInvocationRows>> | undefined;
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [
+        {
+          name: "reads-the-rows",
+          when: "afterMerge",
+          async run() {
+            midTick = await readInvocationRows(join(fx.repo, ".flume"), "plan");
+            return { ok: true, message: "rows read" };
+          },
+        },
+      ],
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent: Agent = {
+      name: "row-on-return",
+      async invoke(inv) {
+        // Nothing has been written yet at this point — the row is the fact of
+        // a *returned* agent, and this one has not returned.
+        expect(existsSync(invocationsPath(join(fx.repo, ".flume"), "plan"))).toBe(
+          false,
+        );
+        await writeAndCommit(inv.cwd, "src/plan-output.ts", "ok\n", "plan: derive");
+        return {
+          exitCode: 0,
+          stdout: "",
+          stderr: "",
+          usage: {
+            model: "claude-fable-5-1",
+            turns: 2,
+            inputTokens: 10,
+            costUsd: 211.4,
+          },
+        };
+      },
+    };
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+    expect(outcome.result?.committed).toBe(true);
+    // Vacuity (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): the gate must have run, or the read below judged nothing.
+    expect(midTick).toBeDefined();
+    expect(midTick).toHaveLength(1);
+    expect(midTick![0]!.model).toBe("claude-fable-5-1");
+    expect(midTick![0]!.costUsd).toBe(211.4);
+    // And the tick's own verdict says exactly what the mid-tick reader saw:
+    // one set, on disk, with no second copy settled at the end.
+    expect(outcome.verdict!.invocations).toEqual(midTick);
+  });
+
+  it("a tick that dies after an agent returned keeps that agent's usage row", async () => {
+    await writePending(fx.repo, [makeEntry("PAID", ["src/paid.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
+    const agent: Agent = {
+      name: "paid-then-the-wave-dies",
+      async invoke(inv) {
+        // The refusal siblings' own mid-wave corruption: unparseable bytes
+        // land on trunk after this wave's decide-read and before the ledger
+        // rewrite's own read, so the agent is paid for in full and the
+        // rewrite behind its pick is what tears the wave down.
+        await commitEntryFile(
+          fx.repo,
+          entryFileName("CORRUPT"),
+          "{ corrupted mid-wave, not json",
+        );
+        await writeAndCommit(inv.cwd, "src/paid.ts", "paid\n", "build(PAID): ship");
+        return {
+          exitCode: 0,
+          stdout: "",
+          stderr: "",
+          usage: { model: "claude-fable-5-1", turns: 4, costUsd: 211.4 },
+        };
+      },
+    };
+
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    }).tick();
+
+    // The tick died: the wave threw out of its own ledger rewrite rather than
+    // returning, and never reached the point a pre-fix tree wrote usage at.
+    expect(outcome.failed).toBe(true);
+    expect(outcome.ledgerRefusal).toBe("parse-failure");
+
+    // The spend it had already paid for is on disk regardless, read back
+    // through the real reader rather than off the verdict the throw carried.
+    const rows = await readInvocationRows(join(fx.repo, ".flume"), "build");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.entryTag).toBe("PAID");
+    expect(rows[0]!.costUsd).toBe(211.4);
+    expect(rows[0]!.turns).toBe(4);
+  });
+
+  it("the tick verdict's invocations compose from the usage rows already on disk", async () => {
+    await writePending(fx.repo, [
+      makeEntry("COMPOSE-A", ["src/a.ts"]),
+      makeEntry("COMPOSE-B", ["src/b.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent: Agent = {
+      name: "two-paid",
+      async invoke(inv) {
+        const slug = basename(inv.cwd);
+        const tag = slug === "compose-a" ? "COMPOSE-A" : "COMPOSE-B";
+        const file = slug === "compose-a" ? "src/a.ts" : "src/b.ts";
+        await writeAndCommit(inv.cwd, file, `${tag}\n`, `build(${tag}): ship`);
+        return {
+          exitCode: 0,
+          stdout: "",
+          stderr: "",
+          usage: { model: "claude-fable-5-1", turns: 1, inputTokens: 7 },
+        };
+      },
+    };
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      maxParallel: 2,
+    });
+
+    const outcome = await dispatcher.tick();
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
+      "COMPOSE-A",
+      "COMPOSE-B",
+    ]);
+    // Agreement (.claude/rules/engineering.md, "A seam gate reads what the
+    // real writer wrote"): the rows the legs wrote, decoded by the reader the
+    // verdict composes through, against the verdict the same tick produced.
+    const rows = await readInvocationRows(join(fx.repo, ".flume"), "build");
+    // Vacuity: the whole set the claim is over, not a populated prefix of it.
+    expect(rows).toHaveLength(2);
+    expect([...rows].map((r) => r.entryTag).sort()).toEqual([
+      "COMPOSE-A",
+      "COMPOSE-B",
+    ]);
+    expect(outcome.verdict!.invocations).toEqual(rows);
   });
 });
 

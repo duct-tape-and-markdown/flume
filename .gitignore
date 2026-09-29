@@ -9,6 +9,7 @@ dist/
 .flume/worktrees/
 .flume/merging/
 .flume/tick-verdict/
+.flume/invocations/
 .flume/loop.pid
 .flume/tick-verdicts.jsonl
 .flume/stop

@@ -20,6 +20,7 @@ import {
   RUNTIME_IGNORES,
 } from "../src/runtimeIgnores.ts";
 import {
+  invocationsPath,
   mergingMarkerPath,
   STATE_ROOT_NAMES,
   tickVerdictPath,
@@ -200,6 +201,50 @@ describe("ensureRuntimeIgnores — the runtime files a tick drops", () => {
 // the state root's own (`STATE_ROOT_NAMES`, `src/paths.ts`) and the marker
 // path is built by the real accessor, so this drives the real writer through
 // the real reader — git — rather than respelling either side here.
+// Mechanism pin (per spec/loop.md "Every agent invocation leaves a usage
+// row"): a running tick appends one row per returned agent under
+// `<stateRoot>/invocations/<phase>.jsonl`, so the rows of every tick that
+// ever ran sit under the state root between ticks — exactly where an operator
+// reaches for `git add`. The name is the state root's own (`STATE_ROOT_NAMES`,
+// `src/paths.ts`) and the row path is built by the real accessor, so this
+// drives the real writer through the real reader — git — rather than
+// respelling either side here.
+describe("ensureRuntimeIgnores — the usage rows a running tick appends", () => {
+  it("RUNTIME_IGNORES names the per-phase usage-row dir", async () => {
+    // Vacuity (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): an empty set would leave `status` below judging nothing.
+    expect(RUNTIME_IGNORES.length).toBeGreaterThan(0);
+    // A directory of per-phase files, so the entry carries the trailing slash
+    // a directory needs — a bare name ignores nothing here.
+    expect(RUNTIME_IGNORES).toContain(`${STATE_ROOT_NAMES.invocations}/`);
+
+    const repo = await makeRepo();
+    try {
+      const stateRoot = join(repo.dir, ".flume");
+      await mkdir(stateRoot, { recursive: true });
+      await ensureRuntimeIgnores(stateRoot);
+      // Two phases, because that is what the directory exists for: a
+      // supervisor run holds one child per awake phase, each appending its
+      // own rows.
+      for (const phase of ["plan", "build"]) {
+        const rows = invocationsPath(stateRoot, phase);
+        await mkdir(dirname(rows), { recursive: true });
+        await writeFile(rows, '{"promptPath":"p.md","uncommittedTracked":[]}\n');
+      }
+      const seen = await gitOut(repo.dir, [
+        "status",
+        "--porcelain",
+        "-uall",
+        "--",
+        ".flume",
+      ]);
+      expect(seen).toBe("?? .flume/.gitignore");
+    } finally {
+      await repo.cleanup();
+    }
+  });
+});
+
 describe("ensureRuntimeIgnores — the crash-surviving merge marker", () => {
   it("RUNTIME_IGNORES names the merging-marker dir", async () => {
     // Vacuity (.claude/rules/engineering.md, "A green verdict is proven

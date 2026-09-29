@@ -59,8 +59,10 @@ import type { TickLegContext } from "./tickLeg.js";
 import { checkMergedTipUnmoved, liveForeignClaimPid } from "./tipVerify.js";
 import {
   buildTickVerdict,
+  appendInvocationRow,
   gateFailureSignature,
   MAX_FAILURE_SIGNATURE,
+  readInvocationRows,
   reportedGateRow,
   startTiming,
   throwFacts,
@@ -71,7 +73,6 @@ import {
   type ReportedGateResult,
   type StakeLoss,
   type TickVerdict,
-  type TickVerdictInvocation,
   type TickVerdictMergeOutcome,
   type TickVerdictTiming,
 } from "./tickVerdict.js";
@@ -343,12 +344,6 @@ interface WaveMerge {
   /** Gate-stage failures, the sibling accounting to {@link WaveMerge.mergeFailures}. */
   readonly gateFailures: GateFailure[];
   /**
-   * spec/loop.md "Every agent invocation leaves a usage row": one row per
-   * provisioned entry that actually reached `invokeAgent` — a declined or
-   * render-refused entry carries no `termination` and gets no row.
-   */
-  readonly invocations: TickVerdictInvocation[];
-  /**
    * Every ledger commit this wave has landed, in the order it landed them —
    * one per pick whose rewrite reported one, empty while every rewrite so far
    * wrote no commit (a footprint already recorded, a live foreign tip claim
@@ -408,7 +403,6 @@ interface WaveMergeResult {
   readonly mergeOutcomes: TickVerdictMergeOutcome[];
   readonly mergeFailures: MergeFailure[];
   readonly gateFailures: GateFailure[];
-  readonly invocations: TickVerdictInvocation[];
   /** A tip claim or a per-entry ancestry refusal stopped at least one span. */
   readonly tipMoved: boolean;
   /** `shouldRun` declined at least one entry. */
@@ -433,7 +427,6 @@ export function openWaveMerge(setup: WaveMergeSetup): WaveMerge {
     mergeOutcomes: [],
     mergeFailures: [],
     gateFailures: [],
-    invocations: [],
     ledgerShas: [],
     tipMoved: false,
     declined: false,
@@ -566,16 +559,22 @@ async function foldAttemptFacts(
   // entry's attempt time lands before the merge time it preceded.
   w.timings.push(...r.timings);
   if (r.termination) {
-    w.invocations.push({
+    // spec/loop.md "Every agent invocation leaves a usage row": on disk the
+    // moment this entry's agent returned, ahead of the ship lock its pick
+    // waits on. A wave of four agents is hours long and every one of them is
+    // paid for as it finishes, so the rows cannot wait on the wave that
+    // outlives them (`appendInvocationRow`, `src/tickVerdict.ts`).
+    //
+    // spec/loop.md "Tip verify — one writer per branch, absorption
+    // at the merge": this entry's worktree is done being written —
+    // its agent, its tip-verify soft reset and its afterCommit
+    // revert all ran inside `runAttempt`, and the pick touches
+    // trunk alone — but teardown is still a whole wave away, so the
+    // set is readable here.
+    await appendInvocationRow(w.setup.leg.flumeDir, w.setup.phase.name, {
       entryTag: r.entry.tag,
       promptPath: r.termination.promptPath,
       ...(r.termination.usage ?? {}),
-      // spec/loop.md "Tip verify — one writer per branch, absorption
-      // at the merge": this entry's worktree is done being written —
-      // its agent, its tip-verify soft reset and its afterCommit
-      // revert all ran inside `runAttempt`, and the pick touches
-      // trunk alone — but teardown is still a whole wave away, so the
-      // set is readable here.
       uncommittedTracked: await git.trackedModifications(r.worktreePath),
     });
   }
@@ -1050,7 +1049,6 @@ export function closeWaveMerge(w: WaveMerge): WaveMergeResult {
     mergeOutcomes: w.mergeOutcomes,
     mergeFailures: w.mergeFailures,
     gateFailures: w.gateFailures,
-    invocations: w.invocations,
     tipMoved: w.tipMoved,
     declined: w.declined,
     ...(w.bystanderCheckpointSha
@@ -1319,7 +1317,11 @@ async function settledWaveVerdict(
     timings: w.timings,
     shippedTags,
     mergeOutcomes: w.mergeOutcomes,
-    invocations: w.invocations,
+    // spec/loop.md "Every agent invocation leaves a usage row": composed from
+    // the rows this wave's agents already wrote, never a second copy the
+    // stage carried — the rows on disk are the set, and a wave torn down
+    // mid-flight reports exactly the ones it had paid for.
+    invocations: await readInvocationRows(leg.flumeDir, phase.name),
     provisionFailures,
     renderFailures,
     stakeLosses,

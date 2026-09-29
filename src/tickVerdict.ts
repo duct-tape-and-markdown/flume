@@ -1,7 +1,10 @@
 /**
  * The tick verdict — the facts artifact every tick that runs a phase leaves
  * behind: its shape, the stage-failure and merge-fate vocabularies it
- * carries, and the read/write/clear I/O over the two files it lives in.
+ * carries, and the read/write/clear I/O over the three files it lives in —
+ * the per-phase latest verdict, the bounded history log, and the per-phase
+ * usage rows a running tick appends and the verdict's `invocations[]` is
+ * composed from.
  *
  * spec/loop.md "The tick verdict — one facts artifact". The dispatcher
  * builds a verdict, the CLI writes it, `superviseLoop` and a chain's
@@ -16,7 +19,7 @@
  * way and a field decoded for one surface may not be dropped from the next.
  */
 
-import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
+import { appendFile, readFile, writeFile, mkdir, rm } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 
 import type { AgentUsage } from "./Agent.js";
@@ -24,6 +27,8 @@ import { bound } from "./bounds.js";
 import { existsLoud } from "./fsProbe.js";
 import type { GateResult } from "./Gate.js";
 import {
+  invocationsDir,
+  invocationsPath,
   namespacedJoin,
   tickVerdictDir,
   tickVerdictPath,
@@ -921,7 +926,7 @@ export function buildTickVerdict(facts: TickVerdictFacts): TickVerdict {
 }
 
 /**
- * Two files under the state dir, both stable paths, neither a
+ * Three files under the state dir, every one a stable path and none a
  * dogfood convention. Their names live in `STATE_ROOT_NAMES`
  * (`src/paths.ts`) with the rest of the state root's layout, so the job
  * `.gitignore` seed carries them without a second spelling; the accessors
@@ -945,8 +950,21 @@ export function buildTickVerdict(facts: TickVerdictFacts): TickVerdict {
  *    and bounded to {@link MAX_TICK_VERDICTS}, read back by the exported
  *    `readTickVerdicts` accessor so a chain can render recent tick history
  *    into a prompt. Never cleared — it is history, not a per-tick signal.
+ *  - {@link invocationsPath} — the usage rows of the tick of that phase
+ *    running *now*, appended one per agent as it returns
+ *    ({@link appendInvocationRow}) and read back where a verdict is built
+ *    ({@link readInvocationRows}). Per phase for the same reason the verdict
+ *    file is, and cleared by {@link clearInvocationRows} at the start of that
+ *    phase's next tick — the one artifact here written mid-tick, because the
+ *    spend it records is paid mid-tick.
  */
-export { tickVerdictDir, tickVerdictPath, tickVerdictsLogPath };
+export {
+  invocationsDir,
+  invocationsPath,
+  tickVerdictDir,
+  tickVerdictPath,
+  tickVerdictsLogPath,
+};
 
 /**
  * Bound on {@link tickVerdictsLogPath}'s file — a rolling window, not an
@@ -1132,6 +1150,107 @@ export async function clearTickVerdict(
     return;
   }
   await rm(namespacedJoin(tickVerdictPath(flumeDir, phase)), { force: true });
+}
+
+/**
+ * spec/loop.md "Every agent invocation leaves a usage row": append one row to
+ * `phase`'s usage-row file, at the moment the agent it describes returned.
+ *
+ * Both legs call it — the wave's per-attempt fold (`src/waveMerge.ts`) and
+ * the singleton's one attempt (`src/singletonTick.ts`) — so the row is on
+ * disk before the pick, the gates and the teardown that follow it, and a tick
+ * that dies anywhere past here keeps the spend it already paid for. Spend is
+ * state on disk, not a total held in memory until the tick settles
+ * (`spec/loop.md`, *Crash equals stop*).
+ *
+ * Append rather than rewrite: the file is one tick's, and a rewrite of the
+ * whole set per agent would lose every earlier row to a crash mid-write —
+ * the failure this artifact exists to close. {@link clearInvocationRows} is
+ * what bounds it; nothing here trims.
+ */
+export async function appendInvocationRow(
+  flumeDir: string,
+  phase: string,
+  row: TickVerdictInvocation,
+): Promise<void> {
+  // The rows dir nests inside the state root, so one recursive mkdir creates
+  // both. win32 MAX_PATH: flumeDir nests under a job/worktree root;
+  // namespacedJoin (src/paths.ts) is the shared idiom.
+  await mkdir(namespacedJoin(invocationsDir(flumeDir)), { recursive: true });
+  await appendFile(
+    namespacedJoin(invocationsPath(flumeDir, phase)),
+    JSON.stringify(row) + "\n",
+    "utf8",
+  );
+}
+
+/**
+ * The usage rows `phase`'s running tick has left so far, oldest first — what
+ * a verdict's `invocations[]` is composed from, by the dispatcher at the end
+ * of a tick and by the partial verdict a torn-down wave rides out on
+ * (`src/waveMerge.ts`). Neither producer holds a second copy of the set
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
+ * beside its source*).
+ *
+ * Absent reads as no rows — a tick whose agents never ran wrote no file. It
+ * is the only silent reading and it is **proven**: `existsLoud`
+ * (`src/fsProbe.ts`) throws on any stat failure but `ENOENT`, and the read
+ * past it refuses under {@link unreadable}, so a rows file that is present and
+ * unreadable refuses rather than reporting a tick that paid for agents as one
+ * that paid for none (`.claude/rules/engineering.md`, *Loud or nothing*). A
+ * line that will not parse, or that is not a row this engine version reads, is
+ * skipped the way a history line is: an append cut short by the crash the
+ * artifact is written against must not cost the rows before it.
+ */
+export async function readInvocationRows(
+  flumeDir: string,
+  phase: string,
+): Promise<TickVerdictInvocation[]> {
+  const path = invocationsPath(flumeDir, phase);
+  const p = namespacedJoin(path);
+  if (!existsLoud(p)) return [];
+  let raw: string;
+  try {
+    raw = await readFile(p, "utf8");
+  } catch (err) {
+    throw unreadable("tick usage rows", path, err);
+  }
+  const rows: TickVerdictInvocation[] = [];
+  for (const line of verdictLogLines(raw)) {
+    let rec: unknown;
+    try {
+      rec = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (isInvocationRow(rec)) rows.push(rec);
+  }
+  return rows;
+}
+
+/** Structural check a parsed line is shaped like a {@link TickVerdictInvocation} — the two fields every row carries, whatever the agent reported. */
+function isInvocationRow(rec: unknown): rec is TickVerdictInvocation {
+  if (!rec || typeof rec !== "object") return false;
+  const r = rec as Partial<TickVerdictInvocation>;
+  return typeof r.promptPath === "string" && Array.isArray(r.uncommittedTracked);
+}
+
+/**
+ * Clear `phase`'s usage rows before that phase's next tick reaches its own
+ * work — called by `Dispatcher.tick()` once the phase is chosen and before
+ * either leg runs, so the file a verdict composes from holds this tick's rows
+ * and no earlier tick's.
+ *
+ * Scoped to one phase for the same reason {@link clearTickVerdict}'s named
+ * arm is: a supervisor run holds one child per awake phase, and a clear of the
+ * whole directory would take a live sibling's rows with it — including the
+ * rows of agents that had already been paid for.
+ */
+export async function clearInvocationRows(
+  flumeDir: string,
+  phase: string,
+): Promise<void> {
+  await rm(namespacedJoin(invocationsPath(flumeDir, phase)), { force: true });
 }
 
 /**

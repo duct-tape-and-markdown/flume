@@ -74,6 +74,8 @@ import type { AgentBounds, AttemptContext } from "./tickAttempt.js";
 import type { PhaseTickOutcome, TickLegContext } from "./tickLeg.js";
 import {
   buildTickVerdict,
+  clearInvocationRows,
+  readInvocationRows,
   throwFacts,
   type GateFailure,
   type MergeFailure,
@@ -968,6 +970,15 @@ export class Dispatcher {
     );
     const legCtx = this.legCtxFor(promptTemplate);
 
+    // spec/loop.md "Every agent invocation leaves a usage row": a row reaches
+    // disk when its agent returns, so the file this phase appends to is one
+    // tick's and the stale one a previous tick of this phase left is cleared
+    // here — after the phase is chosen and before either leg runs, which is
+    // the last moment at which no agent of this tick has been paid for.
+    // Scoped to this phase: a supervisor run holds one child per awake phase,
+    // and a live sibling's rows are spend already paid.
+    await clearInvocationRows(this.flumeDir, phase.name);
+
     this.log.info(`[flume] tick → ${phase.name} (${phase.concurrency})`);
 
     let phaseOutcome: PhaseTickOutcome;
@@ -1041,7 +1052,6 @@ export class Dispatcher {
       gateFailures,
       tags,
       mergeOutcomes,
-      invocations,
       timings,
       clearedPriorAttempts,
     } = phaseOutcome;
@@ -1141,7 +1151,13 @@ export class Dispatcher {
       gateResults: result.gateResults,
       shippedTags: result.shippedTags,
       mergeOutcomes,
-      invocations,
+      // spec/loop.md "Every agent invocation leaves a usage row": composed
+      // from the rows each agent wrote as it returned, never from a list the
+      // legs carried back — the rows on disk are the set, and the verdict
+      // states them rather than keeping a second copy
+      // (`.claude/rules/engineering.md`, *Derived state is computed, never
+      // restated beside its source*).
+      invocations: await readInvocationRows(this.flumeDir, phase.name),
       // spec/loop.md "The tick verdict — one facts artifact": what this tick
       // spent off the agent's clock, from the leg that measured it — the same
       // rows the wave's refusal verdict carries, so the completing and the

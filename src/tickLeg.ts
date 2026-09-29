@@ -35,7 +35,6 @@ import type {
   RenderFailure,
   StakeLoss,
   TickVerdict,
-  TickVerdictInvocation,
   TickVerdictTiming,
   TickVerdictMergeOutcome,
 } from "./tickVerdict.js";
@@ -64,8 +63,6 @@ export type PhaseTickOutcome = {
   tags?: string[];
   /** Fanout only: each provisioned entry's cherry-pick/merge fate; absent for a singleton phase. */
   mergeOutcomes?: TickVerdictMergeOutcome[];
-  /** See {@link TickVerdict.invocations}. */
-  invocations?: TickVerdictInvocation[];
   /** See {@link TickVerdict.timings}. */
   timings?: TickVerdictTiming[];
   /** See {@link TickVerdict.clearedPriorAttempts}; fanout only. */

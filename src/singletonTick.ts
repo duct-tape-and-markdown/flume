@@ -33,6 +33,7 @@ import { consultShouldRun, runAttempt } from "./tickAttempt.js";
 import type { PhaseTickOutcome, TickLegContext } from "./tickLeg.js";
 import { checkMergedTipUnmoved } from "./tipVerify.js";
 import {
+  appendInvocationRow,
   gateFailureSignature,
   MAX_FAILURE_SIGNATURE,
   reportedGateRow,
@@ -42,7 +43,6 @@ import {
   type MergeOutcome,
   type ProvisionFailure,
   type ReportedGateResult,
-  type TickVerdictInvocation,
   type TickVerdictMergeOutcome,
   type TickVerdictTiming,
 } from "./tickVerdict.js";
@@ -257,15 +257,6 @@ export async function runSingleton(
   // alone. Same for a merge-stage failure — see MergeFailure's doc.
   const gateFailures: GateFailure[] = [];
   let mergeFailure: MergeFailure | undefined;
-  // spec/loop.md "Every agent invocation leaves a usage row": set once the
-  // agent actually runs, regardless of what the tick goes on to do with
-  // the commit — absent when `shouldRun`/render-refusal skipped the
-  // invocation entirely. The row's `uncommittedTracked` is the one field
-  // this tick cannot know yet, so it is completed at the teardown site
-  // below rather than here.
-  let invocationRow:
-    | Omit<TickVerdictInvocation, "uncommittedTracked">
-    | undefined;
   // spec/loop.md "The tick verdict — one facts artifact": "the phase's own
   // single span under singleton". A singleton has no entry to tag, so these
   // rows carry `outcome`/`baseSha`/`headSha` and no `tag` — one row at
@@ -307,10 +298,24 @@ export async function runSingleton(
   gateResults.push(...attempt.gateResults);
   timings.push(...attempt.timings);
   if (attempt.termination) {
-    invocationRow = {
+    // spec/loop.md "Every agent invocation leaves a usage row": written the
+    // moment this tick's one agent returned, regardless of what the tick goes
+    // on to do with the commit — absent when `shouldRun`/render-refusal
+    // skipped the invocation entirely. On disk here rather than carried out
+    // to the verdict, so the merge stage below, the teardown after it and any
+    // crash through either leave the spend already paid readable
+    // (`appendInvocationRow`, `src/tickVerdict.ts`).
+    //
+    // spec/loop.md "Tip verify — one writer per branch, absorption at the
+    // merge": the worktree read rides the same write. Everything that could
+    // still dirty it — the agent, the tip-verify soft reset, an afterCommit
+    // revert — ran inside `runAttempt` above; the cherry-pick and afterMerge
+    // stages below touch trunk, not here.
+    await appendInvocationRow(leg.flumeDir, phase.name, {
       promptPath: attempt.termination.promptPath,
       ...(attempt.termination.usage ?? {}),
-    };
+      uncommittedTracked: await git.trackedModifications(wt.path),
+    });
   }
   if (attempt.tipMoved) {
     mergeOutcomes.push({
@@ -562,18 +567,6 @@ export async function runSingleton(
     }
   }
 
-  // spec/loop.md "Tip verify — one writer per branch, absorption at the
-  // merge": last read of this worktree before it stops existing.
-  // Everything that could still dirty it — the agent, the tip-verify soft
-  // reset, an afterCommit revert — is behind us; the cherry-pick and
-  // afterMerge stages above ran against trunk, not here.
-  const invocation: TickVerdictInvocation | undefined = invocationRow
-    ? {
-        ...invocationRow,
-        uncommittedTracked: await git.trackedModifications(wt.path),
-      }
-    : undefined;
-
   await teardownWorktreeInstance(
     phase,
     chain,
@@ -636,7 +629,6 @@ export async function runSingleton(
       : {}),
     ...(mergeFailure ? { mergeFailures: [mergeFailure] } : {}),
     mergeOutcomes,
-    ...(invocation ? { invocations: [invocation] } : {}),
     timings,
   };
 }

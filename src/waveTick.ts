@@ -785,7 +785,6 @@ export async function runFanout(
       : {}),
     tags: provisioned.map((e) => e.tag),
     mergeOutcomes: mergeStage.mergeOutcomes,
-    invocations: mergeStage.invocations,
     timings: mergeStage.timings,
     ...(clearedPriorAttempts.length > 0 ? { clearedPriorAttempts } : {}),
   };

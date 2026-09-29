@@ -236,6 +236,11 @@ Harness-managed state — every name here is one the runtime spells itself
   (`readTickVerdicts`). One file per phase because a `flume loop` run holds
   one child per awake phase at once, and the supervisor reads each child's
   facts back under the phase it named that child with.
+- `.flume/invocations/<phase>.jsonl` — the usage rows the phase's *running*
+  tick has appended, one per agent that has returned. Written as each agent
+  returns rather than when the tick ends, so a tick that dies after paying
+  for an agent keeps that agent's row; the verdict above composes its
+  `invocations[]` from this file and the next tick of that phase clears it.
 
 Everything else under the state root is its chain's — placed by the chain
 rather than the runtime, and the chain's alone to move. This repo's own chain

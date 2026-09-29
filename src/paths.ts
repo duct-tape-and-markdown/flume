@@ -458,6 +458,7 @@ export const STATE_ROOT_NAMES = {
   stopFlag: "stop",
   tickVerdict: "tick-verdict",
   tickVerdictsLog: "tick-verdicts.jsonl",
+  invocations: "invocations",
 } as const;
 
 /**
@@ -619,6 +620,35 @@ export function tickVerdictPath(flumeDir: string, phase: string): string {
  */
 export function tickVerdictsLogPath(flumeDir: string): string {
   return join(flumeDir, STATE_ROOT_NAMES.tickVerdictsLog);
+}
+
+/**
+ * The directory holding one running tick's usage rows per phase —
+ * `<flumeDir>/invocations`. Keyed by phase for the same reason
+ * {@link tickVerdictDir} is: a supervisor run holds one child per awake
+ * phase, and the rows two children write concurrently must not land in one
+ * another's file.
+ *
+ * Same split as {@link tickVerdictDir}: this module owns the name so the
+ * runtime ignore set can reach it without importing the rows' I/O, and
+ * `src/tickVerdict.ts` owns what the file carries and when.
+ */
+export function invocationsDir(flumeDir: string): string {
+  return join(flumeDir, STATE_ROOT_NAMES.invocations);
+}
+
+/**
+ * One phase's in-progress usage rows — `<flumeDir>/invocations/<phase>.jsonl`,
+ * appended to as each of that tick's agents returns and removed before the
+ * next tick of that phase begins its own work.
+ *
+ * Keyed by the phase name exactly as the chain declares it, on the same rule
+ * as {@link tickVerdictPath}: a phase never runs twice at once, so the file
+ * is one tick's, and the verdict written at the end of that tick composes
+ * `invocations[]` from it.
+ */
+export function invocationsPath(flumeDir: string, phase: string): string {
+  return join(invocationsDir(flumeDir), `${phase}.jsonl`);
 }
 
 /**
