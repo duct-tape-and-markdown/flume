@@ -1,0 +1,32 @@
+{
+  "tag": "THE-VERDICT-VOCABULARY-HOVER-TEXT-IS-WELL-FORMED",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 0,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/tickVerdict.ts",
+        "description": "`ProvisionFailure`'s doc loses the stray opener its body starts with, and `MergeOutcome`'s roster is one bullet per member again"
+      },
+      {
+        "path": "tests/docComments.test.ts",
+        "description": "the two arms: a shipped doc comment whose body opens with a second `/**`, and the union whose roster must name one bullet per member"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "Two doc comments on `src/index.ts`-exported surface are malformed — a stray `/**` opening one body, and five of MergeOutcome's nine variants no longer bullets",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Narration is the ladder's bottom rung"
+  },
+  "acceptance": "the hover text a chain author reads for `ProvisionFailure` and `MergeOutcome` is well formed — no body opening with a second doc-comment opener, and one bullet per union member — and both properties are held by an arm of the pin that already owns shipped hover text rather than by review",
+  "notes": "Verified on disk: `src/tickVerdict.ts:35` is a stray `/**` above the real opener at `:36`, so the shipped body starts with it; `MergeOutcome`'s roster (`:360`-`:404`) aligns four bullets and then runs `afterCommit-reverted`, `not-shipped`, `tip-moved`, `dropped-work` and `wave-walled` into the prose of the variant above. Both types are exported (`src/index.ts`). No existing arm reads either — `harness/init.ts:282` nests openers inside emitted template text and is out by construction.",
+  "tests": [
+    "no doc comment the package ships opens with a second doc-comment opener",
+    "MergeOutcome's doc names one bullet per member of the union"
+  ]
+}

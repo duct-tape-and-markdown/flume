@@ -1,0 +1,40 @@
+{
+  "tag": "THE-CLI-VERB-SPLIT-RE-HOMES-ITS-STRANDED-CITES",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 0,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/cliChainLoad.ts",
+        "description": "the two caller rosters name the modules those verbs are now, not the entry module they left"
+      },
+      {
+        "path": "src/paths.ts",
+        "description": "the fence pre-check's second surface and the friction read-by-name name their own modules"
+      },
+      {
+        "path": "src/cliHelp.ts",
+        "description": "the two rows citing `main` for a refusal name the verb function that now takes it"
+      },
+      {
+        "path": "tests/cli.test.ts",
+        "description": "the three case headers naming the entry module for a verb body name the module that holds it"
+      },
+      {
+        "path": "tests/loopSupervisor.test.ts",
+        "description": "the policy-forwarding header names the verb that forwards"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "The CLI verb split left nine comments naming `src/cli.ts` or `main` for facts that moved into the verb modules — green citations at the wrong door",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A module is one job"
+  },
+  "acceptance": "every comment naming a file or function for a CLI verb's own fact names the module that now holds that fact, so no citation resolves as a token while pointing at a door the job has left; no behavior changes, and the typecheck plus the suite hold the edit",
+  "notes": "Stranded by 754afb51's own split, whose note claims each pointer moved with its job. Verified on disk: `src/cliChainLoad.ts:15` (check, friction), `:20` (status, wake/sleep); `src/paths.ts:263` (check), `:376` (friction read-by-name); `src/cliHelp.ts:238` and `:375` name `main` for the tip-claim and usage refusals `tickVerb` now takes; `tests/cli.test.ts:747`, `:850`, `:6268`; `tests/loopSupervisor.test.ts:1897`. Claims no property: the pin reads the token, never the door."
+}

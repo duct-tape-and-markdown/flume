@@ -1,7 +1,34 @@
 {
   "sweptThrough": "7310e6ed8c3714474d06bbf62947a67fc66869bf",
   "rotation": {
-    "kind": "closed"
+    "kind": "open",
+    "covered": [
+      "harness/chain.ts",
+      "harness/filingBands.ts",
+      "harness/gates.ts",
+      "harness/prompts.ts",
+      "src/chainLoad.ts",
+      "src/cli.ts",
+      "src/cliArgs.ts",
+      "src/cliBaton.ts",
+      "src/cliCheck.ts",
+      "src/cliFriction.ts",
+      "src/cliHelp.ts",
+      "src/cliHistory.ts",
+      "src/cliLoop.ts",
+      "src/cliRender.ts",
+      "src/cliRunContext.ts",
+      "src/cliStatus.ts",
+      "src/cliTeardown.ts",
+      "src/cliTick.ts",
+      "src/friction.ts",
+      "src/index.ts",
+      "src/pidClaim.ts",
+      "src/runtimeIgnores.ts",
+      "src/tickVerdict.ts",
+      "src/tipVerify.ts",
+      "src/worktrees.ts"
+    ]
   },
   "retiredThrough": "7310e6ed8c3714474d06bbf62947a67fc66869bf"
 }
