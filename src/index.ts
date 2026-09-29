@@ -1,13 +1,14 @@
 /**
- * Public surface for `flume`. Consumers import from here; package.json's
- * `exports` map restricts resolution to this entry point, so anything not
- * re-exported below is unreachable from outside the package.
+ * Public surface for `flume`. package.json's `exports` map declares this
+ * module at `.` and the harness package's own surface at `./harness`
+ * (`harness/index.ts`), and resolution reaches nothing else: a name neither
+ * entry point re-exports is unreachable from outside the package.
  */
 
 export type { Agent, AgentInvocation, AgentResult, AgentUsage } from "./Agent.js";
 // `BudgetDeclaration` is what `ClaudeCodeOptions.budget` takes, so a chain
 // declaring its window and thresholds as a named constant needs the name
-// from the entry point (`.claude/rules/engineering.md`, *An export earns its
+// from this entry point (`.claude/rules/engineering.md`, *An export earns its
 // consumer*).
 export type { BudgetDeclaration } from "./budgetHook.js";
 export { claudeCode, type ClaudeCodeOptions } from "./claudeCode.js";
@@ -19,7 +20,7 @@ export {
 
 // `BatonToken` is what `Baton.token` answers and `Baton.sleepIfUnchanged`
 // takes, so a chain holding a phase's token across its own work needs to name
-// it from the entry point (`.claude/rules/engineering.md`, *An export earns
+// it from this entry point (`.claude/rules/engineering.md`, *An export earns
 // its consumer*).
 export { Baton, type BatonToken } from "./Baton.js";
 

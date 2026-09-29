@@ -43,6 +43,31 @@ const docCommentBefore = (
   return body;
 };
 
+/**
+ * The manifest's `exports` map, which is the sole author of what the package
+ * resolves: one key per subpath a consumer may import, each naming the
+ * declaration it resolves to.
+ */
+const exportsMap = (): Readonly<Record<string, { readonly types?: string }>> => {
+  const manifest = JSON.parse(
+    readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8"),
+  ) as {
+    readonly exports?: Readonly<Record<string, { readonly types?: string }>>;
+  };
+  if (manifest.exports === undefined) {
+    throw new Error("package.json declares no exports map");
+  }
+  return manifest.exports;
+};
+
+/**
+ * Every span a block backticks. A header names a subpath by writing it as the
+ * manifest spells it, so the spans are read whole rather than searched for as
+ * substrings: `.` inside `./harness` is the map's other key, not this one.
+ */
+const backtickedSpans = (doc: string): ReadonlySet<string> =>
+  new Set([...doc.matchAll(/`([^`]+)`/g)].map((match) => match[1] ?? ""));
+
 /** The doc comment block immediately preceding `field`'s declaration. */
 const docCommentFor = (source: string, field: string): string =>
   docCommentBefore(source, String.raw`${field}\??:`, `\`${field}\``);
@@ -296,5 +321,39 @@ it("the shipped chain-facing glob options' doc comments name no glob dialect the
     for (const dialect of FOREIGN_GLOB_DIALECTS) {
       expect(doc, `\`${label}\` doc names ${dialect}`).not.toMatch(dialect);
     }
+  }
+});
+
+/**
+ * The entry module's own header is the hover text a chain author reads when
+ * deciding whether a symbol absent from that module is public surface, and it
+ * is the one comment the declaration emit carries verbatim into
+ * dist/src/index.d.ts. What the package resolves is the `exports` map's to
+ * say, so the header is read against the manifest rather than against an
+ * entry list someone remembered: a subpath added to the map reds this pin
+ * instead of shipping beside a header that names the old set.
+ */
+it("the src/ entry module's header names every subpath the package's exports map declares", () => {
+  const map = exportsMap();
+  const header = docCommentBefore(
+    srcText("index.ts"),
+    String.raw`export type \{`,
+    "the entry module header",
+  );
+  const named = backtickedSpans(header);
+
+  // Vacuity guard: the map declares more than one subpath — over a one-key
+  // map "every subpath" is a claim about the only entry the header cannot
+  // omit — and the root key resolves to the module whose header was read, so
+  // the block judged below is the one this pin is about.
+  const subpaths = Object.keys(map);
+  expect(subpaths.length).toBeGreaterThan(1);
+  expect(map["."]?.types).toContain("/src/index.d.ts");
+  expect(named.size).toBeGreaterThan(0);
+
+  for (const subpath of subpaths) {
+    expect(named, `the entry header names no ${subpath} subpath`).toContain(
+      subpath,
+    );
   }
 });
