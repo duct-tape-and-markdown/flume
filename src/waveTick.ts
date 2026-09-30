@@ -70,7 +70,11 @@ import {
   waveSlotThrow,
   type EntryAttempt,
 } from "./waveMerge.js";
-import { createWorktree, teardownWorktreeInstance } from "./worktrees.js";
+import {
+  createWorktree,
+  teardownWorktreeInstance,
+  warnSurvivingWorktrees,
+} from "./worktrees.js";
 import { thrownMessage } from "./thrown.js";
 
 /**
@@ -719,11 +723,7 @@ export async function runFanout(
   leg.log.info(
     `[flume] ${phase.name}: cleaned ${cleaned}/${tornDown} worktree(s)`,
   );
-  if (survivingPaths.length > 0) {
-    leg.log.warn(
-      `[flume] ${phase.name}: ${survivingPaths.length} worktree(s) survived removal (fallback exhausted): ${survivingPaths.join(", ")}`,
-    );
-  }
+  warnSurvivingWorktrees(leg.log, phase.name, survivingPaths);
 
   leg.log.info(
     `[flume] ${phase.name}: wave done in ${Date.now() - waveStart}ms`,

@@ -1073,6 +1073,135 @@ describe("Dispatcher singleton — runs in a flume/<phase> worktree (WORKTREE-CO
   });
 });
 
+/**
+ * The singleton's half of what a wave's slot tail already reports: removal
+ * can be exhausted and leave the worktree on disk, and the operator only
+ * learns of it if the teardown's answer is read. Both exits that tear the
+ * singleton's worktree down are driven here — the end-of-tick one and the
+ * setupWorktree-failure one — because they are separate returns and a fix
+ * that reaches only one leaves the other silent.
+ *
+ * `git.removeWorktree` is mocked to reject rather than genuinely locked:
+ * the class it stands in for is the win32 EBUSY/held-handle wall its own
+ * fallback exhausts on, and the leg never distinguishes why removal failed.
+ */
+describe("Dispatcher singleton — a worktree teardown could not remove reaches the operator", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** Only the sentence a surviving directory earns, never the branch-delete
+   * warning that trails it — the branch is still checked out in the
+   * directory that stood, so its deletion fails too. */
+  const survivalWarnings = (warnings: string[], wtPath: string): string[] =>
+    warnings.filter(
+      (w) => w.includes("survived removal") && w.includes(wtPath),
+    );
+
+  it("a singleton whose worktree survives removal names the surviving path", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const wtPath = join(fx.repo, ".flume", "worktrees", "plan");
+
+    vi.spyOn(git, "removeWorktree").mockRejectedValue(
+      new Error("worktree directory survived removal fallback: " + wtPath),
+    );
+
+    const phase = makePhase({ name: "plan", concurrency: "singleton" });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(cwd, "src/plan-output.ts", "ok\n", "plan: derive");
+    });
+
+    const warnings: string[] = [];
+    const log: Logger = {
+      info: () => {},
+      warn: (l) => warnings.push(l),
+      error: () => {},
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // The tick really ran and shipped: the teardown below is the one a
+    // completed tick takes, not a provisioning bail that never got there.
+    expect(outcome.result?.committed).toBe(true);
+    // And the directory really did survive — the warning is about something
+    // still on disk, not a report over an absence.
+    expect(existsSync(wtPath)).toBe(true);
+
+    const survived = survivalWarnings(warnings, wtPath);
+    expect(survived).toHaveLength(1);
+    // Named with this phase as its subject, the way a wave names its own.
+    expect(survived[0]).toBe(
+      `[flume] plan: 1 worktree(s) survived removal (fallback exhausted): ${wtPath}`,
+    );
+  });
+
+  it("a singleton whose setupWorktree hook failed names a worktree its teardown could not remove", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const wtPath = join(fx.repo, ".flume", "worktrees", "plan");
+
+    vi.spyOn(git, "removeWorktree").mockRejectedValue(
+      new Error("worktree directory survived removal fallback: " + wtPath),
+    );
+
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      setupWorktree: async () => {
+        throw new Error("setupWorktree boom for plan");
+      },
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent: Agent = {
+      name: "must-not-run",
+      async invoke() {
+        throw new Error("the agent must not run after a setupWorktree throw");
+      },
+    };
+
+    const warnings: string[] = [];
+    const log: Logger = {
+      info: () => {},
+      warn: (l) => warnings.push(l),
+      error: () => {},
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // This is the hook-failure exit, not the end-of-tick one: the tick
+    // parked with the hook's signature and never committed.
+    expect(outcome.result?.committed).toBe(false);
+    expect(outcome.provisionFailures).toEqual([
+      expect.objectContaining({
+        signature: expect.stringContaining("setupWorktree boom"),
+      }),
+    ]);
+    expect(existsSync(wtPath)).toBe(true);
+
+    const survived = survivalWarnings(warnings, wtPath);
+    expect(survived).toHaveLength(1);
+    expect(survived[0]).toBe(
+      `[flume] plan: 1 worktree(s) survived removal (fallback exhausted): ${wtPath}`,
+    );
+  });
+});
+
 describe("Dispatcher singleton — afterCommit gate failure reverts the commit", () => {
   it("drops the agent's commit and reports the failing gate", async () => {
     const preHead = await head(fx.repo);

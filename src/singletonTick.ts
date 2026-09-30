@@ -48,6 +48,7 @@ import {
 import {
   createWorktree,
   teardownWorktreeInstance,
+  warnSurvivingWorktrees,
 } from "./worktrees.js";
 import { thrownMessage } from "./thrown.js";
 
@@ -215,6 +216,26 @@ export async function runSingleton(
     return provisionNoRun(failure);
   }
 
+  /**
+   * The singleton's one teardown, taken by both exits that reach it — the
+   * setupWorktree-failure exit below and the end-of-tick one. Removal can be
+   * exhausted and leave the directory on disk, and a singleton's surviving
+   * set is a set of one, so the answer is read and named on the operator's
+   * channel rather than dropped (`.claude/rules/engineering.md`, *Loud or
+   * nothing*). One spelling for the sentence, shared with the wave's slot
+   * tail and the startup sweep (`warnSurvivingWorktrees`, `src/worktrees.ts`).
+   */
+  const tearDownWorktree = async (): Promise<void> => {
+    const removed = await teardownWorktreeInstance(
+      phase,
+      chain,
+      wt,
+      phase.name,
+      leg.worktreeCtx,
+    );
+    if (!removed) warnSurvivingWorktrees(leg.log, phase.name, [wt.path]);
+  };
+
   let extraEnv: Record<string, string> | undefined;
   if (phase.setupWorktree) {
     try {
@@ -229,13 +250,7 @@ export async function runSingleton(
       leg.log.warn(
         `[flume] ${phase.name}: setupWorktree hook failed (${failure.signature}); no tick this cycle`,
       );
-      await teardownWorktreeInstance(
-        phase,
-        chain,
-        wt,
-        phase.name,
-        leg.worktreeCtx,
-      );
+      await tearDownWorktree();
       return provisionNoRun(failure);
     }
   }
@@ -477,13 +492,7 @@ export async function runSingleton(
     }
   }
 
-  await teardownWorktreeInstance(
-    phase,
-    chain,
-    wt,
-    phase.name,
-    leg.worktreeCtx,
-  );
+  await tearDownWorktree();
 
   const pendingAfterSingleton = await readPendingTolerant(leg);
   // A second selection over a second world: this tick may have committed,

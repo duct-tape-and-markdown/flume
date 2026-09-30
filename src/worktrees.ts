@@ -657,8 +657,11 @@ export async function createWorktree(
  * (spec/worktrees.md "Singleton runs in a worktree"). `tag` is the entry's
  * tag or the phase name, passed straight through to the hook's `worktreeKey`
  * and to the harvest's provenance prefix. Returns whether removal succeeded —
- * the caller aggregates surviving paths itself, since a wave reports them
- * once at wave level, not once per worktree.
+ * the caller aggregates surviving paths itself and reports them through
+ * {@link warnSurvivingWorktrees}, since a wave reports them once at wave
+ * level, not once per worktree. Discarding the answer is what
+ * `.claude/rules/engineering.md`, *Loud or nothing* forbids: the directory is
+ * still on disk, and nothing else will say so.
  *
  * A wave's slots queue it behind each other's `git worktree add` for the
  * reason they queue their own creations: `add` and `remove` mutate the same
@@ -690,7 +693,7 @@ export async function teardownWorktreeInstance(
     await git.removeWorktree(ctx.repoRoot, wt.path, ctx.log);
     removed = true;
   } catch {
-    // Caller records the surviving path.
+    // Caller reports the surviving path (`warnSurvivingWorktrees`, below).
   }
   try {
     await git.deleteBranch(ctx.repoRoot, wt.branch);
@@ -700,6 +703,31 @@ export async function teardownWorktreeInstance(
     );
   }
   return removed;
+}
+
+/**
+ * The one spelling of the sentence an operator acts on when removal is
+ * exhausted and a worktree is still on disk — {@link
+ * teardownWorktreeInstance} answering false, or the sweep's own removal leg.
+ *
+ * Every reacher supplies its own subject: a phase name for the tick whose
+ * teardown could not remove it, `startup sweep` for the sweep that found it
+ * standing. What the operator goes and clears is the same rung whoever
+ * noticed it, so the paths are the fact and the subject is only who is
+ * speaking.
+ *
+ * Silent on an empty set — a run that removed everything it provisioned has
+ * nothing to report.
+ */
+export function warnSurvivingWorktrees(
+  log: Logger,
+  subject: string,
+  survivingPaths: readonly string[],
+): void {
+  if (survivingPaths.length === 0) return;
+  log.warn(
+    `[flume] ${subject}: ${survivingPaths.length} worktree(s) survived removal (fallback exhausted): ${survivingPaths.join(", ")}`,
+  );
 }
 
 /**
@@ -934,9 +962,5 @@ export async function sweepStaleWorktrees(
     );
   }
 
-  if (survivingPaths.length > 0) {
-    ctx.log.warn(
-      `[flume] startup sweep: ${survivingPaths.length} worktree(s) survived removal (fallback exhausted): ${survivingPaths.join(", ")}`,
-    );
-  }
+  warnSurvivingWorktrees(ctx.log, "startup sweep", survivingPaths);
 }
