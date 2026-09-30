@@ -1,0 +1,32 @@
+{
+  "tag": "A-READ-AT-A-REF-ANSWERS-A-BLOB-OR-ABSENT",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 0,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/git.ts",
+        "description": "the listing leg decides on the row's type and hands its object id to the content leg; the row decode shared with `listTreeBlobNames` beside it"
+      },
+      {
+        "path": "tests/git.test.ts",
+        "description": "the non-blob arm, and the one-tree pin moved from the folded sha to the object id"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "`readFileAtRef` hands back `git show <ref>:<dir>`'s tree listing as a file's committed bytes; its own contract is bytes-or-absent and a non-blob row has no verdict",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Loud or nothing"
+  },
+  "acceptance": "`readFileAtRef` answers a blob's committed bytes or `null`, and nothing else. Its listing leg reads the row's type and object id \u2014 the `ls-tree -z` row decode `listTreeBlobNames` beside it already performs, shared rather than spelled twice (`.claude/rules/engineering.md`, *The fix lands at the mechanism*) \u2014 a non-blob row answers the `null` the reader already gives a path that is not in the tree, and the content leg reads that object id. No `rev-parse` leg and no `<ref>:<path>` composition left: an object id cannot move, so the one-tree property the fold buys today is structural instead. The existing one-sha pin moves to the object id rather than being dropped, and the doc's `git show <ref>:<path>` narration states what the legs now are. `pnpm tsc --noEmit`, the suite, and the export and citation pins green.",
+  "tests": [
+    "a directory committed at the ref reads back absent, never git's own tree listing as content",
+    "the content leg reads the object id the listing named, never a `<ref>:<path>` composition"
+  ],
+  "notes": "Verified on disk and against git 2.43 this tick. `src/git.ts:722`-`:739` probes presence with `ls-tree --name-only`, then `show <sha>:<path>`; over a committed directory git prints `tree <sha>:<dir>` plus the child names, which the reader returns as content though its doc (`:670`) says bytes-or-`null`. Reached through `harness/citeResolver.ts`'s `per` reads, so a cite at a directory refuses on the section \u2014 the wrong half blamed. The non-blob verdict is the price f66ad0f5 named."
+}

@@ -1,0 +1,25 @@
+{
+  "tag": "A-FOLD-IS-SPENT-ONLY-WHERE-ITS-SIDES-CAN-DIFFER",
+  "gate": {
+    "kind": "blockedBy",
+    "tags": ["A-READ-AT-A-REF-ANSWERS-A-BLOB-OR-ABSENT"]
+  },
+  "priority": 0,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/cliStateDirs.ts",
+        "description": "both root comparisons reach `canonicalDir` only once the two spellings differ; the doc's disk-read arithmetic states what is left"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "third body of the family `a shared fold spent unconditionally where one side is the same string by construction`, which the routing bar files once",
+  "per": {
+    "path": ".claude/rules/posture-sweep.md",
+    "section": "Routing"
+  },
+  "acceptance": "`resolveStateDirs` reaches `canonicalDir` only where the two spellings it compares can differ, so the default invocation — where `flumeDir` *is* `own` by assignment and the inherited stamp *is* the `resolve(repoRoot)` a prior call wrote — spends no `realpathSync.native` at all. Behavior-free by construction: equal strings fold equal, so no verdict, message or published env value moves, and the doc comment's disk-read arithmetic states what the tree now spends rather than what it did. No `tests[]` and no `pins[]`: the entry claims no property, which is what `.claude/rules/posture-sweep.md`, *Routing* asks of a filed shape family. The family's other site is retired by the blocker, whose recomposed read needs no `rev-parse` leg at all. `pnpm tsc --noEmit`, the suite, and the export and citation pins green.",
+  "notes": "Count read off `git log` over every plan body, no window: c982b6a0 first (`resolveStateDirs` realpathing a default path to prove it equals itself), f66ad0f5 second (`readFileAtRef`'s `rev-parse` over eight sha-passing call sites). Third body, so it files. Verified on disk this tick: `src/cliStateDirs.ts:236`-`:237` make `flumeDir === own` with `FLUME_DIR` unset and `:243` folds both sides anyway; `:216` folds the stamp `:259` wrote as `resolve(repoRoot)`."
+}
