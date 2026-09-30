@@ -49,20 +49,32 @@ import type {
 } from "./Prompt.js";
 
 /**
- * A `PriorAttempt` variant before {@link PriorAttemptStore.write} stamps
- * the `headSha`/`at` anchor, the `key` keyspace, the `keyedAs` written
- * identity and the `declaredAs` declaration key — what each mode-specific
- * builder below actually produces. Kept as an explicit union (rather than a
- * distributed `Omit` over `PriorAttempt`) so each arm still carries its own
- * mode-specific fields rather than collapsing to their shared `mode` key.
+ * One `PriorAttempt` variant as a builder produces it: before
+ * {@link PriorAttemptStore.write} stamps the `headSha`/`at` anchor, the `key`
+ * keyspace, the `keyedAs` written identity and the `declaredAs` declaration
+ * key. The one home for that key list — every arm of
+ * {@link PriorAttemptDraft} and every `build*` return below is spelled
+ * through here, so a field `write` starts or stops stamping moves once
+ * instead of per site.
+ */
+type Unstamped<A extends PriorAttempt> = Omit<
+  A,
+  "headSha" | "at" | "key" | "keyedAs" | "declaredAs"
+>;
+
+/**
+ * What each mode-specific builder below actually produces. Kept as an
+ * explicit union (rather than one {@link Unstamped} distributed over
+ * `PriorAttempt`) so each arm still carries its own mode-specific fields
+ * rather than collapsing to their shared `mode` key.
  */
 export type PriorAttemptDraft =
-  | Omit<GateRevertAttempt, "headSha" | "at" | "key" | "keyedAs" | "declaredAs">
-  | Omit<CleanExitAttempt, "headSha" | "at" | "key" | "keyedAs" | "declaredAs">
-  | Omit<PlatformPreemptAttempt, "headSha" | "at" | "key" | "keyedAs" | "declaredAs">
-  | Omit<RenderRefusedAttempt, "headSha" | "at" | "key" | "keyedAs" | "declaredAs">
-  | Omit<TipMovedAttempt, "headSha" | "at" | "key" | "keyedAs" | "declaredAs">
-  | Omit<NotShippedAttempt, "headSha" | "at" | "key" | "keyedAs" | "declaredAs">;
+  | Unstamped<GateRevertAttempt>
+  | Unstamped<CleanExitAttempt>
+  | Unstamped<PlatformPreemptAttempt>
+  | Unstamped<RenderRefusedAttempt>
+  | Unstamped<TipMovedAttempt>
+  | Unstamped<NotShippedAttempt>;
 
 /**
  * Where one prior-attempt record lives and which keyspace that place belongs
@@ -826,7 +838,7 @@ export async function buildGateRevert(
    * between them is this tick's to digest.
    */
   span: { base: string; head: string },
-): Promise<Omit<GateRevertAttempt, "headSha" | "at" | "key" | "keyedAs" | "declaredAs">> {
+): Promise<Unstamped<GateRevertAttempt>> {
   const diffStat = await capturedDiffStat(diffCwd, span);
   return {
     mode: "gate-revert",
@@ -876,7 +888,7 @@ export async function buildGateRevert(
 export function buildCleanExit(
   finalMessage: string,
   span: Pick<CleanExitAttempt, "spanBase" | "spanHead">,
-): Omit<CleanExitAttempt, "headSha" | "at" | "key" | "keyedAs" | "declaredAs"> {
+): Unstamped<CleanExitAttempt> {
   const message = tailBound(finalMessage, MAX_PRIOR_NOCOMMIT);
   return {
     mode: "clean-exit",
@@ -891,7 +903,7 @@ export function buildCleanExit(
 /** Build the platform-preempt record from the non-work failure class. */
 export function buildPlatformPreempt(
   failureClass: string,
-): Omit<PlatformPreemptAttempt, "headSha" | "at" | "key" | "keyedAs" | "declaredAs"> {
+): Unstamped<PlatformPreemptAttempt> {
   return {
     mode: "platform-preempt",
     failureClass: bound(failureClass, MAX_PRIOR_NOCOMMIT),
@@ -911,7 +923,7 @@ export function buildPlatformPreempt(
  */
 export function buildRenderRefused(
   failures: string,
-): Omit<RenderRefusedAttempt, "headSha" | "at" | "key" | "keyedAs" | "declaredAs"> {
+): Unstamped<RenderRefusedAttempt> {
   return {
     mode: "render-refused",
     failures: bound(failures, MAX_PRIOR_NOCOMMIT),
@@ -937,7 +949,7 @@ export function buildRenderRefused(
 export function buildTipMoved(
   expectedTip: string,
   observedTip: string,
-): Omit<TipMovedAttempt, "headSha" | "at" | "key" | "keyedAs" | "declaredAs"> {
+): Unstamped<TipMovedAttempt> {
   return { mode: "tip-moved", expectedTip, observedTip };
 }
 
@@ -966,7 +978,7 @@ export function buildNotShipped(
   mergedSha: string,
   touchedPaths: readonly string[],
   threw?: string,
-): Omit<NotShippedAttempt, "headSha" | "at" | "key" | "keyedAs" | "declaredAs"> {
+): Unstamped<NotShippedAttempt> {
   const omitted = touchedPaths.length - MAX_PRIOR_TOUCHED_PATHS;
   return {
     mode: "not-shipped",
