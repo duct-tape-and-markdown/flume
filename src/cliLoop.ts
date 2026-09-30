@@ -10,7 +10,7 @@
  * the run never lies to CI*).
  */
 
-import { parseMaxValue } from "./cliArgs.js";
+import { takeCountValue } from "./cliArgs.js";
 import type { CliVerbRun } from "./cliRunContext.js";
 import { installSignalledTeardown } from "./cliTeardown.js";
 import { describeRefFailure, loopCompletionSummary, loopExitCode } from "./cliVerdict.js";
@@ -76,26 +76,21 @@ function gitFloorWarning(version: GitVersion): string | undefined {
 export async function loopVerb(run: CliVerbRun): Promise<number> {
   const { paths, rest, log: operatorLog, dispatcher } = run;
   const { repoRoot, configDir, flumeDir } = paths;
-  const maxIdx = rest.indexOf("--max");
-  let max = DEFAULT_TICK_BUDGET;
   const words = [...rest];
-  if (maxIdx >= 0) {
-    const value = rest[maxIdx + 1];
-    const parsed = parseMaxValue(value);
-    if (parsed === null) {
-      operatorLog.error("usage: flume loop [--max N]");
-      return 2;
-    }
-    max = parsed;
-    words.splice(words.indexOf("--max"), 2);
-  }
+  const requested = takeCountValue(words, "--max");
   // loop consumes zero positionals — an unexpected trailing token past
   // `--max N` runs something other than what the operator typed
-  // (spec/cli.md "Subcommand surface", gh#1).
-  if (words.length > 0) {
+  // (spec/cli.md "Subcommand surface", gh#1). A `--max` carrying no count is
+  // left standing by the take, so it is refused here whether it is read as
+  // the flag's own failure or as the token it leaves behind.
+  if (requested === null || words.length > 0) {
     operatorLog.error("usage: flume loop [--max N]");
     return 2;
   }
+  // The budget this run spends, and the engine default when the operator
+  // named none — the take answers what was typed and this verb owns its
+  // fallback.
+  const max = requested ?? DEFAULT_TICK_BUDGET;
   // The git floor, read once per run and never per tick: the `flume tick`
   // children `superviseLoop` spawns below reach no branch that reads it, so
   // a run warns exactly once (spec/chain.md, "The package a chain loads

@@ -213,7 +213,7 @@ it("the loop verb and the top-level help page restate no DEFAULT_TICK_BUDGET lit
 
   const verbDefault = soleLineMatching(
     srcText("cliLoop.ts"),
-    /let max =/,
+    /const max = /,
     "the `loop` verb's `--max` default",
   );
   // Vacuity guard: this is the initializer it claims to be, and it names the

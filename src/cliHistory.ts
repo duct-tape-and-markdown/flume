@@ -7,7 +7,7 @@
  * opens the wrong one (`.claude/rules/engineering.md`, *A module is one job*).
  */
 
-import { parseMaxValue } from "./cliArgs.js";
+import { takeCountValue } from "./cliArgs.js";
 import { operatorLog } from "./cliLog.js";
 import { formatTickVerdictLine } from "./cliVerdict.js";
 import { EX_IOERR } from "./exitCodes.js";
@@ -31,21 +31,16 @@ export async function logVerb(
     jsonMode = true;
     words.splice(jsonIdx, 1);
   }
-  let n = DEFAULT_LOG_VERDICTS;
-  const nIdx = words.indexOf("-n");
-  if (nIdx >= 0) {
-    const parsed = parseMaxValue(words[nIdx + 1]);
-    if (parsed === null) {
-      operatorLog.error("usage: flume log [-n N] [--json]");
-      return 2;
-    }
-    n = parsed;
-    words.splice(nIdx, 2);
-  }
-  if (words.length > 0) {
+  const requested = takeCountValue(words, "-n");
+  // `log` consumes no positionals either, and a `-n` carrying no count is
+  // left standing by the take — so one refusal answers both.
+  if (requested === null || words.length > 0) {
     operatorLog.error("usage: flume log [-n N] [--json]");
     return 2;
   }
+  // How many verdicts to read back, and this verb's own default when the
+  // operator named no count.
+  const n = requested ?? DEFAULT_LOG_VERDICTS;
 
   // spec/cli.md "Subcommand surface", `log`: the exit-0/prints-nothing arm
   // is **no verdicts file**, so a log that is present and unreadable takes
