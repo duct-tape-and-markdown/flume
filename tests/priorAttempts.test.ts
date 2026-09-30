@@ -77,6 +77,7 @@ import {
   silent,
   type Fixture,
 } from "./helpers/dispatcherFixture.ts";
+import { bulletsOf, sectionOf } from "./helpers/docSections.ts";
 import { gitOut, SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
@@ -2108,4 +2109,233 @@ it("no docs page composes a prior-attempt map key by hand", () => {
       .map(([rel]) => rel)
       .sort(),
   ).toEqual(["docs/CHAIN-AUTHORING.md", "docs/MIGRATING-0.16.md"]);
+});
+
+/**
+ * The elision marker every bound in `src/bounds.ts` leaves behind, read as a
+ * *position* rather than as text: `bound` puts it after the head it kept,
+ * `tailBound` before the tail, `headTailBound` between the two. So where in
+ * the writer's output it sits is which end that writer keeps, and the chars
+ * either side of it are the bound it kept them to — both read off what the
+ * real writer emitted over an over-long input, never off the module's own
+ * constants (`.claude/rules/engineering.md`, *A seam gate reads what the real
+ * writer wrote*).
+ */
+const ELISION = /\n?…?\[truncated (\d+) chars\]…?\n?/;
+
+/** Which end of an over-long input a bound leaves standing. */
+type KeptEnd = "the head" | "the tail" | "both ends";
+
+/** What the authoring page's bullet must state about one bounded field. */
+interface BoundClaim {
+  /** The record mode whose bullet owns the field. */
+  readonly mode: string;
+  readonly field: string;
+  /** The bound with its unit, in the page's spelling. */
+  readonly amount: string;
+  readonly keeps: KeptEnd;
+}
+
+/**
+ * What a bounded string says about its own bound, or `undefined` for a field
+ * the writer handed back whole — the discovery half of the claim set below, so
+ * a field the writers start bounding joins it without this case being edited.
+ */
+function elisionOf(
+  text: string,
+): { chars: number; keeps: KeptEnd; dropped: number } | undefined {
+  const marker = ELISION.exec(text);
+  if (marker === null) return undefined;
+  const head = marker.index;
+  const tail = text.length - (marker.index + marker[0].length);
+  return {
+    chars: head + tail,
+    keeps: head === 0 ? "the tail" : tail === 0 ? "the head" : "both ends",
+    dropped: Number(marker[1]),
+  };
+}
+
+/**
+ * The `<prior-attempt>` bullet for one mode, cut at the blank line that closes
+ * the list rather than at the next lead: this list is followed by the section's
+ * rendered sample and four bolded paragraphs, so the last bullet has no next
+ * lead to stop at (`bulletsOf`, tests/helpers/docSections.ts).
+ */
+function modeBullet(section: string, mode: string): string {
+  const lead = `\`${mode}\` — `;
+  const found = bulletsOf(section).filter((bullet) => bullet.startsWith(lead));
+  // The cut is its own anchor: a renamed or absent lead reds here rather than
+  // letting an empty span agree with anything.
+  expect(found, `the section has no one bullet led by \`${mode}\``).toHaveLength(
+    1,
+  );
+  return found[0]!;
+}
+
+/**
+ * How a bullet states a bound. The unit is closed to the two the writers
+ * actually use — chars digested as KiB, and list entries — so a bullet that
+ * invented a third spelling reds as an unstated bound rather than passing on a
+ * loose match.
+ */
+const STATED_BOUND =
+  /`(\w+)`, bounded to (\d+(?: KiB| entries)) keeping (the head|the tail|both ends)/g;
+
+describe("priorAttempts — the authoring page states each bounded field's bound (EVERY-BOUNDED-PRIOR-ATTEMPT-FIELDS-BULLET-STATES-ITS-BOUND)", () => {
+  let fx: Fixture;
+
+  beforeEach(async () => {
+    fx = await makeFixture();
+  });
+  afterEach(async () => {
+    await fx.cleanup();
+  });
+
+  /**
+   * A capture longer than the widest bound any record carries, with
+   * distinguishable ends so "which end survived" is read off the output rather
+   * than assumed.
+   */
+  const OVER_LONG = `HEAD-OF-THE-CAPTURE${"x".repeat(16 * 1024)}TAIL-OF-THE-CAPTURE`;
+
+  /**
+   * A commit wide enough that its own `git show --stat` overruns the diffstat
+   * bound, and a path list long enough to overrun the footprint bound — one
+   * span drives both, so the digest and the listing are read off the same real
+   * commit rather than off a hand-authored stat.
+   */
+  const WIDE_PATHS = Array.from(
+    { length: 260 },
+    (_, i) => `wide-${String(i).padStart(3, "0")}.ts`,
+  );
+
+  it("docs/CHAIN-AUTHORING.md's prior-attempt bullets state the bound on every captured text the engine truncates", async () => {
+    const span = await commitPathsNamed(fx.repo, WIDE_PATHS);
+    const touched = WIDE_PATHS.map((name) => `snap/${name}`);
+
+    // Every writer, driven by the real builder over the over-long input —
+    // `tip-moved` included, which bounds nothing, so the reverse direction
+    // below is judged over a mode that had the chance to state a bound and
+    // must not.
+    const notShipped = buildNotShipped(span.head, touched, OVER_LONG);
+    const drafts: readonly PriorAttemptDraft[] = [
+      await buildGateRevert(
+        "afterCommit",
+        { gate: "vitest", message: "3 failed", details: OVER_LONG },
+        fx.repo,
+        span,
+      ),
+      buildCleanExit(OVER_LONG, UNMOVED_SPAN(span.head)),
+      buildPlatformPreempt(OVER_LONG),
+      buildRenderRefused(OVER_LONG),
+      buildTipMoved(span.base, span.head),
+      notShipped,
+    ];
+
+    const claims: BoundClaim[] = [];
+    for (const draft of drafts) {
+      for (const [field, value] of Object.entries(
+        draft as Record<string, unknown>,
+      )) {
+        if (field === "mode" || typeof value !== "string") continue;
+        const elided = elisionOf(value);
+        if (elided === undefined) continue;
+        // Non-vacuity per field: this writer really cut what it was handed,
+        // and the bound it kept is a whole KiB the page can state as one.
+        expect(
+          elided.dropped,
+          `\`${field}\` marks an elision of nothing`,
+        ).toBeGreaterThan(0);
+        expect(
+          elided.chars % 1024,
+          `\`${field}\`'s bound is ${elided.chars} chars, which no KiB spells`,
+        ).toBe(0);
+        claims.push({
+          mode: draft.mode,
+          field,
+          amount: `${elided.chars / 1024} KiB`,
+          keeps: elided.keeps,
+        });
+      }
+    }
+
+    // The one bounded field that is a list rather than a capture: its marker
+    // is the count beside it, and which end it kept is read off the input the
+    // same way — by comparing the entries that survived against it.
+    const kept = notShipped.touchedPaths;
+    expect(
+      notShipped.omittedPaths ?? 0,
+      "the path list elided nothing",
+    ).toBeGreaterThan(0);
+    const fromHead = kept.every((path, i) => path === touched[i]);
+    const fromTail = kept.every(
+      (path, i) => path === touched[touched.length - kept.length + i],
+    );
+    expect(
+      fromHead || fromTail,
+      "the bounded path list is neither end of what the writer was handed",
+    ).toBe(true);
+    claims.push({
+      mode: notShipped.mode,
+      field: "touchedPaths",
+      amount: `${kept.length} entries`,
+      keeps: fromHead ? "the head" : "the tail",
+    });
+
+    // Vacuity on the judged set: all three ends `src/bounds.ts` offers are
+    // represented, so a derivation that collapsed every field to one end —
+    // and a page that never says which end a field keeps — reds here.
+    expect([...new Set(claims.map((claim) => claim.keeps))].sort()).toEqual([
+      "both ends",
+      "the head",
+      "the tail",
+    ]);
+
+    // The fields a variant carries only on one arm are what a narrow fixture
+    // drops first, so they are named rather than counted.
+    const fields = claims.map((claim) => claim.field);
+    for (const armed of ["details", "threw", "touchedPaths"]) {
+      expect(fields, `no draft rosters the bounded \`${armed}\``).toContain(
+        armed,
+      );
+    }
+
+    const page = await readFile(
+      new URL("../docs/CHAIN-AUTHORING.md", import.meta.url),
+      "utf8",
+    );
+    const section = sectionOf(page, "### The `<prior-attempt>` block");
+
+    for (const claim of claims) {
+      const bullet = modeBullet(section, claim.mode);
+      expect(
+        bullet,
+        `the ${claim.mode} bullet does not state \`${claim.field}\`'s bound`,
+      ).toContain(
+        `\`${claim.field}\`, bounded to ${claim.amount} keeping ${claim.keeps}`,
+      );
+      // A bounded string that reads as a whole one is the false signal the
+      // bound must not introduce (`src/bounds.ts`), and a bullet calling the
+      // field full is that signal in prose.
+      expect(
+        bullet,
+        `the ${claim.mode} bullet still calls \`${claim.field}\` full`,
+      ).not.toContain(`full \`${claim.field}\``);
+    }
+
+    // Both directions on one equality, per bullet so a claim cannot be
+    // satisfied by a neighbour's: a field the writers start bounding and the
+    // page never grew reds here, and so does a bound the page states that no
+    // writer emits — a stale KiB after a constant moves included.
+    const onPage = bulletsOf(section).flatMap((bullet) =>
+      [...bullet.matchAll(STATED_BOUND)].map(
+        (m) => `${m[1]}|${m[2]}|${m[3]}`,
+      ),
+    );
+    expect(onPage.sort()).toEqual(
+      claims
+        .map((claim) => `${claim.field}|${claim.amount}|${claim.keeps}`)
+        .sort(),
+    );
+  });
 });

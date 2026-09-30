@@ -2104,31 +2104,35 @@ per record — and the block renders the variant that fired:
 
 - `gate-revert` — the commit landed and a gate reverted it. Carries `when` the
   revert ran (`afterCommit` or `afterMerge`), the failing `gate`'s name, its
-  one-line `message` and its full `details`, the `verdict` and `failingFiles`
-  the gate returned where it returned them, its `blamesSpan` where it disowned
-  the span, and `diffStat`, a `git show --stat` digest of the span the attempt
-  added — every commit from the tip it landed onto to the tip it reached, never
+  one-line `message`, and its `details`, bounded to 8 KiB keeping both ends: a
+  reporter puts its failure block at one end of a capture and its closing
+  counts at the other, and neither is crowded out by the other's length. Then
+  the `verdict` and `failingFiles` the gate returned where it returned them,
+  its `blamesSpan` where it disowned the span, and `diffStat`, bounded to
+  4 KiB keeping the head — a `git show --stat` digest of the span the attempt
+  added, every commit from the tip it landed onto to the tip it reached, never
   that tip's own diff. Symmetric across both gate phases: an `afterMerge`
   failure dies with the dispatcher process, and this is what survives it.
 - `clean-exit` — the agent exited cleanly and left no usable commit: either
   none at all, or a span whose diff against its base was empty, which dies
   with the worktree rather than reaching the merge stage. Carries
-  `finalMessage`, the tail of the agent's own final message, verbatim, and the
-  span's two shas — `spanBase` and `spanHead`, equal when nothing was committed
-  and apart when an empty span was. The engine names no intent:
-  a refused constraint, a deliberate park and "nothing to do" all exit clean,
+  `finalMessage`, bounded to 4 KiB keeping the tail — the agent's own final
+  message, verbatim, and the tail is the end it signs off at — and the span's
+  two shas — `spanBase` and `spanHead`, equal when nothing was committed and
+  apart when an empty span was. The engine names no intent: a refused
+  constraint, a deliberate park and "nothing to do" all exit clean,
   and the message is yours to read.
 - `platform-preempt` — the agent process failed for non-work reasons
   (rate-limit, auth, per-tick timeout, dispatcher-killed). Carries
-  `failureClass`, that class as the engine named it, marked as explicitly
-  **not** a defect in the prior work — the retry resumes rather than treating
-  the cut-off as a wall.
+  `failureClass`, bounded to 4 KiB keeping the head — that class as the engine
+  named it, marked as explicitly **not** a defect in the prior work — the
+  retry resumes rather than treating the cut-off as a wall.
 - `render-refused` — the tick refused before invoking the agent: an inline-exec
   span that would not resolve, a `{{KEY}}` no arg filled, a `shouldRun` hook
-  that threw, or a `promptArgs` hook that threw. Carries `failures` — one
-  field for every writer, since they share no error type: every failing span's
-  command text and its stderr, every key no arg filled, or the hook that threw
-  and what it said.
+  that threw, or a `promptArgs` hook that threw. Carries `failures`, bounded
+  to 4 KiB keeping the head — one field for every writer, since they share no
+  error type: every failing span's command text and its stderr, every key no
+  arg filled, or the hook that threw and what it said.
 - `tip-moved` — the agent's own commits failed the ancestry check: the base its
   private `flume/**` branch started from was no longer an ancestor of the HEAD
   the agent left, so the span was soft-reset away on that branch. Carries both
@@ -2141,13 +2145,18 @@ per record — and the block renders the variant that fired:
   was discarded — the commit is still sitting on its worktree branch.
 - `not-shipped` — the commit landed, passed every gate, and your own `shipped`
   predicate then did not ship it: it returned `false`, or it threw. Carries
-  `mergedSha`, the commit the predicate declined; `touchedPaths`, the paths
-  that commit touched, with `omittedPaths` counting the ones past that list's
-  bound and absent when the list is whole; and `threw` — the message a
+  `mergedSha`, the commit the predicate declined; `touchedPaths`, bounded to
+  200 entries keeping the head — the paths that commit touched, with
+  `omittedPaths` counting the ones past that bound and absent when the list is
+  whole; and `threw`, bounded to 4 KiB keeping the head — the message a
   throwing predicate raised, absent when it deliberately returned `false`, so a
   broken hook never reads back as a park. No reason vocabulary beyond that: the
   engine records that the chain said no, never why. This is what a chain reads
   instead of rebuilding "was the last attempt a park" out of the verdict log.
+
+Every bound above marks its own elision in the persisted field — a truncation
+marker in the captured text, `omittedPaths` beside the path list — so a cut
+capture never reads back to the retry as a whole one.
 
 Rendered, for the `gate-revert` variant:
 

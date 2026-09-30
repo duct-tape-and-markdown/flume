@@ -363,8 +363,13 @@ const LEAD_END = " \u2014 ";
  * across source lines is the formatter's business. A blank line ends the run,
  * so a paragraph following a list is not read as its last bullet's tail.
  * Fenced blocks are skipped on the rule `headingsOf` already carries.
+ *
+ * That blank-line rule is why a per-bullet read of a section whose list is
+ * *not* the last thing in it reaches for this rather than {@link bulletOf}:
+ * the last bullet of such a list has no next lead to stop at, and `bulletOf`
+ * would hand back the rest of the section under its name.
  */
-function bulletsOf(section: string): string[] {
+export function bulletsOf(section: string): string[] {
   const bullets: string[] = [];
   let listed = false;
 
