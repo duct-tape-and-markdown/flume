@@ -1,0 +1,24 @@
+{
+  "tag": "EACH-ARM-OF-THE-ABORT-CLASSIFIER-CARRIES-ITS-OWN-CASE",
+  "gate": { "kind": "open" },
+  "priority": 0,
+  "files": {
+    "edit": [
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the abort-seam cases at :13097 and :13116 and the `preemptFrom` leg they share (:13067); the comment at :13100 claiming a defence the fixture does not give"
+      }
+    ]
+  },
+  "summary": "The abort pin's one fixture satisfies both arms of the classifier's disjunction, so either arm deletes green while the case's comment claims a one-sided rename reds it",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A seam gate reads what the real writer wrote"
+  },
+  "acceptance": "The classifier's two arms (`src/tickAttempt.ts:608`) are reached one at a time: a case per arm drives the real mint's product through `preemptFrom` with the other arm's key not satisfied, each key read off `abortError`'s own output rather than spelled as a literal, so deleting either arm reds a case. The comment at :13100 shrinks to the claim the cases now hold. Hand-authoring a one-key rejection is warranted at the site by this section's refusal/shape carve-out — no mint in the adapter produces one. The property already holds, so the entry names no `tests[]`; `pnpm tsc --noEmit` and `pnpm test` green.",
+  "pins": [
+    "the abort class holds when the mint's product reaches the classifier carrying only its name key",
+    "the abort class holds when the mint's product reaches the classifier carrying only its code key"
+  ],
+  "notes": "Measured this tick, not reasoned: with `e.code === \"ABORT_ERR\"` deleted the :13097 case stays green; with `e.name === \"AbortError\"` deleted the whole of `tests/Dispatcher.test.ts` stays green (432 tests). No other test file reaches the classifier. The mint's own two keys are held elsewhere, hand-spelled (`tests/claudeCode.test.ts:495`) — the unpinned half is the reader's."
+}
