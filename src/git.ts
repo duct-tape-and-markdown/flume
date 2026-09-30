@@ -679,45 +679,102 @@ export async function spanDiffStat(
 }
 
 /**
- * Read a path's content as committed at `ref` (`git show <ref>:<path>`) —
- * spec/pending.md "Dispatch reads come from the tip, not the tree": every
- * strict queue read resolves the committed tip, never the working
- * tree. Returns `null` when the path is absent from that ref's tree,
- * mirroring a plain absence check for the disk read this replaces rather
- * than a distinct failure mode.
+ * One decoded `git ls-tree -z` row — `<mode> SP <type> SP <oid> TAB <path>`:
+ * the type git gave the entry, the object id it names, and the path it sits
+ * at, tree-relative the way git printed it. Decoded once here for both
+ * readers below rather than spelled at each of them, because a row's shape is
+ * git's fact and not each reader's
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ */
+type TreeRow = {
+  readonly type: string;
+  readonly oid: string;
+  readonly path: string;
+};
+
+/**
+ * The rows of an `ls-tree -z` listing.
  *
- * Existence is probed with `ls-tree` first — clean exit, empty stdout for
- * "not in this tree" — rather than parsing `git show`'s fatal-error exit
- * code, which is the same `128` for "path missing" as for every other fatal
- * condition (bad ref, not a repository) and so cannot structurally
- * distinguish them (`.claude/rules/engine-boundary.md` "Told, not
- * inferred"; the `isAncestor`/`deleteBranch` structural-probe pattern above,
- * applied here).
+ * `-z` is the dialect every caller of this decode passes, for the reason
+ * every other listing this module reads takes it: a committed name carrying
+ * a quote, a backslash or a newline is spelled verbatim between NULs, where
+ * git's default output would C-quote it and a caller composing on the name
+ * would name a path that does not exist.
  *
- * That probe's pathspec is matched as the path it is and never re-read as
+ * A row carrying no tab is not a row — the empty trailing field `-z` leaves,
+ * or output that is not a tree listing at all — and is dropped rather than
+ * read as an entry with an empty path. The metadata half is fixed-shape by
+ * construction, so a row that has a tab has all three fields; a row missing
+ * one has no type and no object id to answer with either.
+ */
+function treeRows(stdout: string): TreeRow[] {
+  const rows: TreeRow[] = [];
+  for (const row of stdout.split("\0")) {
+    const tab = row.indexOf("\t");
+    if (tab === -1) continue;
+    const [, type, oid] = row.slice(0, tab).split(" ");
+    if (type === undefined || oid === undefined) continue;
+    rows.push({ type, oid, path: row.slice(tab + 1) });
+  }
+  return rows;
+}
+
+/**
+ * The committed bytes of the **blob** `ref`'s tree holds at `relPath`, or
+ * `null` — spec/pending.md "Dispatch reads come from the tip, not the tree":
+ * every strict queue read resolves the committed tip, never the working
+ * tree. `null` when the path is absent from that ref's tree, mirroring a
+ * plain absence check for the disk read this replaces rather than a distinct
+ * failure mode.
+ *
+ * **A blob or nothing.** The listing leg reads the row's *type*, and a path
+ * `ref` holds as anything else — a directory, a submodule's gitlink — answers
+ * the same `null` an absent path does. Handing a tree to `git show` prints
+ * git's own listing (`tree <ref>:<dir>` and the child names), and returning
+ * that as a file's committed bytes is a confident wrong answer under a
+ * contract that says bytes-or-absent: a caller with no use for a directory's
+ * bytes has none for its listing either, and `null` is the verdict it already
+ * handles (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * The row is the one git printed **for exactly the path asked for**. A
+ * pathspec naming a directory lists that directory's children, and answering
+ * a read of `dir/` with the first child's bytes would be the same
+ * substituted verdict one level down.
+ *
+ * **The content leg reads the object id the listing named**, never
+ * `<ref>:<path>` recomposed. An object id cannot move, so the two legs read
+ * one tree structurally rather than by folding `ref` to a sha first: a
+ * symbolic `ref` is otherwise two answers, where a sibling committing between
+ * the legs leaves the path listed and then absent and the read exits fatal on
+ * a path the listing has just named (field-paid). An unresolvable `ref`
+ * throws at the listing, which is the refusal a caller handed a bad ref is
+ * owed either way.
+ *
+ * `cat-file blob`, not `show`: the type rides the verb, so the object it is
+ * handed is read as a blob or refuses — git holds the type check the branch
+ * above decides on, rather than this leg trusting the row it was given.
+ *
+ * Presence is read off the listing rather than out of `git show`'s
+ * fatal-error exit code, which is the same `128` for "path missing" as for
+ * every other fatal condition (bad ref, not a repository) and so cannot
+ * structurally distinguish them (`.claude/rules/engine-boundary.md` "Told,
+ * not inferred"; the `isAncestor`/`deleteBranch` structural-probe pattern
+ * above, applied here).
+ *
+ * That listing's pathspec is matched as the path it is and never re-read as
  * magic, because every invocation here runs under {@link
- * literalPathspecEnv}. A committed name may begin with `:` — git lists it,
- * `<ref>:<path>` resolves it — but a default pathspec parse takes the
- * leading colon as a magic prefix: `:leading.ts` lists nothing (so an
- * existing path reads back `null`) and `:(icase)x` exits 128 (so the whole
- * read throws). Both are the engine substituting a verdict for a path it was
- * handed (`.claude/rules/engineering.md`, *Loud or nothing*).
+ * literalPathspecEnv}. A committed name may begin with `:` — git lists it —
+ * but a default pathspec parse takes the leading colon as a magic prefix:
+ * `:leading.ts` lists nothing (so an existing path reads back `null`) and
+ * `:(icase)x` exits 128 (so the whole read throws). Both are the engine
+ * substituting a verdict for a path it was handed
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
  *
  * Content comes off `spawnGit`, not `run`: `run`'s `trimEnd()` is right for
  * git's own line-oriented output but would silently drop a real file's
  * trailing bytes — a content read wants exactly what was committed. Both legs
  * of the read are the same invocation composed the same way, so the dialect
  * they run under is one fact rather than two that agree.
- *
- * **Both legs run at one sha, resolved here.** `ref` may be symbolic, and a
- * symbolic ref is two answers to the probe and the read: a sibling committing
- * in between leaves the path listed and then absent, so `show` exits fatal on
- * a path `ls-tree` had just named (field-paid). {@link revParse} folds the ref
- * to the commit it named at the top of this read, and a sha cannot move — the
- * pair is one read of one tree, and a concurrent commit belongs to the next
- * read (`.claude/rules/engineering.md`, *Loud or nothing*). An unresolvable
- * `ref` throws here rather than at the probe, which is the same refusal one
- * call earlier.
  */
 export async function readFileAtRef(
   repoRoot: string,
@@ -725,16 +782,16 @@ export async function readFileAtRef(
   relPath: string,
 ): Promise<string | null> {
   const pathspec = gitPath(relPath);
-  const sha = await revParse(repoRoot, ref);
   const { stdout: listing } = await run(repoRoot, [
     "ls-tree",
-    "--name-only",
-    sha,
+    "-z",
+    ref,
     "--",
     pathspec,
   ]);
-  if (listing.trim().length === 0) return null;
-  const { stdout } = await spawnGit(repoRoot, ["show", `${sha}:${pathspec}`]);
+  const row = treeRows(listing).find((r) => r.path === pathspec);
+  if (row?.type !== "blob") return null;
+  const { stdout } = await spawnGit(repoRoot, ["cat-file", "blob", row.oid]);
   return stdout;
 }
 
@@ -755,11 +812,6 @@ export async function readFileAtRef(
  * own children, so a subdirectory appears as a `tree` row and is dropped
  * here rather than descended into — the listing rule the queue is read under
  * is git's own behavior, not a filter composed on top of it.
- *
- * `-z` for the reason every other listing this module decodes takes it: a
- * committed name carrying a quote, a backslash or a newline is spelled
- * verbatim between NULs, where git's default output would C-quote it and the
- * caller would compose a path that does not exist.
  */
 export async function listTreeBlobNames(
   repoRoot: string,
@@ -774,17 +826,11 @@ export async function listTreeBlobNames(
     "--",
     `${prefix}/`,
   ]);
-  const rows = stdout.split("\0").filter((row) => row.length > 0);
+  const rows = treeRows(stdout);
   if (rows.length === 0) return null;
-  const names: string[] = [];
-  for (const row of rows) {
-    const tab = row.indexOf("\t");
-    if (tab === -1) continue;
-    const type = row.slice(0, tab).split(" ")[1];
-    if (type !== "blob") continue;
-    names.push(row.slice(tab + 1 + prefix.length + 1));
-  }
-  return names;
+  return rows
+    .filter((row) => row.type === "blob")
+    .map((row) => row.path.slice(prefix.length + 1));
 }
 
 /**
@@ -857,7 +903,12 @@ async function revParseVerify(
   ref: string,
 ): Promise<string | undefined> {
   try {
-    const { stdout } = await run(cwd, ["rev-parse", "--verify", "--quiet", ref]);
+    const { stdout } = await run(cwd, [
+      "rev-parse",
+      "--verify",
+      "--quiet",
+      ref,
+    ]);
     return stdout;
   } catch (err) {
     const code = (err as { code?: unknown }).code;
@@ -1001,7 +1052,11 @@ export async function gitCommonDir(cwd: string): Promise<string> {
 export async function absoluteGitDir(cwd: string): Promise<string> {
   // One absolute path and a newline — orders of magnitude under the
   // composer's default, and the cap is declared rather than inherited.
-  const { stdout } = await run(cwd, ["rev-parse", "--absolute-git-dir"], 64 * 1024);
+  const { stdout } = await run(
+    cwd,
+    ["rev-parse", "--absolute-git-dir"],
+    64 * 1024,
+  );
   return stdout;
 }
 

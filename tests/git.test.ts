@@ -362,10 +362,7 @@ describe("currentRefPath", () => {
     // A cwd that doesn't exist on disk fails at spawn (ENOENT), the same
     // shape node:child_process reports for a missing git binary — real
     // spawn failure, not a mocked stand-in.
-    const missing = join(
-      await mkTempDir("flume-missing-"),
-      "gone",
-    );
+    const missing = join(await mkTempDir("flume-missing-"), "gone");
     const ref = await currentRefPath(missing);
     expect(ref.kind).toBe("git-unavailable");
     if (ref.kind === "git-unavailable") {
@@ -509,11 +506,9 @@ it("commitPaths commits only its named paths when an unrelated change is staged"
   expect(lines(changed)).toEqual(["ledger.json"]);
   // The operator's staging survives the harness commit exactly as it was.
   expect(await stagedPaths()).toEqual(["bystander.md"]);
-  const { stdout: staged } = await exec(
-    "git",
-    ["show", ":bystander.md"],
-    { cwd: repo },
-  );
+  const { stdout: staged } = await exec("git", ["show", ":bystander.md"], {
+    cwd: repo,
+  });
   expect(staged).toBe("operator's edit\n");
 });
 
@@ -600,16 +595,45 @@ describe("readFileAtRef (spec/pending.md 'Dispatch reads come from the tip, not 
     );
   });
 
-  it("runs its probe and its content read at one resolved sha, never at the symbolic ref it was handed", async () => {
-    await writeFile(join(repo, "at-one-sha.txt"), "one tree\n");
+  it("a directory committed at the ref reads back absent, never git's own tree listing as content", async () => {
+    await mkdir(join(repo, "dir", "sub"), { recursive: true });
+    await writeFile(join(repo, "dir", "child.txt"), "child\n");
+    await writeFile(join(repo, "dir", "sub", "deep.txt"), "deep\n");
     await exec("git", ["add", "."], { cwd: repo });
-    await exec("git", ["commit", "-q", "-m", "add at-one-sha.txt"], {
+    await exec("git", ["commit", "-q", "-m", "add dir/"], { cwd: repo });
+
+    // Vacuity pin: the directory really is at this ref, and `git show` over it
+    // answers a tree listing rather than failing — which is what makes a
+    // bytes-or-absent reader handing that output back the substituted verdict
+    // and not a git error it could not have helped.
+    const { stdout: asShown } = await exec("git", ["show", "HEAD:dir"], {
       cwd: repo,
     });
-    const tip = await revParse(repo);
+    expect(asShown).toContain("child.txt");
+
+    expect(await readFileAtRef(repo, "HEAD", "dir")).toBeNull();
+
+    // The same directory spelled as git spells a tree pathspec: the listing
+    // answers that directory's *children*, so the first child being a blob
+    // must not answer the read either.
+    expect(await readFileAtRef(repo, "HEAD", "dir/")).toBeNull();
+  });
+
+  it("the content leg reads the object id the listing named, never a `<ref>:<path>` composition", async () => {
+    await writeFile(join(repo, "at-one-oid.txt"), "one tree\n");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "add at-one-oid.txt"], {
+      cwd: repo,
+    });
+    const { stdout: named } = await exec(
+      "git",
+      ["rev-parse", "HEAD:at-one-oid.txt"],
+      { cwd: repo },
+    );
+    const oid = named.trim();
 
     const since = execArgsLog.length;
-    expect(await readFileAtRef(repo, "HEAD", "at-one-sha.txt")).toBe(
+    expect(await readFileAtRef(repo, "HEAD", "at-one-oid.txt")).toBe(
       "one tree\n",
     );
     const argv = execArgsLogSince(since).map((c) => c[1] as string[]);
@@ -618,18 +642,24 @@ describe("readFileAtRef (spec/pending.md 'Dispatch reads come from the tip, not 
     // what follows is a claim about two calls that were made rather than over
     // an empty log — the `promisify.custom` interception at the top of this
     // file is what could leave it empty.
-    const probe = argv.find((a) => a[0] === "ls-tree");
-    const read = argv.find((a) => a[0] === "show");
-    expect(probe).toBeDefined();
+    const listing = argv.find((a) => a[0] === "ls-tree");
+    const read = argv.find((a) => a[0] === "cat-file");
+    expect(listing).toBeDefined();
     expect(read).toBeDefined();
 
-    // The ref was folded to a sha once, and both legs name that sha. `HEAD`
-    // on either is the straddle: a sibling committing between the probe and
-    // the read answers the two out of two different trees, and `show` exits
-    // fatal on a path `ls-tree` has just listed.
-    expect(argv.some((a) => a[0] === "rev-parse" && a[1] === "HEAD")).toBe(true);
-    expect(probe?.[2]).toBe(tip);
-    expect(read?.[1]).toBe(`${tip}:at-one-sha.txt`);
+    // The listing names the ref; the content leg names the object id that
+    // listing returned. An object id cannot move, so the pair reads one tree
+    // structurally — no `rev-parse` fold ahead of it, and no `<ref>:<path>` on
+    // any leg, which is the composition a sibling's commit straddles.
+    expect(listing?.slice(0, 3)).toEqual(["ls-tree", "-z", "HEAD"]);
+    expect(read).toEqual(["cat-file", "blob", oid]);
+    expect(
+      argv
+        .flat()
+        .some(
+          (arg) => typeof arg === "string" && arg.endsWith(":at-one-oid.txt"),
+        ),
+    ).toBe(false);
   });
 });
 
@@ -657,7 +687,7 @@ it.runIf(process.platform !== "win32")(
     ).resolves.toBeDefined();
     const { stdout: defaultParse } = await exec(
       "git",
-      ["ls-tree", "--name-only", "HEAD", "--", ":leading.txt"],
+      ["ls-tree", "-z", "HEAD", "--", ":leading.txt"],
       { cwd: repo },
     );
     expect(defaultParse.trim()).toBe("");
@@ -1554,7 +1584,9 @@ describe("checkoutAddress — the segment a checkout owns", () => {
       ["worktree", "list", "--porcelain", "-z"],
       { cwd: repo },
     );
-    expect(names.split("\0").filter((f) => f.startsWith("worktree ")).length).toBe(3);
+    expect(
+      names.split("\0").filter((f) => f.startsWith("worktree ")).length,
+    ).toBe(3);
 
     expect(dotted.segment).not.toBe(dashed.segment);
   });
@@ -1674,9 +1706,9 @@ describe("acquireTipClaim / liveTipClaim — advisory per-ref tip claim", () => 
     const first = await acquireTipClaim(repo, refPath, held);
     // Non-vacuity: the holder really stated a root, so the refusal below is a
     // read of the claim rather than of a two-line file.
-    expect(
-      parsePidClaim(await readFile(first.path, "utf8"))?.stateRoot,
-    ).toBe(held);
+    expect(parsePidClaim(await readFile(first.path, "utf8"))?.stateRoot).toBe(
+      held,
+    );
 
     const stated = await acquireTipClaim(repo, refPath, refused).catch(
       (err: unknown) => err,
@@ -1726,49 +1758,57 @@ describe("acquireTipClaim / liveTipClaim — advisory per-ref tip claim", () => 
     first.release();
   });
 
-  it("reclaims silently and retries when the recorded pid is dead, taking over the claim", async () => {
-    const refPath = await resolveRefPath(repo);
-    const commonDir = await gitCommonDir(repo);
-    const claimPath = tipClaimPath(commonDir, refPath);
+  it(
+    "reclaims silently and retries when the recorded pid is dead, taking over the claim",
+    async () => {
+      const refPath = await resolveRefPath(repo);
+      const commonDir = await gitCommonDir(repo);
+      const claimPath = tipClaimPath(commonDir, refPath);
 
-    await mkdir(dirname(claimPath), { recursive: true });
-    await writeFile(claimPath, String(deadPid()));
+      await mkdir(dirname(claimPath), { recursive: true });
+      await writeFile(claimPath, String(deadPid()));
 
-    const claim = await acquireTipClaim(repo, refPath, stateRootOf("first"));
+      const claim = await acquireTipClaim(repo, refPath, stateRootOf("first"));
 
-    expect(claim.path).toBe(claimPath);
-    // The dead holder's pid was overwritten by this call's own — proof the
-    // stale claim was reclaimed rather than refused.
-    expect(parsePidClaim(await readFile(claimPath, "utf8"))?.pid).toBe(
-      process.pid,
-    );
+      expect(claim.path).toBe(claimPath);
+      // The dead holder's pid was overwritten by this call's own — proof the
+      // stale claim was reclaimed rather than refused.
+      expect(parsePidClaim(await readFile(claimPath, "utf8"))?.pid).toBe(
+        process.pid,
+      );
 
-    claim.release();
-  }, SPAWN_BUDGET_MS);
+      claim.release();
+    },
+    SPAWN_BUDGET_MS,
+  );
 
-  it("rethrows a non-ENOENT unlink failure during dead-pid reclaim instead of retrying forever (GIT-TIPCLAIM-RECLAIM-UNLINK-NARROW-ENOENT)", async () => {
-    const refPath = await resolveRefPath(repo);
-    const commonDir = await gitCommonDir(repo);
-    const claimPath = tipClaimPath(commonDir, refPath);
+  it(
+    "rethrows a non-ENOENT unlink failure during dead-pid reclaim instead of retrying forever (GIT-TIPCLAIM-RECLAIM-UNLINK-NARROW-ENOENT)",
+    async () => {
+      const refPath = await resolveRefPath(repo);
+      const commonDir = await gitCommonDir(repo);
+      const claimPath = tipClaimPath(commonDir, refPath);
 
-    // A dead holder, so the EEXIST branch takes the reclaim path rather than
-    // refusing outright.
-    await mkdir(dirname(claimPath), { recursive: true });
-    await writeFile(claimPath, String(deadPid()));
+      // A dead holder, so the EEXIST branch takes the reclaim path rather than
+      // refusing outright.
+      await mkdir(dirname(claimPath), { recursive: true });
+      await writeFile(claimPath, String(deadPid()));
 
-    const unlinkErr = Object.assign(new Error("permission denied"), {
-      code: "EACCES",
-    });
-    vi.mocked(unlink).mockImplementationOnce(() => Promise.reject(unlinkErr));
+      const unlinkErr = Object.assign(new Error("permission denied"), {
+        code: "EACCES",
+      });
+      vi.mocked(unlink).mockImplementationOnce(() => Promise.reject(unlinkErr));
 
-    await expect(
-      acquireTipClaim(repo, refPath, stateRootOf("first")),
-    ).rejects.toBe(unlinkErr);
+      await expect(
+        acquireTipClaim(repo, refPath, stateRootOf("first")),
+      ).rejects.toBe(unlinkErr);
 
-    // The stale claim file was never cleared — the rejection came from the
-    // unlink itself, not a retried create failing on some other path.
-    expect(await readFile(claimPath, "utf8")).toBe(String(deadPid()));
-  }, SPAWN_BUDGET_MS);
+      // The stale claim file was never cleared — the rejection came from the
+      // unlink itself, not a retried create failing on some other path.
+      expect(await readFile(claimPath, "utf8")).toBe(String(deadPid()));
+    },
+    SPAWN_BUDGET_MS,
+  );
 
   // The claim file's own stat: `existsSync` read an unstattable claim as no
   // claim at all, and `acquireTipClaim`'s EEXIST branch then took the
