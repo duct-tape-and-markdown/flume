@@ -3,6 +3,11 @@
 From THE-SETUPWORKTREE-WALLS-TEARDOWN-CALL-SITS-IN-ITS-BLOCK's note, which
 shipped the last body of the family *a call's arguments indented to the
 enclosing function rather than their own block* and declined to decide this.
+Re-noted by THE-AGENT-SPEND-FOLD-TAKES-THE-FILE-ITS-NAME-IS's note, which
+measured three divergent sites (`src/loopSupervisor.ts:219`,
+`src/cliVerdict.ts:375`, `tests/cliVerdict.test.ts:525`) and asked the same
+fork; the measurement below is that drain's, and it is two orders of magnitude
+larger than three sites.
 
 **What the tree actually is**, verified this tick:
 
@@ -10,6 +15,15 @@ enclosing function rather than their own block* and declined to decide this.
   `package.json` carries no format or lint script. The fence already admits
   `.prettierrc`, `.prettierrc.*` and `package.json`, so build could add the
   config and the dep; it cannot add the gate.
+- **The tree is not prettier-clean, and not by a little.** Measured with
+  `prettier@3` at its defaults against a scratch copy, no config in the tree:
+  **139 of the 191** `.ts` files under `src/`, `harness/` and `tests/` differ,
+  and the reformat moves **~22,500 lines** — 481 in `src/`, 285 in `harness/`,
+  21,792 in `tests/`. A wider `printWidth` does not rescue it: at `100` the
+  diff *grows* to ~28,000, because prettier then re-joins lines this repo
+  wrapped by hand. The repo's own lines already sit inside 80 columns
+  (p50 = 39, p95 = 78), so the gap is prettier's own wrap/join algorithm over
+  long test fixtures and chained `expect` calls, not a width setting to tune.
 - The mechanism is already shipped, twice. `.flume/declaration.ts` can declare
   `{ kind: "shell", command: ..., when: "afterCommit" }`
   (`harness/declaredGates.ts`, `constructGate`), and the package's registry
@@ -52,7 +66,10 @@ then declare `{ kind: "shell", command: "pnpm prettier --check ." }` at
 - Against: two commits across two fences to land it, and prettier's opinions
   reach far past this family — it will rewrap prose in doc comments, which
   this repo writes densely and deliberately. The reformat diff is the thing to
-  look at before agreeing, not after.
+  look at before agreeing, not after, and it is now measured above: ~22.5k
+  lines, 21.8k of them in `tests/`, so almost every test file's `git blame`
+  points at the reformat commit. Buying this rung costs a restyle of the
+  suite, not a tidy-up of a residue.
 
 ## (c) Opt into the `eslintGate` the registry already ships.
 
