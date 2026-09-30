@@ -534,6 +534,57 @@ export interface TickOutcome {
 }
 
 /**
+ * Every {@link TickOutcome} field that mirrors a {@link TickVerdict} record
+ * bucket — derived from the two shapes rather than listed: a name both declare,
+ * holding rows. {@link MIRRORED_BUCKETS} below is that set at runtime, and a
+ * bucket added to both shapes without a key there reds the typecheck, so the
+ * projection cannot fall behind the shapes it reads.
+ */
+type MirroredBucket = {
+  [K in keyof TickOutcome]-?: K extends keyof TickVerdict
+    ? NonNullable<TickOutcome[K]> extends readonly unknown[]
+      ? K
+      : never
+    : never;
+}[keyof TickOutcome];
+
+/** The buckets above, as keys a projection can walk. */
+const MIRRORED_BUCKETS: { readonly [K in MirroredBucket]: true } = {
+  provisionFailures: true,
+  renderFailures: true,
+  mergeFailures: true,
+  gateFailures: true,
+  platformFailures: true,
+  shipFailures: true,
+  unclassedWalls: true,
+};
+
+/**
+ * A verdict's record buckets, projected onto the fields {@link TickOutcome}
+ * declares for them. One projection, called by both of
+ * {@link Dispatcher.tick}'s return arms — the walled arm over the verdict the
+ * torn-down wave carried out, the completing arm over the verdict it just
+ * built — so a bucket reaches both arms or neither, instead of being spelled
+ * per arm and mirrored on one (`.claude/rules/engineering.md`, *The fix lands
+ * at the mechanism*).
+ *
+ * Emptiness is the verdict's own test: a key present here has rows, which is
+ * what each mirrored field's doc above promises ("Present only when the tick
+ * hit at least one").
+ */
+function mirrorFailureBuckets(
+  verdict: TickVerdict,
+): Pick<TickOutcome, MirroredBucket> {
+  const mirrored: Pick<TickOutcome, MirroredBucket> = {};
+  for (const bucket of Object.keys(MIRRORED_BUCKETS) as MirroredBucket[]) {
+    const rows = verdict[bucket];
+    if (rows !== undefined && rows.length > 0)
+      Object.assign(mirrored, { [bucket]: rows });
+  }
+  return mirrored;
+}
+
+/**
  * What to resolve a preview for: a phase the chain declares, and — under
  * fanout — which queue entry to scope it to. `entryTag` omitted leaves the
  * selection to {@link Dispatcher.render}'s own batch arithmetic, exactly as a
@@ -1115,13 +1166,16 @@ export class Dispatcher {
         summary: err.message,
         ...(ledgerRefusal !== undefined ? { ledgerRefusal } : {}),
         ...(carried !== undefined ? { verdict: carried.verdict } : {}),
-        // The walls the wave's ranking did not class, read off the verdict
-        // the ranking itself built rather than re-selected here: `summary`
-        // and `ledgerRefusal` above name one wall, and this is the rest of
-        // what the same wave held (`waveWall`, `src/waveMerge.ts`).
-        ...(carried?.verdict.unclassedWalls?.length
-          ? { unclassedWalls: carried.verdict.unclassedWalls }
-          : {}),
+        // Every record bucket the wave filed, read off the verdict the wave
+        // itself built rather than re-selected here, through the one
+        // projection the completing arm below takes: `summary` and
+        // `ledgerRefusal` above name a single wall, and this is the rest of
+        // what the same wave held — the walls its ranking did not class
+        // (`waveWall`, `src/waveMerge.ts`) beside the stage failures its legs
+        // recorded, each on the field this shape already declares for it. A
+        // supervisor reading the handoff sees them without opening the
+        // verdict file.
+        ...(carried !== undefined ? mirrorFailureBuckets(carried.verdict) : {}),
       };
     }
     const {
@@ -1291,18 +1345,12 @@ export class Dispatcher {
       ...(noCommit ? { noCommit } : {}),
       ...(tipMoved ? { tipMoved } : {}),
       ...(declined ? { declined } : {}),
-      ...(provisionFailures && provisionFailures.length > 0
-        ? { provisionFailures }
-        : {}),
-      ...(renderFailures && renderFailures.length > 0
-        ? { renderFailures }
-        : {}),
-      ...(mergeFailures && mergeFailures.length > 0 ? { mergeFailures } : {}),
-      ...(gateFailures && gateFailures.length > 0 ? { gateFailures } : {}),
-      ...(platformFailures && platformFailures.length > 0
-        ? { platformFailures }
-        : {}),
-      ...(shipFailures && shipFailures.length > 0 ? { shipFailures } : {}),
+      // The stage records, off the verdict built just above rather than
+      // re-tested against the locals it was built from: one projection, the
+      // walled arm's too, so this surface and the artifact beside it cannot
+      // disagree about which stage refused what, and neither arm can be the
+      // one a later bucket is added to.
+      ...mirrorFailureBuckets(verdict),
       awakeAfter: this.baton.awake(),
       summary,
     };

@@ -32,7 +32,11 @@ import {
   loadChainModule,
   type LoadedChain,
 } from "../src/chainLoad.ts";
-import { Dispatcher, type DispatcherOptions } from "../src/Dispatcher.ts";
+import {
+  Dispatcher,
+  type DispatcherOptions,
+  type TickOutcome,
+} from "../src/Dispatcher.ts";
 import { tickExitCode } from "../src/cliVerdict.ts";
 import { EX_MOUNT_DEAD } from "../src/exitCodes.ts";
 import { PendingParseFailure as realPendingParseFailure } from "../src/PendingSchema.ts";
@@ -11237,7 +11241,21 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
     expect(verdict?.declined).toBe(true);
   });
 
-  it("the ledger-refusal verdict names a render refusal raised after the refusing pick", async () => {
+  /**
+   * The walled wave both cases below read, run once per case: SHIP-A's pick
+   * corrupts the queue and refuses the ledger rewrite, and REFUSE-C — held in
+   * its `setupWorktree` until that pick's merge span has ended — raises a
+   * render refusal strictly behind it, into the wave the teardown carries out.
+   * One fixture, two readers: the verdict's own record of that refusal and the
+   * outcome's mirror of it.
+   */
+  async function walledWaveWithRenderRefusal(): Promise<{
+    outcome: TickOutcome;
+    heldWait: string | undefined;
+    corruptEntry: string;
+    corrupt: string;
+    failingSpan: string;
+  }> {
     await writePending(fx.repo, [
       makeEntry("SHIP-A", ["src/a.ts"]),
       makeEntry("REFUSE-C", ["src/c.ts"]),
@@ -11257,9 +11275,10 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
     );
     const failingSpan = "echo span-detail 1>&2; exit 3";
 
-    // Same ordering as the decline case above: REFUSE-C's slot is held until
-    // SHIP-A's merge span has ended, so the span that will not resolve runs —
-    // and the refusal it raises is recorded — behind the refusing pick.
+    // The sibling suites above race the two slots and read whichever landed
+    // first; this one orders them. The wait's own refusal is captured rather
+    // than thrown into the engine's provisioning-failure arm, where a blown
+    // wait would read as an entry that was never offered at all.
     let heldWait: string | undefined;
     const phase = makePhase({
       name: "build",
@@ -11301,7 +11320,18 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
       maxParallel: 4,
     });
 
-    const outcome = await dispatcher.tick();
+    return {
+      outcome: await dispatcher.tick(),
+      heldWait,
+      corruptEntry,
+      corrupt,
+      failingSpan,
+    };
+  }
+
+  it("the ledger-refusal verdict names a render refusal raised after the refusing pick", async () => {
+    const { outcome, heldWait, corruptEntry, corrupt, failingSpan } =
+      await walledWaveWithRenderRefusal();
 
     expect(heldWait).toBeUndefined();
 
@@ -11325,6 +11355,32 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
     expect(reported[0]!.tag).toBe("REFUSE-C");
     expect(reported[0]!.signature).toBe(failingSpan);
     expect(reported[0]!.message).toContain("span-detail");
+  });
+
+  it("a walled wave's tick outcome names the render failure its verdict carries", async () => {
+    const { outcome, heldWait, failingSpan } =
+      await walledWaveWithRenderRefusal();
+
+    expect(heldWait).toBeUndefined();
+    expect(outcome.failed).toBe(true);
+
+    // Vacuity: the verdict this outcome carries really holds the row, so the
+    // mirror below is asserted over a bucket that was populated.
+    const carried = outcome.verdict?.renderFailures ?? [];
+    expect(carried).toHaveLength(1);
+    expect(carried[0]!.signature).toBe(failingSpan);
+
+    // The walled arm mirrors what it carries: the handoff surface names the
+    // entry whose prompt never resolved without a supervisor opening the
+    // verdict file beside it.
+    expect(outcome.renderFailures).toEqual(carried);
+    expect(outcome.renderFailures?.[0]!.tag).toBe("REFUSE-C");
+    expect(outcome.renderFailures?.[0]!.message).toContain("span-detail");
+
+    // And the buckets this wave did not fill stay absent on both surfaces —
+    // the mirror is the verdict's rows, never a shape stamped out per field.
+    expect(outcome.verdict?.gateFailures).toBeUndefined();
+    expect(outcome.gateFailures).toBeUndefined();
   });
 
   it("a wave walled before an attempt was carried records that attempt's span with its base and head shas", async () => {
