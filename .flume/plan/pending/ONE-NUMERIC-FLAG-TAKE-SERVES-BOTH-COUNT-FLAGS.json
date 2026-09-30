@@ -1,0 +1,32 @@
+{
+  "tag": "ONE-NUMERIC-FLAG-TAKE-SERVES-BOTH-COUNT-FLAGS",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 0,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/cliArgs.ts",
+        "description": "the numeric-flag take itself, beside the parse it already shares and the presence-only take it sits next to"
+      },
+      {
+        "path": "src/cliLoop.ts",
+        "description": "`--max` takes it; the read-index-off-`rest`, splice-off-`words` asymmetry goes with the copy"
+      },
+      {
+        "path": "src/cliHistory.ts",
+        "description": "`-n` takes it"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "third body of the family `a numeric-flag take spelled twice`, which the routing bar files once",
+  "per": {
+    "path": ".claude/rules/posture-sweep.md",
+    "section": "Routing"
+  },
+  "acceptance": "`src/cliArgs.ts` holds one numeric-flag take, and both count flags reach it: locate the flag, `parseMaxValue` the word after it, answer the caller, splice the pair — spelled once rather than at each verb. Each verb keeps what the two copies actually differed in, its own default and its own usage line, and `flume loop`'s leg stops reading its index off one array while splicing off another. Behavior-free by construction: every argv the two verbs accept today is accepted, and every argv either refuses is refused with the same exit 2 and the same usage line, so no operator-visible string or code moves. No `tests[]` and no `pins[]`: the entry claims no property, which is what `.claude/rules/posture-sweep.md`, *Routing* asks of a filed shape family. `pnpm tsc --noEmit`, the suite, and the export and citation pins green.",
+  "notes": "Count read off `git log` over every plan body, no window: b46c2c13, c5ad3577, 4d64f075 — the last two each re-framed it as a first note after the sites moved out of `src/cli.ts`, which is the reset the unbounded read exists to catch. Verified on disk this tick: `src/cliLoop.ts:79`-`:91` and `src/cliHistory.ts:34`-`:44` spell one sequence. `src/cliArgs.ts:39` declares only that the numeric flags keep `parseMaxValue`, never that the take around it is copied."
+}
