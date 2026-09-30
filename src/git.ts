@@ -1080,7 +1080,8 @@ const CHECKOUT_SEGMENT_MAX = 32;
 
 /**
  * The segment for a checkout whose git dir is `gitDir` and whose common dir is
- * `commonDir`, both in git's own alphabet.
+ * `commonDir`, both already folded into the host's alphabet by the one
+ * reporter that reads them off git ({@link checkoutAddress}).
  *
  * Git's fact: a linked checkout's git dir is `<common>/worktrees/<name>`,
  * where `<name>` is unique among that repository's linked checkouts (git
@@ -1125,10 +1126,15 @@ function checkoutSegment(commonDir: string, gitDir: string): string {
  * sound when the two sides are absolutized by the same hand. Asking twice and
  * absolutizing one side here would read a primary checkout reached through a
  * symlinked path as a linked one, and the same checkout as two segments
- * depending on which spelling of its path a tick was handed.
+ * depending on which spelling of its path a tick was handed. Git answers that
+ * pair in its own alphabet, and both sides are folded into the host's below,
+ * by that same hand.
  */
 export async function checkoutAddress(cwd: string): Promise<{
-  /** The shared `--git-common-dir`, absolute — one path from every checkout. */
+  /**
+   * The shared `--git-common-dir`, absolute and in the host's alphabet — one
+   * path from every checkout, composable with `node:path` as it stands.
+   */
   readonly commonDir: string;
   /** This checkout's own segment. */
   readonly segment: string;
@@ -1141,12 +1147,25 @@ export async function checkoutAddress(cwd: string): Promise<{
     64 * 1024,
   );
   // Two absolute paths, in the order the options were spelled.
-  const [gitDir = "", commonDir = ""] = stdout.split("\n").map((l) => l.trim());
-  if (gitDir === "" || commonDir === "") {
+  const [rawGitDir = "", rawCommonDir = ""] = stdout
+    .split("\n")
+    .map((l) => l.trim());
+  if (rawGitDir === "" || rawCommonDir === "") {
     throw new Error(
       `git named no git dir and common dir for ${cwd}: ${JSON.stringify(stdout)}`,
     );
   }
+  // Git spells an absolute path with `/` on every platform, so on win32 the
+  // pair arrives as `C:/Users/...` while `commonDir`'s consumers compose it
+  // through `node:path` ({@link tipClaimPath} below, `entryClaimPath` in
+  // `src/entryClaims.ts`) and the sibling reporter {@link gitCommonDir}
+  // answers in the host's `C:\Users\...`. The fold lands here, at the one
+  // reporter, never at a composer (`.claude/rules/posture-sweep.md`, *A
+  // repo-relative path composed with `node:path`*) — and it takes both sides
+  // together, because {@link checkoutSegment}'s equality is only sound while
+  // the two are spelled by one hand.
+  const gitDir = resolve(rawGitDir);
+  const commonDir = resolve(rawCommonDir);
   return { commonDir, segment: checkoutSegment(commonDir, gitDir) };
 }
 

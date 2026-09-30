@@ -1550,9 +1550,17 @@ describe("checkoutAddress — the segment a checkout owns", () => {
 
     // One repository: every checkout answers the same common dir, which is
     // what makes the segment the only thing separating their addresses.
-    expect(primary.commonDir).toBe(await gitCommonDir(repo));
     expect(a.commonDir).toBe(primary.commonDir);
     expect(b.commonDir).toBe(primary.commonDir);
+
+    // And in one alphabet with the sibling reporter, asked from the primary
+    // checkout and from a linked one — the two surfaces a consumer composes
+    // a shared-state path from. On win32 `checkoutAddress`'s
+    // `--path-format=absolute` answers `C:/...` where `gitCommonDir`'s
+    // `resolve` answers `C:\...`, so an unfolded pair is one directory under
+    // two spellings.
+    expect(primary.commonDir).toBe(await gitCommonDir(repo));
+    expect(a.commonDir).toBe(await gitCommonDir(join(repo, "effort-a")));
 
     // Three checkouts, three segments.
     expect(new Set([primary.segment, a.segment, b.segment]).size).toBe(3);
