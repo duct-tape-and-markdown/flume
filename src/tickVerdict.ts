@@ -1534,12 +1534,7 @@ export async function readTickVerdict(
   } catch (err) {
     throw unreadable("tick verdict record", path, err);
   }
-  try {
-    const rec: unknown = JSON.parse(raw);
-    return isTickVerdict(rec) ? rec : undefined;
-  } catch {
-    return undefined;
-  }
+  return decodeVerdictLine(raw);
 }
 
 /**
@@ -1577,17 +1572,20 @@ function verdictLogLines(raw: string): string[] {
 }
 
 /**
- * One history line as a verdict, or `undefined` when it will not parse or is
- * not a record {@link isTickVerdict} accepts — a line a reader skips rather
- * than throws on, and one {@link writeTickVerdict} carries forward
- * regardless.
+ * One record's text as a verdict, or `undefined` when it will not parse or is
+ * not a record {@link isTickVerdict} accepts — the module's one spelling of
+ * "take this text iff the guard does", read by every reader here: a history
+ * line a reader skips rather than throws on and one {@link writeTickVerdict}
+ * carries forward regardless, and the whole of the per-phase record
+ * {@link readTickVerdict} stats. The degrade is the parse alone; whether the
+ * text could be read at all is settled before the call.
  */
-function decodeVerdictLine(line: string): TickVerdict | undefined {
+function decodeVerdictLine(text: string): TickVerdict | undefined {
   try {
-    const rec: unknown = JSON.parse(line);
+    const rec: unknown = JSON.parse(text);
     return isTickVerdict(rec) ? rec : undefined;
   } catch {
-    // a corrupt line is skipped, not fatal to the rest of the history
+    // a corrupt record is skipped, not fatal to the rest of the history
     return undefined;
   }
 }
