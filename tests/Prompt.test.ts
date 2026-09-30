@@ -42,7 +42,7 @@ import {
   priorAttemptBlock,
   priorAttemptBlockIfAny,
 } from "./helpers/priorAttemptBlock.ts";
-import { fencedBlocks, sectionOf } from "./helpers/docSections.ts";
+import { bulletOf, fencedBlocks, sectionOf } from "./helpers/docSections.ts";
 import {
   harnessLeads,
   listingUnder,
@@ -1142,6 +1142,61 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     // each red here. The values behind them are the page's own.
     expect(blockLeads(samples[0]!)).toEqual(leads);
   }, SPAWN_BUDGET_MS);
+
+  /**
+   * Every field a `gate-revert` record carries beyond the envelope, read off a
+   * record the compiler holds complete rather than off a list kept beside the
+   * declaration (`.claude/rules/engineering.md`, *Derived state is computed,
+   * never restated beside its source*): `satisfies Required<GateRevertAttempt>`
+   * makes a field the variant gains a compile error here, rather than a field
+   * the authoring page quietly stops rostering.
+   *
+   * `blamesSpan` rejoins {@link sampleRecord} for this roster alone. It is out
+   * of the rendered sample because its arm *replaces* the instruction that
+   * record renders, so no one block shows both; the page's bullet rosters what
+   * the record **carries**, and the field is carried either way.
+   */
+  const GATE_REVERT_FIELDS = Object.keys({
+    ...sampleRecord,
+    blamesSpan: false,
+  } satisfies Required<GateRevertAttempt>).filter(
+    (field) => !(SHARED_FIELDS as readonly string[]).includes(field),
+  );
+
+  it("docs/CHAIN-AUTHORING.md's gate-revert bullet names every field the record carries", async () => {
+    const page = await readFile(
+      new URL("../docs/CHAIN-AUTHORING.md", import.meta.url),
+      "utf8",
+    );
+    const section = sectionOf(page, "### The `<prior-attempt>` block");
+    // `bulletOf` throws on a lead the section no longer opens, so the cut is
+    // its own anchor: a renamed bullet reds here rather than rostering an
+    // empty span green.
+    const bullet = bulletOf(section, "- `gate-revert` — ");
+
+    // Vacuity on the judged set (`.claude/rules/engineering.md`, *A green
+    // verdict is proven non-vacuous*): an envelope filter that swallowed the
+    // variant's own fields would roster nothing and pass over a bullet naming
+    // none of them. The two the gate authors only sometimes are what a narrow
+    // roster drops first, so they are named rather than counted.
+    expect(GATE_REVERT_FIELDS).toContain("verdict");
+    expect(GATE_REVERT_FIELDS).toContain("failingFiles");
+    expect(GATE_REVERT_FIELDS.length).toBeGreaterThan(2);
+
+    for (const field of GATE_REVERT_FIELDS) {
+      expect(
+        bullet,
+        `the gate-revert bullet does not name \`${field}\``,
+      ).toContain(`\`${field}\``);
+    }
+
+    // The bullet, not the section: the section spends a bolded claim each on
+    // `verdict`, `failingFiles` and `blamesSpan` further down, and its
+    // rendered sample labels them too, so a section-wide read would stay green
+    // over a bullet that had gone silent (`.claude/rules/posture-sweep.md`, *A
+    // negative assertion over a whole rendered artifact*).
+    expect(section.length).toBeGreaterThan(bullet.length);
+  });
 
   it("tip-moved names the recorded base and the observed HEAD, never a tip-start comparison on the ref", async () => {
     // Vacuity: the record under test carries two distinct shas to name.

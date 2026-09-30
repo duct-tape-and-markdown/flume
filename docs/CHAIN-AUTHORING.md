@@ -2102,10 +2102,13 @@ entry (fanout) or phase (singleton) gets a `<prior-attempt>` block right after
 `<harness>`. The record behind it is a mode-tagged union — exactly one variant
 per record — and the block renders the variant that fired:
 
-- `gate-revert` — the commit landed and a gate reverted it. Carries which gate
-  phase reverted (`afterCommit` or `afterMerge`), the failing gate's `name`,
-  its one-line `message`, its full `details`, and a `git show --stat` digest of
-  the reverted commit. Symmetric across both gate phases: an `afterMerge`
+- `gate-revert` — the commit landed and a gate reverted it. Carries `when` the
+  revert ran (`afterCommit` or `afterMerge`), the failing `gate`'s name, its
+  one-line `message` and its full `details`, the `verdict` and `failingFiles`
+  the gate returned where it returned them, its `blamesSpan` where it disowned
+  the span, and `diffStat`, a `git show --stat` digest of the span the attempt
+  added — every commit from the tip it landed onto to the tip it reached, never
+  that tip's own diff. Symmetric across both gate phases: an `afterMerge`
   failure dies with the dispatcher process, and this is what survives it.
 - `clean-exit` — the agent exited cleanly and left no usable commit: either
   none at all, or a span whose diff against its base was empty, which dies
