@@ -1,0 +1,27 @@
+{
+  "tag": "THE-PRIOR-ATTEMPT-BULLETS-EACH-ROSTER-THEIR-VARIANTS-FIELDS",
+  "gate": { "kind": "open" },
+  "priority": 20,
+  "files": {
+    "edit": [
+      {
+        "path": "docs/CHAIN-AUTHORING.md",
+        "description": "the five bullets under *The `<prior-attempt>` block* beside `gate-revert` name their own variant's fields"
+      },
+      {
+        "path": "tests/Prompt.test.ts",
+        "description": "the gate-revert roster case generalizes over the file's `variants` array"
+      }
+    ]
+  },
+  "summary": "Widen the five remaining `<prior-attempt>` bullets to name their variant's fields, and generalize the roster pin over all six modes",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Narration is the ladder's bottom rung"
+  },
+  "acceptance": "Every bullet under *The `<prior-attempt>` block* names its variant's own fields, and one case reads that roster off the declaration for all six modes.",
+  "tests": [
+    "docs/CHAIN-AUTHORING.md's bullet for every prior-attempt mode names every field that variant carries"
+  ],
+  "notes": "Same hole the gate-revert bullet had, on its five siblings: `finalMessage`, `failureClass`, `failures`, `expectedTip`/`observedTip`, `mergedSha`/`touchedPaths` are prose-only and `omittedPaths` is on no line of the page. `variants` and `SHARED_FIELDS` (tests/Prompt.test.ts) already enumerate six; each fixture needs a maximal `satisfies Required<...>` roster like the gate-revert one, so an optional field a variant gains is a compile error rather than a silent gap."
+}
