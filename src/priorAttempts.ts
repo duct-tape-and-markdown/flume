@@ -361,6 +361,26 @@ export function priorAttemptRef(
 }
 
 /**
+ * The sentence to print for a value a `catch` in this module received.
+ *
+ * `catch` binds `unknown`, and the two places below that fold one into
+ * operator-facing prose are `readRecord`'s refusal and `snapshotReverted`'s
+ * whole-artifact warn — one home for both, so a thrown non-`Error` reads the
+ * same at either (`.claude/rules/engineering.md`, *A module is one job*).
+ *
+ * The guarded reading is the one that holds for every input. A cast prints
+ * `undefined` for a thrown string, and for a thrown `null` it throws inside
+ * the `catch` itself — which would carry a snapshot failure back out into the
+ * revert, the one thing `snapshotReverted` promises it cannot do.
+ *
+ * On the `Error` path the text is `err.message` unchanged, so the strings an
+ * operator greps for are the ones both sites already emit.
+ */
+function thrownMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/**
  * The prior-attempt record directory, bound to one run's state root.
  *
  * A class rather than free functions taking `flumeDir` at every call: the
@@ -496,9 +516,9 @@ export class PriorAttemptStore {
       return await readFile(toNamespacedPath(path), "utf8");
     } catch (err) {
       throw new Error(
-        `[flume] prior-attempt record is unreadable: ${path} — ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+        `[flume] prior-attempt record is unreadable: ${path} — ${thrownMessage(
+          err,
+        )}`,
         { cause: err },
       );
     }
@@ -806,7 +826,7 @@ export class PriorAttemptStore {
       // have been, at the moment it fails rather than by discovering an
       // absent directory later.
       this.log.warn(
-        `[flume] revert snapshot failed: ${dir}: ${(err as Error).message}`,
+        `[flume] revert snapshot failed: ${dir}: ${thrownMessage(err)}`,
       );
     }
   }
