@@ -920,11 +920,42 @@ function modeLines(prior: PriorAttempt): string[] {
     case "gate-revert":
       return [
         `A previous attempt at this work committed and was REVERTED by a gate.`,
-        `Read the failure below and change your approach — do not blindly`,
-        `reconstruct the reverted change.`,
+        // The gate's own attribution decides what the agent is told to do
+        // about the revert, and nothing else does (spec/loop.md
+        // "Prior-outcome feedback to the retrying tick"): a gate that
+        // declared the failure not the span's leaves a record with no blame
+        // on the entry, so the block states the revert and stops. Telling a
+        // disowned retry to change its approach would be the engine
+        // inventing the blame the gate withheld.
+        ...(prior.blamesSpan === false
+          ? [
+              `The gate DISOWNED the blame: it declared this failure not the`,
+              `reverted span's. The revert happened, and nothing about the`,
+              `reverted work is discredited by it — do not treat this as a`,
+              `wall in the task. Read what the gate did say below.`,
+            ]
+          : [
+              `Read the failure below and change your approach — do not blindly`,
+              `reconstruct the reverted change.`,
+            ]),
         `Reverted at: ${prior.when}`,
         `Failing gate: ${prior.gate}`,
-        `Verdict: ${prior.message}`,
+        // `message` and `verdict` are two statements the gate made, not one
+        // read two ways, so each is labelled by the field that holds it —
+        // the bare `Verdict:` this line once carried named the prose while
+        // the chain-authored discriminant had no line at all.
+        `Gate message: ${prior.message}`,
+        ...(prior.verdict === undefined
+          ? []
+          : [`Gate verdict: ${prior.verdict}`]),
+        // A gate that named no file and one that named an empty list said
+        // the same thing, and a lead over `(none)` would read as a third.
+        ...(prior.failingFiles && prior.failingFiles.length > 0
+          ? [
+              `Files the gate blamed:`,
+              indentBlock(prior.failingFiles.join("\n")),
+            ]
+          : []),
         `Gate details:`,
         indentBlock(prior.details ?? ""),
         `Reverted change digest (git show --stat):`,

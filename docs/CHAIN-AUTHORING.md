@@ -2150,7 +2150,10 @@ Read the failure below and change your approach — do not blindly
 reconstruct the reverted change.
 Reverted at: afterCommit
 Failing gate: tsc
-Verdict: tsc failed (3 errors)
+Gate message: tsc failed (3 errors)
+Gate verdict: type-error
+Files the gate blamed:
+  src/Dispatcher.ts
 Gate details:
   src/Dispatcher.ts(412,7): error TS2322: ...
 Reverted change digest (git show --stat):
@@ -2163,9 +2166,10 @@ Recorded 2026-03-04T11:22:31.004Z, trunk tip 9f2c1ab.
 
 Like `<harness>`, this is dispatcher-owned and structural — there is **no
 `{{token}}` for it** and you don't reference it in `promptArgs` or the prompt
-file. For `gate-revert`, both the gate `message` and its `details` feed the
-block — write `details` for the retrying agent to read (concrete paths and
-line numbers beat narration).
+file. For `gate-revert`, everything the gate returned feeds the block — write
+`details` for the retrying agent to read (concrete paths and line numbers beat
+narration), and the `verdict` and `failingFiles` lines appear only when the
+gate authored them.
 
 **Every record is anchored.** Whatever the variant, it carries `headSha` — the
 trunk tip when the record was written — and `at`, an ISO timestamp, rendered
@@ -2177,8 +2181,9 @@ mtime against a commit time.
 record carries the failing gate's `verdict` (above, §2) verbatim beside its
 `message`, absent when the gate authored none. A `shouldRun` deciding whether
 to retry reads that field off `TickContext.priorAttempts` rather than
-pattern-matching the rendered prose. The block above renders `message` and
-`details` only — `verdict` is for the hook, not the agent.
+pattern-matching the rendered prose; the block renders it too, under its own
+label beside the `message`, so the retrying agent reads the discriminant the
+hook keys on rather than inferring it from the prose.
 
 **A gate-revert record carries the gate's own attribution, never an inferred
 one.** A `gate-revert` record carries the failing gate's `failingFiles`
@@ -2186,7 +2191,11 @@ one.** A `gate-revert` record carries the failing gate's `failingFiles`
 disowned the span, absent otherwise. The engine infers nothing from the paths:
 a span's edits can red a file they never touched, so a `shouldRun` deciding
 whether a wall is real reads what the gate *said* rather than what the two
-path lists happened to overlap on.
+path lists happened to overlap on. Both reach the block as well as the hook:
+the blamed paths are listed under their own lead, and a `blamesSpan: false`
+record is rendered as the revert plus the gate's disowning of it — in place of
+the change-your-approach instruction an ordinary revert carries, which the
+engine has no blame to justify here.
 
 The carry is cross-process by construction — the record is persisted under
 `.flume/prior-attempts/<keyspace>/` (gitignored, beside the baton;

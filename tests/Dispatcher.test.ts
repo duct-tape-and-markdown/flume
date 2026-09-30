@@ -19529,13 +19529,13 @@ describe("Dispatcher — chainLoadGate revert forwards the chain-load failure to
 
     // Retry: the prior-attempt block names the *chain-load* gate, reverted at
     // afterCommit, and forwards its full loader failure — not just the
-    // one-line verdict — so the next tick does not blindly re-author the
+    // one-line message — so the next tick does not blindly re-author the
     // same broken chain.ts.
     expect(prompts[1]).toContain("<prior-attempt>");
     expect(prompts[1]).toContain("Reverted at: afterCommit");
     expect(prompts[1]).toContain("Failing gate: chain-load");
     expect(prompts[1]).toContain(
-      "Verdict: chain.ts is broken — commit reverted",
+      "Gate message: chain.ts is broken — commit reverted",
     );
     // The raw esbuild transform failure (chainLoadGate's `details`) is
     // forwarded, bounded but verbatim.

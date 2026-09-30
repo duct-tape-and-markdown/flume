@@ -730,6 +730,8 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
   const KEYED_AS = "rendered-entry";
   /** The lead the `not-shipped` record's touched-path listing sits under. */
   const PATHS_LEAD = "Paths it touched:";
+  /** The lead the `gate-revert` record's `failingFiles` listing sits under. */
+  const BLAMED_LEAD = "Files the gate blamed:";
   /** A clean exit whose ref never moved: one tip for both ends of the span. */
   const UNMOVED_TIP = "d".repeat(40);
 
@@ -751,8 +753,10 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     when: "afterCommit",
     gate: "revert-gate",
     message: "gate said no",
+    verdict: "type-error",
     details: "GATE-DETAIL",
     diffStat: "1 file changed",
+    failingFiles: ["src/one.ts", "src/two.ts"],
     key: "entry",
     keyedAs: KEYED_AS,
     headSha: HEAD_SHA,
@@ -978,6 +982,77 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
       ...notShipped.touchedPaths,
       "…and 7 more path(s)",
     ]);
+  }, SPAWN_BUDGET_MS);
+
+  it("the gate-revert block renders the gate's verdict and failing files where the record carries them", async () => {
+    // Vacuity: the record under test carries both fields, and the verdict is
+    // a statement distinct from the one-line `message` beside it — a block
+    // quoting the message alone would otherwise read as covering it.
+    expect(gateRevert.verdict).toBeDefined();
+    expect(gateRevert.verdict).not.toEqual(gateRevert.message);
+    expect(gateRevert.failingFiles?.length ?? 0).toBeGreaterThan(0);
+
+    const block = priorAttemptBlock(await renderWithPrior(gateRevert));
+
+    // Two statements the gate made, each under the label of the field
+    // holding it (spec/loop.md "Prior-outcome feedback to the retrying
+    // tick"). The chain-authored discriminant reaches the agent as well as
+    // the hook; it is not a `shouldRun`-only field.
+    expect(block).toContain(`Gate message: ${gateRevert.message}`);
+    expect(block).toContain(`Gate verdict: ${gateRevert.verdict}`);
+
+    // The blamed paths as a total, so "every file the gate named and no path
+    // the engine added" is one assertion rather than a negative over a render
+    // that also quotes the fence, the details and the diffstat.
+    expect(listingUnder(block, BLAMED_LEAD, "  ")).toEqual(
+      gateRevert.failingFiles,
+    );
+
+    // A gate that named none says the same thing whether it returned nothing
+    // or an empty list, and neither leaves a lead standing over `(none)`.
+    for (const named of [undefined, [] as string[]]) {
+      const record: GateRevertAttempt = { ...gateRevert };
+      // Assigned rather than spread as `undefined`: under
+      // `exactOptionalPropertyTypes` the absent case is the key's absence,
+      // which is the record `buildGateRevert` actually writes.
+      if (named === undefined) delete record.failingFiles;
+      else record.failingFiles = named;
+      const silent = priorAttemptBlock(await renderWithPrior(record));
+      expect(silent).not.toContain(BLAMED_LEAD);
+      // Still a gate-revert block, so the negative above is about the lead
+      // and not about a render that failed to happen.
+      expect(silent).toContain(`Failing gate: ${gateRevert.gate}`);
+    }
+  }, SPAWN_BUDGET_MS);
+
+  it("a gate-revert block whose record disowns the blame says so instead of instructing the agent to change approach", async () => {
+    const disowned: GateRevertAttempt = { ...gateRevert, blamesSpan: false };
+    // Vacuity: the two fixtures differ on exactly the field under test, and
+    // the ordinary one really is the arm that instructs.
+    expect(gateRevert.blamesSpan).toBeUndefined();
+    expect(disowned.blamesSpan).toBe(false);
+    const ordinary = priorAttemptBlock(await renderWithPrior(gateRevert));
+    expect(ordinary).toContain("change your approach");
+
+    const block = priorAttemptBlock(await renderWithPrior(disowned));
+
+    // The revert stays a stated fact, and the gate's own attribution is what
+    // the block reads it through (spec/loop.md "A gate-revert record carries
+    // the gate's own attribution, never an inferred one").
+    expect(block).toContain("was REVERTED by a gate");
+    expect(block).toContain("DISOWNED the blame");
+    expect(block).toContain("declared this failure not the");
+    // What it must not say: the instruction the ordinary arm carries. The
+    // gate withheld the blame, so an engine that still told the retry to
+    // change its approach would be inventing one
+    // (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+    expect(block).not.toContain("change your approach");
+    expect(block).not.toMatch(/do not blindly/i);
+
+    // The gate's own statements still reach the agent on this arm — disowning
+    // the blame withholds the instruction, never the failure.
+    expect(block).toContain(`Gate message: ${gateRevert.message}`);
+    expect(block).toContain(`Gate verdict: ${gateRevert.verdict}`);
   }, SPAWN_BUDGET_MS);
 
   it("tip-moved names the recorded base and the observed HEAD, never a tip-start comparison on the ref", async () => {
