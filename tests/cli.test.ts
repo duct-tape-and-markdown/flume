@@ -1549,6 +1549,16 @@ describe("flume status — friction line", () => {
  * chain-less probe pinned per-arm in tests/pendingLedger.test.ts.
  */
 describe("flume status — pending entry count", () => {
+  /**
+   * The queue rows of a listing, read as whole lines. A `not.toContain` over
+   * the whole output would turn on whatever else it happens to quote — a
+   * chain-load report naming "the pending count", a fixture path — rather
+   * than on the row the case is about (`.claude/rules/posture-sweep.md`,
+   * *Standing lenses*).
+   */
+  const pendingRows = (out: string): string[] =>
+    out.split("\n").filter((line) => line.startsWith("pending:"));
+
   it("names the entry count for a valid queue", async () => {
     const dir = await mkFixtureRoot("flume-status-pending-");
     try {
@@ -1628,6 +1638,72 @@ describe("flume status — pending entry count", () => {
       const r = await runCli(dir, ["status"]);
       expect(r.code).toBe(0);
       expect(r.out).toContain("pending: 1");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, SPAWN_BUDGET_MS);
+
+  /**
+   * spec/cli.md "Subcommand surface", `status`: the verb refuses only when a
+   * file it must read is present and unreadable — and the queue is one of
+   * those, because the alternative reading is "pending: 0" over entries
+   * nothing listed. The reader's rethrow is pinned at
+   * `tests/pendingLedger.test.ts`; this is the verb's half of it.
+   */
+  it("flume status refuses a pending queue that is present and unreadable with the io-error exit code rather than a raw stack", async () => {
+    const dir = await mkFixtureRoot("flume-status-pending-unreadable-");
+    try {
+      // The queue path comes from the accessor the verb itself resolves
+      // (`resolvePendingDir`, `src/paths.ts`), never a second spelling here.
+      const queueDir = resolvePendingDir(join(dir, ".flume"));
+      await seedQueue(queueDir, [
+        {
+          tag: "A",
+          gate: { kind: "open" },
+          dependsOnForks: [],
+          files: { new: [], edit: [{ path: "src/a.ts", description: "a" }], retire: [] },
+        },
+      ]);
+      // Non-vacuity: the count prints over this very queue before either
+      // denial, so each refusal below is the denial's and not an empty
+      // listing's.
+      const before = await runCli(dir, ["status"]);
+      expect(before.code).toBe(0);
+      expect(pendingRows(before.out)).toEqual(["pending: 1"]);
+
+      // First input — the descent's refusal: a plain file where the queue
+      // directory belongs, which is `ENOENT` on win32 and `ENOTDIR` on posix,
+      // so the probe proves absence from the path rather than the errno.
+      denyDirectory(queueDir);
+
+      const obstructed = await runCli(dir, ["status"]);
+      expect(obstructed.code).toBe(EX_IOERR);
+      expect(obstructed.out).toContain(
+        `[flume] status: pending queue at ${queueDir} failed to read`,
+      );
+      expect(pendingRows(obstructed.out)).toEqual([]);
+      // The rows above the queue are not withheld: this refusal is the
+      // queue's alone, and the baton it follows read fine.
+      expect(obstructed.out).toContain("hibernating");
+
+      // Second input — an entry file present and unreadable, which reaches
+      // the read past the listing rather than the descent before it.
+      // `denyFile` cannot arm this one: `readQueueOnDisk`
+      // (`src/pendingLedger.ts`) drops a directory named `*.json` instead of
+      // reading it, so the listing would answer the empty queue and the case
+      // would pass over a read it never made. A self-referential symlink is
+      // listed as an entry and fails ELOOP at the open.
+      await rm(queueDir, { recursive: true, force: true });
+      await mkdir(queueDir, { recursive: true });
+      const entryFile = entryFileName("A");
+      await symlink(entryFile, join(queueDir, entryFile));
+
+      const unreadableEntry = await runCli(dir, ["status"]);
+      expect(unreadableEntry.code).toBe(EX_IOERR);
+      expect(unreadableEntry.out).toContain(
+        `[flume] status: pending queue at ${queueDir} failed to read`,
+      );
+      expect(pendingRows(unreadableEntry.out)).toEqual([]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

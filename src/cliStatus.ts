@@ -21,6 +21,7 @@ import { existsLoudUnder } from "./fsProbe.js";
 import { currentRefPath, gitCommonDir, liveTipClaim, tipClaimPath } from "./git.js";
 import { loopLockPath, resolvePendingDir, stopFlagPath } from "./paths.js";
 import { readPendingLoose } from "./pendingLedger.js";
+import type { ParseResult } from "./PendingSchema.js";
 import { liveLoopClaim, statedStateRoot, type PidClaim } from "./pidClaim.js";
 import { readRunSpend, type RunSpend } from "./runSpend.js";
 import { thrownMessage } from "./thrown.js";
@@ -188,10 +189,29 @@ export async function statusVerb(paths: FlumePaths): Promise<number> {
   // The pending entry count, independent of whether the chain loads:
   // `readPendingLoose` (src/pendingLedger.ts) is the probe, so an absent queue reads
   // 0 and a corrupt one reads "unparsable" rather than failing the verb.
-  const pending = readPendingLoose(
-    flumeDir,
-    resolvePendingDir(flumeDir, chain?.pendingDir),
-  );
+  //
+  // Guarded like the four reads above it: absent and unparsable are the
+  // probe's two silent readings, and every other failure throws — a plain
+  // file where the queue directory belongs, an entry file that lists and will
+  // not open. Outside a guard those escaped to `main()`'s catch as a raw
+  // stack and exit 1, the one exit `status` is specced never to take
+  // (spec/cli.md, "Subcommand surface"), and the alternative reading a fold
+  // would print is "pending: 0" over a queue nothing read
+  // (`.claude/rules/engineering.md`, "Loud or nothing"). The line names the
+  // queue this verb resolved, because a failure past the open carries no path
+  // of its own (`.claude/rules/platform-facts.md`, *A read that fails after
+  // the open names no path*) and a chain-declared `pendingDir` puts it
+  // somewhere the default spelling does not.
+  const statusPendingDir = resolvePendingDir(flumeDir, chain?.pendingDir);
+  let pending: ParseResult;
+  try {
+    pending = readPendingLoose(flumeDir, statusPendingDir);
+  } catch (err) {
+    operatorLog.error(
+      `[flume] status: pending queue at ${statusPendingDir} failed to read: ${thrownMessage(err)}`,
+    );
+    return EX_IOERR;
+  }
   console.log(
     pending.ok ? `pending: ${pending.entries.length}` : "pending: unparsable",
   );

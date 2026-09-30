@@ -896,9 +896,8 @@ export async function readPendingForDecision(
  * failure (permission denied, a path too long for the platform, …) is
  * rethrown rather than folded into the absent case
  * (`.claude/rules/engineering.md`, "Loud or nothing") — rethrowing leaves the
- * caller to decide how to surface it: `flume status` (`src/cliStatus.ts`)
- * catches it, reports the failure, and exits non-zero rather than printing
- * "pending: 0" over a queue it could not read.
+ * caller to decide how to surface it, and `flume status` (`src/cliStatus.ts`)
+ * decides at its own arm.
  *
  * The one read on this page that takes bare paths rather than a
  * {@link PendingLedgerContext}: it runs where no chain resolved, which is the
