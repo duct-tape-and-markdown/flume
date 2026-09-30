@@ -11,6 +11,12 @@
  * calls the engine's probes are built from, with no platform guard: a host
  * where structural denial stopped denying reds this file first, and the
  * dozen loud-or-nothing cases downstream stop reading as green over nothing.
+ *
+ * The fixture's **limits** are pinned here too, each beside the shape it
+ * bounds: a denial a code path resolves around arms nothing, and a site that
+ * reaches for the wrong one reads green over a call it never made. Those
+ * cases drive the real reader they are about, since the limit is the
+ * reader's shape meeting the denial's and neither half shows it alone.
  */
 
 import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
@@ -19,6 +25,9 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { resolvePendingDir } from "../src/paths.ts";
+import { readQueueOnDisk } from "../src/pendingLedger.ts";
+import { entryFileName } from "../src/PendingSchema.ts";
 import { DENIAL_NOTE, denyDirectory, denyFile } from "./helpers/denial.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 
@@ -160,6 +169,40 @@ describe("denyFile — a directory where a file is read or written", () => {
     // The split a probe-then-read gate has to survive: present to the stat,
     // refused on the read.
     expect(statSync(path, { throwIfNoEntry: false })).toBeDefined();
+  });
+
+  it("`denyFile` at a queue entry path is dropped from `readQueueOnDisk`'s listing by dirent kind rather than refusing the read", async () => {
+    const root = await scratch();
+    const stateRoot = join(root, ".flume");
+    const queueDir = resolvePendingDir(stateRoot);
+    mkdirSync(queueDir, { recursive: true });
+    const entry = entryFileName("A");
+    const path = join(queueDir, entry);
+    writeFileSync(path, "{}");
+    // Non-vacuity: the reader really lists this entry and really opens it, so
+    // the empty queue below is the denial's doing and not a queue the reader
+    // was never pointed at (`.claude/rules/engineering.md`, *A green verdict
+    // is proven non-vacuous*).
+    expect(readQueueOnDisk(stateRoot, queueDir)).toEqual([{ file: entry, raw: "{}" }]);
+
+    denyFile(path);
+
+    // The denial itself landed, exactly as the case above pins it: present to
+    // a stat, and refusing a read with a non-ENOENT error.
+    expect(statSync(path, { throwIfNoEntry: false })).toBeDefined();
+    const code = errno(() => readFileSync(path, "utf8"));
+    expect(code).toBeDefined();
+    expect(code).not.toBe("ENOENT");
+
+    // And the reader never makes that read. `readQueueOnDisk`
+    // (`src/pendingLedger.ts`) filters its listing by dirent kind before it
+    // opens anything, so the directory planted here leaves the listing and
+    // the queue answers empty — not null, which is the absent directory, and
+    // not a refusal. A loud-or-nothing case armed this way is green over a
+    // read that never happened. A reader shaped like this one wants an input
+    // its listing keeps instead: `tests/cli.test.ts` plants a self-referential
+    // symlink, which lists as an entry and fails ELOOP at the open.
+    expect(readQueueOnDisk(stateRoot, queueDir)).toEqual([]);
   });
 
   it("a structurally denied file refuses a path whose parent is absent rather than creating one", async () => {

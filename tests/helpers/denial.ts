@@ -72,6 +72,13 @@ export function denyDirectory(path: string): void {
  * `ENOENT` (`EISDIR` on this host), while a stat still reports the entry
  * present — the split a gate that probes for existence before reading has to
  * survive.
+ *
+ * Its converse is the reader that classifies a listing before it opens
+ * anything: the directory planted here is dropped by dirent kind, the read
+ * never happens, and the case reads green over it. `tests/denial.test.ts`
+ * holds that limit over `readQueueOnDisk` (`src/pendingLedger.ts`) as a case
+ * of its own; a site denying an entry such a reader lists wants an input the
+ * listing keeps.
  */
 export function denyFile(path: string): void {
   rmSync(path, { recursive: true, force: true });

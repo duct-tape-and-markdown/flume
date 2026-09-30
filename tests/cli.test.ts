@@ -1688,10 +1688,8 @@ describe("flume status — pending entry count", () => {
 
       // Second input — an entry file present and unreadable, which reaches
       // the read past the listing rather than the descent before it.
-      // `denyFile` cannot arm this one: `readQueueOnDisk`
-      // (`src/pendingLedger.ts`) drops a directory named `*.json` instead of
-      // reading it, so the listing would answer the empty queue and the case
-      // would pass over a read it never made. A self-referential symlink is
+      // `denyFile` cannot arm this one — the fixture's dirent-kind limit,
+      // pinned in `tests/denial.test.ts`. A self-referential symlink is
       // listed as an entry and fails ELOOP at the open.
       await rm(queueDir, { recursive: true, force: true });
       await mkdir(queueDir, { recursive: true });
