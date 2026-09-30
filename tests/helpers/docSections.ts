@@ -43,18 +43,63 @@ export interface ProseLine {
  * dropped it would run a paragraph on as the last bullet's tail.
  */
 export function proseLines(page: string): ProseLine[] {
-  const found: ProseLine[] = [];
+  return fenceWalk(page)
+    .filter((walked) => !walked.fence && !walked.fenced)
+    .map(({ line, text }) => ({ line, text }));
+}
+
+/**
+ * Every fenced block of a page, in page order, as the body between its own
+ * fence lines — the complement of {@link proseLines}, off the same walk, so a
+ * sample and the prose around it cannot disagree about where the fence opened.
+ *
+ * The body alone: the fence lines and whatever info string they carry are the
+ * renderer's business, while the body is what the page shows a reader. A fence
+ * the page never closes yields nothing rather than running to the end — an
+ * unclosed sample is the same non-block `proseLines` already treats it as.
+ */
+export function fencedBlocks(page: string): string[] {
+  const blocks: string[] = [];
+  let body: string[] | undefined;
+
+  for (const { text, fence, fenced } of fenceWalk(page)) {
+    if (fence) {
+      if (body === undefined) body = [];
+      else {
+        blocks.push(body.join("\n"));
+        body = undefined;
+      }
+    } else if (fenced) body?.push(text);
+  }
+
+  return blocks;
+}
+
+/** One line of a page, with what the fence walk makes of it. */
+interface WalkedLine extends ProseLine {
+  /** Whether the line itself opens or closes a fenced block. */
+  readonly fence: boolean;
+  /** Whether the line sits inside one, its own fence lines excluded. */
+  readonly fenced: boolean;
+}
+
+/**
+ * The page's one read of what a fence covers: every line, tagged with whether
+ * it delimits a block and whether it sits inside one. Both readers above take
+ * their answer from this rather than each toggling a flag of its own
+ * (`.claude/rules/engineering.md`, *A module is one job*).
+ */
+function fenceWalk(page: string): WalkedLine[] {
+  const walked: WalkedLine[] = [];
   let fenced = false;
 
   for (const [index, text] of page.split(/\r?\n/).entries()) {
-    if (FENCE.test(text)) {
-      fenced = !fenced;
-      continue;
-    }
-    if (!fenced) found.push({ line: index + 1, text });
+    const fence = FENCE.test(text);
+    if (fence) fenced = !fenced;
+    walked.push({ line: index + 1, text, fence, fenced: fenced && !fence });
   }
 
-  return found;
+  return walked;
 }
 
 /**

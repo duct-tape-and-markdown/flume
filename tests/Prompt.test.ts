@@ -42,6 +42,7 @@ import {
   priorAttemptBlock,
   priorAttemptBlockIfAny,
 } from "./helpers/priorAttemptBlock.ts";
+import { fencedBlocks, sectionOf } from "./helpers/docSections.ts";
 import {
   harnessLeads,
   listingUnder,
@@ -748,7 +749,30 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     });
   }
 
-  const gateRevert: GateRevertAttempt = {
+  /**
+   * The anchor stamps `docs/CHAIN-AUTHORING.md`'s rendered sample carries. The
+   * anchor is the block's one line that labels nothing — it states `at` and
+   * `headSha` in running prose — so the lead cut below has no label to drop it
+   * at, and this record takes the page's own stamps rather than the comparison
+   * hand-authoring that sentence a second time.
+   */
+  const SAMPLE_AT = "2026-03-04T11:22:31.004Z";
+  const SAMPLE_HEAD_SHA = "9f2c1ab";
+
+  /**
+   * The record the authoring page's rendered sample stands for: a
+   * `gate-revert` carrying every field its variant declares, so the leads it
+   * renders are the widest set this mode can spend
+   * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+   * wrote*). `Required` is the maximality check — an optional field
+   * {@link GateRevertAttempt} gains lands here as a compile error rather than
+   * as a lead the page silently stops claiming.
+   *
+   * `blamesSpan` is out by exclusion rather than omission: its arm *replaces*
+   * the instruction this record renders, so no one record carries both, and
+   * the disowning arm has its own case below.
+   */
+  const sampleRecord: Required<Omit<GateRevertAttempt, "blamesSpan">> = {
     mode: "gate-revert",
     when: "afterCommit",
     gate: "revert-gate",
@@ -759,6 +783,14 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     failingFiles: ["src/one.ts", "src/two.ts"],
     key: "entry",
     keyedAs: KEYED_AS,
+    declaredAs: "entry-declaration-key",
+    headSha: SAMPLE_HEAD_SHA,
+    at: SAMPLE_AT,
+  };
+
+  /** The same record re-anchored onto the stamps every variant here shares. */
+  const gateRevert: GateRevertAttempt = {
+    ...sampleRecord,
     headSha: HEAD_SHA,
     at: AT,
   };
@@ -1053,6 +1085,62 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     // the blame withholds the instruction, never the failure.
     expect(block).toContain(`Gate message: ${gateRevert.message}`);
     expect(block).toContain(`Gate verdict: ${gateRevert.verdict}`);
+  }, SPAWN_BUDGET_MS);
+
+  /**
+   * Where a rendered block line stops naming what it holds and starts holding
+   * it: a label's own colon and the space after it. A line with no such label
+   * — the block's tags, the instruction prose, the anchor — is all lead and is
+   * taken whole.
+   */
+  const LABELLED_VALUE = /: .*$/;
+
+  /**
+   * The line leads a `<prior-attempt>` block spends, in render order: each
+   * unindented line with its value dropped at the label, and `indentBlock`'s
+   * output — every indented line of it — dropped whole.
+   *
+   * This is the subject of the agreement below. What the page and the renderer
+   * must both show is the set of lines the block spends, not the illustrative
+   * gate output the page fills them with.
+   */
+  function blockLeads(block: string): string[] {
+    return block
+      .split("\n")
+      .filter((line) => line.length > 0 && !line.startsWith(" "))
+      .map((line) => line.replace(LABELLED_VALUE, ":"));
+  }
+
+  it("the authoring page's rendered gate-revert sample shows every line lead the real renderer emits for a maximal record, and no lead it does not", async () => {
+    const page = await readFile(
+      new URL("../docs/CHAIN-AUTHORING.md", import.meta.url),
+      "utf8",
+    );
+    const samples = fencedBlocks(
+      sectionOf(page, "### The `<prior-attempt>` block"),
+    );
+    // Vacuity, and the cut's own anchor: the section shows exactly one
+    // rendered block, so the comparison cannot pass by picking a neighbour,
+    // and a section this heading no longer opens reds here rather than
+    // agreeing emptily.
+    expect(samples, "the section shows exactly one rendered block").toHaveLength(
+      1,
+    );
+
+    // The fixture reaches the whole output the pin claims
+    // (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+    // wrote*): both leads this mode spends only when the gate authored the
+    // field are armed, so a page that showed the narrow render would red.
+    expect(sampleRecord.verdict.length).toBeGreaterThan(0);
+    expect(sampleRecord.failingFiles.length).toBeGreaterThan(0);
+    const leads = blockLeads(priorAttemptBlock(await renderWithPrior(sampleRecord)));
+    expect(leads).toContain("Gate verdict:");
+    expect(leads).toContain("Files the gate blamed:");
+
+    // Both directions on one equality: a lead the renderer gained and the page
+    // never grew, and a lead the page shows that the renderer no longer emits,
+    // each red here. The values behind them are the page's own.
+    expect(blockLeads(samples[0]!)).toEqual(leads);
   }, SPAWN_BUDGET_MS);
 
   it("tip-moved names the recorded base and the observed HEAD, never a tip-start comparison on the ref", async () => {
