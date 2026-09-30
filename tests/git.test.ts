@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import {
   chmod,
   mkdir,
@@ -1348,6 +1348,35 @@ describe("deleteBranch (GITDELETEBRANCH-BROAD-SWALLOW)", () => {
     await expect(deleteBranch(repo, "checked-out-elsewhere")).rejects.toThrow(
       /checked-out-elsewhere/,
     );
+    // The refusal left the ref standing for the surviving worktree.
+    await expect(
+      exec("git", ["show-ref", "--verify", "refs/heads/checked-out-elsewhere"], {
+        cwd: repo,
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  // A wave tears a slot down while its siblings still run git against the
+  // same `.git/config`, and win32 fails a read that races that file's
+  // replacement. The race is the host's; the rewrite is ours, and is
+  // decidable on every host: the file's identity survives the delete, or the
+  // delete replaced it.
+  it("deletes an existing branch without rewriting .git/config", async () => {
+    await exec("git", ["branch", "doomed-branch"], { cwd: repo });
+    const config = join(repo, ".git", "config");
+    const before = statSync(config, { bigint: true });
+
+    await deleteBranch(repo, "doomed-branch");
+
+    // Non-vacuity: the branch was really deleted, not skipped as absent.
+    await expect(
+      exec("git", ["show-ref", "--verify", "--quiet", "refs/heads/doomed-branch"], {
+        cwd: repo,
+      }),
+    ).rejects.toMatchObject({ code: 1 });
+    const after = statSync(config, { bigint: true });
+    expect(after.ino).toBe(before.ino);
+    expect(after.mtimeNs).toBe(before.mtimeNs);
   });
 });
 

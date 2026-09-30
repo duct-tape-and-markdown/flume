@@ -563,28 +563,41 @@ export async function worktreeListPorcelain(repoRoot: string): Promise<string> {
  * rephrases it and the match silently stops firing. Structural check
  * instead: probe `refs/heads/<branch>` with `show-ref --verify --quiet` (no
  * stdout, no stderr, only the exit code) and key off that. Any other failure
- * — including a non-1 exit from the probe itself, and anything `branch -D`
- * throws once the ref is confirmed present (most commonly the branch still
- * checked out in a worktree that survived removal) — rethrows so the caller
- * can surface it rather than losing it silently.
+ * — including a non-1 exit from the probe itself, a branch still checked out
+ * in a worktree that survived removal, and anything the ref deletion throws —
+ * rethrows so the caller can surface it rather than losing it silently.
+ *
+ * The ref is deleted with `update-ref -d`, never `branch -D`: `branch -D`
+ * also drops the branch's config section, and it rewrites `.git/config` to do
+ * so even when there is no section to drop. That rewrite lands while a wave's
+ * siblings are running git against the same config, and on win32 a read that
+ * races the replacement fails. A branch this engine created carries no config
+ * section, so the ref is the whole of what there is to delete. `update-ref`
+ * does not refuse a checked-out branch the way `branch -D` does, so that
+ * refusal is read off the worktree registry here.
  */
 export async function deleteBranch(
   repoRoot: string,
   branch: string,
 ): Promise<void> {
+  const ref = `refs/heads/${branch}`;
   try {
-    await run(repoRoot, [
-      "show-ref",
-      "--verify",
-      "--quiet",
-      `refs/heads/${branch}`,
-    ]);
+    await run(repoRoot, ["show-ref", "--verify", "--quiet", ref]);
   } catch (err) {
     const code = (err as { code?: number | string }).code;
     if (code === 1) return;
     throw err;
   }
-  await run(repoRoot, ["branch", "-D", branch]);
+  let worktree: string | undefined;
+  for (const field of (await worktreeListPorcelain(repoRoot)).split("\0")) {
+    if (field.startsWith("worktree ")) worktree = field.slice("worktree ".length);
+    else if (field === `branch ${ref}`) {
+      throw new Error(
+        `cannot delete branch '${branch}': checked out at '${worktree ?? "?"}'`,
+      );
+    }
+  }
+  await run(repoRoot, ["update-ref", "-d", ref]);
 }
 
 /**
