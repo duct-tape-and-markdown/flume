@@ -259,7 +259,11 @@ function harvestedName(tag: string, stamp: string, name: string): string {
  * worktree's `HEAD` is the existence probe — content is irrelevant, only
  * whether the path is tracked there. `HEAD` is resolved with the worktree
  * itself as the git invocation's cwd, since each linked worktree has its
- * own `HEAD` even though branch refs live in the shared common dir.
+ * own `HEAD` even though branch refs live in the shared common dir — and
+ * resolved once, ahead of the candidates, so every probe reads the one tree
+ * (`spec/pending.md`, *Dispatch reads come from the tip, not the tree*);
+ * probing a symbolic `HEAD` per candidate would weigh the first half of a
+ * harvest against one tip and the second half against another.
  *
  * Undeclared `chain.friction` — no-op. A relocated state root (`flumeDir`
  * outside the repo tree, so `stateRootRel` is `undefined`) has no
@@ -303,12 +307,28 @@ export async function harvestFriction(
   // agent committed it — is delivered content already, and is left in
   // place rather than re-harvested under a stamped name. Existence only;
   // content is irrelevant to the check.
+  //
+  // One tip for every candidate: resolved here rather than per probe, so a
+  // commit landing mid-harvest joins the next harvest's bound instead of
+  // splitting this one. A tip this worktree cannot resolve leaves every
+  // candidate unprobed, which is what the per-candidate failure below already
+  // does to each of them — one log line instead of one per file, and the
+  // wave's teardown carries on either way.
+  let headSha: string;
+  try {
+    headSha = await git.revParse(worktreePath, "HEAD");
+  } catch (err) {
+    ctx.log.warn(
+      `[flume] friction harvest: could not resolve HEAD in ${worktreePath}: ${(err as Error).message}`,
+    );
+    return;
+  }
   const files: string[] = [];
   for (const name of candidates) {
     const relPath = join(ctx.stateRootRel, chain.friction, name);
     let atHead: string | null;
     try {
-      atHead = await git.readFileAtRef(worktreePath, "HEAD", relPath);
+      atHead = await git.readFileAtRef(worktreePath, headSha, relPath);
     } catch (err) {
       // Same log-and-continue class as the readdir/mkdir/rename failure
       // modes below: a probe failure isolates to this one candidate

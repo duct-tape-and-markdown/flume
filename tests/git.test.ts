@@ -599,6 +599,38 @@ describe("readFileAtRef (spec/pending.md 'Dispatch reads come from the tip, not 
       "nested\n",
     );
   });
+
+  it("runs its probe and its content read at one resolved sha, never at the symbolic ref it was handed", async () => {
+    await writeFile(join(repo, "at-one-sha.txt"), "one tree\n");
+    await exec("git", ["add", "."], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "add at-one-sha.txt"], {
+      cwd: repo,
+    });
+    const tip = await revParse(repo);
+
+    const since = execArgsLog.length;
+    expect(await readFileAtRef(repo, "HEAD", "at-one-sha.txt")).toBe(
+      "one tree\n",
+    );
+    const argv = execArgsLogSince(since).map((c) => c[1] as string[]);
+
+    // Vacuity before the verdict: both legs of this read are in the slice, so
+    // what follows is a claim about two calls that were made rather than over
+    // an empty log — the `promisify.custom` interception at the top of this
+    // file is what could leave it empty.
+    const probe = argv.find((a) => a[0] === "ls-tree");
+    const read = argv.find((a) => a[0] === "show");
+    expect(probe).toBeDefined();
+    expect(read).toBeDefined();
+
+    // The ref was folded to a sha once, and both legs name that sha. `HEAD`
+    // on either is the straddle: a sibling committing between the probe and
+    // the read answers the two out of two different trees, and `show` exits
+    // fatal on a path `ls-tree` has just listed.
+    expect(argv.some((a) => a[0] === "rev-parse" && a[1] === "HEAD")).toBe(true);
+    expect(probe?.[2]).toBe(tip);
+    expect(read?.[1]).toBe(`${tip}:at-one-sha.txt`);
+  });
 });
 
 // A filename may not contain `:` on win32 — the Win32 path layer refuses the

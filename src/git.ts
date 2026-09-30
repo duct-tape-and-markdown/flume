@@ -708,6 +708,16 @@ export async function spanDiffStat(
  * trailing bytes — a content read wants exactly what was committed. Both legs
  * of the read are the same invocation composed the same way, so the dialect
  * they run under is one fact rather than two that agree.
+ *
+ * **Both legs run at one sha, resolved here.** `ref` may be symbolic, and a
+ * symbolic ref is two answers to the probe and the read: a sibling committing
+ * in between leaves the path listed and then absent, so `show` exits fatal on
+ * a path `ls-tree` had just named (field-paid). {@link revParse} folds the ref
+ * to the commit it named at the top of this read, and a sha cannot move — the
+ * pair is one read of one tree, and a concurrent commit belongs to the next
+ * read (`.claude/rules/engineering.md`, *Loud or nothing*). An unresolvable
+ * `ref` throws here rather than at the probe, which is the same refusal one
+ * call earlier.
  */
 export async function readFileAtRef(
   repoRoot: string,
@@ -715,15 +725,16 @@ export async function readFileAtRef(
   relPath: string,
 ): Promise<string | null> {
   const pathspec = gitPath(relPath);
+  const sha = await revParse(repoRoot, ref);
   const { stdout: listing } = await run(repoRoot, [
     "ls-tree",
     "--name-only",
-    ref,
+    sha,
     "--",
     pathspec,
   ]);
   if (listing.trim().length === 0) return null;
-  const { stdout } = await spawnGit(repoRoot, ["show", `${ref}:${pathspec}`]);
+  const { stdout } = await spawnGit(repoRoot, ["show", `${sha}:${pathspec}`]);
   return stdout;
 }
 
@@ -732,7 +743,8 @@ export async function readFileAtRef(
  * directory prefix — the queue directory's listing as the committed tip
  * holds it (`spec/pending.md`, *The ledger is a directory — one entry per
  * file*), for a caller that then reads each name through
- * {@link readFileAtRef}.
+ * {@link readFileAtRef} — at the sha that caller resolved before this
+ * listing, so the listing and the reads that follow it name one tree.
  *
  * `null` when the directory is absent from that tree. A git tree holds no
  * empty directory, so "absent" and "empty of everything" are one fact and

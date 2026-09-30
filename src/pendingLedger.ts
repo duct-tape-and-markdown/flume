@@ -250,7 +250,8 @@ export function readQueueOnDisk(
  * for the same fact — the directory is not in that tree.
  *
  * `dirRel` is repo-relative in git's own alphabet; both legs hand it to git
- * unchanged. A **gate** asking what queue the commit it is attached to holds
+ * unchanged. `ref` is folded to a sha once, here, so the listing and the file
+ * reads that follow it are one read of one tree — see the body. A **gate** asking what queue the commit it is attached to holds
  * asks {@link readGatedQueue} below rather than this: which ref, which
  * offset, and what a relocated root reads instead are that question's facts,
  * and a gate composing them is one divergence from judging a queue the gate
@@ -262,18 +263,27 @@ export async function readQueueAtRef(
   ref: string,
   dirRel: string,
 ): Promise<QueueFile[] | null> {
-  const names = await git.listTreeBlobNames(repoRoot, ref, dirRel);
+  // One tip for the whole read. `ref` may be symbolic — every dispatch read
+  // here hands `HEAD` — and a symbolic ref answers the listing and the file
+  // reads out of whatever tree each one happens to catch: a sibling's commit
+  // landing in between leaves an entry listed and then absent (field-paid:
+  // `show HEAD:<entry>` exiting fatal on a path `ls-tree HEAD` had just
+  // named). Resolved once, the queue this read returns is the one a single
+  // commit holds, and a commit landing mid-read is the next read's
+  // (`spec/pending.md`, *Dispatch reads come from the tip, not the tree*).
+  const sha = await git.revParse(repoRoot, ref);
+  const names = await git.listTreeBlobNames(repoRoot, sha, dirRel);
   if (names === null) return null;
   const files = names.filter((name) => name.endsWith(ENTRY_FILE_EXT)).sort();
   return Promise.all(
     files.map(async (file) => ({
       file,
-      // Present in the listing a moment ago and the ref does not move, so a
-      // null here is a tree that changed under the read — reported as the
-      // empty file it then is, and refused by the parse rather than silently
-      // skipped.
+      // Listed in this same tree, which cannot change, so a null here is no
+      // longer a race: it is a name that did not compose or an object git
+      // will not produce — reported as the empty file it then is, and refused
+      // by the parse rather than silently skipped.
       raw:
-        (await git.readFileAtRef(repoRoot, ref, entryFileRel(dirRel, file))) ??
+        (await git.readFileAtRef(repoRoot, sha, entryFileRel(dirRel, file))) ??
         "",
     })),
   );

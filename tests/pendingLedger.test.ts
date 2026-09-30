@@ -42,6 +42,7 @@ import {
   readPendingForDecision,
   readPendingLoose,
   readPendingTolerant,
+  readQueueAtRef,
   readQueueOnDisk,
   type PendingLedgerContext,
 } from "../src/pendingLedger.ts";
@@ -57,6 +58,36 @@ import { SPAWN_BUDGET_MS, exec, gitOut } from "./helpers/subprocess.ts";
 // here rather than inheriting the runner's default (`SPAWN_BUDGET_MS`,
 // `tests/helpers/subprocess.ts`).
 vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
+
+/**
+ * What a sibling committing *during* a queue read is, in the one place the
+ * window exists: between the listing and the file reads `readQueueAtRef`
+ * composes. Set by the straddle case below, fired once, cleared on the way
+ * through — a real commit into the repository under read, so the tip moves
+ * the way a fanout sibling's does rather than by a stubbed answer.
+ *
+ * Partial mock over the git module the ledger reads through, the
+ * `tests/worktrees.test.ts` shape: every export is the real one, and the one
+ * call whose *timing* is the property announces itself on the way past. Every
+ * other case in this file runs against unchanged behaviour.
+ */
+let onListing: (() => Promise<void>) | undefined;
+
+vi.mock("../src/git.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/git.ts")>();
+  return {
+    ...actual,
+    listTreeBlobNames: async (
+      ...args: Parameters<typeof actual.listTreeBlobNames>
+    ) => {
+      const names = await actual.listTreeBlobNames(...args);
+      const fire = onListing;
+      onListing = undefined;
+      if (fire !== undefined) await fire();
+      return names;
+    },
+  };
+});
 
 const REPO = join("/", "tmp", "flume-ledger-repo");
 
@@ -744,4 +775,74 @@ describe("commitPendingUpdate — the commit it reports is the one it wrote", ()
       await repo.cleanup();
     }
   });
+});
+
+/**
+ * spec/pending.md "Dispatch reads come from the tip, not the tree" — *which*
+ * tip, for a read that takes two git calls to make. The dispatch reads hand
+ * `readQueueAtRef` the symbolic `HEAD`, and under fanout a sibling's ship
+ * commit lands whenever it lands: field-paid, `show HEAD:<entry>` exited fatal
+ * on a path `ls-tree HEAD` had named a moment earlier, and the wave died on a
+ * queue that was never inconsistent at any commit.
+ *
+ * Deliberately top-level rather than inside a describe: this title is the
+ * queue entry’s own `tests[]` line, matched on the full name.
+ */
+it("a queue read whose tip moves between the listing and the file reads returns the queue the listing's tip held", async () => {
+  const repo = await makeScratchRepo("flume-queue-straddle-", "main");
+  try {
+    const declared = "queue/ledger";
+    const pendingDir = join(repo.dir, "queue", "ledger");
+    await mkdir(pendingDir, { recursive: true });
+    const shipped = entryFileName("SHIPPED-MID-READ");
+    const staying = entryFileName("STILL-QUEUED");
+    const body = (tag: string) =>
+      JSON.stringify({
+        tag,
+        gate: { kind: "open" },
+        files: { new: [], edit: [], retire: [] },
+      }) + "\n";
+    await writeFile(join(pendingDir, shipped), body("SHIPPED-MID-READ"), "utf8");
+    await writeFile(join(pendingDir, staying), body("STILL-QUEUED"), "utf8");
+    await exec("git", ["add", "."], { cwd: repo.dir });
+    await exec("git", ["commit", "-q", "-m", "two queued entries"], {
+      cwd: repo.dir,
+    });
+    const listingTip = (await gitOut(repo.dir, ["rev-parse", "HEAD"])).trim();
+
+    // The sibling: between the listing and the reads, one entry leaves the
+    // queue and the branch moves. Exactly the wave-end rewrite another fanout
+    // worker makes while this read is in flight.
+    onListing = async () => {
+      await exec("git", ["rm", "-q", "--", `${declared}/${shipped}`], {
+        cwd: repo.dir,
+      });
+      await exec("git", ["commit", "-q", "-m", "ship SHIPPED-MID-READ"], {
+        cwd: repo.dir,
+      });
+    };
+
+    const files = await readQueueAtRef(repo.dir, "HEAD", declared);
+
+    // Vacuity: the sibling really did commit mid-read, and the branch really
+    // did move off the tip the listing was drawn from — without both, this
+    // case is a plain queue read wearing a race’s title.
+    expect(onListing).toBeUndefined();
+    const movedTip = (await gitOut(repo.dir, ["rev-parse", "HEAD"])).trim();
+    expect(movedTip).not.toBe(listingTip);
+
+    // One tip for the whole read: the queue the listing’s tip held, content
+    // and all. Pre-fix the second leg read the moved tip, where the listed
+    // entry no longer exists, and its `raw` came back empty.
+    expect(files?.map((f) => f.file)).toEqual([shipped, staying].sort());
+    expect(files?.find((f) => f.file === shipped)?.raw).toBe(
+      body("SHIPPED-MID-READ"),
+    );
+    expect(files?.find((f) => f.file === staying)?.raw).toBe(
+      body("STILL-QUEUED"),
+    );
+  } finally {
+    onListing = undefined;
+    await repo.cleanup();
+  }
 });
