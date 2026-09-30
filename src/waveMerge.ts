@@ -22,7 +22,7 @@
  * outlast many merges, and a queue that went on listing an entry already on
  * the trunk would be read as current by every producer beside it. One
  * ship-lock span per pick — taken when the pick begins and released however
- * it leaves, shipped, reverted or thrown as a {@link WaveLedgerRefusal} — so
+ * it leaves, shipped, reverted or thrown as a {@link WaveCarriedThrow} — so
  * a sibling tick gets its turn between two of this wave's picks and reads a
  * queue that matches the trunk it is looking at. What one span learned and
  * the next needs is {@link WaveMerge}.
@@ -131,8 +131,9 @@ export type EntryAttempt = AttemptOutcome & {
  *
  * The cause stays on the error for its message and for anything reading past
  * the carry. What this class deliberately does *not* hold is a ledger
- * classification: a slot leg that threw outside any ledger read refused no
- * ledger, and naming one for it would be a verdict invented at the carry
+ * classification: a slot leg, or a merge stage, that threw outside any ledger
+ * call refused no ledger, and naming one for it would be a verdict invented at
+ * the carry
  * ({@link WaveLedgerRefusal} is the subclass for the causes that really are
  * one).
  *
@@ -374,11 +375,15 @@ interface WaveMerge {
    * The cause a pick's ledger rewrite refused with, boxed so that "refused"
    * is readable whatever the cause is; `undefined` while none has.
    *
-   * Held on the stage rather than carried out by the throw alone because the
-   * verdict naming this refusal is built where the wave has *settled* — every
-   * slot finished ({@link waveMergeError}) — and a re-thrown cause is
-   * indistinguishable there from any other merge throw
-   * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+   * Held on the stage because it is what tells the stage's two carries apart:
+   * every throw out of the merge stage leaves wrapped, and a re-thrown cause
+   * at the wave leg's throw site is indistinguishable there from a marker the
+   * disk refused or a record the store would not write — so the ledger class
+   * one of them reports is stated by the call that took the refusal rather
+   * than read back off the cause
+   * (`.claude/rules/engine-boundary.md`, *Told, not inferred*). The verdict
+   * either carry rides is built where the wave has *settled* — every slot
+   * finished ({@link waveMergeError}).
    */
   refusal: { readonly cause: unknown } | undefined;
 }
@@ -1083,13 +1088,28 @@ function noCommitLine(
 
 /**
  * The error this wave leaves with, at the point every slot it opened has
- * finished: a ledger rewrite that refused becomes the
- * {@link WaveLedgerRefusal} carrying this wave's facts as they *settled*, and
- * any other merge throw passes through untouched.
+ * finished: this wave's facts as they *settled*, carried on the throw for
+ * `tick()` to report.
  *
- * Called from the wave leg's own throw site rather than from the refusing pick
- * (`src/waveTick.ts`): the refusal stops the wave carrying any further span,
- * but the siblings already running still settle behind it, and a decline
+ * Every throw out of the merge stage leaves carried, never the ledger refusal
+ * alone. A marker whose stake would not write, a prior-attempt record the
+ * store refused, a `revParse` the disk failed: each of them leaves behind what
+ * a refused rewrite leaves — the picks before it cherry-picked and gated onto
+ * trunk, a usage row per agent that ran, the merge rows and gate rows the
+ * stage folded — and a bare re-throw discards all of it
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported, never
+ * rediscovered*).
+ *
+ * What the cause decides is only *which* carry, the same split
+ * {@link waveSlotThrow} makes beside it: a rewrite this stage recorded as
+ * refused ({@link WaveMerge.refusal}) is the {@link WaveLedgerRefusal} that
+ * `tick()` classifies; anything else refused no ledger and takes the base
+ * carry, reported as no ledger refusal at all rather than assigned one this
+ * site would have to invent.
+ *
+ * Called from the wave leg's own throw site rather than from the pick that
+ * threw (`src/waveTick.ts`): the wall stops the wave carrying any further
+ * span, but the siblings already running still settle behind it, and a decline
  * folded or a render refusal raised in that window is a fact of this tick. A
  * verdict built at the pick names whichever of them happened to have landed
  * first (spec/loop.md "The tick verdict — one facts artifact").
@@ -1097,12 +1117,16 @@ function noCommitLine(
 export async function waveMergeError(
   w: WaveMerge,
   err: unknown,
-): Promise<unknown> {
-  if (w.refusal === undefined) return err;
-  return new WaveLedgerRefusal(
-    w.refusal.cause,
-    await settledWaveVerdict(w, w.refusal.cause, "pending-ledger rewrite refused"),
-  );
+): Promise<WaveCarriedThrow> {
+  const refusal = w.refusal;
+  return refusal === undefined
+    ? carriedWaveThrow(w, err, false, "the merge stage threw")
+    : carriedWaveThrow(
+        w,
+        refusal.cause,
+        true,
+        "pending-ledger rewrite refused",
+      );
 }
 
 /**
@@ -1127,14 +1151,31 @@ export async function waveSlotThrow(
   err: unknown,
 ): Promise<WaveCarriedThrow> {
   const ledger = err instanceof PendingParseFailure;
-  const verdict = await settledWaveVerdict(
+  return carriedWaveThrow(
     w,
     err,
+    ledger,
     ledger ? "mid-wave queue re-read refused" : "a slot leg threw",
   );
+}
+
+/**
+ * The carry both legs above leave with: the settled wave's verdict, on the
+ * class the cause earned. One spelling, two callers
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*) — the
+ * verdict is built the same way whichever leg walled, and which class carries
+ * it is the caller's own reading of its cause, never re-derived here.
+ */
+async function carriedWaveThrow(
+  w: WaveMerge,
+  cause: unknown,
+  ledger: boolean,
+  event: string,
+): Promise<WaveCarriedThrow> {
+  const verdict = await settledWaveVerdict(w, cause, event);
   return ledger
-    ? new WaveLedgerRefusal(err, verdict)
-    : new WaveCarriedThrow(err, verdict);
+    ? new WaveLedgerRefusal(cause, verdict)
+    : new WaveCarriedThrow(cause, verdict);
 }
 
 /**
@@ -1154,9 +1195,11 @@ export async function waveSlotThrow(
  * that carries this, for `tick()` to classify.
  *
  * `event` is what happened, in the operator's words, for the one summary line
- * the verdict carries: the callers are the rewrite behind a pick
- * ({@link waveMergeError}) and a slot leg that threw ({@link waveSlotThrow}),
- * and an operator reading the verdict has different repairs for them.
+ * the verdict carries. It arrives through {@link carriedWaveThrow}, from the
+ * leg that walled — a rewrite behind a pick that refused, the merge stage
+ * throwing outside one ({@link waveMergeError}), a slot leg that threw
+ * ({@link waveSlotThrow}) — because an operator reading the verdict has a
+ * different repair for each.
  *
  * `why` reads the cause through `thrownMessage` (`src/thrown.ts`) — the same
  * fold {@link WaveCarriedThrow}'s own message takes, so the summary and the

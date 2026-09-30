@@ -695,14 +695,18 @@ export async function runFanout(
   // that exploded, a hook that threw or a render that did not resolve leaves
   // carrying the same verdict and no ledger class at all.
   if (slotError !== undefined) throw await waveSlotThrow(merge, slotError);
-  // A refused ledger rewrite becomes its `WaveLedgerRefusal` here and not at
-  // the pick that hit it: every slot has finished behind this line, so the
-  // verdict the error carries names the whole wave — the spans already landed
-  // on trunk, and the decline or render refusal a sibling settled after the
-  // refusal (`waveMergeError`, `src/waveMerge.ts`). From here it propagates
-  // straight to `tick()`'s catch, over the worktree and the claim of every
-  // slot that settled behind the refusal — `settleSlot` above takes neither
-  // half once this holder is set. Surviving worktrees are the accepted cost
+  // A throw out of the merge stage leaves here carried, whatever threw it and
+  // whether or not a ledger refused — a refused rewrite as the
+  // `WaveLedgerRefusal` `tick()` classifies, a marker the disk would not take
+  // or a record the store refused as the base carry that reports no ledger
+  // class at all. Built here and not at the pick that hit it: every slot has
+  // finished behind this line, so the verdict the error carries names the
+  // whole wave — the spans already landed on trunk, and the decline or render
+  // refusal a sibling settled after the wall (`waveMergeError`,
+  // `src/waveMerge.ts`). From here it propagates straight to `tick()`'s catch,
+  // over the worktree and the claim of every slot that settled behind the
+  // wall — `settleSlot` above takes neither half once this holder is set.
+  // Surviving worktrees are the accepted cost
   // of refusing rather than proceeding, and they are the next `flume loop`
   // start's sweep to remove (`sweepStaleWorktrees`, `src/worktrees.ts`),
   // which takes the directory and the branch it was cut on — a prune takes

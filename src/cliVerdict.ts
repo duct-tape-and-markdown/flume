@@ -127,8 +127,9 @@ const TICK_EXIT_ARMS: readonly TickExitArm[] = [
   {
     // The other failure that says nothing about the mount, and the last arm
     // because it is the widest: a wave that ran, landed what it landed, and
-    // was then torn down by a throw out of one of its own slot legs — an
-    // agent that exploded, a hook that threw, a render that did not resolve.
+    // was then torn down by a throw out of one of its own legs — an agent that
+    // exploded, a hook that threw, a render that did not resolve, a merge
+    // marker or prior-attempt record the disk would not take.
     // The carry is what makes it visible here at all (`WaveCarriedThrow`,
     // `src/waveMerge.ts`): a bare re-throw took the verdict with it and left
     // `main()` to exit 1 off an uncaught stack. So this arm returns that same
@@ -137,10 +138,11 @@ const TICK_EXIT_ARMS: readonly TickExitArm[] = [
     // above, which carry a verdict too and state their own class over it.
     code: 1,
     opening: "A wave that ran and was then torn down by ",
-    phrase: "a throw out of one of its own slot legs",
+    phrase: "a throw out of one of its own legs",
     rest:
       " — an agent that exploded, a hook that threw, a render that did not " +
-      "resolve: the spans that merged and gated before it are on trunk, and " +
+      "resolve, a write inside the merge stage the disk refused: the spans " +
+      "that merged and gated before it are on trunk, and " +
       "this tick's verdict names them with a usage row per agent that ran. " +
       "The chain mounted fine, so a fresh process has every reason to get " +
       "further; read the verdict, clear the cause and re-run.",

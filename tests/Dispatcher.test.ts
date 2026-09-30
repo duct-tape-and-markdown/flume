@@ -77,6 +77,7 @@ import {
   invocationsPath,
   loopLockPath,
   mergingDir,
+  mergingMarkerPath,
   renderedPromptsDir,
   slugify,
   stopFlagPath,
@@ -11827,6 +11828,164 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
     expect(existsSync(join(fx.repo, "src", "a.ts"))).toBe(true);
     expect(outcome.result?.ledgerCommitShas).toBeUndefined();
     expect(outcome.result?.commitSha).toBeUndefined();
+  });
+});
+
+// ---------- a merge throw outside the ledger rewrite ----------
+
+describe("Dispatcher fanout — a merge-stage throw outside the ledger rewrite carries the settled wave's verdict", () => {
+  /**
+   * Trunk's commit subjects, one per line, so a negative below reads an exact
+   * subject against a list rather than a substring against a whole log
+   * (`.claude/rules/posture-sweep.md`, *Standing lenses*).
+   */
+  async function trunkSubjects(): Promise<string[]> {
+    const { stdout } = await exec("git", ["log", "--format=%s", "-n", "50"], {
+      cwd: fx.repo,
+    });
+    return stdout
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+  }
+
+  /**
+   * The wall this stage has that is not a refused rewrite: a merge marker the
+   * disk will not take. `mergeError` (`src/waveTick.ts`) holds every throw out
+   * of `mergeAttempt`, only one of which is `commitPendingUpdate` refusing, so
+   * the carry is driven here from the other side — over a wave whose first pick
+   * has already cherry-picked, gated and retired its entry.
+   *
+   * The obstruction is structural rather than a permission bit, so it denies on
+   * every host (`.claude/rules/platform-facts.md`, "`chmod` denies nothing on
+   * win32"): a directory standing where STAKE-B's marker file goes, at the
+   * engine's own spelling of that path rather than a second copy of the layout
+   * composed here. STAKE-A's marker is a sibling name and writes clean, which
+   * is what leaves a shipped span behind the wall.
+   *
+   * One arming, two cases: what the carried verdict names, and the class it
+   * declines to name.
+   */
+  async function waveWalledByAnUnwritableMarker(): Promise<{
+    outcome: Awaited<ReturnType<Dispatcher["tick"]>> | undefined;
+    thrown: unknown;
+    obstructed: string;
+  }> {
+    await writePending(fx.repo, [
+      makeEntry("STAKE-A", ["src/a.ts"]),
+      makeEntry("STAKE-B", ["src/b.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const obstructed = mergingMarkerPath(
+      join(fx.repo, ".flume"),
+      slugify("STAKE-B"),
+    );
+    await mkdir(obstructed, { recursive: true });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [makePhase({ name: "build", concurrency: "fanout", gates: [] })],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "stake-a": (cwd) =>
+          writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(STAKE-A): ship"),
+        // The merge order this case turns on, held on the event rather than a
+        // sleep: A's span is on trunk before B's agent commits, so the wall
+        // below lands behind a pick that really shipped (`awaitOnTrunk`).
+        "stake-b": async (cwd) => {
+          await awaitOnTrunk(fx.repo, "build(STAKE-A): ship");
+          await writeAndCommit(
+            cwd,
+            "src/b.ts",
+            "from-B\n",
+            "build(STAKE-B): ship",
+          );
+        },
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+
+    let outcome: Awaited<ReturnType<Dispatcher["tick"]>> | undefined;
+    let thrown: unknown;
+    try {
+      outcome = await dispatcher.tick();
+    } catch (err) {
+      thrown = err;
+    }
+    return { outcome, thrown, obstructed };
+  }
+
+  it("a wave whose merge stage throws outside its ledger rewrite reports a tick verdict naming the spans it already shipped", async () => {
+    const { outcome, thrown, obstructed } = await waveWalledByAnUnwritableMarker();
+
+    // Before anything else: the order this case's agent body held for ended on
+    // its event rather than its ceiling (`runAgentBody`,
+    // `tests/helpers/dispatcherFixture.ts`).
+    expectNoFindings(blownWaitsInAgentBodies());
+    // Vacuity, in the order the wave produced it. The obstruction is still
+    // standing, so the write it refused really was refused…
+    expect(lstatSync(obstructed).isDirectory()).toBe(true);
+    // …both agents ran and were paid for, so the wall is a merge stage's and
+    // not a batch that never reached one…
+    expect(outcome?.verdict?.invocations.map((i) => i.entryTag).sort()).toEqual([
+      "STAKE-A",
+      "STAKE-B",
+    ]);
+    // …and the wave really walled: STAKE-B's span never reached trunk, and the
+    // tick is failed rather than a wave that carried both picks.
+    expect(await trunkSubjects()).not.toContain("build(STAKE-B): ship");
+    expect(outcome?.failed).toBe(true);
+
+    // The claim. `tick()` returns rather than propagating — a bare re-throw
+    // took every fact below with it — and the verdict it carries names the
+    // span this wave had already landed, the ledger commit that retired it,
+    // and the entries it was provisioned for.
+    expect(thrown).toBeUndefined();
+    expect(outcome?.verdict).toBeDefined();
+    expect(outcome?.verdict?.shippedTags).toEqual(["STAKE-A"]);
+    expect(outcome?.verdict?.committed).toBe(true);
+    expect(outcome?.verdict?.tags).toEqual(["STAKE-A", "STAKE-B"]);
+    expect(outcome?.verdict?.phaseName).toBe("build");
+    expect(
+      outcome?.verdict?.mergeOutcomes.map((m) => [m.entryTag, m.outcome]),
+    ).toEqual([["STAKE-A", "merged"]]);
+    // And the summary says which wall it was, in the same words the verdict on
+    // disk carries: the merge stage, not the rewrite behind a pick.
+    expect(outcome?.verdict?.summary).toContain("shipped STAKE-A");
+    expect(outcome?.verdict?.summary).toContain("the merge stage threw");
+  });
+
+  it("a non-ledger throw out of a wave's merge stage reports no ledger-refusal class", async () => {
+    const { outcome, thrown, obstructed } = await waveWalledByAnUnwritableMarker();
+
+    expectNoFindings(blownWaitsInAgentBodies());
+    // The same vacuity the sibling carries, because a class absence asserted
+    // over a tick that never walled — or never carried a verdict at all — is a
+    // line no refusal produced: the obstruction stood, the tick failed over
+    // it, and the wave had shipped a span before it did.
+    expect(lstatSync(obstructed).isDirectory()).toBe(true);
+    expect(thrown).toBeUndefined();
+    expect(outcome?.failed).toBe(true);
+    expect(outcome?.verdict?.shippedTags).toEqual(["STAKE-A"]);
+
+    // The claim: nothing about this wall was a pending-ledger refusal, so no
+    // class is reported for it rather than one this carry would have had to
+    // invent (`.claude/rules/engine-boundary.md`, "Told, not inferred"). The
+    // queue itself is the same fact from git's side: STAKE-A's retirement
+    // committed, so the rewrite behind that pick ran clean.
+    expect(outcome?.ledgerRefusal).toBeUndefined();
+    expect(readPendingFromDisk(fx.repo).map((e) => e.tag)).toEqual(["STAKE-B"]);
+    // And the real classifier reads the absence: a wave whose picks are on
+    // trunk and whose queue matches them is an ordinary harness error, never
+    // the mount-dead fail-fast that burns the rest of a `flume loop` run
+    // (spec/loop.md, "Exit codes — the run never lies to CI").
+    expect(tickExitCode(outcome!)).toBe(1);
+    expect(tickExitCode(outcome!)).not.toBe(EX_MOUNT_DEAD);
   });
 });
 

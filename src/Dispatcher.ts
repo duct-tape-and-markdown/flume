@@ -1066,11 +1066,13 @@ export class Dispatcher {
       // ran is this arm's because a wave's own throws arrive wrapped: a wave
       // torn down after its picks landed leaves as a `WaveCarriedThrow`
       // carrying the spans already on trunk and a usage row per agent that
-      // ran (`waveSlotThrow`, `src/waveMerge.ts`). That is the other throw —
-      // a ledger read or write that refused, and equally an agent that
-      // exploded, a hook that threw, a render that did not resolve; the
-      // `cause` says which, and the facts it carries are the same in every
-      // case, which is why the carry is not keyed on one of them.
+      // ran — a slot leg that threw (`waveSlotThrow`, `src/waveMerge.ts`) and
+      // the merge stage alike (`waveMergeError`, `src/waveMerge.ts`). That is
+      // the other throw — a ledger read or write that refused, and equally an
+      // agent that exploded, a hook that threw, a render that did not resolve,
+      // a merge marker the disk would not take; the `cause` says which, and
+      // the facts it carries are the same in every case, which is why the
+      // carry is not keyed on one of them.
       //
       // Everything else is an ordinary throw and keeps propagating. Both arms
       // are `failed: true` and neither is softened — but they are not one
