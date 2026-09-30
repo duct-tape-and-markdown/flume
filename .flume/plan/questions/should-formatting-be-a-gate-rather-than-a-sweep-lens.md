@@ -8,6 +8,13 @@ measured three divergent sites (`src/loopSupervisor.ts:219`,
 `src/cliVerdict.ts:375`, `tests/cliVerdict.test.ts:525`) and asked the same
 fork; the measurement below is that drain's, and it is two orders of magnitude
 larger than three sites.
+Re-noted a third time by
+THE-VERDICTS-PROVISIONED-TAGS-ARE-READ-AS-A-SET-NOT-A-SEQUENCE's note, from
+the other side of the fork: not a shape to catch, but what the absence costs —
+`tests/Dispatcher.test.ts` is not prettier-clean on the base, so every diff in
+the file build waves touch most carries reformat noise beside the change, and
+nothing gates it. That is a cost of (a) the measurement below does not price:
+the tree does not drift toward clean on its own.
 
 **What the tree actually is**, verified this tick:
 

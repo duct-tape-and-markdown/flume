@@ -7,24 +7,16 @@
   "files": {
     "edit": [
       {
-        "path": "src/waveTick.ts",
-        "description": "the slot leg whose throw leaves the wave with no verdict"
-      },
-      {
-        "path": "src/worktrees.ts",
-        "description": "the worktree path the teardown/probe misses on win32"
-      },
-      {
         "path": "tests/Dispatcher.test.ts",
-        "description": "the four walled-wave cases that red"
+        "description": "the walled-wave arming that denies nothing on win32, and the evidence read doubling as the throw"
       }
     ]
   },
-  "summary": "four walled-wave cases red on win32 with ENOENT at a worktree's .git and then an undefined verdict, so a wall loses the facts artifact",
+  "summary": "the walled-wave arming does not arm on win32, so four cases assert a wall that never happened or red on a deleted path",
   "per": {
-    "path": "spec/loop.md",
-    "section": "The tick verdict — one facts artifact"
+    "path": ".claude/rules/engineering.md",
+    "section": "A green verdict is proven non-vacuous"
   },
-  "acceptance": "a wave walled by a win32 worktree path reports the verdict naming the spans it shipped, rather than throwing out past it",
-  "notes": "Windows-lane reds, one family: \"a recorded ledger refusal outranks a slot leg's throw\" and \"a walled wave reports every wall it held\" fail with `ENOENT ... boom-b\\.git`, then two cases fail `expected undefined` where a verdict was due. Every tick that runs a phase writes one verdict, so the undefined is the defect and the ENOENT its likely cause. Shares tests/Dispatcher.test.ts with two siblings, which serializes the three. No tests[]: win32-only, so nothing reds on the base."
+  "acceptance": "the walled-wave cases arm their ledger refusal on both hosts or skip with a stated reason, and each asserts the wall its title names rather than a read of the worktree's `.git`",
+  "notes": "The park refuted the premise: no verdict is lost. `failed` is only ever set true, so `expected undefined` is the wave never walling, and `<worktree>/.git` is composed only by this test file. On win32 the arming does not arm, teardown deletes the worktree, and the evidence read ENOENTs on the path it deleted. No tests[]: the whole diff is the file carrying them. Proof is the windows lane, per the same page's *A fix ships the test that would have caught it*."
 }
