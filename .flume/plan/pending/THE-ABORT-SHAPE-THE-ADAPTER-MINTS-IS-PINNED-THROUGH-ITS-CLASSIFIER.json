@@ -1,0 +1,32 @@
+{
+  "tag": "THE-ABORT-SHAPE-THE-ADAPTER-MINTS-IS-PINNED-THROUGH-ITS-CLASSIFIER",
+  "gate": { "kind": "open" },
+  "priority": 0,
+  "files": {
+    "edit": [
+      {
+        "path": "src/claudeCode.ts",
+        "description": "`abortError` (:295-:301) — the writer side, module-private, whose doc (:288-:294) already names the classifier as the agreeing reader"
+      },
+      {
+        "path": "src/tickAttempt.ts",
+        "description": "`invokeAgent`'s catch arm (:604-:609) — the reader side, whose comment already names the mint; both prose cites shrink to a pointer at the pin"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "where a fake agent already drives a whole tick's attempt, so the minted rejection reaches the real classifier"
+      }
+    ]
+  },
+  "summary": "The abort shape the agent adapter mints and the class the attempt's classifier reads off it cite each other in prose, and nothing drives the real rejection through the real reader",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A seam gate reads what the real writer wrote"
+  },
+  "acceptance": "The real `abortError` mints the rejection the pin hands `invokeAgent`'s catch arm, so the keys the mint sets and the keys the classifier reads cannot part one-sidedly. `abortError` gains a module export to make the mint reachable, its test consumer earning it (*An export earns its consumer*); the alternative — driving the adapter's own spawn — lands in the lane no judge runs. Both arms of the catch are pinned, so the abort class and the pre-exit error class each read off the shape that produced them, and the prose cite on each side shrinks to a pointer at the pin. `pnpm tsc --noEmit` and `pnpm test` green.",
+  "pins": [
+    "the abort an agent invocation rejects with classifies as the platform-preempt abort class a tick reports",
+    "an agent rejection carrying no abort shape classifies as the pre-exit error class naming its own message"
+  ],
+  "notes": "Verified on disk: neither `failureClass` string appears anywhere under `tests/`, so the arm is unpinned in both directions. The class reaches the persisted `platform-preempt` record and `stageFailureFacts`'s signature, which a supervisor compares one tick's preempt against the next's by — a one-sided drift makes repeated aborts stop matching as identical failures."
+}
