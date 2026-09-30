@@ -729,6 +729,8 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
   const AT = "2024-06-01T12:00:00.000Z";
   /** The identity every fixture below was written under; the block renders the anchor, not this. */
   const KEYED_AS = "rendered-entry";
+  /** The declaration those fixtures were written against — envelope-optional, so only a maximal record carries it. */
+  const DECLARED_AS = "entry-declaration-key";
   /** The lead the `not-shipped` record's touched-path listing sits under. */
   const PATHS_LEAD = "Paths it touched:";
   /** The lead the `gate-revert` record's `failingFiles` listing sits under. */
@@ -783,7 +785,7 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     failingFiles: ["src/one.ts", "src/two.ts"],
     key: "entry",
     keyedAs: KEYED_AS,
-    declaredAs: "entry-declaration-key",
+    declaredAs: DECLARED_AS,
     headSha: SAMPLE_HEAD_SHA,
     at: SAMPLE_AT,
   };
@@ -856,6 +858,13 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     "at",
   ];
 
+  /** The fields one record carries beyond the envelope every variant shares. */
+  function ownFields(prior: PriorAttempt): string[] {
+    return Object.keys(prior).filter(
+      (field) => !(SHARED_FIELDS as readonly string[]).includes(field),
+    );
+  }
+
   /**
    * Every line of every value a fixture carries *beyond* the envelope, paired
    * with the field holding it — read off the record rather than restated
@@ -866,8 +875,9 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
    */
   function ownFieldLines(prior: PriorAttempt): Array<[string, string]> {
     const lines: Array<[string, string]> = [];
+    const own = ownFields(prior);
     for (const [field, value] of Object.entries(prior)) {
-      if ((SHARED_FIELDS as readonly string[]).includes(field)) continue;
+      if (!own.includes(field)) continue;
       if (value === undefined) continue;
       for (const one of Array.isArray(value) ? value : [value]) {
         for (const line of String(one).split("\n")) {
@@ -1144,58 +1154,110 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
   }, SPAWN_BUDGET_MS);
 
   /**
-   * Every field a `gate-revert` record carries beyond the envelope, read off a
-   * record the compiler holds complete rather than off a list kept beside the
-   * declaration (`.claude/rules/engineering.md`, *Derived state is computed,
-   * never restated beside its source*): `satisfies Required<GateRevertAttempt>`
-   * makes a field the variant gains a compile error here, rather than a field
-   * the authoring page quietly stops rostering.
+   * One record per mode, each widened to every field its variant declares —
+   * the whole set that mode can carry, rather than the subset a fixture
+   * happened to fill (`.claude/rules/engineering.md`, *A seam gate reads what
+   * the real writer wrote*). Read off records the compiler holds complete
+   * rather than off lists kept beside the declarations (*Derived state is
+   * computed, never restated beside its source*): `satisfies Required<...>`
+   * makes an optional field a variant gains a compile error here, rather than
+   * a field the authoring page quietly stops rostering.
    *
-   * `blamesSpan` rejoins {@link sampleRecord} for this roster alone. It is out
-   * of the rendered sample because its arm *replaces* the instruction that
-   * record renders, so no one block shows both; the page's bullet rosters what
-   * the record **carries**, and the field is carried either way.
+   * The fields a block renders only on one arm rejoin their record for this
+   * roster alone. `blamesSpan`'s arm *replaces* the instruction
+   * {@link sampleRecord} renders and `threw`'s replaces the declined-ship
+   * line, so no one block shows both halves — but the page's bullet rosters
+   * what the record **carries**, and each is carried either way.
    */
-  const GATE_REVERT_FIELDS = Object.keys({
-    ...sampleRecord,
-    blamesSpan: false,
-  } satisfies Required<GateRevertAttempt>).filter(
-    (field) => !(SHARED_FIELDS as readonly string[]).includes(field),
-  );
+  const MAXIMAL_RECORDS: readonly PriorAttempt[] = [
+    {
+      ...sampleRecord,
+      blamesSpan: false,
+    } satisfies Required<GateRevertAttempt>,
+    {
+      ...cleanExit,
+      declaredAs: DECLARED_AS,
+    } satisfies Required<CleanExitAttempt>,
+    {
+      ...platformPreempt,
+      declaredAs: DECLARED_AS,
+    } satisfies Required<PlatformPreemptAttempt>,
+    {
+      ...renderRefused,
+      declaredAs: DECLARED_AS,
+    } satisfies Required<RenderRefusedAttempt>,
+    {
+      ...tipMoved,
+      declaredAs: DECLARED_AS,
+    } satisfies Required<TipMovedAttempt>,
+    {
+      ...notShipped,
+      declaredAs: DECLARED_AS,
+      threw: "shipped predicate exploded",
+      omittedPaths: 7,
+    } satisfies Required<NotShippedAttempt>,
+  ];
 
-  it("docs/CHAIN-AUTHORING.md's gate-revert bullet names every field the record carries", async () => {
+  it("docs/CHAIN-AUTHORING.md's bullet for every prior-attempt mode names every field that variant carries", async () => {
     const page = await readFile(
       new URL("../docs/CHAIN-AUTHORING.md", import.meta.url),
       "utf8",
     );
     const section = sectionOf(page, "### The `<prior-attempt>` block");
-    // `bulletOf` throws on a lead the section no longer opens, so the cut is
-    // its own anchor: a renamed bullet reds here rather than rostering an
-    // empty span green.
-    const bullet = bulletOf(section, "- `gate-revert` — ");
+
+    // Both directions against the fixture roster this describe already pins
+    // to PRIOR_ATTEMPT_MODES above: a mode the engine gains reaches the page
+    // as a missing bullet rather than as silence, and a widened record for a
+    // mode the union dropped reds here too.
+    expect(MAXIMAL_RECORDS.map((prior) => prior.mode).sort()).toEqual(
+      variants.map(([mode]) => mode).sort(),
+    );
 
     // Vacuity on the judged set (`.claude/rules/engineering.md`, *A green
     // verdict is proven non-vacuous*): an envelope filter that swallowed the
-    // variant's own fields would roster nothing and pass over a bullet naming
-    // none of them. The two the gate authors only sometimes are what a narrow
-    // roster drops first, so they are named rather than counted.
-    expect(GATE_REVERT_FIELDS).toContain("verdict");
-    expect(GATE_REVERT_FIELDS).toContain("failingFiles");
-    expect(GATE_REVERT_FIELDS.length).toBeGreaterThan(2);
-
-    for (const field of GATE_REVERT_FIELDS) {
+    // variants' own fields would roster nothing and pass over bullets naming
+    // none of them. The fields a variant carries only sometimes are what a
+    // narrow roster drops first, so they are named rather than counted.
+    const rostered = MAXIMAL_RECORDS.flatMap(ownFields);
+    for (const optional of [
+      "verdict",
+      "failingFiles",
+      "blamesSpan",
+      "threw",
+      "omittedPaths",
+    ]) {
       expect(
-        bullet,
-        `the gate-revert bullet does not name \`${field}\``,
-      ).toContain(`\`${field}\``);
+        rostered,
+        `no maximal record rosters the optional \`${optional}\``,
+      ).toContain(optional);
     }
 
-    // The bullet, not the section: the section spends a bolded claim each on
-    // `verdict`, `failingFiles` and `blamesSpan` further down, and its
-    // rendered sample labels them too, so a section-wide read would stay green
-    // over a bullet that had gone silent (`.claude/rules/posture-sweep.md`, *A
-    // negative assertion over a whole rendered artifact*).
-    expect(section.length).toBeGreaterThan(bullet.length);
+    for (const prior of MAXIMAL_RECORDS) {
+      // `bulletOf` throws on a lead the section no longer opens, so the cut is
+      // its own anchor: a renamed bullet reds here rather than rostering an
+      // empty span green.
+      const bullet = bulletOf(section, `- \`${prior.mode}\` — `);
+      const fields = ownFields(prior);
+      expect(
+        fields,
+        `the '${prior.mode}' record carries no fields of its own`,
+      ).not.toHaveLength(0);
+
+      for (const field of fields) {
+        expect(
+          bullet,
+          `the ${prior.mode} bullet does not name \`${field}\``,
+        ).toContain(`\`${field}\``);
+      }
+
+      // The bullet, not the section: the section spends a bolded claim each on
+      // `verdict`, `failingFiles` and `blamesSpan` further down, and its
+      // rendered sample labels the gate-revert fields too, so a section-wide
+      // read would stay green over a bullet that had gone silent
+      // (`.claude/rules/posture-sweep.md`, *A negative assertion over a whole
+      // rendered artifact*).
+      expect(section.length).toBeGreaterThan(bullet.length);
+    }
   });
 
   it("tip-moved names the recorded base and the observed HEAD, never a tip-start comparison on the ref", async () => {
