@@ -20,9 +20,11 @@ import {
   EX_MOUNT_DEAD,
 } from "../src/exitCodes.ts";
 import {
-  tickVerdictsLogPath,
   totalAgentUsageByPhase,
   type PhaseAgentUsage,
+} from "../src/agentSpend.ts";
+import {
+  tickVerdictsLogPath,
   type TickVerdict,
   type TickVerdictInvocation,
 } from "../src/tickVerdict.ts";
@@ -765,7 +767,7 @@ describe("agentUsageLine — the spend line against the fold that feeds it", () 
    * and the rendered line must move with it. A total the line never prints
    * renders identically twice. So a ninth summable field on `AgentUsage`
    * (`src/Agent.ts`) — which joins the fold by construction,
-   * `SummableUsageKey` (`src/tickVerdict.ts`) — reds here until
+   * `SummableUsageKey` (`src/agentSpend.ts`) — reds here until
    * `agentUsageLine` (`src/cliVerdict.ts`) names it.
    *
    * Which perturbation moves a given total is the fold's own answer, not a

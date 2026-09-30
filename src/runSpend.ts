@@ -26,12 +26,11 @@ import {
   withinRunWindow,
 } from "./renderedPrompts.js";
 import {
-  readAllInvocationRows,
-  readTickVerdicts,
   totalAgentUsageByPhase,
   type PhaseAgentUsage,
   type PhaseInvocations,
-} from "./tickVerdict.js";
+} from "./agentSpend.js";
+import { readAllInvocationRows, readTickVerdicts } from "./tickVerdict.js";
 
 /** What a live run has paid for so far, and what it is still waiting on. */
 export interface RunSpend {

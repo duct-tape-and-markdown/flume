@@ -6,7 +6,8 @@
 import { type TickOutcome } from "./Dispatcher.js";
 import { clauseOf, type ExitCauseLabel } from "./exitCauses.js";
 import { EX_TERMINAL_MISCONFIG, EX_MOUNT_DEAD } from "./exitCodes.js";
-import { type PhaseAgentUsage, type TickVerdict } from "./tickVerdict.js";
+import { type PhaseAgentUsage } from "./agentSpend.js";
+import { type TickVerdict } from "./tickVerdict.js";
 import type { SuperviseResult } from "./loopSupervisor.js";
 import type { CurrentRef } from "./git.js";
 
@@ -318,7 +319,7 @@ export function loopCompletionSummary(
  * `label`, then one segment per phase — the whole spend line, or `undefined`
  * when the span spent nothing (a phase that never invoked an agent is absent
  * from the fold rather than present at zero — `totalAgentUsageByPhase`
- * (`src/tickVerdict.ts`)).
+ * (`src/agentSpend.ts`)).
  *
  * Both surfaces that report spend take this: `flume loop`'s completion
  * summary for the run it just finished, `flume status` for what the live run

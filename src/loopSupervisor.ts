@@ -13,10 +13,9 @@ import { diskChainLoader } from "./chainLoad.js";
 import { type TerminalMisconfiguration } from "./Dispatcher.js";
 import { EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG } from "./exitCodes.js";
 import { consoleLogger, type Logger } from "./log.js";
+import { totalAgentUsageByPhase, type PhaseAgentUsage } from "./agentSpend.js";
 import {
   readTickVerdict,
-  totalAgentUsageByPhase,
-  type PhaseAgentUsage,
   type StageFailureEntry,
   type TickVerdict,
 } from "./tickVerdict.js";
@@ -488,7 +487,7 @@ export async function superviseLoop(
   // `settled` below. Accumulated the same way `shippedTags` is, and for the
   // same reason: the rows cross the child boundary one tick at a time, and
   // what the summary owes an operator is the run's total. The grouping itself
-  // is `totalAgentUsageByPhase`'s (`src/tickVerdict.ts`) — one totaller for
+  // is `totalAgentUsageByPhase`'s (`src/agentSpend.ts`) — one totaller for
   // this run and for the live-run line `flume status` prints from the same
   // rows.
   const runVerdicts: TickVerdict[] = [];
