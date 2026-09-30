@@ -12113,72 +12113,78 @@ describe("Dispatcher fanout — a merge-stage throw outside the ledger rewrite c
 
 // ---------- two walls at once ----------
 
+/**
+ * A wave that hits both of its walls, driven once per case.
+ *
+ * SHIP-A's agent commits a corrupt entry file into the queue before its own
+ * span, so the strict read behind its pick refuses and the merge stage
+ * records the refusal (`commitAttemptLedger`, `src/waveMerge.ts`). BOOM-B's
+ * agent wrecks the `.git` file its worktree is addressed through, so the tip
+ * read that follows its agent refuses and lands in the wave's `slotError` —
+ * the same arming `waveTornDownByASlotLeg` below uses, and the shape the
+ * field hits: a hook that throws, a read of the tree that will not resolve.
+ *
+ * Nothing here orders the two: a slot leg's throw does not stop a sibling's
+ * merge (only the merge holder does), so both walls stand by the time the
+ * wave leg leaves, whichever was hit first. That is exactly the wave a throw
+ * site per holder classified by source order rather than by what an operator
+ * repairs, and the wave whose loser reached no surface once the ranking
+ * settled it.
+ */
+async function waveHoldingBothWalls(): Promise<{
+  outcome: Awaited<ReturnType<Dispatcher["tick"]>> | undefined;
+  thrown: unknown;
+  corruptEntry: string;
+  corruptBytes: string;
+  boomCwd: string | undefined;
+}> {
+  await writePending(fx.repo, [
+    makeEntry("SHIP-A", ["src/a.ts"]),
+    makeEntry("BOOM-B", ["src/b.ts"]),
+  ]);
+  new Baton(join(fx.repo, ".flume")).wake("build");
+
+  const corruptEntry = join(queueDirOf(fx.repo), entryFileName("CORRUPT"));
+  const corrupt = "{ corrupted mid-wave, not json";
+  let boomCwd: string | undefined;
+
+  const dispatcher = new Dispatcher({
+    chainLoader: staticLoader({
+      phases: [makePhase({ name: "build", concurrency: "fanout", gates: [] })],
+      humanOnly: [],
+    }),
+    repoRoot: fx.repo,
+    configDir: fx.configDir,
+    agent: fanoutAgent({
+      "ship-a": async (cwd) => {
+        await commitEntryFile(fx.repo, entryFileName("CORRUPT"), corrupt);
+        await writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(SHIP-A): ship");
+      },
+      "boom-b": async (cwd) => {
+        boomCwd = cwd;
+        await writeFile(
+          join(cwd, ".git"),
+          "gitdir: /flume-no-such-gitdir\n",
+          "utf8",
+        );
+      },
+    }),
+    log: silent,
+    maxParallel: 4,
+  });
+
+  let thrown: unknown;
+  const outcome = await dispatcher.tick().catch((err: unknown) => {
+    thrown = err;
+    return undefined;
+  });
+  return { outcome, thrown, corruptEntry, corruptBytes: corrupt, boomCwd };
+}
+
 describe("Dispatcher fanout — a recorded ledger refusal outranks a slot leg's throw", () => {
-  /**
-   * A wave that hits both of its walls, and the one class that leaves on it.
-   *
-   * SHIP-A's agent commits a corrupt entry file into the queue before its own
-   * span, so the strict read behind its pick refuses and the merge stage
-   * records the refusal (`commitAttemptLedger`, `src/waveMerge.ts`). BOOM-B's
-   * agent wrecks the `.git` file its worktree is addressed through, so the tip
-   * read that follows its agent refuses and lands in the wave's `slotError` —
-   * the same arming `waveTornDownByASlotLeg` below uses, and the shape the
-   * field hits: a hook that throws, a read of the tree that will not resolve.
-   *
-   * Nothing here orders the two: a slot leg's throw does not stop a sibling's
-   * merge (only the merge holder does), so both walls stand by the time the
-   * wave leg leaves, whichever was hit first. That is exactly the wave a throw
-   * site per holder classified by source order rather than by what an operator
-   * repairs.
-   */
   it("a wave whose merge stage refused its ledger rewrite reports that refusal when a slot leg also threw", async () => {
-    await writePending(fx.repo, [
-      makeEntry("SHIP-A", ["src/a.ts"]),
-      makeEntry("BOOM-B", ["src/b.ts"]),
-    ]);
-    new Baton(join(fx.repo, ".flume")).wake("build");
-
-    const corruptEntry = join(queueDirOf(fx.repo), entryFileName("CORRUPT"));
-    const corrupt = "{ corrupted mid-wave, not json";
-    let boomCwd: string | undefined;
-
-    const dispatcher = new Dispatcher({
-      chainLoader: staticLoader({
-        phases: [
-          makePhase({ name: "build", concurrency: "fanout", gates: [] }),
-        ],
-        humanOnly: [],
-      }),
-      repoRoot: fx.repo,
-      configDir: fx.configDir,
-      agent: fanoutAgent({
-        "ship-a": async (cwd) => {
-          await commitEntryFile(fx.repo, entryFileName("CORRUPT"), corrupt);
-          await writeAndCommit(
-            cwd,
-            "src/a.ts",
-            "from-A\n",
-            "build(SHIP-A): ship",
-          );
-        },
-        "boom-b": async (cwd) => {
-          boomCwd = cwd;
-          await writeFile(
-            join(cwd, ".git"),
-            "gitdir: /flume-no-such-gitdir\n",
-            "utf8",
-          );
-        },
-      }),
-      log: silent,
-      maxParallel: 4,
-    });
-
-    let thrown: unknown;
-    const outcome = await dispatcher.tick().catch((err: unknown) => {
-      thrown = err;
-      return undefined;
-    });
+    const { outcome, thrown, corruptEntry, corruptBytes, boomCwd } =
+      await waveHoldingBothWalls();
 
     // Vacuity, both walls, because a class asserted over a wave that hit only
     // one of them is the sibling suites' claim, not this one's.
@@ -12189,14 +12195,17 @@ describe("Dispatcher fanout — a recorded ledger refusal outranks a slot leg's 
     expect(thrown).toBeUndefined();
     expect(outcome?.failed).toBe(true);
     expect(outcome?.verdict?.shippedTags).toEqual(["SHIP-A"]);
-    expect(await readFile(corruptEntry, "utf8")).toBe(corrupt);
-    // The slot leg's: BOOM-B's agent ran and its sabotage still stands, so
-    // every git call in that leg refused from the tip read on — which is why
-    // the entry is provisioned and named by the verdict while its attempt was
-    // never folded, leaving no usage row and no merge row of its own.
+    expect(await readFile(corruptEntry, "utf8")).toBe(corruptBytes);
+    // The slot leg's, read off the fact the engine now reports rather than
+    // off a row BOOM-B is missing from: an absent merge row is what a
+    // declined, render-refused or nothing-committed slot leaves too, so it
+    // pins "BOOM-B did not merge" where this case needs "BOOM-B's leg threw".
     expect(boomCwd).toBeDefined();
     expect(await readFile(join(boomCwd!, ".git"), "utf8")).toContain(
       "gitdir: /flume-no-such-gitdir",
+    );
+    expect(outcome?.verdict?.unclassedWalls?.map((wall) => wall.event)).toEqual(
+      ["a slot leg threw"],
     );
     expect([...(outcome?.verdict?.tags ?? [])].sort()).toEqual([
       "BOOM-B",
@@ -12205,9 +12214,6 @@ describe("Dispatcher fanout — a recorded ledger refusal outranks a slot leg's 
     expect(outcome?.verdict?.invocations.map((i) => i.entryTag)).toEqual([
       "SHIP-A",
     ]);
-    expect(
-      outcome?.verdict?.mergeOutcomes.map((m) => m.entryTag),
-    ).not.toContain("BOOM-B");
 
     // The claim: the refusal the stage recorded is the class the wave leaves
     // as, so the queue that needs an operator is named rather than shadowed by
@@ -12221,6 +12227,62 @@ describe("Dispatcher fanout — a recorded ledger refusal outranks a slot leg's 
     // (`spec/loop.md`, *Exit codes — the run never lies to CI*).
     expect(tickExitCode(outcome!)).toBe(EX_MOUNT_DEAD);
     expect(tickExitCode(outcome!)).not.toBe(1);
+  });
+});
+
+describe("Dispatcher fanout — a walled wave reports every wall it held", () => {
+  it("a wave holding a refused ledger rewrite and a slot leg's throw reports both walls on its verdict", async () => {
+    const { outcome, corruptEntry, corruptBytes, boomCwd } =
+      await waveHoldingBothWalls();
+
+    // Vacuity: this wave really held two walls, each still standing on disk.
+    // A verdict naming one of them is what every sibling case here pins, so a
+    // "both" claim over a one-wall wave would read green on the ranking alone.
+    expect(outcome?.failed).toBe(true);
+    expect(await readFile(corruptEntry, "utf8")).toBe(corruptBytes);
+    expect(boomCwd).toBeDefined();
+    expect(await readFile(join(boomCwd!, ".git"), "utf8")).toContain(
+      "gitdir: /flume-no-such-gitdir",
+    );
+
+    // The classed wall, unchanged: it still decides the summary line and the
+    // exit arm, which is what the ranking is for.
+    const verdict = outcome?.verdict;
+    expect(verdict?.summary).toContain("pending-ledger rewrite refused");
+    expect(outcome?.ledgerRefusal).toBe("parse-failure");
+
+    // The claim: the wall the ranking did not class is on the verdict beside
+    // it, in the same words the summary would have spent on it, with the
+    // operator's own message — not dropped at the selection.
+    const walls = verdict?.unclassedWalls ?? [];
+    expect(walls.map((wall) => wall.event)).toEqual(["a slot leg threw"]);
+    expect(walls[0]?.message.length ?? 0).toBeGreaterThan(0);
+    expect(walls[0]?.signature).toBe(walls[0]?.message.trim());
+    // One throw is one wall: the merge holder beside the recorded refusal is
+    // that same error re-caught a layer out, so the dedupe at the ranking
+    // keeps it off this list rather than reporting it twice under two names.
+    expect(walls.map((wall) => wall.event)).not.toContain(
+      "the merge stage threw",
+    );
+  });
+
+  it("the wall a wave's ranking did not class rides the TickResult beside the class it did", async () => {
+    const { outcome } = await waveHoldingBothWalls();
+
+    // Vacuity: the handoff really is the walled-wave arm — a class it named,
+    // over a wave that shipped a span before it walled.
+    expect(outcome?.failed).toBe(true);
+    expect(outcome?.ledgerRefusal).toBe("parse-failure");
+    expect(outcome?.verdict?.shippedTags).toEqual(["SHIP-A"]);
+
+    // The claim: a supervisor reading the handoff sees the second wall
+    // without opening the verdict file beside it, and the two surfaces carry
+    // the one set (`.claude/rules/engineering.md`, *A fact the engine holds
+    // is reported, never rediscovered*).
+    expect(outcome?.unclassedWalls?.map((wall) => wall.event)).toEqual([
+      "a slot leg threw",
+    ]);
+    expect(outcome?.unclassedWalls).toEqual(outcome?.verdict?.unclassedWalls);
   });
 });
 
@@ -26013,8 +26075,11 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
     // A fact classified unreachable is vacuous-by-design, spelled:
     // `noCommit` classifies a tick that produced no usable commit and
     // `tipMoved` a span the wave refused to pick, and this wave picked one
-    // and shipped it. Such a fact is asserted absent below, never left to
-    // read as covered.
+    // and shipped it; `unclassedWalls` names the walls a wave held beside
+    // the one it reports, and neither leg here holds a second — the
+    // completing leg walls not at all, and the refused leg's two holders are
+    // one throw the merge stage recorded and re-threw. Such a fact is
+    // asserted absent below, never left to read as covered.
     const conditionalFacts: {
       [K in ConditionalTickVerdictFact]: "populated" | "unreachable";
     } = {
@@ -26029,6 +26094,7 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
       gateFailures: "populated",
       platformFailures: "populated",
       shipFailures: "populated",
+      unclassedWalls: "unreachable",
       clearedPriorAttempts: "populated",
     };
     const reach = Object.entries(conditionalFacts);
@@ -26039,7 +26105,7 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
     // this wave really populates, and the unreachable half is a named few
     // rather than the roster quietly emptying itself.
     expect(populated.length).toBeGreaterThan(0);
-    expect(reach.length - populated.length).toBe(2);
+    expect(reach.length - populated.length).toBe(3);
 
     const legs: [string, WaveLeg][] = [
       ["completing", completing],
@@ -26054,7 +26120,8 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
           expect(keys, `${name} verdict names ${field}`).not.toContain(field);
         }
       }
-      // What puts the two unreachable facts out of reach: this wave shipped.
+      // What puts two of the three unreachable facts out of reach: this wave
+      // shipped. The third is the wave holding one wall, not two.
       expect(leg.verdict.committed).toBe(true);
     }
   });

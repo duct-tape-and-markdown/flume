@@ -296,6 +296,7 @@ const TICK_OUTCOME_SPACE: {
   gateFailures: [ABSENT, [A_STAGE_FAILURE]],
   platformFailures: [ABSENT, [A_STAGE_FAILURE]],
   shipFailures: [ABSENT, [A_STAGE_FAILURE]],
+  unclassedWalls: [ABSENT, [{ event: "a slot leg threw", ...A_STAGE_FAILURE }]],
   verdict: [ABSENT, A_TICK_VERDICT],
   awakeAfter: [[], ["plan"]],
   summary: ["no phases awake; hibernating"],

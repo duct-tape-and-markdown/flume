@@ -72,6 +72,8 @@ import {
   type TickVerdict,
   type TickVerdictMergeOutcome,
   type TickVerdictTiming,
+  type UnclassedWall,
+  type WaveWallEvent,
 } from "./tickVerdict.js";
 import { thrownMessage } from "./thrown.js";
 
@@ -1121,8 +1123,20 @@ export async function waveWallThrow(
   w: WaveMerge,
   held: WaveWallHeld,
 ): Promise<WaveCarriedThrow> {
-  const { cause, ledger, event } = waveWall(w, held);
-  const verdict = await settledWaveVerdict(w, cause, event);
+  const [classed, ...rest] = waveWall(w, held);
+  const { cause, ledger, event } = classed;
+  const unclassedWalls = rest.map((wall) => ({
+    event: wall.event,
+    ...stageFailureFacts(thrownMessage(wall.cause)),
+  }));
+  // Said once, here, where the ranking is: the classed wall reaches the
+  // operator on the verdict's own summary line and nothing prints the rest,
+  // so a wave that walled twice read as a wave that walled once.
+  for (const wall of unclassedWalls)
+    w.setup.leg.log.warn(
+      `[flume] ${w.setup.phase.name}: ${wall.event} beside the wall this wave reports (${wall.message}); both stand, and the verdict names both`,
+    );
+  const verdict = await settledWaveVerdict(w, cause, event, unclassedWalls);
   return ledger
     ? new WaveLedgerRefusal(cause, verdict)
     : new WaveCarriedThrow(cause, verdict);
@@ -1142,9 +1156,14 @@ interface WaveWallHeld {
 }
 
 /**
- * Which of the walls a wave hit is the one it reports: the cause the carry
- * states, whether that cause refused a pending ledger, and what happened in
- * the operator's words for the one summary line the verdict carries.
+ * Every wall a wave held, ranked, the one it reports first: for each, the
+ * cause, whether that cause refused a pending ledger, and what happened in
+ * the operator's words. The head decides the carry's class and the one
+ * summary line the verdict names; the rest ride the verdict beside it as
+ * facts ({@link UnclassedWall}), because a wave keeps running after its first
+ * wall and the loser is a wall an operator still has to repair
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*).
  *
  * Three arms, ranked, because a wave can hold more than one wall at once and
  * only one class reaches `tick()`:
@@ -1167,38 +1186,70 @@ interface WaveWallHeld {
  *   failed. Reported as no ledger refusal at all rather than assigned one
  *   this site would have to invent.
  *
- * Total over the holders the leg calls it with, which is at least one
- * (`waveThrows`, `src/waveTick.ts`): the last arm is the merge stage's
- * because a wave holding neither wall never reaches here.
+ * Deduplicated by cause identity, which is why the recorded refusal above can
+ * be listed beside the merge holder without double-reporting: the refusal
+ * re-throws its cause, so the merge holder *is* that same object one layer
+ * out, and one throw is one wall. Identity rather than a message comparison —
+ * the same object is a fact, two errors reading alike is a guess
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ *
+ * Non-empty over the holders the leg calls it with, which is at least one
+ * (`waveThrows`, `src/waveTick.ts`): the merge stage's arm is last because a
+ * wave holding neither holder never reaches here.
  */
 function waveWall(
   w: WaveMerge,
   held: WaveWallHeld,
-): {
-  readonly cause: unknown;
-  readonly ledger: boolean;
-  readonly event: string;
-} {
+): readonly [WaveWallRank, ...WaveWallRank[]] {
   const refusal = w.refusal;
+  const ranked: WaveWallRank[] = [];
   if (refusal !== undefined)
-    return {
+    ranked.push({
       cause: refusal.cause,
       ledger: true,
       event: "pending-ledger rewrite refused",
-    };
+    });
   if (held.slotError !== undefined) {
     const ledger = held.slotError instanceof PendingParseFailure;
-    return {
+    ranked.push({
       cause: held.slotError,
       ledger,
       event: ledger ? "mid-wave queue re-read refused" : "a slot leg threw",
-    };
+    });
   }
-  return {
-    cause: held.mergeError,
-    ledger: false,
-    event: "the merge stage threw",
-  };
+  if (held.mergeError !== undefined)
+    ranked.push(mergeStageWall(held.mergeError));
+  // The default is the merge arm this ranking's last rung already is, which
+  // is how the selection stays total without a refusal it could never take:
+  // a wave reaching here holds at least one of the three, so the list is
+  // non-empty, and the type says so for the caller that reads the head.
+  const [classed = mergeStageWall(held.mergeError), ...rest] = ranked;
+  const seen: unknown[] = [classed.cause];
+  const unclassed: WaveWallRank[] = [];
+  for (const wall of rest) {
+    if (seen.some((cause) => Object.is(cause, wall.cause))) continue;
+    seen.push(wall.cause);
+    unclassed.push(wall);
+  }
+  return [classed, ...unclassed];
+}
+
+/** The ranking's last rung, and its totality default ({@link waveWall}). */
+function mergeStageWall(cause: unknown): WaveWallRank {
+  return { cause, ledger: false, event: "the merge stage threw" };
+}
+
+/**
+ * One wall as the ranking states it: the cause, whether that cause refused a
+ * pending ledger, and what happened in the operator's words. The head of the
+ * ranking spends all three — the carry's class, its `ledgerRefusal`, and the
+ * verdict's summary line — and every wall behind it spends `event` alone,
+ * on {@link UnclassedWall}.
+ */
+interface WaveWallRank {
+  readonly cause: unknown;
+  readonly ledger: boolean;
+  readonly event: WaveWallEvent;
 }
 
 /**
@@ -1226,11 +1277,16 @@ function waveWall(
  * `why` reads the cause through `thrownMessage` (`src/thrown.ts`) — the same
  * fold {@link WaveCarriedThrow}'s own message takes, so the summary and the
  * error carrying it cannot describe one refusal differently.
+ *
+ * `unclassedWalls` is the rest of what the same ranking held — the walls that
+ * reach no class, no exit arm and no summary line, and would otherwise reach
+ * no surface at all ({@link UnclassedWall}).
  */
 async function settledWaveVerdict(
   w: WaveMerge,
   cause: unknown,
-  event: string,
+  event: WaveWallEvent,
+  unclassedWalls: readonly UnclassedWall[],
 ): Promise<TickVerdict> {
   const {
     leg,
@@ -1272,6 +1328,7 @@ async function settledWaveVerdict(
     gateFailures: w.gateFailures,
     shipFailures: w.shipFailures,
     platformFailures,
+    unclassedWalls,
     clearedPriorAttempts,
     summary:
       shippedTags.length > 0

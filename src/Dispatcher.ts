@@ -87,6 +87,7 @@ import {
   type RenderFailure,
   type ShipFailure,
   type TickVerdict,
+  type UnclassedWall,
 } from "./tickVerdict.js";
 import * as git from "./git.js";
 import {
@@ -500,6 +501,14 @@ export interface TickOutcome {
    * `shipped` consult returned.
    */
   shipFailures?: ShipFailure[];
+  /**
+   * See {@link TickVerdict.unclassedWalls}. Present only on the one `failed`
+   * path that carries a walled wave's verdict — and only when that wave held
+   * more than one wall — so a supervisor reading the handoff sees the wall
+   * `summary` and `ledgerRefusal` could not name without opening the verdict
+   * file beside them.
+   */
+  unclassedWalls?: UnclassedWall[];
   /**
    * This tick's unified facts artifact, present iff a phase
    * actually ran (same condition as `result`) — absent on `hibernated`,
@@ -1106,6 +1115,13 @@ export class Dispatcher {
         summary: err.message,
         ...(ledgerRefusal !== undefined ? { ledgerRefusal } : {}),
         ...(carried !== undefined ? { verdict: carried.verdict } : {}),
+        // The walls the wave's ranking did not class, read off the verdict
+        // the ranking itself built rather than re-selected here: `summary`
+        // and `ledgerRefusal` above name one wall, and this is the rest of
+        // what the same wave held (`waveWall`, `src/waveMerge.ts`).
+        ...(carried?.verdict.unclassedWalls?.length
+          ? { unclassedWalls: carried.verdict.unclassedWalls }
+          : {}),
       };
     }
     const {

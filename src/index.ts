@@ -235,6 +235,12 @@ export {
   // took between this wave's selection and its stake, with the holder it
   // names (`PidClaim`, re-exported below for the same reason).
   type StakeLoss,
+  // And the record beside *those*: a wall a walled wave held that its own
+  // ranking did not class, which a chain reads on the verdict and on the
+  // handoff alike.
+  type UnclassedWall,
+  // …and the closed set its `event` names the wall from.
+  type WaveWallEvent,
   type TickVerdict,
   type ReportedGateResult,
   type TickVerdictInvocation,

@@ -254,6 +254,62 @@ export type ShipFailure = StageFailureEntry & {
 };
 
 /**
+ * A wall a fanout wave held that its ranking did not class (`waveWall`,
+ * `src/waveMerge.ts`).
+ *
+ * A wave does not stop at its first wall: it keeps every slot it opened
+ * running and leaves once they have all settled, so a slot leg that threw and
+ * a pending-ledger rewrite that refused can both be standing by the time the
+ * leg leaves. Exactly one of them decides the carried class, the tick's exit
+ * arm and the verdict's one summary line, and the rest are these. Without
+ * them the losing wall reaches no surface at all: an operator reads a
+ * teardown that failed and never learns the queue behind it refused too, and
+ * a chain deciding what to repair first has nothing to read.
+ *
+ * Deduplicated by cause identity at the selection, so one throw caught at two
+ * layers — the ledger refusal the merge stage records *and* re-throws — is
+ * one wall, never the same error reported twice under two names.
+ *
+ * A fact, never a verdict: what a second wall means — retry, wake, wait for
+ * the operator — stays the chain's (`.claude/rules/engine-boundary.md`,
+ * *Routing rule (plan, build, and interactive sessions)*).
+ */
+export interface UnclassedWall {
+  /**
+   * Which wall this was ({@link WaveWallEvent}) — the same vocabulary the
+   * classed wall spends on the verdict's summary line (`waveWall`,
+   * `src/waveMerge.ts`), so the two walls of one wave are read through one
+   * set of words rather than one named and one described.
+   */
+  event: WaveWallEvent;
+  /** Same comparison-key contract as `ProvisionFailure.signature`. */
+  signature: string;
+  message: string;
+}
+
+/**
+ * The four walls a fanout wave's ranking can name, in the operator's words:
+ * the queue rewrite behind a pick that refused, a freed slot's decide-read
+ * over a queue this phase's fence does not admit, a slot's own leg throwing
+ * for anything else, and the merge stage throwing outside a recorded refusal
+ * (`waveWall`, `src/waveMerge.ts`). Each names a different repair, which is
+ * why they are spelled apart.
+ *
+ * A closed set rather than free prose, because these strings are the
+ * discriminant a chain keys an {@link UnclassedWall} on — the same standing
+ * this module's `NoCommitMode` and `MergeOutcome` have, and the reason a
+ * reader never pattern-matches `message` back out
+ * (`.claude/rules/engineering.md`, *Narration is the ladder's bottom rung*).
+ * The classed wall spends one of these on the verdict's `summary`, so the
+ * summary and this field cannot drift into two names for one wall.
+ */
+export type WaveWallEvent =
+  | "pending-ledger rewrite refused"
+  | "mid-wave queue re-read refused"
+  | "a slot leg threw"
+  | "the merge stage threw";
+
+/**
  * One gate's result as the engine reports it — the single row shape every
  * reporting surface carries: a {@link TickVerdict}'s `gateResults` on disk,
  * `TickResult.gateResults` for `handoff`, and `ShipContext.gateResults` for
@@ -806,6 +862,14 @@ export interface TickVerdict {
    */
   shipFailures?: ShipFailure[];
   /**
+   * The walls this walled wave held beside the one it left as
+   * ({@link UnclassedWall}). Absent/empty on every tick that left by one wall
+   * or none — a singleton, a wave that completed, and a walled wave whose
+   * ranking had a single holder to choose from, which is the common walled
+   * wave.
+   */
+  unclassedWalls?: UnclassedWall[];
+  /**
    * spec/loop.md "No false signal": prior-attempt records this tick cleared
    * as stale — entry-keyed records whose tag the queue the wave read no
    * longer carries — by the key each was filed under. The retry those
@@ -873,6 +937,7 @@ interface TickVerdictFacts {
   gateFailures?: readonly GateFailure[] | undefined;
   platformFailures?: readonly PlatformFailure[] | undefined;
   shipFailures?: readonly ShipFailure[] | undefined;
+  unclassedWalls?: readonly UnclassedWall[] | undefined;
   clearedPriorAttempts?: readonly string[] | undefined;
   summary: string;
   /**
@@ -939,6 +1004,9 @@ export function buildTickVerdict(facts: TickVerdictFacts): TickVerdict {
       : {}),
     ...(facts.shipFailures?.length
       ? { shipFailures: [...facts.shipFailures] }
+      : {}),
+    ...(facts.unclassedWalls?.length
+      ? { unclassedWalls: [...facts.unclassedWalls] }
       : {}),
     ...(facts.clearedPriorAttempts?.length
       ? { clearedPriorAttempts: [...facts.clearedPriorAttempts] }
