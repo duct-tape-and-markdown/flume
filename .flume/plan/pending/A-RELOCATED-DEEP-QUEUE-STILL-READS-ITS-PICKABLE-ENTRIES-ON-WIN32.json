@@ -23,5 +23,5 @@
     "section": "Dispatch reads come from the tip, not the tree"
   },
   "acceptance": "a relocated pendingDir past ~260 chars yields its pickable entries, and a queue that cannot be read refuses rather than reading as drained",
-  "notes": "The park refuted the named suspect: `isDirectoryOrAbsent` namespaces every rung, and tests/namespacedFsPaths.test.ts reds an unfolded fs call tree-wide. Controls pass (the shallow twin, the relocated base), and the loud-or-nothing half holds. Bisect: first red 36181632876 (55020947); its one reachable code commit was `a73970d4`, whose fold shipped at 1b04f687, so the next windows run may close this. Unpickable until a win32 host is declared: a fix from here aims at a described symptom."
+  "notes": "The park refuted the named suspect: `isDirectoryOrAbsent` namespaces every rung, and tests/namespacedFsPaths.test.ts reds an unfolded fs call tree-wide. Controls pass (the shallow twin, the relocated base), and the loud-or-nothing half holds. The bisect's prediction is now refuted: run 36760791228 (5e9da727) is past 1b04f687's fold and the case still reds, reading the queue as `[]` rather than refusing. Unpickable until a win32 host is declared: a fix from here aims at a described symptom."
 }
