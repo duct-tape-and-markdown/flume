@@ -80,7 +80,6 @@ import {
   buildTickVerdict,
   clearInvocationRows,
   readInvocationRows,
-  throwFacts,
   type GateFailure,
   type MergeFailure,
   type PlatformFailure,
@@ -100,7 +99,7 @@ import {
   sweepStaleWorktrees,
   type WorktreeContext,
 } from "./worktrees.js";
-import { thrownMessage } from "./thrown.js";
+import { throwFacts, thrownMessage } from "./thrown.js";
 
 /**
  * The one name this module still re-exports rather than holds, and a

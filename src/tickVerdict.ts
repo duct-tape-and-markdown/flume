@@ -14,9 +14,10 @@
  * one job*).
  *
  * The small constructors of those vocabularies live here too — the row a
- * gate's result becomes, the signature a stage failure is compared by, the
- * two facts a throw reports — because every producer spells them the same
- * way and a field decoded for one surface may not be dropped from the next.
+ * gate's result becomes, the signature a stage failure is compared by —
+ * because every producer spells them the same way and a field decoded for one
+ * surface may not be dropped from the next. Reading the throw those
+ * constructors are handed is its own job, and lives in `src/thrown.ts`.
  */
 
 import {
@@ -388,29 +389,6 @@ export function unrevertableMergeFailure(facts: {
 }): { signature: string; message: string } {
   const message = `${facts.refusal} — afterMerge-failed commit ${facts.mergedSha} stays on trunk, unrevertable to ${facts.preCherry}`;
   return stageFailureFacts(message);
-}
-
-/**
- * What a throw reports: the message it raised and, when it has one, the stack
- * that raised it. Every seam that answers a throw with a record rather than
- * losing the tick reads it here — a gate's `{ message, details }`
- * (`spec/chain.md`, *What a gate returns*) and a hook's render-refused record
- * (*What a hook receives*) are the same two facts under two names, so the
- * decoding is shared rather than re-derived beside each one
- * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
- *
- * `stack` is absent rather than a second copy of `message` when the thrown
- * value has none — a non-`Error`, or an `Error` whose `stack` was stripped —
- * because a duplicated line reads as evidence while carrying none
- * (*Derived state is computed, never restated beside its source*).
- */
-export function throwFacts(err: unknown): { message: string; stack?: string } {
-  const message = err instanceof Error ? err.message : String(err);
-  const stack =
-    err instanceof Error && typeof err.stack === "string" && err.stack
-      ? err.stack
-      : undefined;
-  return stack ? { message, stack } : { message };
 }
 
 /**

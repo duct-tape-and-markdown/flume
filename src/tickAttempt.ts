@@ -58,7 +58,6 @@ import {
   MAX_FAILURE_SIGNATURE,
   reportedGateRow,
   stageFailureFacts,
-  throwFacts,
   type GateFailure,
   type PlatformFailure,
   type RenderFailure,
@@ -66,7 +65,7 @@ import {
   type TickVerdictTiming,
 } from "./tickVerdict.js";
 import type { WorktreeContext } from "./worktrees.js";
-import { thrownMessage } from "./thrown.js";
+import { throwFacts, thrownMessage } from "./thrown.js";
 
 /**
  * The runtime state one attempt reads — the roots it resolves paths against,
@@ -604,11 +603,26 @@ async function invokeAgent(
     // read below are `abortError`'s (`src/claudeCode.ts`), whose real mint
     // reaches each of them through a pin of its own rather than a prose cite
     // (`tests/Dispatcher.test.ts`).
-    const e = err as Error & { name?: string; code?: string };
+    //
+    // `Agent.invoke` is chain code (`Phase.agent`, `src/Phase.ts`), so the
+    // rejection is whatever an adapter settled with and not an `Error` the
+    // engine minted: the keys are read off a guarded shape and the text
+    // through the one fold (`thrownMessage`, `src/thrown.ts`), so a thrown
+    // string records its own words instead of `undefined` and a thrown
+    // `null` records a preempt instead of raising a second failure out of
+    // the handler accounting for the first (`.claude/rules/engineering.md`,
+    // *Loud or nothing*). Reading through the prototype chain, as an
+    // `Error`'s inherited `name` is: the mint writes both keys as own
+    // properties, and a shape whose abort name arrives from a base class is
+    // the same statement.
+    const abortKeys: { name?: unknown; code?: unknown } =
+      typeof err === "object" && err !== null
+        ? (err as { name?: unknown; code?: unknown })
+        : {};
     const failureClass =
-      e.name === "AbortError" || e.code === "ABORT_ERR"
+      abortKeys.name === "AbortError" || abortKeys.code === "ABORT_ERR"
         ? "agent process aborted (per-tick timeout or dispatcher signal)"
-        : `agent process error before exit: ${e.message}`;
+        : `agent process error before exit: ${thrownMessage(err)}`;
     ctx.log.warn(`[flume] ${phase.name}: ${failureClass}`);
     return { kind: "process-failure", promptPath, failureClass };
   }

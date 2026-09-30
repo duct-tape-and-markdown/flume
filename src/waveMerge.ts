@@ -64,7 +64,6 @@ import {
   reportedGateRow,
   stageFailureFacts,
   startTiming,
-  throwFacts,
   unrevertableMergeFailure,
   type GateFailure,
   type MergeFailure,
@@ -78,7 +77,7 @@ import {
   type TickVerdictMergeOutcome,
   type TickVerdictTiming,
 } from "./tickVerdict.js";
-import { thrownMessage } from "./thrown.js";
+import { throwFacts, thrownMessage } from "./thrown.js";
 
 /**
  * Rank of each no-commit mode in a wave's representative-cause fold — lowest

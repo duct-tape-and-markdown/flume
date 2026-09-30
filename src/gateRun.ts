@@ -12,7 +12,8 @@
 
 import type { Gate, GateContext, GateResult } from "./Gate.js";
 import type { Logger } from "./log.js";
-import { startTiming, throwFacts, type TickVerdictTiming } from "./tickVerdict.js";
+import { startTiming, type TickVerdictTiming } from "./tickVerdict.js";
+import { throwFacts } from "./thrown.js";
 import { withGateCheckouts, type WorktreeContext } from "./worktrees.js";
 
 /**

@@ -13303,6 +13303,47 @@ describe("Dispatcher — no-commit outcome taxonomy", () => {
       "agent process error before exit: spawn claude ENOENT",
     );
   });
+
+  // `Agent.invoke` is chain code, so the value it rejects with is an
+  // adapter's and not an `Error` the engine minted. Hand-authored on
+  // purpose: no mint in `src/claudeCode.ts` settles with a non-`Error`
+  // rejection, and a shape input is where hand-authoring is sanctioned
+  // (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+  // wrote*).
+  it("an agent adapter rejecting with a string classifies as the pre-exit error class naming the thrown text", async () => {
+    const { noCommit, platformFailures } = await preemptFrom(
+      "claude: command not found",
+    );
+
+    expect(noCommit).toBe("platform-preempt");
+    expect(
+      platformFailures,
+      "the tick reported one preempt for the class to be read off",
+    ).toHaveLength(1);
+    // The thrown text itself, not the `undefined` a cast to `Error` reads off
+    // a string's absent `message` — which also collapsed every distinct
+    // string rejection onto one failure signature.
+    expect(platformFailures[0]!.message).toBe(
+      "agent process error before exit: claude: command not found",
+    );
+  });
+
+  it("an agent adapter rejecting with null classifies as a platform preempt instead of raising inside the classifier", async () => {
+    // The key read is guarded, so the classifier accounts for the rejection
+    // rather than raising a `TypeError` out of the `catch` that exists to
+    // account for it — which escaped `runAttempt` and `Dispatcher.tick`
+    // entirely.
+    const { noCommit, platformFailures } = await preemptFrom(null);
+
+    expect(noCommit).toBe("platform-preempt");
+    expect(
+      platformFailures,
+      "the tick reported one preempt for the class to be read off",
+    ).toHaveLength(1);
+    expect(platformFailures[0]!.message).toBe(
+      "agent process error before exit: null",
+    );
+  });
 });
 
 // ---------- fanout wave-level noCommit precedence (mixed causes) ----------
