@@ -1,0 +1,27 @@
+{
+  "tag": "THE-DENIAL-HELPERS-DIRENT-KIND-LIMIT-IS-A-CASE-LIKE-ITS-PARENT-CONVERSE",
+  "gate": { "kind": "open" },
+  "priority": 20,
+  "files": {
+    "edit": [
+      {
+        "path": "tests/denial.test.ts",
+        "description": "the dirent-kind limit as its own case, driving the real reader"
+      },
+      {
+        "path": "tests/helpers/denial.ts",
+        "description": "the doc sentence points at that case instead of stating the limit"
+      }
+    ]
+  },
+  "summary": "`denyFile` at a path its reader skips by dirent kind arms a case over a read that never happens; pin that limit beside its parent-denial converse",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A green verdict is proven non-vacuous"
+  },
+  "acceptance": "`tests/denial.test.ts` holds the dirent-kind limit as its own case, driving `readQueueOnDisk`; the helper's doc points at it rather than asserting it",
+  "pins": [
+    "`denyFile` at a queue entry path is dropped from `readQueueOnDisk`'s listing by dirent kind rather than refusing the read"
+  ],
+  "notes": "From THE-STATUS-COUNT-REFUSES-AN-UNREADABLE-QUEUE-LIKE-ITS-FOUR-SIBLINGS's note. `readQueueOnDisk` (`src/pendingLedger.ts:239`) filters `!d.isDirectory()`, so the directory `denyFile` plants at `A.json` leaves the listing and the read answers the empty queue. `tests/denial.test.ts:105` already holds the parent-vs-read-path converse as a case, so home and shape are precedented; the helper's rule alone is the bottom rung."
+}
