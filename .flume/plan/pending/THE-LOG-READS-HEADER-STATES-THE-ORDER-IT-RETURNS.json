@@ -1,0 +1,22 @@
+{
+  "tag": "THE-LOG-READS-HEADER-STATES-THE-ORDER-IT-RETURNS",
+  "gate": { "kind": "open" },
+  "priority": 0,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/cliHistory.ts",
+        "description": "the header states the order the read returns and the verb prints"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "`src/cliHistory.ts`'s header heads `flume log` newest-first where the read it calls and the verb it is are oldest-first; third body of the drift",
+  "per": {
+    "path": ".claude/rules/posture-sweep.md",
+    "section": "Routing"
+  },
+  "acceptance": "`src/cliHistory.ts`'s header states the order `readTickVerdicts` returns and `logVerb` prints, which every other surface already states — `docs/CLI.md`, `flume --help` (`src/cliHelp.ts`) and `readTickVerdicts`' own doc all say oldest first. No claim of order left in the tree that the suite's own title ('default prints the last 10 verdicts oldest-first as fixed-format lines') contradicts. Prose only: no behavior changes, no test moves. `pnpm tsc --noEmit`, the suite and the citation pins green.",
+  "notes": "Third body of the family (posture-sweep.md, *Routing*): d54d8f9f first, 59ba7ea7 second. Verified on disk this tick — src/cliHistory.ts:2 reads \"read back newest-first\" while readTickVerdicts (src/tickVerdict.ts:1614) returns `verdicts.slice(-n)` in append order and logVerb prints that order. Sole contradicting site: docs/CLI.md:144, src/cliHelp.ts:563 and src/tickVerdict.ts:1594 all say oldest first."
+}

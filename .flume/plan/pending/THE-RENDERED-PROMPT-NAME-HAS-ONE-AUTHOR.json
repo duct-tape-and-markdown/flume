@@ -1,0 +1,38 @@
+{
+  "tag": "THE-RENDERED-PROMPT-NAME-HAS-ONE-AUTHOR",
+  "gate": { "kind": "open" },
+  "priority": 0,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/renderedPrompts.ts",
+        "description": "the filename's one home, beside the prefix, the `.md` listing filter and the window compare that read it"
+      },
+      {
+        "path": "src/tickAttempt.ts",
+        "description": "`recordRenderedPrompt` composes the name through that home instead of spelling the stamp-key-`.md` grammar itself"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the window and listing arms driven by a real tick's own prompt file, not a name spelled in the fixture"
+      },
+      {
+        "path": "tests/cli.test.ts",
+        "description": "the status-spend fixture's `promptName` reads the composer"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "the prompt filename's stamp-first `.md` grammar is written in tickAttempt and depended on by renderedPrompts' listing filter and window compare; one home, read by the real readers",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A seam gate reads what the real writer wrote"
+  },
+  "acceptance": "One module composes a rendered prompt's filename, and it is the module whose readers depend on it: nothing outside `src/renderedPrompts.ts` spells the stamp-then-key-then-`.md` grammar, and `recordRenderedPrompt` takes it. The pins drive a real tick's own prompt file through the run-window trim and through the listing the outstanding-agent count reads, so a one-sided respell of the name reds. Behavior-free: no path written, no prompt kept, no count changed. `pnpm tsc --noEmit`, the suite, and the export and citation pins green.",
+  "pins": [
+    "the run-window trim keeps a real tick's own rendered prompt and takes one written before the live run's claim",
+    "the rendered-prompt listing returns the file a real tick's writer left"
+  ],
+  "notes": "Verified on disk: writer src/tickAttempt.ts:909 (`${fsStamp()}-${slugify(key)}.md`); readers src/renderedPrompts.ts:102 (`.md` filter) and :71 (`name >= startStamp`, correct only because the stamp leads). The window and listing arms are driven only by hand-spelled names — tests/Dispatcher.test.ts:14538, :15533 (raw readdir), tests/cli.test.ts:2618. 1e801a5c pinned the prefix half of this seam; the name is the half left."
+}
