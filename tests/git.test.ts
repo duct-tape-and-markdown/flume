@@ -132,6 +132,7 @@ import { parsePidClaim } from "../src/pidClaim.ts";
 import { buildFlumeApi } from "../src/flumeApi.ts";
 
 import { deadPid } from "./helpers/deadPid.ts";
+import { withPlatform } from "./helpers/fakeAgentChild.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import {
   REPO_ROOT,
@@ -1851,6 +1852,47 @@ describe("acquireTipClaim / liveTipClaim — advisory per-ref tip claim", () => 
     claim.release();
 
     expect(existsSync(claim.path)).toBe(false);
+  });
+});
+
+// The config probe's own arm, on every lane. `pinLongPaths` reads its `git
+// config --local --get` exit 1 as "the key is unset" and rethrows every other
+// code — the same arm `isAncestor` (`src/git.ts`) pins for its own probe
+// above. Reaching it needs nothing but the platform gate open, which
+// `withPlatform` does on any host, so this case is not `runIf`-gated the way
+// the win32 block below is.
+describe("pinLongPaths - the config probe's unexplained exit", () => {
+  it("pinLongPaths rethrows a git config failure the probe cannot explain rather than reading it as unset", async () => {
+    const outsideAnyRepo = await mkTempDir("flume-git-no-worktree-");
+    try {
+      // Outside any working tree `git config --local` refuses, and not with
+      // the exit 1 that means "unset". Measured here rather than assumed:
+      // that non-1 exit is this case's whole subject, and a host answering 1
+      // would leave it green over the arm it is not about
+      // (`.claude/rules/engineering.md`, *A green verdict is proven
+      // non-vacuous*).
+      const probeExit = await exec(
+        "git",
+        ["config", "--local", "--get", "core.longpaths"],
+        { cwd: outsideAnyRepo },
+      ).then(
+        () => 0,
+        (err: { code?: unknown }) => err.code,
+      );
+      expect(probeExit).not.toBe(0);
+      expect(probeExit).not.toBe(1);
+
+      await withPlatform("win32", async () => {
+        // The rejection carries the probe's own argv, which is what makes it
+        // the rethrow: read as unset, `pinLongPaths` would go on to `git
+        // config core.longpaths true` and surface that command instead.
+        await expect(pinLongPaths(outsideAnyRepo)).rejects.toThrow(
+          /config --local --get core\.longpaths/,
+        );
+      });
+    } finally {
+      await rm(outsideAnyRepo, { recursive: true, force: true });
+    }
   });
 });
 
