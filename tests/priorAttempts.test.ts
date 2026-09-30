@@ -30,10 +30,11 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { entryDeclaredKey } from "../src/entryKey.ts";
-// The engine's own range and single-commit listings, spelled here only as the
-// vacuity pins for the span cases below: what a head-only listing names, and
-// what the span's range names before `excludeDeleted` narrows it.
-import { diffNameOnly, showNameOnly } from "../src/git.ts";
+// The engine's own range and single-commit listings plus its tip-read, spelled
+// here only as the vacuity pins for the span cases below: what a head-only
+// listing names, what the span's range names before `excludeDeleted` narrows
+// it, and what the head's tree hands back at a path that listing named.
+import { diffNameOnly, readFileAtRef, showNameOnly } from "../src/git.ts";
 import type { Logger } from "../src/log.ts";
 import { slugify } from "../src/paths.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
@@ -1059,6 +1060,78 @@ it("a failed reverted-prose snapshot warns with the directory it could not write
     // Still best-effort: the warn is the whole of the change, and the revert
     // path behind it is untouched.
     expect(existsSync(store.snapshotDir(SNAP_REF))).toBe(false);
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+it("snapshotReverted warns and names a listed path it could not read at the span head", async () => {
+  const fx = await makeFixture();
+  try {
+    const warned: string[] = [];
+    const capture: Logger = {
+      ...silent,
+      warn: (line) => void warned.push(line),
+    };
+    const store = new PriorAttemptStore(
+      join(fx.repo, ".flume"),
+      fx.repo,
+      capture,
+    );
+
+    // A real span carrying a gitlink beside a real prose file: the range names
+    // both, and the head's tree answers the gitlink with a `commit` row rather
+    // than a blob, so the content read hands back `null` with nothing having
+    // failed. The whole case runs on git and the engine's own readers — no
+    // fixture hands the store a file list or a null by the tester's hand
+    // (`.claude/rules/engineering.md`, *A seam gate reads what the real
+    // writer wrote*).
+    const base = (await gitOut(fx.repo, ["rev-parse", "HEAD"])).trim();
+    await writeFile(join(fx.repo, "finding.md"), "prose worth recovering\n");
+    await gitOut(fx.repo, ["add", "finding.md"]);
+    await gitOut(fx.repo, [
+      "update-index",
+      "--add",
+      "--cacheinfo",
+      `160000,${base},vendor/dep`,
+    ]);
+    await gitOut(fx.repo, ["commit", "-q", "-m", "prose beside a gitlink"]);
+    const span = {
+      base,
+      head: (await gitOut(fx.repo, ["rev-parse", "HEAD"])).trim(),
+    };
+
+    // Vacuity pins, both halves of the skip: the listing the store iterates
+    // really names the gitlink even under `excludeDeleted`, and the head
+    // really holds a non-blob there — so the assertion below is judged over a
+    // path the store genuinely drops, not over one it never saw.
+    expect(
+      await diffNameOnly(fx.repo, span.base, span.head, {
+        excludeDeleted: true,
+      }),
+    ).toEqual(expect.arrayContaining(["finding.md", "vendor/dep"]));
+    expect(
+      await gitOut(fx.repo, ["ls-tree", span.head, "--", "vendor/dep"]),
+    ).toContain("160000 commit");
+    expect(await readFileAtRef(fx.repo, span.head, "vendor/dep")).toBeNull();
+
+    await store.snapshotReverted(fx.repo, span, SNAP_REF);
+
+    // `capturedDiffStat` still advertises `vendor/dep` to the retrying tick,
+    // so a silent skip leaves an operator reading the stat, opening the
+    // snapshot, and finding an absence that accounts for nothing
+    // (`.claude/rules/engineering.md`, *Loud or nothing*).
+    expect(warned).toHaveLength(1);
+    expect(warned[0]).toContain("vendor/dep");
+
+    // Still best-effort, and still the span's snapshot: the warn is the whole
+    // of the change, the skipped path stays out, and the prose beside it —
+    // what the artifact exists for — is on disk.
+    const dir = store.snapshotDir(SNAP_REF);
+    expect(await readFile(join(dir, "finding.md"), "utf8")).toBe(
+      "prose worth recovering\n",
+    );
+    expect(existsSync(join(dir, "vendor", "dep"))).toBe(false);
   } finally {
     await fx.cleanup();
   }

@@ -693,9 +693,10 @@ export class PriorAttemptStore {
    * changed, so the dispatcher needs no chain-specific notion of which
    * artifact is "prose" vs "machine-checkable", and names no chain's file.
    * Must run while the span is still reachable (before the drop).
-   * Best-effort — a snapshot failure must never block or fail the revert;
-   * it warns through the store's own logger instead, so the lost recovery
-   * artifact is stated rather than left to be noticed.
+   * Best-effort — a snapshot failure must never block or fail the revert; it
+   * warns through the store's own logger instead, for the whole artifact and
+   * for a single listed path alike, so the lost recovery content is stated
+   * rather than left to be noticed.
    */
   async snapshotReverted(
     cwd: string,
@@ -718,11 +719,26 @@ export class PriorAttemptStore {
       });
       for (const rel of files) {
         // `excludeDeleted` already dropped everything the span removed, so a
-        // null here means the listing and the head's tree disagree — skip
-        // that path rather than abandoning the rest of the snapshot to the
-        // catch below, which is the whole artifact for the sake of one file.
+        // null here means the head's tree hands back no blob at a path the
+        // span's own listing named — a gitlink the range names as changed, or
+        // a listing and a tree that disagree. Skip that path rather than
+        // abandoning the rest of the snapshot to the catch below, which is
+        // the whole artifact for the sake of one file.
         const content = await git.readFileAtRef(cwd, span.head, rel);
-        if (content === null) continue;
+        if (content === null) {
+          // Declared degraded-but-proceeding path, bounded the way the
+          // whole-artifact catch below is (`.claude/rules/engineering.md`,
+          // *Loud or nothing*): nothing downstream refuses on a snapshot
+          // narrower than the span, and `capturedDiffStat` beside it still
+          // advertises this path to the retrying tick — so an operator who
+          // opens the snapshot looking for it finds an absence with no
+          // account of itself. The warn is that account, naming the path at
+          // the moment it is dropped.
+          this.log.warn(
+            `[flume] revert snapshot skipped ${rel}: ${span.head} holds no file there`,
+          );
+          continue;
+        }
         const dest = join(dir, rel);
         // win32 MAX_PATH (`.claude/rules/platform-facts.md`): dest depth
         // here is driven by the reverted diff's own path depth, not
