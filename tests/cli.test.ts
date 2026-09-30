@@ -1682,6 +1682,9 @@ describe("flume status — pending entry count", () => {
         `[flume] status: pending queue at ${queueDir} failed to read`,
       );
       expect(pendingRows(obstructed.out)).toEqual([]);
+      // The second half of the title: the refusal is the verb's own line, not
+      // a throw escaping to `main()`'s catch, which would exit 1 with a stack.
+      expect(obstructed.out).not.toContain("    at ");
       // The rows above the queue are not withheld: this refusal is the
       // queue's alone, and the baton it follows read fine.
       expect(obstructed.out).toContain("hibernating");
@@ -1702,6 +1705,7 @@ describe("flume status — pending entry count", () => {
         `[flume] status: pending queue at ${queueDir} failed to read`,
       );
       expect(pendingRows(unreadableEntry.out)).toEqual([]);
+      expect(unreadableEntry.out).not.toContain("    at ");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
