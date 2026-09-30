@@ -615,9 +615,12 @@ receives a **`PriorAttempt` record** — a mode-tagged union, exactly one varian
 dispatcher-owned `<prior-attempt>` block:
 
 - `gate-revert` — which gate phase reverted (`afterCommit` or `afterMerge`), the gate's
-  `name`, its one-line `message`, its full `details`, and a stat digest of the
-  reverted span — every commit the tick added, base to head. Fires for `afterMerge`
-  as well as `afterCommit`: a merge-time
+  `name`, its one-line `message`, its full `details`, its `verdict` and `failingFiles`
+  where it returned them, and a stat digest of the reverted span — every commit the
+  tick added, base to head. A gate that declared the failure not the span's
+  (`blamesSpan: false`) is stated as that: the block says the revert happened and
+  the gate disowned the blame, never that the approach must change. Fires for
+  `afterMerge` as well as `afterCommit`: a merge-time
   failure that dies with the dispatcher process is the anti-pattern this closes.
 - `clean-exit` — the tail of `AgentResult.finalMessage` (the adapter's field,
   `spec/chain.md`, *The agent seam*). The engine names no intent: a refused constraint,
