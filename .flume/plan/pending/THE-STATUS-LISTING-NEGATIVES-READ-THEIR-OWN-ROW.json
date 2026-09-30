@@ -1,0 +1,22 @@
+{
+  "tag": "THE-STATUS-LISTING-NEGATIVES-READ-THEIR-OWN-ROW",
+  "gate": { "kind": "open" },
+  "priority": 0,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "tests/cli.test.ts",
+        "description": "the status-listing negatives at `:997`, `:1020`-`:1021`, `:1052`-`:1053`, `:1094`-`:1095` read their own row"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "the status-listing negatives read the listing row they are about, not the verb's whole output",
+  "per": {
+    "path": ".claude/rules/posture-sweep.md",
+    "section": "Routing"
+  },
+  "acceptance": "Each of the named `not.toContain` assertions reads the listing row it is about rather than `r.out`; every positive assertion in those cases is unchanged and the suite is green.",
+  "notes": "Third body of family *the status-listing negatives take the whole stdout* (`107bd9c0`, then `2fb49496`), filed per the three-notes hatch: no property claimed. Sites re-verified on disk this tick at `tests/cli.test.ts:997`, `:1020`-`:1021`, `:1052`-`:1053`, `:1094`-`:1095` — each over `r.out`, which carries the fixture's interpolated temp path. The stack-trace guards beside them are the lens's sanctioned use and stay."
+}

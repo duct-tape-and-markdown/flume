@@ -1,0 +1,25 @@
+{
+  "tag": "THE-QUEUE-REFUSAL-CASE-ASSERTS-THE-STACK-ITS-TITLE-CLAIMS",
+  "gate": { "kind": "open" },
+  "priority": 0,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "tests/cli.test.ts",
+        "description": "the unreadable-queue status case gains the no-stack assertion on both of its refusals"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "`flume status`'s unreadable-queue case asserts the absent stack its title claims, as its obstructed-root sibling does",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A green verdict is proven non-vacuous"
+  },
+  "acceptance": "The case at `tests/cli.test.ts:1653` asserts no stack frame in the verb's output on both of its refusals, the way its sibling at `:1059` does; the suite is green and no positive assertion moves.",
+  "pins": [
+    "flume status refuses a pending queue that is present and unreadable with the io-error exit code rather than a raw stack"
+  ],
+  "notes": "The title claims two properties; the body asserts the exit code and the refusal line only. Sibling `:1059` — same title clause, same verb — asserts `not.toContain(\"    at \")`. Verified this tick by driving the verb: it returns EX_IOERR before `main()`'s catch and prints one line, so the property holds and the line is a pin, never a test."
+}
