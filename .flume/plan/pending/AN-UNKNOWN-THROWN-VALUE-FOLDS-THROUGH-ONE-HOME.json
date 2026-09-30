@@ -1,0 +1,45 @@
+{
+  "tag": "AN-UNKNOWN-THROWN-VALUE-FOLDS-THROUGH-ONE-HOME",
+  "gate": { "kind": "open" },
+  "priority": 20,
+  "files": {
+    "new": [
+      {
+        "path": "src/thrown.ts",
+        "description": "the one home for folding an unknown thrown value to a message, with the doc `src/priorAttempts.ts:370`-`:378` carries for it today"
+      }
+    ],
+    "edit": [
+      { "path": "src/priorAttempts.ts", "description": "the module-private `thrownMessage` (:379) leaves for its own file; its two callers re-point" },
+      { "path": "src/singletonTick.ts", "description": "4 cast sites, :220 the measured one" },
+      { "path": "src/waveTick.ts", "description": "3 cast sites, :416 the fanout twin of :220" },
+      { "path": "src/builtinGates.ts", "description": "chainLoadGate's `details` (:272) — chain-author code in the try" },
+      { "path": "src/Dispatcher.ts", "description": "the chain-resolution refusal (:905) — chain-author code in the try" },
+      { "path": "src/worktrees.ts", "description": "7 cast sites" },
+      { "path": "src/friction.ts", "description": "6 cast sites" },
+      { "path": "src/waveMerge.ts", "description": "1 cast site" },
+      { "path": "src/tickAttempt.ts", "description": "1 cast site" },
+      { "path": "src/pendingLedger.ts", "description": "1 cast site" },
+      { "path": "src/loopSupervisor.ts", "description": "1 cast site" },
+      { "path": "src/git.ts", "description": "1 cast site" },
+      { "path": "src/budgetHook.ts", "description": "1 cast site" },
+      { "path": "src/PendingSchema.ts", "description": "1 cast site" },
+      { "path": "harness/vitestRunner.ts", "description": "1 cast site; imports `../src/` as its siblings do" },
+      { "path": "harness/planState.ts", "description": "1 cast site" },
+      { "path": "tests/Dispatcher.test.ts", "description": "the two setupWorktree legs (:5657, :5901) gain their non-`Error` case" },
+      { "path": "tests/Gate.test.ts", "description": "the chainLoadGate describe (:593) gains its non-`Error` case" }
+    ]
+  },
+  "summary": "31 catches cast their binding to `Error`; a chain hook throwing a string makes the message `undefined` and the TypeError escapes `Dispatcher.tick` past the failure accounting",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Loud or nothing"
+  },
+  "acceptance": "One exported fold from an unknown thrown value to a message — the module-private `thrownMessage` (`src/priorAttempts.ts:379`) promoted to a home of its own, its doc moving with it — and every `(err as Error).message` across `src/` and `harness/` rewritten to it, leaving no cast behind (`grep -rn 'as Error)\\.message' src/ harness/` empty; 31 sites in 15 modules today). The `Error` path stays byte-identical, so no standing expected text moves. `pnpm tsc --noEmit` and `pnpm test` green.",
+  "tests": [
+    "a singleton whose setupWorktree hook throws a non-Error records the thrown text as a provisioning failure instead of escaping the tick",
+    "a fanout entry whose setupWorktree hook throws a non-Error stays pending with the thrown text as its provisioning failure",
+    "chainLoadGate reports the thrown text in details when the committed chain.ts throws a non-Error at load"
+  ],
+  "notes": "Measured, not reasoned: `tests/Dispatcher.test.ts:5909` rewritten to `throw \"...\"` reds with `TypeError: Cannot read properties of undefined (reading 'trim')` at `src/tickVerdict.ts:359`, thrown from `src/singletonTick.ts:220` and escaping `Dispatcher.tick` (`src/Dispatcher.ts:1055`) — teardown, the provisionFailures record and the quarantine backstop all skipped. `setupWorktree` is chain-author code (`src/Phase.ts:900`), as is the module `chainLoadGate` loads."
+}
