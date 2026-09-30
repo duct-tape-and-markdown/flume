@@ -178,6 +178,23 @@ export async function runSingleton(
   // hence untagged (there is no entry to blame on a singleton at all),
   // same shape `runFanout` gives its wave-level prune.
   const provisionFailures: ProvisionFailure[] = [];
+  // Same record on both surfaces: the outcome envelope feeds the verdict and
+  // the quarantine accounting, `result` feeds `handoff` — a singleton whose
+  // worktree never existed is otherwise indistinguishable there from one that
+  // ran and did nothing. Both provisioning legs that give up return through
+  // here; each keeps its own `log.warn` naming its stage, and the
+  // `setupWorktree` leg its teardown, which has no counterpart on a leg with
+  // no worktree to take down.
+  const provisionNoRun = async (
+    failure: ProvisionFailure,
+  ): Promise<PhaseTickOutcome> => {
+    provisionFailures.push(failure);
+    const failures = [...provisionFailures];
+    return {
+      result: { ...(await noRunResult()), provisionFailures: failures },
+      provisionFailures: failures,
+    };
+  };
   try {
     await git.pruneWorktrees(repoRoot, leg.log);
   } catch (err) {
@@ -196,16 +213,7 @@ export async function runSingleton(
     leg.log.warn(
       `[flume] ${phase.name}: worktree provisioning failed (${failure.signature}); no tick this cycle`,
     );
-    // Same record on both surfaces: the outcome envelope feeds the verdict
-    // and the quarantine accounting, `result` feeds `handoff` — a singleton
-    // whose worktree never existed is otherwise indistinguishable there
-    // from one that ran and did nothing.
-    provisionFailures.push(failure);
-    const failures = [...provisionFailures];
-    return {
-      result: { ...(await noRunResult()), provisionFailures: failures },
-      provisionFailures: failures,
-    };
+    return provisionNoRun(failure);
   }
 
   let extraEnv: Record<string, string> | undefined;
@@ -229,12 +237,7 @@ export async function runSingleton(
         phase.name,
         leg.worktreeCtx,
       );
-      provisionFailures.push(failure);
-      const failures = [...provisionFailures];
-      return {
-        result: { ...(await noRunResult()), provisionFailures: failures },
-        provisionFailures: failures,
-      };
+      return provisionNoRun(failure);
     }
   }
 
