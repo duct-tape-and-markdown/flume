@@ -1387,6 +1387,144 @@ describe("priorAttempts — a record is keyed by the identity it was written und
     expect((await store.readAll()).size).toBe(0);
   });
 
+  it("a prior-attempt record whose written identity composes to a path other than the file it sits at reads as no prior attempt", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+    const ref: PriorAttemptRef = { key: "plan", keyspace: "phase" };
+    const p = priorAttemptPath(flumeDir, ref);
+    await mkdir(dirname(p), { recursive: true });
+
+    // Every field the reader asks for, with the identity the file's own place
+    // states — the vacuity pin for the refusal below: the disagreement
+    // changes the written identity and nothing else, so what the reader
+    // refuses on cannot be anything else in these bytes.
+    const record = {
+      mode: "clean-exit",
+      finalMessage: "parked: the entry needs a wider fence",
+      key: "phase",
+      keyedAs: "plan",
+      headSha: "0".repeat(40),
+      at: "2024-01-01T00:00:00.000Z",
+    };
+    await writeFile(p, JSON.stringify(record));
+    expect((await store.read(ref))?.keyedAs).toBe("plan");
+
+    // Hand-authored, the sanctioned exception for a refusal case: nothing
+    // `write` mints names a file other than its own — a renamed or
+    // hand-edited record does. Honoured, this file's wall is filed under
+    // `phase:build`, so `build`'s retry reads `plan`'s record and `plan`'s
+    // retry reads none.
+    await writeFile(p, JSON.stringify({ ...record, keyedAs: "build" }));
+    await expect(store.read(ref)).resolves.toBeUndefined();
+
+    // Nor is it reachable under the identity it claims: that is a different
+    // file, and no one wrote it.
+    const claimed: PriorAttemptRef = { key: "build", keyspace: "phase" };
+    expect(priorAttemptPath(flumeDir, claimed)).not.toBe(p);
+    expect(existsSync(priorAttemptPath(flumeDir, claimed))).toBe(false);
+    await expect(store.read(claimed)).resolves.toBeUndefined();
+
+    // And the file stays where it is: deleting a record this store cannot
+    // decode is a guess about what wrote it.
+    expect(existsSync(p)).toBe(true);
+  });
+
+  it("the prior-attempt listing files no record under an identity that reaches a different file than the one it was read from", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+
+    // A record from the real writer, under a phase name `slugify` rewrites:
+    // the legitimate divergence between the identity and the stem, which
+    // stays filed under the chain's own spelling. It is also what populates
+    // the map the assertions below read.
+    const kept = priorAttemptRef({ name: "Plan Derive" } as Phase);
+    expect(slugify("Plan Derive")).not.toBe("Plan Derive");
+    await store.write(
+      kept,
+      buildCleanExit("parked: needs a wider fence", UNMOVED_SPAN()),
+    );
+
+    const ref: PriorAttemptRef = { key: "plan", keyspace: "phase" };
+    const p = priorAttemptPath(flumeDir, ref);
+    await mkdir(dirname(p), { recursive: true });
+    // Hand-authored, the sanctioned exception for a refusal case: no writer
+    // mints a record whose identity names another file. Both files sit at a
+    // stem the path rule composes, so the walk reaches both and the reader is
+    // what separates them.
+    await writeFile(
+      p,
+      JSON.stringify({
+        mode: "clean-exit",
+        finalMessage: "parked: the entry needs a wider fence",
+        key: "phase",
+        keyedAs: "build",
+        headSha: "0".repeat(40),
+        at: "2024-01-01T00:00:00.000Z",
+      }),
+    );
+    expect(existsSync(priorAttemptPath(flumeDir, kept))).toBe(true);
+    expect(existsSync(p)).toBe(true);
+
+    const all = await store.readAll();
+    expect(all.size).toBe(1);
+    expect(all.get("phase:Plan Derive")?.mode).toBe("clean-exit");
+    // Not under the identity it wrote, and not under the stem it sits at
+    // either: a file no read reaches is no record at all.
+    expect(all.has("phase:build")).toBe(false);
+    expect(all.has("phase:plan")).toBe(false);
+    expect(existsSync(p)).toBe(true);
+  });
+
+  it("clearStale reports no cleared key for a record it left standing on disk", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
+
+    // The sweep's live half, through the real writer: a record for a tag the
+    // queue below no longer carries. Without it "no cleared key" would hold
+    // over a sweep that clears nothing at all.
+    const dropped: PendingEntry = {
+      tag: "DROPPED-TAG",
+      gate: { kind: "open" },
+      dependsOnForks: [],
+      priority: 0,
+      files: { new: [], edit: [], retire: [] },
+    };
+    const droppedRef = priorAttemptRef({ name: "build" } as Phase, dropped);
+    await store.write(
+      droppedRef,
+      buildCleanExit("parked: needs a wider fence", UNMOVED_SPAN()),
+    );
+
+    const ref: PriorAttemptRef = { key: "real-tag", keyspace: "entry" };
+    const p = priorAttemptPath(flumeDir, ref);
+    await mkdir(dirname(p), { recursive: true });
+    // Hand-authored, the sanctioned exception for a refusal case. Honoured,
+    // the sweep reports `entry:ghost` cleared on every call — `clear`
+    // composes that identity's path, which nothing wrote — while the file it
+    // was reported for never leaves.
+    await writeFile(
+      p,
+      JSON.stringify({
+        mode: "clean-exit",
+        finalMessage: "parked: the entry needs a wider fence",
+        key: "entry",
+        keyedAs: "ghost",
+        declaredAs: "ghost@0000000000",
+        headSha: "0".repeat(40),
+        at: "2024-01-01T00:00:00.000Z",
+      }),
+    );
+
+    // Every key reported is a file that left, and every file left standing is
+    // a key unreported.
+    expect(await store.clearStale([])).toEqual([entryAttemptKey(dropped)]);
+    expect(existsSync(priorAttemptPath(flumeDir, droppedRef))).toBe(false);
+    expect(existsSync(p)).toBe(true);
+    // A key reported for a file that never leaves is reported on every call.
+    expect(await store.clearStale([])).toEqual([]);
+    expect(existsSync(p)).toBe(true);
+  });
+
   it("the engine reports the entry-as-declared key on the prior-attempt record", async () => {
     const flumeDir = join(fx.repo, ".flume");
     const store = new PriorAttemptStore(flumeDir, fx.repo, silent);

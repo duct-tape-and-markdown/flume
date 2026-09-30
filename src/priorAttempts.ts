@@ -404,7 +404,13 @@ export class PriorAttemptStore {
    * in is the same class of undecodable: the two sides of its identity
    * contradict each other, and honouring the stated one would file it in the
    * map under a key whose path — the one {@link clear} would later remove —
-   * is not the file it came from.
+   * is not the file it came from. The identity half is held to the same bar,
+   * and by the same test: the record's own ref must compose back through
+   * {@link priorAttemptPath} to the file it was read from. A `keyedAs`
+   * naming another record's file keys {@link readAll}'s map under an
+   * identity no read reaches — the retry whose name it wears reads this
+   * file's wall while its own reads none, and `clearStale` reports a key
+   * cleared on every call while the file never leaves.
    */
   async read(ref: PriorAttemptRef): Promise<PriorAttempt | undefined> {
     const p = priorAttemptPath(this.flumeDir, ref);
@@ -444,7 +450,18 @@ export class PriorAttemptStore {
         (rec.key !== "entry" ||
           (typeof rec.declaredAs === "string" && rec.declaredAs.length > 0))
       ) {
-        return rec as PriorAttempt;
+        const stated = rec as PriorAttempt;
+        // The identity half of the agreement the keyspace half gets above,
+        // asked of the path rule rather than of `slugify` directly: what
+        // decides whether an identity names this file is the composition that
+        // locates a record, never a second spelling of its fold
+        // (`.claude/rules/engineering.md`, *The fix lands at the mechanism*) —
+        // the same question the walk asks of a stem it found. A phase name
+        // `slugify` rewrites passes: the record is keyed by the chain's own
+        // spelling and sits at the slugged stem that spelling composes to.
+        if (priorAttemptPath(this.flumeDir, refOfRecord(stated)) !== p)
+          return undefined;
+        return stated;
       }
       return undefined;
     } catch {
@@ -659,9 +676,12 @@ export class PriorAttemptStore {
    * the ref wrote it under, which is what `queued` holds. The cleared keys
    * reported are the ones {@link readAll} keys by, so a chain reading the
    * verdict and a chain reading `TickContext.priorAttempts` name the same
-   * record. Records that read as absent (corrupt, unanchored, no keyspace)
-   * are not cleared — {@link readAll} never surfaces them, and deleting a
-   * file this store cannot parse is a guess about what wrote it.
+   * record. Records that read as absent (corrupt, unanchored, no keyspace, an
+   * identity naming another file) are not cleared — {@link readAll} never
+   * surfaces them, and deleting a file this store cannot parse is a guess
+   * about what wrote it. A reported key is therefore a file that left: the
+   * removal is composed from the same identity the report is, so a key the
+   * sweep names and a file it deletes cannot come apart.
    */
   async clearStale(pending: readonly PendingEntry[]): Promise<string[]> {
     const queued = new Set(pending.map((e) => slugify(e.tag)));
