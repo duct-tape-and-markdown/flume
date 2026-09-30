@@ -364,10 +364,8 @@ const LEAD_END = " \u2014 ";
  * so a paragraph following a list is not read as its last bullet's tail.
  * Fenced blocks are skipped on the rule `headingsOf` already carries.
  *
- * That blank-line rule is why a per-bullet read of a section whose list is
- * *not* the last thing in it reaches for this rather than {@link bulletOf}:
- * the last bullet of such a list has no next lead to stop at, and `bulletOf`
- * would hand back the rest of the section under its name.
+ * {@link bulletOf} cuts one bullet by the same blank line, so a per-bullet
+ * read and a whole-list read cannot disagree about where a bullet ends.
  */
 export function bulletsOf(section: string): string[] {
   const bullets: string[] = [];
@@ -417,10 +415,25 @@ export function leadNamesOf(section: string): string[] {
 const BULLET_OPENING = /^[-*] +(?:\*\*)?`?/;
 
 /**
+ * The blank line that ends a list — the same rule {@link bulletsOf} resets its
+ * run on, so the two cuts agree on what closes a bullet.
+ */
+const LIST_CLOSE = /\n[ \t]*\n/;
+
+/**
  * One bullet of a section, from its lead through the line before the next
- * bullet opening the same way, with the page's own wrapping folded out — a
- * claim is a sentence, and where a sentence breaks across source lines is the
+ * bullet opening the same way *or* the blank line that closes the list,
+ * whichever comes first, with the page's own wrapping folded out — a claim is
+ * a sentence, and where a sentence breaks across source lines is the
  * formatter's business, not the claim's.
+ *
+ * The list close is what bounds the last bullet of a list a section does not
+ * end with. On the next lead alone that bullet has none, so the cut hands
+ * back every paragraph, bolded claim and rendered sample below the walk under
+ * its name — and a per-bullet read exists precisely because those neighbours
+ * quote the same vocabulary the bullet does, so a bullet gone silent still
+ * passes (`.claude/rules/posture-sweep.md`, *A negative assertion over a
+ * whole rendered artifact*).
  *
  * `lead` is the bullet's opening verbatim, the member's spelling included:
  * `` - **`tickTimeoutMs`** — ``. One home for a per-bullet read three cases in
@@ -445,8 +458,10 @@ export function bulletOf(section: string, lead: string): string {
   }
 
   const rest = section.slice(at + lead.length);
-  const next = rest.indexOf(`\n${opening}`);
-  const body = next === -1 ? rest : rest.slice(0, next);
+  const closers = [rest.indexOf(`\n${opening}`), rest.search(LIST_CLOSE)].filter(
+    (found) => found !== -1,
+  );
+  const body = closers.length === 0 ? rest : rest.slice(0, Math.min(...closers));
 
   return `${lead}${body}`.replace(/\s+/g, " ").trim();
 }

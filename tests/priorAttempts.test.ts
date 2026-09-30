@@ -77,7 +77,7 @@ import {
   silent,
   type Fixture,
 } from "./helpers/dispatcherFixture.ts";
-import { bulletsOf, sectionOf } from "./helpers/docSections.ts";
+import { bulletOf, bulletsOf, sectionOf } from "./helpers/docSections.ts";
 import { gitOut, SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
@@ -2156,23 +2156,6 @@ function elisionOf(
 }
 
 /**
- * The `<prior-attempt>` bullet for one mode, cut at the blank line that closes
- * the list rather than at the next lead: this list is followed by the section's
- * rendered sample and four bolded paragraphs, so the last bullet has no next
- * lead to stop at (`bulletsOf`, tests/helpers/docSections.ts).
- */
-function modeBullet(section: string, mode: string): string {
-  const lead = `\`${mode}\` — `;
-  const found = bulletsOf(section).filter((bullet) => bullet.startsWith(lead));
-  // The cut is its own anchor: a renamed or absent lead reds here rather than
-  // letting an empty span agree with anything.
-  expect(found, `the section has no one bullet led by \`${mode}\``).toHaveLength(
-    1,
-  );
-  return found[0]!;
-}
-
-/**
  * How a bullet states a bound. The unit is closed to the two the writers
  * actually use — chars digested as KiB, and list entries — so a bullet that
  * invented a third spelling reds as an unstated bound rather than passing on a
@@ -2307,7 +2290,11 @@ describe("priorAttempts — the authoring page states each bounded field's bound
     const section = sectionOf(page, "### The `<prior-attempt>` block");
 
     for (const claim of claims) {
-      const bullet = modeBullet(section, claim.mode);
+      // `bulletOf` cuts at the blank line closing this walk as well as at
+      // the next lead, which is what bounds the last bullet of a list this
+      // section does not end with — and throws on a lead the page renamed,
+      // so the cut is its own anchor.
+      const bullet = bulletOf(section, `- \`${claim.mode}\` — `);
       expect(
         bullet,
         `the ${claim.mode} bullet does not state \`${claim.field}\`'s bound`,

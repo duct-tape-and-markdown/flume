@@ -12,7 +12,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { sectionOf, sectionTitles } from "./helpers/docSections.ts";
+import { bulletOf, sectionOf, sectionTitles } from "./helpers/docSections.ts";
 
 const PAGE = [
   "# Title",
@@ -174,5 +174,58 @@ describe("sectionTitles", () => {
     expect(QUOTED).toContain("a **bolded run** part-way through");
 
     expect(sectionTitles(QUOTED)).toEqual(["Title", "Reading the exit codes"]);
+  });
+});
+
+describe("bulletOf", () => {
+  // A list that is *not* the last thing in its section — the shape every doc
+  // pin that cuts one bullet meets on a real page: the walk, then a paragraph
+  // and a bolded claim about the same names. `docs/CHAIN-AUTHORING.md`'s
+  // `<prior-attempt>` walk is one, and its last bullet is the one with no next
+  // lead to stop at.
+  const LISTED = [
+    "## Modes",
+    "",
+    "- `first` — the opening mode. Carries `alpha`.",
+    "- `last` — the closing mode. Carries `omega`, wrapped",
+    "  across two source lines.",
+    "",
+    "Prose below the walk, naming `alpha` and `omega` both.",
+    "",
+    "**A bolded claim the section spends on `omega`.**",
+    "",
+  ].join("\n");
+
+  it("a bullet mid-list stops at the next lead opening the same way", () => {
+    expect(bulletOf(LISTED, "- `first` — ")).toBe(
+      "- `first` — the opening mode. Carries `alpha`.",
+    );
+  });
+
+  it("the last bullet of a non-terminal list stops at the blank line that closes it", () => {
+    // Vacuity guard on the subject: the section really does carry the prose a
+    // cut that ran to the section's end would swallow, and that prose names
+    // the field this bullet's own claim is about — so the equality below is
+    // the list-close rule rather than a fixture with nothing past its list
+    // (`.claude/rules/engineering.md`, *A green verdict is proven
+    // non-vacuous*).
+    expect(LISTED).toContain("Prose below the walk");
+    expect(LISTED).toContain("**A bolded claim the section spends on `omega`.**");
+
+    // The whole cut as an equality: the page's own wrapping folded out, and
+    // nothing below the list carried in under the bullet's name.
+    expect(bulletOf(LISTED, "- `last` — ")).toBe(
+      "- `last` — the closing mode. Carries `omega`, wrapped across two source lines.",
+    );
+  });
+
+  it("a bullet closing a section that ends with its list runs to the section's end", () => {
+    const terminal = ["## Modes", "", "- `only` — the whole list."].join("\n");
+    expect(bulletOf(terminal, "- `only` — ")).toBe("- `only` — the whole list.");
+  });
+
+  it("an absent lead throws rather than cutting an empty span", () => {
+    expect(() => bulletOf(LISTED, "- `renamed` — ")).toThrow(/no bullet led by/);
+    expect(() => bulletOf(LISTED, "`first` — ")).toThrow(/not a bullet lead/);
   });
 });
