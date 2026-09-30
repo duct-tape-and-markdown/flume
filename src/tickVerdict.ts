@@ -891,9 +891,9 @@ interface TickVerdictFacts {
  *
  * Two producers call it — the dispatcher at the end of a tick, and a walled
  * wave for the partial verdict it rides out on, whatever threw to wall it: a
- * pending-ledger rewrite that refused, anything else out of the merge stage
- * (`waveMergeError`, `src/waveMerge.ts`), or a slot's own leg
- * (`waveSlotThrow`, `src/waveMerge.ts`). They differ in the facts they hold
+ * pending-ledger rewrite that refused, anything else out of the merge stage,
+ * or a slot's own leg (`waveWallThrow`, `src/waveMerge.ts`). They differ in
+ * the facts they hold
  * and the summary they name, nothing else, so the sequence is one function
  * with two callers rather than two copies that agree by discipline
  * (`.claude/rules/engineering.md`, *A module is one job*). A field the shape

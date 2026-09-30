@@ -12111,6 +12111,119 @@ describe("Dispatcher fanout — a merge-stage throw outside the ledger rewrite c
   });
 });
 
+// ---------- two walls at once ----------
+
+describe("Dispatcher fanout — a recorded ledger refusal outranks a slot leg's throw", () => {
+  /**
+   * A wave that hits both of its walls, and the one class that leaves on it.
+   *
+   * SHIP-A's agent commits a corrupt entry file into the queue before its own
+   * span, so the strict read behind its pick refuses and the merge stage
+   * records the refusal (`commitAttemptLedger`, `src/waveMerge.ts`). BOOM-B's
+   * agent wrecks the `.git` file its worktree is addressed through, so the tip
+   * read that follows its agent refuses and lands in the wave's `slotError` —
+   * the same arming `waveTornDownByASlotLeg` below uses, and the shape the
+   * field hits: a hook that throws, a read of the tree that will not resolve.
+   *
+   * Nothing here orders the two: a slot leg's throw does not stop a sibling's
+   * merge (only the merge holder does), so both walls stand by the time the
+   * wave leg leaves, whichever was hit first. That is exactly the wave a throw
+   * site per holder classified by source order rather than by what an operator
+   * repairs.
+   */
+  it("a wave whose merge stage refused its ledger rewrite reports that refusal when a slot leg also threw", async () => {
+    await writePending(fx.repo, [
+      makeEntry("SHIP-A", ["src/a.ts"]),
+      makeEntry("BOOM-B", ["src/b.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const corruptEntry = join(queueDirOf(fx.repo), entryFileName("CORRUPT"));
+    const corrupt = "{ corrupted mid-wave, not json";
+    let boomCwd: string | undefined;
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [
+          makePhase({ name: "build", concurrency: "fanout", gates: [] }),
+        ],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "ship-a": async (cwd) => {
+          await commitEntryFile(fx.repo, entryFileName("CORRUPT"), corrupt);
+          await writeAndCommit(
+            cwd,
+            "src/a.ts",
+            "from-A\n",
+            "build(SHIP-A): ship",
+          );
+        },
+        "boom-b": async (cwd) => {
+          boomCwd = cwd;
+          await writeFile(
+            join(cwd, ".git"),
+            "gitdir: /flume-no-such-gitdir\n",
+            "utf8",
+          );
+        },
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+
+    let thrown: unknown;
+    const outcome = await dispatcher.tick().catch((err: unknown) => {
+      thrown = err;
+      return undefined;
+    });
+
+    // Vacuity, both walls, because a class asserted over a wave that hit only
+    // one of them is the sibling suites' claim, not this one's.
+    //
+    // The merge stage's: SHIP-A's span reached trunk, and the queue it was
+    // about to be retired from is still corrupt on disk — the rewrite refused
+    // rather than overwriting it from a parse it never trusted.
+    expect(thrown).toBeUndefined();
+    expect(outcome?.failed).toBe(true);
+    expect(outcome?.verdict?.shippedTags).toEqual(["SHIP-A"]);
+    expect(await readFile(corruptEntry, "utf8")).toBe(corrupt);
+    // The slot leg's: BOOM-B's agent ran and its sabotage still stands, so
+    // every git call in that leg refused from the tip read on — which is why
+    // the entry is provisioned and named by the verdict while its attempt was
+    // never folded, leaving no usage row and no merge row of its own.
+    expect(boomCwd).toBeDefined();
+    expect(await readFile(join(boomCwd!, ".git"), "utf8")).toContain(
+      "gitdir: /flume-no-such-gitdir",
+    );
+    expect([...(outcome?.verdict?.tags ?? [])].sort()).toEqual([
+      "BOOM-B",
+      "SHIP-A",
+    ]);
+    expect(outcome?.verdict?.invocations.map((i) => i.entryTag)).toEqual([
+      "SHIP-A",
+    ]);
+    expect(
+      outcome?.verdict?.mergeOutcomes.map((m) => m.entryTag),
+    ).not.toContain("BOOM-B");
+
+    // The claim: the refusal the stage recorded is the class the wave leaves
+    // as, so the queue that needs an operator is named rather than shadowed by
+    // the teardown that failed beside it…
+    expect(outcome?.ledgerRefusal).toBe("parse-failure");
+    expect(outcome?.verdict?.summary).toContain(
+      "pending-ledger rewrite refused",
+    );
+    // …and the real classifier reads it: the fail-fast that stops a `flume
+    // loop` run at a queue no tick can rewrite, never the widest arm's 1
+    // (`spec/loop.md`, *Exit codes — the run never lies to CI*).
+    expect(tickExitCode(outcome!)).toBe(EX_MOUNT_DEAD);
+    expect(tickExitCode(outcome!)).not.toBe(1);
+  });
+});
+
 // ---------- foundations governor ----------
 
 describe("Dispatcher fanout — foundations governor skips fork-blocked entries", () => {

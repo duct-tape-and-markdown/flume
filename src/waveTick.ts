@@ -66,8 +66,7 @@ import {
   foldUncarriedAttempt,
   mergeAttempt,
   openWaveMerge,
-  waveMergeError,
-  waveSlotThrow,
+  waveWallThrow,
   type EntryAttempt,
 } from "./waveMerge.js";
 import {
@@ -273,7 +272,7 @@ export async function runFanout(
   // the rewrite is inside the pick's own hold now, so the refusal happens
   // mid-wave, and the verdict naming every pick it landed — and everything the
   // siblings behind it went on to observe — is built at the throw below, where
-  // the wave has settled (`waveMergeError`, `src/waveMerge.ts`).
+  // the wave has settled (`waveWallThrow`, `src/waveMerge.ts`).
   let mergeError: unknown;
 
   // `git worktree add`/`remove` mutate the shared `.git/worktrees/` metadata
@@ -337,8 +336,8 @@ export async function runFanout(
   //
   // This is the arm the phase's own fence admits, so the read handed the
   // failure back; the arm it does not admit throws instead, and leaves this
-  // wave past the settled merge stage carrying its verdict (`waveSlotThrow`
-  // (`src/waveMerge.ts`)).
+  // wave past the settled merge stage carrying its verdict, classified as the
+  // ledger refusal it is (`waveWallThrow`, `src/waveMerge.ts`).
   let refillParseFailure: QueueParseFailure | undefined;
   // One promise per slot this wave opened, appended to as freed slots refill.
   const slots: Promise<void>[] = [];
@@ -462,10 +461,12 @@ export async function runFanout(
   /**
    * Whether this wave leaves by throwing: a merge that walled, or a slot's own
    * leg that did. Each is held rather than propagated where it happened, so
-   * the siblings still running settle first — and both are read twice, by the
-   * freed slot that then pulls nothing more ({@link wavePulls}) and by the
-   * settling slot that then leaves its worktree and claim standing
-   * ({@link settleSlot}).
+   * the siblings still running settle first — and all three readers ask this
+   * one predicate: the freed slot that then pulls nothing more
+   * ({@link wavePulls}), the settling slot that then leaves its worktree and
+   * claim standing ({@link settleSlot}), and the leg's own throw site, which
+   * hands both holders to one selection over them
+   * (`waveWallThrow`, `src/waveMerge.ts`).
    */
   const waveThrows = (): boolean =>
     mergeError !== undefined || slotError !== undefined;
@@ -685,34 +686,24 @@ export async function runFanout(
   // awaiting a slot is what guarantees its own refill is already appended:
   // the append happens in the slot promise's own `finally`.
   for (let i = 0; i < slots.length; i++) await slots[i]!;
-  // A throw out of a slot's own leg leaves here rather than bare, whatever
-  // threw it: every slot has finished behind this line, so the spans this wave
-  // already carried onto trunk and the usage row every agent that ran left
-  // behind are facts a verdict has to record — the same reason its
-  // `mergeError` sibling below carries one (`waveSlotThrow`,
-  // `src/waveMerge.ts`). A queue re-read this phase's fence cannot rewrite is
-  // one such throw and leaves classified as the ledger refusal it is; an agent
-  // that exploded, a hook that threw or a render that did not resolve leaves
-  // carrying the same verdict and no ledger class at all.
-  if (slotError !== undefined) throw await waveSlotThrow(merge, slotError);
-  // A throw out of the merge stage leaves here carried, whatever threw it and
-  // whether or not a ledger refused — a refused rewrite as the
-  // `WaveLedgerRefusal` `tick()` classifies, a marker the disk would not take
-  // or a record the store refused as the base carry that reports no ledger
-  // class at all. Built here and not at the pick that hit it: every slot has
-  // finished behind this line, so the verdict the error carries names the
-  // whole wave — the spans already landed on trunk, and the decline or render
-  // refusal a sibling settled after the wall (`waveMergeError`,
+  // A walled wave leaves here carried, whatever walled it: every slot has
+  // finished behind this line, so the spans this wave already carried onto
+  // trunk and the usage row every agent that ran left behind are facts a
+  // verdict has to record, and a bare re-throw would take all of them with it.
+  // Both holders go to one selection rather than a throw site each: a wave
+  // that hit a slot leg's throw *and* a refusing rewrite holds both by the
+  // time it gets here, and the class an operator repairs at is the ranking's
+  // to state, never the order two `if`s happen to sit in (`waveWallThrow`,
   // `src/waveMerge.ts`). From here it propagates straight to `tick()`'s catch,
   // over the worktree and the claim of every slot that settled behind the
-  // wall — `settleSlot` above takes neither half once this holder is set.
+  // wall — `settleSlot` above takes neither half once either holder is set.
   // Surviving worktrees are the accepted cost
   // of refusing rather than proceeding, and they are the next `flume loop`
   // start's sweep to remove (`sweepStaleWorktrees`, `src/worktrees.ts`),
   // which takes the directory and the branch it was cut on — a prune takes
   // neither. Those claim files stay staked for the same reason, and the next
   // selection's liveness probe reclaims them — that reclaim needs no repair.
-  if (mergeError !== undefined) throw await waveMergeError(merge, mergeError);
+  if (waveThrows()) throw await waveWallThrow(merge, { mergeError, slotError });
 
   // Close the stage: the fold over what the picks observed. Each of them
   // already landed its own ledger commit inside its own ship-lock hold, so

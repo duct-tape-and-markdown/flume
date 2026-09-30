@@ -1066,8 +1066,8 @@ export class Dispatcher {
       // ran is this arm's because a wave's own throws arrive wrapped: a wave
       // torn down after its picks landed leaves as a `WaveCarriedThrow`
       // carrying the spans already on trunk and a usage row per agent that
-      // ran — a slot leg that threw (`waveSlotThrow`, `src/waveMerge.ts`) and
-      // the merge stage alike (`waveMergeError`, `src/waveMerge.ts`). That is
+      // ran — a slot leg that threw and the merge stage alike, ranked into the
+      // one class this arm reads (`waveWallThrow`, `src/waveMerge.ts`). That is
       // the other throw — a ledger read or write that refused, and equally an
       // agent that exploded, a hook that threw, a render that did not resolve,
       // a merge marker the disk would not take; the `cause` says which, and
@@ -1226,9 +1226,9 @@ export class Dispatcher {
     // left behind even on a quiet no-commit tick. The shaping itself, `at`
     // included, is `buildTickVerdict`'s (`src/tickVerdict.ts`), shared with
     // the partial verdict a walled wave rides out on — every throw its merge
-    // stage holds (`waveMergeError`, `src/waveMerge.ts`) and every throw out
-    // of a slot's own leg (`waveSlotThrow`, `src/waveMerge.ts`), not the
-    // refused ledger rewrite alone.
+    // stage holds and every throw out of a slot's own leg alike
+    // (`waveWallThrow`, `src/waveMerge.ts`), not the refused ledger rewrite
+    // alone.
     const verdict = buildTickVerdict({
       phaseName: phase.name,
       tags: tags ?? [],
