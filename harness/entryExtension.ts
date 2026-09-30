@@ -1,7 +1,7 @@
 /**
  * The entry extension the harness package declares (`spec/harness.md`, *The
  * entry extension*) — `summary`, `per`, `acceptance`, `tests[]`, `pins[]`,
- * `notes`, with their caps and their hints, plus the optional
+ * `laneTests[]`, `notes`, with their caps and their hints, plus the optional
  * {@link CONTRACT_TOUCHING_FIELD} the package's default handoff acts on.
  *
  * Each field is declared **once**, as the engine's `EntryExtensionField`:
@@ -71,6 +71,41 @@ export const PerSchema = z.strictObject({
 export const NamedLinesSchema = z.array(z.string().min(1)).default([]);
 
 /**
+ * The entry's `laneTests[]`: a case only another host runs, named by the lane
+ * that runs it and the title it carries (`spec/harness.md`, *The judges*).
+ *
+ * `lane` is the **CI lane's** name — the key that lane already files its
+ * findings under (*CI lanes as a findings source*) — and not a runner lane,
+ * which is a selection of the suite the judge itself drives. The two senses
+ * meet on this field, and the one that decides a `laneTests[]` line's proof
+ * is the CI lane: the line is owed there, so the lane's own red closes or
+ * files it.
+ *
+ * Shape only. Whether the named lane is one the consumer declared, and
+ * whether a case carrying the title is skipped on this host, belong to the
+ * declaration and to the judge that read this.
+ *
+ * Defaulted rather than optional, for the reason {@link NamedLinesSchema}
+ * is.
+ */
+export const LaneTestsSchema = z
+  .array(
+    z.strictObject({
+      lane: z.string().min(1),
+      title: z.string().min(1),
+    }),
+  )
+  .default([]);
+
+/**
+ * One `laneTests[]` line as the judge rules on it — the shape
+ * {@link LaneTestsSchema} parses to, named here rather than respelled at the
+ * judge (`.claude/rules/engineering.md`, *Derived state is computed, never
+ * restated beside its source*).
+ */
+export type LaneTest = z.output<typeof LaneTestsSchema>[number];
+
+/**
  * The name of the risk flag `spec/loop.md`, *One tick is one fresh process*,
  * calls "marked contract-touching": an entry whose work changes a contract a
  * run already in flight cannot safely absorb.
@@ -94,7 +129,7 @@ export const NamedLinesSchema = z.array(z.string().min(1)).default([]);
 export const CONTRACT_TOUCHING_FIELD = "contractTouching";
 
 /**
- * What the running lane will not reach, as a clause on the two named-line
+ * What the running lane will not reach, as a clause on the three named-line
  * hints — the reader `spec/harness.md`, *The runner interface* names for
  * `Runner.lanes`.
  *
@@ -168,6 +203,18 @@ function packageFields(lanes: readonly Lane[]) {
       schema: NamedLinesSchema,
       hint: `[ "property that already holds and gains its check here" ] — same title discipline as tests[]; judged green, never red on the base${lane}`,
     },
+    /**
+     * A behavior only another host can run — the case a host-gated defect
+     * ships (`.claude/rules/engineering.md`, *A fix ships the test that would
+     * have caught it*). Named by the CI lane that runs it and the title it
+     * carries: on the build host the case is skipped, so the judge reports the
+     * line owed to that lane rather than green, and the lane's own red is
+     * what files or closes it.
+     */
+    laneTests: {
+      schema: LaneTestsSchema,
+      hint: `[ { "lane": "a declared CI lane's name", "title": "behavior only that lane's host can run" } ] — for a case this host cannot run at all: same title discipline as tests[], written skipped on every other host so the suite reports it skipped and never failed. The judge reports each owed to its lane and never green, so the lane is the proof: a red title files as that lane's finding and a run on the tip reporting it green closes it. A behavior this host can run belongs in tests[]${lane}`,
+    },
     notes: {
       schema: z.string().max(ENTRY_CAPS.notes).optional(),
       hint: `"≤${ENTRY_CAPS.notes} chars; optional context not in the spec"`,
@@ -220,8 +267,8 @@ export class EntryFieldRemovalError extends Error {
  * a refinement there as an intersection over its own mechanical floor.
  *
  * `lanes` is the consumer's runner's own (`spec/harness.md`, *The runner
- * interface*): the running lane's exclusions ride the `tests[]` and `pins[]`
- * hints, so plan is told at authorship which globs no judge will reach.
+ * interface*): the running lane's exclusions ride the `tests[]`, `pins[]` and
+ * `laneTests[]` hints, so plan is told at authorship which globs no judge will reach.
  * Omitted where no runner is in hand — the pending gate composes this for
  * its schemas alone (`gates.ts`), and a schema does not vary by lane.
  */

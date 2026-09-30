@@ -59,8 +59,10 @@ the first of them is what this page documents:
   about how to run the engine, shipped beside it: three plan slices
   (`plan-inbox`, `plan-derive`, `plan-sweep`), a fanout `build` phase, their
   prompts and discipline, the entry extension (`summary`, `per`,
-  `acceptance`, `tests[]`, `pins[]`, `notes`, `contractTouching`), the judge
-  that proves a `tests[]` line green on the merged tree and red on the base,
+  `acceptance`, `tests[]`, `pins[]`, `laneTests[]`, `notes`,
+  `contractTouching`), the judge
+  that proves a `tests[]` line green on the merged tree and red on the base
+  and reports a `laneTests[]` line owed to the CI lane that runs it,
   the discipline gates that run ahead of whatever a consumer declared
   (`records`, `clean-tree`, `pending-gate`, `per cites resolve`,
   `filing band`, `slice-state`), the records conventions, and the plan state

@@ -44,6 +44,15 @@
  *   above; a malformed one is refused rather than skipped, since skipping it
  *   would report the name as uncarried and pin a runner's defect on build.
  *
+ * A verdict line says `pass` or `fail` and nothing else, so an answer
+ * this reader builds is never a **skipped** carrier
+ * (`runner.ts`, {@link NamedResult.skipped}): a validator runs its checks or
+ * reports that they did not pass, and it has no third word for a check this
+ * host declines to run. A consumer whose validator does have one declares a
+ * reader that says so. Absent that, a judge asked to rule a `laneTests[]`
+ * line here refuses it as unnamed rather than reading the encoding's silence
+ * as a skip (`spec/harness.md`, *The judges*).
+ *
  * Whichever reader ran, the answers it returns are reconciled against the
  * names that were asked about: a set that does not answer exactly those —
  * one missing, one twice, one nobody asked for — is refused at the point of
@@ -131,7 +140,7 @@ function readLine(line: string, where: string): NamedResult {
           `carried the name, and nothing carried this one.`,
       );
     }
-    return { name, carried: false, files: [] };
+    return { name, carried: false, skipped: false, files: [] };
   }
   // Folded into git's alphabet before it is judged, so a win32 validator's
   // separators read the way a posix one's do. Where it lands is then asked of
@@ -149,7 +158,7 @@ function readLine(line: string, where: string): NamedResult {
         `lays that file over the base tree, which an absent or outside path cannot reach.`,
     );
   }
-  return { name, carried: true, files: [relative] };
+  return { name, carried: true, skipped: false, files: [relative] };
 }
 
 /**

@@ -253,6 +253,7 @@ export const SHARED_PROMPT_DATA_KEYS = [
   "PENDING_SCHEMA",
   "TESTS_HINT",
   "PINS_HINT",
+  "LANE_TESTS_HINT",
   "SPEC_LOCUS",
   "QUESTIONS_INDEX",
   "DOMAIN",
@@ -327,6 +328,7 @@ export function sharedPromptArgs(
     PENDING_SCHEMA: block("schema", renderSchemaForPrompt(extension)),
     TESTS_HINT: hintOf(extension, "tests"),
     PINS_HINT: hintOf(extension, "pins"),
+    LANE_TESTS_HINT: hintOf(extension, "laneTests"),
     SPEC_LOCUS: backticked(declaration.specLocus),
     /**
      * Which questions are open, read off the directory that holds them

@@ -165,6 +165,33 @@ it("passes while a rejection nobody awaited goes unhandled", () => {
 `;
 
 /**
+ * The three things a run can say about a title, in one file: a case this host
+ * declines to run, a case nobody wrote a body for, and a case that runs. The
+ * first is the form a `laneTests[]` line's test takes — skipped over every
+ * host that is not its lane's (`spec/harness.md`, *The judges*) — and
+ * vitest's own word for what it did to each is what the reader below is
+ * judged on (`.claude/rules/engineering.md`, *A seam gate reads what the real
+ * writer wrote*).
+ */
+const HOST_GATED_TEST = `import { describe, expect, it } from "vitest";
+
+describe("widget", () => {
+  it.skipIf(true)("walls a path only the other host refuses", () => {
+    expect(process.platform).toBe("a platform nothing is");
+  });
+  it.todo("a case nobody has written a body for");
+  it("runs on whichever host collected it", () => {
+    expect(1).toBe(1);
+  });
+});
+`;
+
+/** The gated case's title, the unwritten one's, and the one that runs. */
+const GATED = "walls a path only the other host refuses";
+const UNWRITTEN = "a case nobody has written a body for";
+const EVERYWHERE = "runs on whichever host collected it";
+
+/**
  * A test file that fails the ordinary way: one red assertion, which vitest
  * reports as a failure *and* exits non-zero over. The other side of the same
  * disagreement check — a non-zero exit the report accounts for.
@@ -397,9 +424,10 @@ describe("the vitest runner", () => {
       {
         name: "carries the merged widget",
         carried: true,
+        skipped: false,
         files: ["tests/widget.test.ts"],
       },
-      { name: "a behavior nobody titled", carried: false, files: [] },
+      { name: "a behavior nobody titled", carried: false, skipped: false, files: [] },
     ]);
   });
 
@@ -421,6 +449,7 @@ describe("the vitest runner", () => {
     expect(r.names[1]).toEqual({
       name: "runs wherever it is laid down",
       carried: true,
+      skipped: false,
       files: ["tests/widget.test.ts"],
     });
     // Against the base's own source: everything outside `files` stayed at
@@ -428,6 +457,7 @@ describe("the vitest runner", () => {
     expect(r.names[0]).toEqual({
       name: "carries the merged widget",
       carried: false,
+      skipped: false,
       files: [],
     });
 
@@ -472,6 +502,7 @@ describe("the vitest runner", () => {
       judgeNamedLines(runner, {
         tests: [test],
         pins: [pin],
+        laneTests: [],
         baseSha,
         footprint,
         cwd: fixture,
@@ -513,6 +544,7 @@ describe("the vitest runner", () => {
       judgeNamedLines(runner, {
         tests: [line],
         pins: [],
+        laneTests: [],
         baseSha,
         footprint,
         cwd: fixture,
@@ -618,6 +650,7 @@ describe("the vitest runner", () => {
     expect(result.names[0]).toEqual({
       name: "runs wherever it is laid down",
       carried: true,
+      skipped: false,
       files: ["tests/widget.test.ts"],
     });
 
@@ -645,6 +678,7 @@ describe("the vitest runner", () => {
     expect(result.names[0]).toEqual({
       name: "runs wherever it is laid down",
       carried: true,
+      skipped: false,
       files: ["tests/widget.test.ts"],
     });
   });
@@ -711,6 +745,41 @@ describe("the vitest runner", () => {
     }
   });
 
+  it("the vitest runner reports a line carried only by a skipped test as skipped rather than uncarried", async () => {
+    const solo = await soloProject("host-gated", HOST_GATED_TEST);
+    try {
+      const r = await runner.run(
+        [GATED, UNWRITTEN, EVERYWHERE, "a behavior nobody titled"],
+        solo,
+      );
+
+      // Vacuity: the run collected this suite and passed the case that runs
+      // everywhere, so the silence around the gated one is vitest declining a
+      // case rather than a suite that never ran. And nothing failed — a
+      // host-gated case is skipped here, never red.
+      expect(r.ok).toBe(true);
+      expect(r.passed).toBe(1);
+      expect(r.failures).toEqual([]);
+
+      // The gated case is a carrier the judge can rule on, distinct from the
+      // title nothing carries at all — and distinct from the todo case, which
+      // is a case nobody wrote rather than one this host will not run.
+      expect(r.names).toEqual([
+        { name: GATED, carried: false, skipped: true, files: [] },
+        { name: UNWRITTEN, carried: false, skipped: false, files: [] },
+        {
+          name: EVERYWHERE,
+          carried: true,
+          skipped: false,
+          files: ["tests/solo.test.ts"],
+        },
+        { name: "a behavior nobody titled", carried: false, skipped: false, files: [] },
+      ]);
+    } finally {
+      await rm(solo, { recursive: true, force: true });
+    }
+  }, SPAWN_BUDGET_MS);
+
   it("refuses a run that produced no report rather than reading one as empty", async () => {
     const silent = vitestRunner({
       invoke: () => ({ command: process.execPath, args: ["-e", ""] }),
@@ -772,7 +841,7 @@ describe("the vitest runner", () => {
       expect(r.failures[0]!.name).toBe("widget fails the ordinary way");
       expect(r.failures[0]!.message).toContain("base");
       expect(r.names).toEqual([
-        { name: "fails the ordinary way", carried: false, files: [] },
+        { name: "fails the ordinary way", carried: false, skipped: false, files: [] },
       ]);
     } finally {
       await rm(solo, { recursive: true, force: true });
@@ -1005,9 +1074,9 @@ describe("the script runner", () => {
     // a passing check carried it, and the file that did. The validator's own
     // output on the same stream is no part of it.
     expect(r.names).toEqual([
-      { name: CARRIED, carried: true, files: ["checks/widget.checks"] },
-      { name: MERGED_ONLY, carried: true, files: ["checks/widget.checks"] },
-      { name: UNLISTED, carried: false, files: [] },
+      { name: CARRIED, carried: true, skipped: false, files: ["checks/widget.checks"] },
+      { name: MERGED_ONLY, carried: true, skipped: false, files: ["checks/widget.checks"] },
+      { name: UNLISTED, carried: false, skipped: false, files: [] },
     ]);
   });
 
@@ -1029,8 +1098,8 @@ describe("the script runner", () => {
       return report.names.map((name) => {
         const check = doc.checks.find((c) => c.name === name);
         return check !== undefined && !drifted.has(name)
-          ? { name, carried: true, files: [check.file] }
-          : { name, carried: false, files: [] };
+          ? { name, carried: true, skipped: false, files: [check.file] }
+          : { name, carried: false, skipped: false, files: [] };
       });
     };
 
@@ -1058,8 +1127,8 @@ describe("the script runner", () => {
     // each carrying the file a base run would lay over the base tree.
     expect(clean.passed).toBe(2);
     expect(clean.names).toEqual([
-      { name: CARRIED, carried: true, files: ["checks/widget.checks"] },
-      { name: MERGED_ONLY, carried: true, files: ["checks/widget.checks"] },
+      { name: CARRIED, carried: true, skipped: false, files: ["checks/widget.checks"] },
+      { name: MERGED_ONLY, carried: true, skipped: false, files: ["checks/widget.checks"] },
     ]);
 
     // What the declaration buys, stated as the price it removes: this same
@@ -1078,8 +1147,8 @@ describe("the script runner", () => {
     expect((JSON.parse(seen[1]!.stdout) as Summary).drift).toEqual([UNLISTED]);
     expect(drifted.ok).toBe(true);
     expect(drifted.names).toEqual([
-      { name: CARRIED, carried: true, files: ["checks/widget.checks"] },
-      { name: UNLISTED, carried: false, files: [] },
+      { name: CARRIED, carried: true, skipped: false, files: ["checks/widget.checks"] },
+      { name: UNLISTED, carried: false, skipped: false, files: [] },
     ]);
 
     // Both operations read through the declared reader, over the tree each one
@@ -1109,7 +1178,7 @@ describe("the script runner", () => {
 
     // The lines are the verdict: the run reports what the validator said about
     // the name, and reports no failure of its own over the status.
-    expect(r.names).toEqual([{ name: UNLISTED, carried: false, files: [] }]);
+    expect(r.names).toEqual([{ name: UNLISTED, carried: false, skipped: false, files: [] }]);
     expect(r.ok).toBe(true);
     expect(r.failures).toEqual([]);
   });
@@ -1306,6 +1375,7 @@ describe("the vitest runner over a span that inherited a red suite", () => {
       judgeNamedLines(runner, {
         tests: [line],
         pins: [],
+        laneTests: [],
         baseSha,
         footprint,
         cwd: fixture,

@@ -170,11 +170,26 @@ function readRun(run: CapturedRun, names: readonly string[], root: string): RunR
       .filter((a) => a.status === "passed")
       .map((a) => ({ file: rel(f.name), fullName: a.fullName })),
   );
+  // The cases the run collected and declined to execute — the skip marker,
+  // and the host-conditional form a host-gated case is written as. vitest's
+  // own word for both is the status read here, and it is read as itself: a
+  // todo case is a title with no body, which is a case nobody wrote rather
+  // than one this host will not run, and reading the two as one would report
+  // an unwritten `laneTests[]` case as owed to a lane (`spec/harness.md`,
+  // *The judges*).
+  const skipped = report.testResults.flatMap((f) =>
+    f.assertionResults.filter((a) => a.status === "skipped").map((a) => a.fullName),
+  );
   const named: NamedResult[] = names.map((name) => {
     const files = [
       ...new Set(passing.filter((p) => p.fullName.includes(name)).map((p) => p.file)),
     ];
-    return { name, carried: files.length > 0, files };
+    return {
+      name,
+      carried: files.length > 0,
+      skipped: skipped.some((fullName) => fullName.includes(name)),
+      files,
+    };
   });
 
   const failures: TestFailure[] = [];

@@ -1,7 +1,8 @@
 /**
  * The judges (`spec/harness.md`, *The judges*) — the harness package's
  * ruling on an entry's named lines: every `tests[]` line green on the merged
- * tree and red at the base, every `pins[]` line green only.
+ * tree and red at the base, every `pins[]` line green only, every
+ * `laneTests[]` line owed to the CI lane that runs it.
  *
  * Acceptance-driven backpressure is the whole point. Plan names a behavior,
  * build titles a passing test with the line verbatim, and this judge proves
@@ -23,10 +24,15 @@
  * see which line it was can say so.
  */
 
+import type { LaneTest } from "./entryExtension.js";
 import type { NamedResult, RunResult, Runner, TestFailure } from "./runner.js";
 
-/** Which of the entry's two lists a line came from, and so which bar it faces. */
-export type LineLane = "tests" | "pins";
+/**
+ * Which of the entry's three lists a line came from, and so which bar it
+ * faces. `laneTests` is the host-gated one: its bar is met on another host
+ * entirely, so this judge only ever reports it owed there.
+ */
+export type LineLane = "tests" | "pins" | "laneTests";
 
 /**
  * What the judge found for one line.
@@ -38,11 +44,24 @@ export type LineLane = "tests" | "pins";
  *   base run a `tests[]` line still needs did not happen because an earlier
  *   refusal preempted it. Never the state of a `pins[]` line, which the
  *   merged tree settles.
- * - `unnamed` — no passing test's full name contained the line.
+ * - `owed` — a `laneTests[]` line whose case exists here and did not run
+ *   here, or ran and passed: either way the line is owed to the CI lane
+ *   {@link LineVerdict.owedTo} names, which is the only place its behavior is
+ *   actually proven. Never `proven`, because this host proved nothing about
+ *   it (`.claude/rules/engineering.md`, *A green verdict is proven
+ *   non-vacuous*).
+ * - `unnamed` — no test's full name contained the line: no passing one, and
+ *   for a `laneTests[]` line no skipped one either. A host-gated case has to
+ *   exist in the suite to be owed anywhere.
  * - `green-on-base` — a `tests[]` line carried on the merged tree and carried
  *   again at the base. The line pins nothing this entry changed.
  */
-export type LineState = "proven" | "carried" | "unnamed" | "green-on-base";
+export type LineState =
+  | "proven"
+  | "carried"
+  | "owed"
+  | "unnamed"
+  | "green-on-base";
 
 /** One line's verdict, and the files that decided it. */
 export interface LineVerdict {
@@ -54,9 +73,20 @@ export interface LineVerdict {
   readonly state: LineState;
   /**
    * The run-relative files whose passing tests carried the line on the merged
-   * tree. Empty exactly when `state` is `unnamed`.
+   * tree. Empty when `state` is `unnamed`, and empty for the ordinary `owed`
+   * line too — a skipped case names no file, and none of its bytes is laid
+   * over a base.
    */
   readonly files: readonly string[];
+  /**
+   * The CI lane a `laneTests[]` line is owed to, as the entry declared it —
+   * absent on every other line. Reported rather than left for a caller to
+   * re-join against the request: the lane is what a reader has to act on,
+   * and the verdict is the surface it reads
+   * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+   * never rediscovered*).
+   */
+  readonly owedTo?: string;
 }
 
 /**
@@ -92,8 +122,9 @@ export interface JudgeVerdict {
   /** One line, for a log or a gate message. The facts below are the surface. */
   readonly message: string;
   /**
-   * One verdict per declared line, `tests[]` first then `pins[]`, in declared
-   * order. Empty exactly when the entry named no line.
+   * One verdict per declared line — `tests[]`, then `pins[]`, then
+   * `laneTests[]` — in declared order. Empty exactly when the entry named no
+   * line.
    */
   readonly lines: readonly LineVerdict[];
   /** How many tests passed on the merged tree — the caller's vacuity check. */
@@ -138,6 +169,13 @@ export interface JudgeRequest {
   /** The entry's `pins[]`: green on the merged tree, never run at the base. */
   readonly pins: readonly string[];
   /**
+   * The entry's `laneTests[]`: a case only another host runs, each naming the
+   * CI lane that runs it. Required rather than optional, as the two lists
+   * above are — an entry naming none passes the empty list, and a reader
+   * telling `undefined` from `[]` would decide the same thing twice.
+   */
+  readonly laneTests: readonly LaneTest[];
+  /**
    * The commit the merged tree is judged against. Required rather than
    * optional: a judge handed no base cannot rule on a `tests[]` line, and a
    * caller that has no base sha resolves that before it gets here.
@@ -178,6 +216,21 @@ function answerFor(run: RunResult, name: string, where: string): NamedResult {
 const quote = (lines: readonly LineVerdict[]): string =>
   lines.map((l) => JSON.stringify(l.line)).join(", ");
 
+/**
+ * The clause the owed lines contribute to a message: how many, and to which
+ * lanes. Empty when the entry named no `laneTests[]` line, so an ordinary
+ * entry's message reads as it did.
+ */
+function owedClause(lines: readonly LineVerdict[]): string {
+  const owed = lines.filter((l) => l.state === "owed");
+  if (owed.length === 0) return "";
+  const lanes = [...new Set(owed.map((l) => l.owedTo))].join(", ");
+  return (
+    `; ${owed.length} laneTests[] line(s) owed to ${lanes} — skipped here, ` +
+    `proven by that lane`
+  );
+}
+
 /** The clause a failure list contributes to a message: its first, or nothing. */
 const firstOf = (failures: readonly TestFailure[]): string => {
   const first = failures[0];
@@ -199,6 +252,11 @@ const firstOf = (failures: readonly TestFailure[]): string => {
  * introduced) carries no passing test and so reads red — conservative in the
  * direction that matters.
  *
+ * A `laneTests[]` line reaches neither run's base half. Its case is one this
+ * host cannot run, so the merged run is asked whether the case exists at all
+ * — skipped counts — and the ruling stops there: the lane is the proof, and
+ * a base run over a case that never ran here would compare two silences.
+ *
  * A **red merged suite** reaches the base too, and for the opposite question:
  * whether it was red before this span existed. That question is asked only
  * when *no* failing file is in the span's footprint, and then over all of
@@ -212,8 +270,8 @@ export async function judgeNamedLines(
   runner: Runner,
   request: JudgeRequest,
 ): Promise<JudgeVerdict> {
-  const { tests, pins, baseSha, footprint, cwd } = request;
-  const named = [...tests, ...pins];
+  const { tests, pins, laneTests, baseSha, footprint, cwd } = request;
+  const named = [...tests, ...pins, ...laneTests.map((l) => l.title)];
   const spanFiles = new Set(footprint);
 
   const run = await runner.run(named, cwd);
@@ -236,9 +294,27 @@ export async function judgeNamedLines(
       files: answer.files,
     };
   };
+  /**
+   * One host-gated line. A case the run skipped is exactly as good as a case
+   * it passed — neither proves the behavior here — so both read `owed`, and
+   * only a title no test carries at all is refused. A case that *failed* here
+   * never reaches this: the suite is red and the whole entry is unjudgeable
+   * (`spec/harness.md`, *The judges*).
+   */
+  const draftLane = ({ lane, title }: LaneTest): LineVerdict => {
+    const answer = answerFor(run, title, `the run in ${cwd}`);
+    return {
+      line: title,
+      lane: "laneTests",
+      state: answer.carried || answer.skipped ? "owed" : "unnamed",
+      files: answer.files,
+      owedTo: lane,
+    };
+  };
   const lines: LineVerdict[] = [
     ...tests.map((line) => draft(line, "tests")),
     ...pins.map((line) => draft(line, "pins")),
+    ...laneTests.map(draftLane),
   ];
 
   if (!run.ok) {
@@ -295,8 +371,9 @@ export async function judgeNamedLines(
     return {
       outcome: "unnamed",
       message:
-        `${unnamed.length} of ${named.length} named line(s) have no passing test: ${quote(unnamed)} ` +
-        `— title a passing test with each line verbatim`,
+        `${unnamed.length} of ${named.length} named line(s) have no test: ${quote(unnamed)} ` +
+        `— title a passing test with each line verbatim; a laneTests[] line's ` +
+        `case is skipped on this host, never absent from the suite`,
       lines,
       ...observed,
     };
@@ -305,7 +382,10 @@ export async function judgeNamedLines(
   if (tests.length === 0) {
     return {
       outcome: "proven",
-      message: `${pins.length} pins[] line(s) green (${run.passed} passed); no tests[] line to run at the base`,
+      message:
+        `${pins.length} pins[] line(s) green (${run.passed} passed)` +
+        owedClause(lines) +
+        `; no tests[] line to run at the base`,
       lines,
       ...observed,
     };
@@ -342,7 +422,8 @@ export async function judgeNamedLines(
     outcome: "proven",
     message:
       `${tests.length} tests[] line(s) green (${run.passed} passed) and red at ${baseSha.slice(0, 7)}` +
-      (pins.length > 0 ? `; ${pins.length} pins[] line(s) green` : ""),
+      (pins.length > 0 ? `; ${pins.length} pins[] line(s) green` : "") +
+      owedClause(ruled),
     lines: ruled,
     ...observed,
   };

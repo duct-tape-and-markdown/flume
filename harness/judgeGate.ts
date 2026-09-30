@@ -12,7 +12,7 @@
 
 import type { Gate, GateContext, GateResult } from "../src/Gate.js";
 
-import { NamedLinesSchema } from "./entryExtension.js";
+import { LaneTestsSchema, NamedLinesSchema } from "./entryExtension.js";
 import { judgeNamedLines, type JudgeVerdict } from "./judge.js";
 import type { PutDownKind, PutDownPredicate } from "./putDown.js";
 import type { Runner, TestFailure } from "./runner.js";
@@ -38,7 +38,9 @@ const PUT_DOWN: Record<PutDownKind, { said: string; skipped: string }> = {
 /**
  * The judge as a gate on the merged tree (`spec/harness.md`, *The judges*):
  * the consumer's suite is green, every `tests[]` line has a passing test
- * that fails at the base, and every `pins[]` line has one here.
+ * that fails at the base, every `pins[]` line has one here, and every
+ * `laneTests[]` line has a case this host skipped rather than one nobody
+ * wrote — owed to its lane, never counted green.
  *
  * `afterMerge`, not `afterCommit`: under fanout, N parallel suites contend
  * for the host and revert clean commits on timing alone, while an
@@ -98,6 +100,10 @@ export function namedLinesGate(
       const verdict = await judgeNamedLines(runner, {
         tests: NamedLinesSchema.parse(entry.tests),
         pins: NamedLinesSchema.parse(entry.pins),
+        // Narrowed here for the reason the two above are: the queue's own
+        // schema is what the gate reads the field back through, never a
+        // second spelling of it (`entryExtension.ts`).
+        laneTests: LaneTestsSchema.parse(entry.laneTests),
         baseSha: ctx.baseSha,
         // The span's own footprint, as the dispatcher already computed it:
         // the judge tells a failing file this span changed from one it
@@ -159,6 +165,11 @@ function details(verdict: JudgeVerdict): string {
   const lines = verdict.lines.map(
     (line) =>
       `${line.lane}[] ${line.state}: ${JSON.stringify(line.line)}` +
+      // The lane a host-gated line is owed to, off the verdict's own field: a
+      // reader acting on the line has to know which lane will prove the case,
+      // and re-joining the entry to find out is the rediscovery the verdict
+      // reports to prevent.
+      (line.owedTo === undefined ? "" : ` (lane ${line.owedTo})`) +
       (line.files.length > 0 ? ` (${line.files.join(", ")})` : ""),
   );
   const failures = verdict.failures.map((failure) => `FAIL ${rendered(failure)}`);

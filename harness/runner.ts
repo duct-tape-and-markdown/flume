@@ -81,9 +81,29 @@ export interface NamedResult {
   /** True when at least one passing test's full name contains the line. */
   readonly carried: boolean;
   /**
+   * True when at least one **skipped** test's full name contains the line —
+   * a case that exists in the suite and did not run here.
+   *
+   * Independent of {@link carried}, and reported rather than folded into it:
+   * a skipped carrier is not a passing one, and a judge handed only
+   * `carried` cannot tell a case this host declines to run from a case
+   * nobody wrote. That distinction is the whole of a `laneTests[]` line's
+   * ruling (`spec/harness.md`, *The judges*) — owed to its lane, against
+   * refused as unnamed — so it is a fact the runner states rather than one
+   * the judge reconstructs (`.claude/rules/engineering.md`, *A fact the
+   * engine holds is reported, never rediscovered*).
+   *
+   * A runner whose tool has no notion of a skipped case reports `false`,
+   * which costs a consumer nothing it did not already lack: the judge then
+   * refuses a `laneTests[]` line outright rather than reading the silence as
+   * a skip.
+   */
+  readonly skipped: boolean;
+  /**
    * The run-relative files holding those passing tests. Empty exactly when
    * `carried` is false — the judge reads this to decide which files to lay
-   * over the base.
+   * over the base. A skipped carrier names no file here: nothing it holds is
+   * laid over a base, since a `laneTests[]` line never reaches a base run.
    */
   readonly files: readonly string[];
 }

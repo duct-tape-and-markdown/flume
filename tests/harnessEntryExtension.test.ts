@@ -38,8 +38,22 @@ import { bulletOf, sectionOf } from "./helpers/docSections.ts";
 /** The six the spec section lists, in the order it lists them. */
 const SPEC_FIELDS = ["summary", "per", "acceptance", "tests", "pins", "notes"];
 
-/** Those six plus the package's risk flag, which renders and parses beside them. */
-const PACKAGE_FIELDS = [...SPEC_FIELDS, CONTRACT_TOUCHING_FIELD];
+/**
+ * The fields the running lane's exclusions ride: the two the spec section
+ * lists and the host-gated one declared beside them, which shares their bar
+ * on where a line's test may land.
+ */
+const NAMED_LINE_FIELDS = ["tests", "pins", "laneTests"];
+
+/**
+ * Every field the package declares, in declaration order — which is render
+ * order: those six, with the host-gated named-line field among them beside
+ * the two it shares a bar with, and the package's risk flag last.
+ */
+const PACKAGE_FIELDS = [
+  ...SPEC_FIELDS.flatMap((field) => (field === "notes" ? ["laneTests", field] : [field])),
+  CONTRACT_TOUCHING_FIELD,
+];
 
 /**
  * One core-valid entry as its own queue file, with the extension fields a
@@ -79,6 +93,7 @@ const everyPackageField: Record<string, unknown> = {
   acceptance: "every declared field parses",
   tests: ["a behavior this entry introduces"],
   pins: ["a property that already holds"],
+  laneTests: [{ lane: "win32", title: "a behavior only that lane's host runs" }],
   notes: "context the spec does not carry",
   [CONTRACT_TOUCHING_FIELD]: true,
 };
@@ -94,9 +109,13 @@ const riskField: EntryExtension = {
 it("the package's entry extension declares summary, per, acceptance, tests, pins and notes", () => {
   const extension = entryExtension();
 
-  // The six the title names, in the spec's order, ahead of whatever the
-  // package declares beside them — the risk flag's own case is below.
-  expect(Object.keys(extension).slice(0, SPEC_FIELDS.length)).toEqual(SPEC_FIELDS);
+  // The six the title names, in the spec's order — read as a subsequence of
+  // the declaration rather than its prefix, since `laneTests[]` is declared
+  // among them, beside the two named-line fields it shares a bar with. The
+  // risk flag's own case is below.
+  expect(Object.keys(extension).filter((key) => SPEC_FIELDS.includes(key))).toEqual(
+    SPEC_FIELDS,
+  );
 
   // The acceptance: every declared field reaches a prompt through the
   // engine's own renderer, each carrying the hint its declaration holds.
@@ -293,6 +312,42 @@ it("the package entry extension accepts an entry that omits contractTouching", (
   expect(bogus.errors.map((e) => e.path)).toContain(CONTRACT_TOUCHING_FIELD);
 });
 
+it("the laneTests[] field parses a lane and a title, and is declared beside tests and pins", () => {
+  const extension = entryExtension();
+  const declared = [{ lane: "win32", title: "walls a path only win32 refuses" }];
+
+  // Declared among the named-line fields, so the prompt renders the three
+  // bars together rather than leaving the host-gated one past `notes`.
+  expect(Object.keys(extension).filter((key) => NAMED_LINE_FIELDS.includes(key))).toEqual(
+    NAMED_LINE_FIELDS,
+  );
+
+  // Both halves survive the real parser, carrying their values out.
+  const named = parsePendingQueue(entryQueue({ laneTests: declared }), extension);
+  expect(named.errors).toEqual([]);
+  expect(named.entries[0]).toMatchObject({ laneTests: declared });
+
+  // Omitted parses as the empty list, so the judge reads one shape rather
+  // than telling `undefined` from `[]`.
+  const omitted = parsePendingQueue(entryQueue({}), extension);
+  expect(omitted.errors).toEqual([]);
+  expect(omitted.entries[0]).toMatchObject({ laneTests: [] });
+
+  // And a line missing either half is refused, naming the field — without
+  // this the two cases above would pass over a schema accepting anything.
+  for (const bogus of [
+    [{ lane: "win32" }],
+    [{ title: "a case" }],
+    ["a case"],
+    [{ lane: "", title: "a case" }],
+    [{ lane: "win32", title: "a case", extra: true }],
+  ]) {
+    const refused = parsePendingQueue(entryQueue({ laneTests: bogus }), extension);
+    expect(refused.ok).toBe(false);
+    expect(refused.errors.map((e) => e.path).join(" ")).toContain("laneTests");
+  }
+});
+
 it("the rendered contract-touching hint names the contracts two tick children share", () => {
   const extension = entryExtension();
   const field = extension[CONTRACT_TOUCHING_FIELD];
@@ -363,6 +418,19 @@ it("the tests[] hint names the globs the running lane excludes", () => {
   expect(renderSchemaForPrompt(entryExtension(undefined, SPLIT))).toContain(hint);
 });
 
+it("the laneTests[] hint names the globs the running lane excludes", () => {
+  expect(RUNNING.excludes.length).toBeGreaterThan(0);
+
+  const hint = hintOf(entryExtension(undefined, SPLIT), "laneTests");
+
+  for (const glob of RUNNING.excludes) expect(hint).toContain(glob);
+  expect(hint).toContain(RUNNING.name);
+  expect(hint).not.toContain(IDLE.name);
+  for (const glob of IDLE.excludes) expect(hint).not.toContain(glob);
+
+  expect(renderSchemaForPrompt(entryExtension(undefined, SPLIT))).toContain(hint);
+});
+
 it("the pins[] hint names the globs the running lane excludes", () => {
   expect(RUNNING.excludes.length).toBeGreaterThan(0);
 
@@ -383,21 +451,21 @@ it("a running lane with no exclusions renders the hint without a lane clause", (
 
   // Nothing excluded, nothing said: the hints are byte-identical to the ones
   // a runner that declared no lanes at all composes.
-  expect(hintOf(quiet, "tests")).toBe(hintOf(laneless, "tests"));
-  expect(hintOf(quiet, "pins")).toBe(hintOf(laneless, "pins"));
+  for (const field of NAMED_LINE_FIELDS) {
+    expect(hintOf(quiet, field)).toBe(hintOf(laneless, field));
+  }
 
   // And the clause it is missing is a real one — without this the case above
   // passes over a composition that never renders a lane clause for anyone.
-  expect(hintOf(entryExtension(undefined, SPLIT), "tests")).not.toBe(
-    hintOf(laneless, "tests"),
-  );
-  expect(hintOf(entryExtension(undefined, SPLIT), "pins")).not.toBe(
-    hintOf(laneless, "pins"),
-  );
+  for (const field of NAMED_LINE_FIELDS) {
+    expect(hintOf(entryExtension(undefined, SPLIT), field)).not.toBe(
+      hintOf(laneless, field),
+    );
+  }
 
   // The clause is the only difference: every other field renders the same
   // whatever the lanes, so nothing else moved with it.
-  for (const field of PACKAGE_FIELDS.filter((f) => f !== "tests" && f !== "pins")) {
+  for (const field of PACKAGE_FIELDS.filter((f) => !NAMED_LINE_FIELDS.includes(f))) {
     expect(hintOf(entryExtension(undefined, SPLIT), field)).toBe(hintOf(laneless, field));
   }
 });

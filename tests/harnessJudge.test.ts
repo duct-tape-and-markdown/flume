@@ -39,6 +39,13 @@ const FOOTPRINT = ["src/widget.ts", "tests/widget.test.ts"];
 /** A suite as the stand-in holds it: which full names passed, and where. */
 interface FakeSuite {
   readonly passing: readonly { readonly fullName: string; readonly file: string }[];
+  /**
+   * The full names of cases the suite collected and did not run — what a
+   * host-gated case looks like on the host that does not run it. No file
+   * rides one: a skipped case carries nothing a base run could lay down
+   * (`harness/runner.ts`, `NamedResult`).
+   */
+  readonly skipped?: readonly string[];
   readonly failures?: readonly TestFailure[];
 }
 
@@ -67,7 +74,12 @@ const answer = (suite: FakeSuite, names: readonly string[]): RunResult => {
       const files = [
         ...new Set(suite.passing.filter((p) => p.fullName.includes(name)).map((p) => p.file)),
       ];
-      return { name, carried: files.length > 0, files };
+      return {
+        name,
+        carried: files.length > 0,
+        skipped: (suite.skipped ?? []).some((fullName) => fullName.includes(name)),
+        files,
+      };
     }),
     failures,
   };
@@ -106,6 +118,7 @@ describe("the judge", () => {
     const verdict = await judgeNamedLines(runner, {
       tests: [line],
       pins: [],
+      laneTests: [],
       baseSha: BASE_SHA,
       footprint: FOOTPRINT,
       cwd: CWD,
@@ -140,6 +153,7 @@ describe("the judge", () => {
     const verdict = await judgeNamedLines(runner, {
       tests: [stale, fresh],
       pins: [],
+      laneTests: [],
       baseSha: BASE_SHA,
       footprint: FOOTPRINT,
       cwd: CWD,
@@ -161,6 +175,89 @@ describe("the judge", () => {
     expect(verdict.lines.filter((l) => l.state === "proven").map((l) => l.line)).toEqual([fresh]);
   });
 
+  it("a laneTests line carried only by a skipped test reports owed rather than proven", async () => {
+    const gated = "walls a worktree path only win32 refuses";
+    const here = "the widget refuses a negative count";
+    const { runner, asked } = fakeRunner(
+      {
+        passing: [{ fullName: `widget > ${here}`, file: "tests/widget.test.ts" }],
+        // The gated case exists in the suite and did not run — no file, since
+        // nothing it holds is laid over a base.
+        skipped: [`worktrees > ${gated}`],
+      },
+      { passing: [] },
+    );
+
+    const verdict = await judgeNamedLines(runner, {
+      tests: [here],
+      pins: [],
+      laneTests: [{ lane: "win32", title: gated }],
+      baseSha: BASE_SHA,
+      footprint: FOOTPRINT,
+      cwd: CWD,
+    });
+
+    // Vacuity: the suite ran and this host's own line really was proven, so
+    // the ruling below is over a case the run declined rather than over a run
+    // that collected nothing.
+    expect(verdict.passed).toBeGreaterThan(0);
+    expect(verdict.lines.filter((l) => l.state === "proven").map((l) => l.line)).toEqual([
+      here,
+    ]);
+
+    expect(verdict.outcome).toBe("proven");
+    // Owed, and to the lane the entry named — the fact a reader acts on,
+    // carried on the line rather than left to a re-join against the entry.
+    expect(verdict.lines).toContainEqual({
+      line: gated,
+      lane: "laneTests",
+      state: "owed",
+      files: [],
+      owedTo: "win32",
+    });
+    // Never green: this host proved nothing about it, whatever the suite's
+    // count says.
+    expect(verdict.lines.filter((l) => l.lane === "laneTests" && l.state === "proven")).toEqual(
+      [],
+    );
+    // And never asked at the base: the lane is the proof, so a base run over
+    // a case that never ran here would compare two silences.
+    expect(asked.runAtBase).toHaveLength(1);
+    expect(asked.runAtBase[0]?.names).toEqual([here]);
+    expect(verdict.message).toContain("owed to win32");
+  });
+
+  it("a laneTests line no test on the build host names is refused as unnamed", async () => {
+    const gated = "walls a worktree path only win32 refuses";
+    const { runner, asked } = fakeRunner({
+      passing: [{ fullName: "widget > renders", file: "tests/widget.test.ts" }],
+      // A skip that is not this line's, so the refusal is "no case carries
+      // this title" rather than "the suite skipped nothing at all".
+      skipped: ["worktrees > a different gated case"],
+    });
+
+    const verdict = await judgeNamedLines(runner, {
+      tests: [],
+      pins: [],
+      laneTests: [{ lane: "win32", title: gated }],
+      baseSha: BASE_SHA,
+      footprint: FOOTPRINT,
+      cwd: CWD,
+    });
+
+    // Vacuity: the suite ran, and it skipped a case — so the refusal is the
+    // title missing, not the skipped status going unread.
+    expect(verdict.passed).toBeGreaterThan(0);
+
+    expect(verdict.outcome).toBe("unnamed");
+    expect(verdict.lines).toEqual([
+      { line: gated, lane: "laneTests", state: "unnamed", files: [], owedTo: "win32" },
+    ]);
+    expect(verdict.message).toContain(gated);
+    // A host-gated line named by nothing is settled on the merged tree.
+    expect(asked.runAtBase).toEqual([]);
+  });
+
   it("a pins[] line is judged on the merged tree and never run at the base", async () => {
     const test = "the widget refuses a negative count";
     const pin = "every declared option has a doc comment";
@@ -179,6 +276,7 @@ describe("the judge", () => {
     const verdict = await judgeNamedLines(runner, {
       tests: [test],
       pins: [pin],
+      laneTests: [],
       baseSha: BASE_SHA,
       footprint: FOOTPRINT,
       cwd: CWD,
@@ -210,6 +308,7 @@ describe("the judge", () => {
     const verdict = await judgeNamedLines(runner, {
       tests: [],
       pins: [],
+      laneTests: [],
       baseSha: BASE_SHA,
       footprint: FOOTPRINT,
       cwd: CWD,
@@ -236,6 +335,7 @@ describe("the judge", () => {
     const verdict = await judgeNamedLines(runner, {
       tests: [line],
       pins: [],
+      laneTests: [],
       baseSha: BASE_SHA,
       // The failing file is the span's own, so the ruling is settled here and
       // no base run is asked for — the case's subject is the merged-tree
@@ -277,6 +377,7 @@ describe("the judge", () => {
     const verdict = await judgeNamedLines(runner, {
       tests: [line],
       pins: [],
+      laneTests: [],
       baseSha: BASE_SHA,
       footprint: FOOTPRINT,
       cwd: CWD,
@@ -318,6 +419,7 @@ describe("the judge", () => {
     const verdict = await judgeNamedLines(runner, {
       tests: [line],
       pins: [],
+      laneTests: [],
       baseSha: BASE_SHA,
       footprint: FOOTPRINT,
       cwd: CWD,
@@ -352,6 +454,7 @@ describe("the judge", () => {
     const verdict = await judgeNamedLines(runner, {
       tests: [line],
       pins: [],
+      laneTests: [],
       baseSha: BASE_SHA,
       footprint: FOOTPRINT,
       cwd: CWD,
@@ -392,6 +495,7 @@ describe("the judge", () => {
     const verdict = await judgeNamedLines(runner, {
       tests: [line],
       pins: [],
+      laneTests: [],
       baseSha: BASE_SHA,
       // Both failing files are the span's own: the subject here is the blame
       // list's order, not what a base run would say about it.
@@ -425,6 +529,7 @@ describe("the judge", () => {
       judgeNamedLines(runner, {
         tests: [line],
         pins: [],
+        laneTests: [],
         baseSha: BASE_SHA,
         footprint: FOOTPRINT,
         cwd: CWD,
@@ -527,6 +632,45 @@ describe("the named-lines gate", () => {
       "a park attempts none of the entry's named lines",
     );
     expect(parked.skipped).not.toBe(result.skipped);
+  });
+
+  it("a judge gate over an entry whose only named lines are laneTests passes with every line owed to its lane", async () => {
+    const gated = "walls a worktree path only win32 refuses";
+    const runner = fakeRunner({
+      passing: [{ fullName: "worktrees > walls a path on every host", file: "tests/worktrees.test.ts" }],
+      skipped: [`worktrees > ${gated}`],
+    }).runner;
+    const entry: PendingEntry = {
+      ...entryNaming(line),
+      tests: [],
+      laneTests: [{ lane: "win32", title: gated }],
+    };
+
+    const result = await namedLinesGate(runner, finished).run(
+      gateContext({ entry, touchedPaths: ["src/worktrees.ts"] }),
+    );
+
+    // Vacuity: the judge ruled. A put-down skip carries `skipped` and none of
+    // the message below, so a green-over-nothing cannot read as this.
+    expect(result.skipped).toBeUndefined();
+    expect(result.ok).toBe(true);
+    // The line is named as owed, to its lane, on the surface the wave reads —
+    // a pass whose one line was never green here says so.
+    expect(result.message).toContain("1 laneTests[] line(s) owed to win32");
+
+    // Non-vacuous the other way: the same entry with a title no case carries
+    // refuses, so the pass above is the skipped case being read and not the
+    // field going unparsed.
+    const unnamed = await namedLinesGate(runner, finished).run(
+      gateContext({
+        entry: { ...entry, laneTests: [{ lane: "win32", title: "a case nobody wrote" }] },
+        touchedPaths: ["src/worktrees.ts"],
+      }),
+    );
+    expect(unnamed.ok).toBe(false);
+    expect(unnamed.details?.split("\n")).toContain(
+      `laneTests[] unnamed: "a case nobody wrote" (lane win32)`,
+    );
   });
 
   it("the named-lines gate reports base-red as its verdict when the judge ruled the base red", async () => {

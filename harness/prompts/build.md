@@ -36,9 +36,10 @@ Execute the assigned entry. Implement completely — no placeholders, no stubs.
 - The acceptance criterion (`entry.acceptance`) must turn green.
 - {{PUT_DOWN}} That note goes at `{{CONTINUING_NOTE_PATH}}`: what landed, what is next, and where the next tick should look, in the same `# <title>` shape and the same {{RECORD_MAX_BYTES}}-byte cap as the note above. The entry stays in the queue with your commit on the trunk, and the next tick on it is handed your note. **Continuing is your declaration, never something inferred from how far you got**: a tick that runs out of context, turns, or wall clock without writing the note is a preempt, and everything it had not committed dies with the worktree. The entry is the goal and the tick is not the bound. Exactly one of the three note paths named here is yours to write: the one you wrote is the whole statement.
 - **A continuing note standing for this entry is yours to remove when you finish it.** A prior tick on this entry may have left one at `{{CONTINUING_NOTE_PATH}}`; no drain takes it, so it leaves with the tick that completes the entry. Delete it in the commit that finishes the work (`git rm`), or the records gate refuses that commit and names the path. Leave it standing only if you are putting the rest down too — then you are rewriting it, not orphaning it.
-- The entry's `tests[]` and `pins[]` are judged against the contract the package declares for each field, quoted here from those declarations (a line's test is matched on its full name — describe titles plus its own):
+- The entry's `tests[]`, `pins[]` and `laneTests[]` are judged against the contract the package declares for each field, quoted here from those declarations (a line's test is matched on its full name — describe titles plus its own):
   - `tests[]`: {{TESTS_HINT}}
   - `pins[]`: {{PINS_HINT}}
+  - `laneTests[]`: {{LANE_TESTS_HINT}}
 
   A `tests[]` line that already passes on the pre-fix tree reverts the commit, and that is plan's to fix, not yours — do not restructure a test to fail on the base; ship the work as named and let the record reach plan.
 - Search the tree before assuming "not implemented".
