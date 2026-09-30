@@ -1,0 +1,37 @@
+{
+  "tag": "A-QUEUE-READ-RESOLVES-ONE-TIP-FOR-ITS-WHOLE-READ",
+  "gate": { "kind": "open" },
+  "priority": 30,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/pendingLedger.ts",
+        "description": "`readQueueFiles` resolves the tip once and hands `readQueueAtRef` the sha, so that function's \"the ref does not move\" comment holds as written"
+      },
+      {
+        "path": "src/git.ts",
+        "description": "`readFileAtRef`'s own `ls-tree`-then-`show` pair is the inner straddle; it and `listTreeBlobNames` compose at one resolved sha, per `revParse`"
+      },
+      {
+        "path": "src/friction.ts",
+        "description": "the harvest's tracked-at-HEAD probe — the other symbolic-`HEAD` read, one tip for every candidate, same log-and-continue class"
+      },
+      {
+        "path": "tests/pendingLedger.test.ts",
+        "description": "the tip-moves-mid-read case"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "the queue read lists and shows at the symbolic HEAD, so a sibling's commit mid-read kills it; one read resolves one tip, at every src/ site composing HEAD: across git calls",
+  "per": {
+    "path": "spec/pending.md",
+    "section": "Dispatch reads come from the tip, not the tree"
+  },
+  "acceptance": "A queue read resolves its tip to a sha once and lists and shows at that sha, so a concurrent commit is the next read's and never half of this one; `readFileAtRef`'s own two legs run at one sha, and the friction harvest resolves once for all candidates, keeping its log-and-continue class. `pnpm tsc --noEmit` and the suite green.",
+  "tests": [
+    "a queue read whose tip moves between the listing and the file reads returns the queue the listing's tip held"
+  ],
+  "notes": "Field-paid 2026-09-30, build wave refill: `show HEAD:<entry>` exited 1 (`fatal: path ... does not exist in 'HEAD'`) after `ls-tree HEAD` had listed it. Verified on disk this tick: the only symbolic-`HEAD` reads in `src/` are pendingLedger.ts:404 and friction.ts:311; every other `readFileAtRef`/`listTreeBlobNames` caller already hands a resolved sha (`ctx.commitSha`, `ctx.baseSha`, `span.head`). `revParse` (src/git.ts:123) is the resolver."
+}
