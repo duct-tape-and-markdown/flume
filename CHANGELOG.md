@@ -11,6 +11,117 @@ Pre-1.0: minor versions may introduce breaking changes to the public API surface
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-09-30
+
+The supervisor release. A wave now merges each entry as its agent finishes
+and refills the freed slot from the live queue, so a build tick runs as long
+as there is disjoint work. Running it for days found what a long wave breaks,
+and those breaks are fixed: a wave that outlives a prompt change renders from
+the templates it loaded, a failed render is a per-entry refusal instead of a
+torn-down wave, every agent's spend is on disk as it is paid, a claim ends
+with its attempt rather than its wave, and a queue read resolves one tip for
+its whole read. A platform wall (an expired login, a spent cap) and a thrown
+`shipped` hook now reach the repeated-failure backstop instead of spending
+the run's budget. From the 0.20 field report: an empty cherry-pick is
+absorbed, and every run line carries its instant. CI lanes read a red on an
+ancestor of the tip as still standing, so they no longer go dark while a loop
+ships faster than CI finishes. `docs/MIGRATING-0.21.md` walks the three breaks
+and the behavior changes a consumer notices first.
+
+### Breaking
+
+- **`renderPrompt` and `readPhaseTemplate` are no longer value exports of the
+  package root.** A chain reaches both on `api`; the refusal classes they
+  throw ride `api` too, and only their types are named at the root
+  ([`docs/MIGRATING-0.21.md`](docs/MIGRATING-0.21.md), section 1).
+- **`renderPrompt` takes the template's bytes, not its path.**
+  `RenderOptions.promptFile` is replaced by `template`; load it with
+  `api.readPhaseTemplate` (section 2).
+- **`DispatcherOptions.chainLoader` returns `LoadedChain`**, the module beside
+  the `worktreesBase` its load evaluated, instead of `ChainModule`. Only an
+  in-process test injection is affected (section 3).
+
+### Added
+
+- **A wave merges each entry as its agent finishes, and refills a freed slot**
+  from the live queue in priority order, reading the stop flag at every slot.
+- **The verdict times every gate run and merge**, names a render refusal per
+  entry, reports every ledger commit a wave landed, and records the span a
+  walled wave never carried beside every wall it held.
+- **Each agent's usage row reaches disk when that agent returns**, and
+  `flume status` totals the live run from those rows, naming how many agents
+  have started with no row yet.
+- **The completion summary names the run's yield** beside its spend, including
+  a run that shipped nothing.
+- **Every CLI run line opens with an ISO-8601 UTC instant**, refusals
+  included.
+- **`flume status` names the state root a live tip claim was taken for.**
+- **The harness entry extension gains `laneTests[]`**: a case only another
+  host runs, reported owed to its CI lane and never green on the build host.
+- **The harness files each entry at its source's priority band** and a gate
+  holds a filed entry to it.
+- **`TickResult` and the API carry the facts behind the new walls**:
+  platform, render, ship and unclassed failures, wave-wall events, timings,
+  and the worktree registry's own membership answer.
+
+### Changed
+
+- **A tick renders every slot from the templates it loaded with its chain**,
+  so a refill that outlasts a prompt change hands its entry the older prompt
+  rather than mixing two versions in one render.
+- **A missing placeholder is `render-refused`** for that entry, like an
+  unresolved span; `flume render` exits 65 for the whole class.
+- **A pick the tip already holds is absorbed**: the redundant commit is
+  skipped, the rest lands, and a span the tip holds whole merges with nothing
+  to add instead of counting as a merge failure.
+- **A platform failure and a thrown `shipped` hook join the repeated-failure
+  accounting.** Three identical platform preempts abort the run; a thrown
+  hook quarantines its entry until the tip moves.
+- **A slot releases its entry claim, tears down its worktree and harvests its
+  friction when its own attempt ends**, not when the wave does.
+- **A CI lane reads a failed run on an ancestor of the tip as red-standing**:
+  its titles stand as findings until a later run drops them; closing still
+  needs a run on the tip itself.
+- **Reading the baton creates nothing.** `awake/` is created by the first
+  `wake`; `flume status` and `flume render` write nothing.
+- **Rendered prompts live while a retained verdict names them**, instead of
+  growing without bound.
+- **Tick branches and entry claims are keyed by the checkout**
+  (`flume/<checkout>/<slug>`), and a second state root in one checkout is
+  refused early.
+- **`worktreesBase` is evaluated at the chain load**, and a bad declaration
+  refuses there.
+- **The tip claim names the state root it holds for**, and a bare
+  `flume tick` takes it; a `FLUME_TIP_CLAIM_HELD` naming no pid refuses.
+- **`--max` and `-n` take a decimal integer or refuse.**
+- **The prior-attempt block renders the gate's own attribution** — its
+  verdict and failing files, and says so when the gate disowned the blame.
+
+### Fixed
+
+- **A queue read resolves one tip for its whole read**; a sibling commit
+  between listing and reading no longer kills a wave.
+- **A slot throw no longer loses the wave's verdict**, whichever stage threw.
+- **A claim no longer outlives its attempt** and walls a parked entry from
+  both build and the drain.
+- **A prior-attempt record that will not open, or names another file, is
+  refused** naming its path, never read as absent.
+- **A state-root write or read that fails names the root and the path.**
+- **`checkoutAddress` reports its common dir in the host's alphabet on win32.**
+- **`flume sleep` proves an absent flag by descent** rather than keying on an
+  errno.
+- **Deleting a torn-down branch no longer rewrites `.git/config`.** `git
+  branch -D` replaced the config file even with no section to drop, and on
+  win32 a sibling slot's git reading config across the swap failed
+  intermittently; the ref is deleted with `update-ref -d`.
+
+### Internal
+
+- Each CLI verb has its own module; the two merge legs carry a span from one
+  home; the thrown-value fold, the failure-signature pairing, the agent-spend
+  fold and the prompt-path prefix each have one home. The CI consumer probe's
+  imports are resolved against the package root in the suite.
+
 ## [0.20.0] - 2026-09-25
 
 The field release. A downstream consumer's 0.19 report named ten items from

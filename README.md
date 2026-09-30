@@ -466,6 +466,11 @@ follows enough usage signal to commit under semver.
   who owns what, how each is extended from outside, where a finding goes.
 - [`docs/INTENT.md`](docs/INTENT.md) — design rationale: the spine, what
   stays prose, what becomes JSON, non-goals.
+- [`docs/MIGRATING-0.21.md`](docs/MIGRATING-0.21.md) — upgrade note for a
+  chain on `0.20.x`: three breaks at the render and loader seams —
+  `renderPrompt` off the root's value surface, taking a template's bytes,
+  and `chainLoader` returning `LoadedChain` — and the behavior changes a
+  long-running wave brings.
 - [`docs/MIGRATING-0.20.md`](docs/MIGRATING-0.20.md) — upgrade note for a
   chain on `0.19.x`: one break, the legacy queue and plan state pages off the
   plan fence, and two behavior changes, an inbox record counting once
