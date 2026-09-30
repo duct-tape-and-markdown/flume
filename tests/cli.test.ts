@@ -6624,10 +6624,13 @@ describe("the run log (spec/cli.md §A log line carries the instant it was writt
         // neither exists inside a tick child to be written there. Their
         // presence is what makes the sweep below a claim about supervisor
         // lines rather than about a stream that happened to be all child.
+        // The completion summary leads with the run's yield and carries the
+        // spend behind it, so the total is matched where it sits in that line
+        // rather than against a prefix it no longer opens.
         const supervisorLines = lines.filter(
           (line) =>
             line.includes("[flume] hibernating after") ||
-            line.includes("[flume] agent usage:"),
+            (line.includes("[flume]") && line.includes("agent usage:")),
         );
         expect(supervisorLines).toHaveLength(2);
 

@@ -2959,11 +2959,12 @@ describe("superviseLoop — the run's agent spend, by phase", () => {
         costUsd: 2.25,
       },
     ]);
-    // ...and the line the operator reads is those totals, whole: the run
-    // errored nothing and stopped on hibernation, so the spend is all the
-    // summary has to say.
+    // ...and the line the operator reads is those totals, whole, behind the
+    // yield they are read against: the run errored nothing and stopped on
+    // hibernation, and none of its three ticks shipped, so the summary is
+    // that emptiness spelled out and then the spend.
     expect(loopCompletionSummary(res)).toBe(
-      "[flume] agent usage: " +
+      "[flume] shipped nothing | agent usage: " +
         "plan ×1 (2 turns, 1.5s, 100 in / 10 out tokens, " +
         "5 cache-write / 50 cache-read, $0.2500); " +
         "build ×3 (7 turns, 4.5s, 900 in / 50 out tokens, " +
@@ -3009,7 +3010,8 @@ describe("superviseLoop — the run's agent spend, by phase", () => {
     expect(res.ticks).toBe(1);
     expect(res.agentUsageByPhase).toEqual([]);
     expect(loopCompletionSummary(res)).toBe(
-      "[flume] 1 tick(s) errored: build: no commit (gate-revert) → hibernate",
+      "[flume] shipped nothing | " +
+        "1 tick(s) errored: build: no commit (gate-revert) → hibernate",
     );
   });
 });

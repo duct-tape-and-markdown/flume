@@ -257,11 +257,19 @@ export function describeRefFailure(
  * errors, an abort on the consecutive-failure backstop (named by the stage
  * `superviseLoop` reported it against — provision, render, merge, gate, ship
  * or platform — never fixed to any one of them), (spec/loop.md "Graceful stop — the stop flag")
- * a stop-flag-ended run, and what the run spent on agents, by phase —
- * undefined when the run had none of these. Printed even on a 0 exit (partial
- * success, or a graceful stop): none of these facts may vanish into a green
- * exit silently, and what a run cost is read where its outcome is rather than
- * by re-reading the verdict log.
+ * a stop-flag-ended run, the run's yield, and what the run spent on agents,
+ * by phase — undefined when the run had none of these. Printed even on a 0
+ * exit (partial success, or a graceful stop): none of these facts may vanish
+ * into a green exit silently, and what a run cost is read where its outcome
+ * is rather than by re-reading the verdict log.
+ *
+ * The yield is unconditional wherever a line is emitted, and spells an empty
+ * `shippedTags` out as nothing shipped rather than falling silent: a run that
+ * burned its whole budget shipping nothing is the one an operator most needs
+ * told apart from a productive one, and a summary reporting only spend says
+ * the same thing either way. It never *causes* a line, though — a run with
+ * nothing else to report stays silent, so hibernation with an idle budget
+ * prints nothing at all.
  *
  * The spend is last: an error or an abort is what an operator reads first,
  * and the totals are context for it.
@@ -282,19 +290,27 @@ export function loopCompletionSummary(
         `${result.repeatedFailure.signature}`,
     );
   }
+  // Where the yield reads: after why iteration ended, before what went wrong
+  // inside it. Held as an index rather than pushed here, because a yield that
+  // is always present would make `parts` never empty and turn the
+  // nothing-to-report run into a line of its own.
+  const yieldAt = parts.length;
   if (result.erroredTicks.length > 0) {
-    const shipped =
-      result.shippedTags.length > 0
-        ? `shipped ${result.shippedTags.join(", ")}; `
-        : "";
     parts.push(
-      `${shipped}${result.erroredTicks.length} tick(s) errored: ` +
+      `${result.erroredTicks.length} tick(s) errored: ` +
         result.erroredTicks.join(" | "),
     );
   }
   const spend = agentUsageLine("agent usage", result.agentUsageByPhase);
   if (spend) parts.push(spend);
   if (parts.length === 0) return undefined;
+  parts.splice(
+    yieldAt,
+    0,
+    result.shippedTags.length > 0
+      ? `shipped ${result.shippedTags.join(", ")}`
+      : "shipped nothing",
+  );
   return `[flume] ${parts.join(" | ")}`;
 }
 

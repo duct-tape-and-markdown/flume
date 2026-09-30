@@ -237,6 +237,75 @@ describe("loopExitCode / loopCompletionSummary — amended exit-code contract", 
     expect(loopCompletionSummary(result)).toBeUndefined();
   });
 
+  /**
+   * THE-COMPLETION-SUMMARY-NAMES-THE-RUNS-YIELD-BESIDE-ITS-SPEND: the spend
+   * is reported so what a run cost is read where its outcome is
+   * (spec/loop.md, "Exit codes — the run never lies to CI"), and the outcome
+   * is what shipped — so the yield is a segment of its own rather than a
+   * prefix the errored branch happened to carry. A run that errored nothing
+   * said only what it cost, which reads the same whether the budget bought
+   * four entries or none.
+   *
+   * The spend half of each expected line comes from `agentUsageLine`, the
+   * real renderer, rather than being respelled here: the claim is where the
+   * yield sits and how it is spelled, not how a duration formats.
+   */
+  const runSpend = (): PhaseAgentUsage[] =>
+    totalAgentUsageByPhase([
+      makeVerdict({
+        phaseName: "build",
+        invocations: [
+          {
+            promptPath: "prompts/build.md",
+            uncommittedTracked: [],
+            turns: 2,
+            durationMs: 2000,
+            inputTokens: 100,
+            outputTokens: 10,
+            costUsd: 0.5,
+          },
+        ],
+      }),
+    ]);
+
+  it("the loop completion summary names the run's shipped tags on a run that errored no tick", () => {
+    const agentUsageByPhase = runSpend();
+    // The spend the yield is read beside is really there: a run folding no
+    // rows would print no line at all, and the shape below would be vacuous.
+    expect(agentUsageByPhase).toHaveLength(1);
+    const result: SuperviseResult = {
+      ticks: 2,
+      hibernated: true,
+      shippedTags: ["SHIPPED-ONE", "SHIPPED-TWO"],
+      erroredTicks: [],
+      agentUsageByPhase,
+    };
+    expect(loopExitCode(result)).toBe(0);
+    expect(loopCompletionSummary(result)).toBe(
+      "[flume] shipped SHIPPED-ONE, SHIPPED-TWO | " +
+        agentUsageLine("agent usage", agentUsageByPhase),
+    );
+  });
+
+  it("the loop completion summary spells nothing shipped on a run whose summary is its spend alone", () => {
+    const agentUsageByPhase = runSpend();
+    expect(agentUsageByPhase).toHaveLength(1);
+    const result: SuperviseResult = {
+      ticks: 4,
+      hibernated: true,
+      shippedTags: [],
+      erroredTicks: [],
+      agentUsageByPhase,
+    };
+    expect(loopExitCode(result)).toBe(0);
+    // Byte-for-byte the productive run's line above, but for the yield: the
+    // one segment that tells the two runs apart.
+    expect(loopCompletionSummary(result)).toBe(
+      "[flume] shipped nothing | " +
+        agentUsageLine("agent usage", agentUsageByPhase),
+    );
+  });
+
   it("terminal misconfiguration propagates 78 regardless of shipped/errored counts", () => {
     const result: SuperviseResult = {
       ticks: 1,
