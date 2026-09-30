@@ -23015,11 +23015,11 @@ describe.runIf(process.platform === "win32")(
         // `readPending`/`commitPendingUpdate` calls it names.
         const wtBase = join(dock, "wt");
         const phase = makePhase({ name: "build", concurrency: "fanout" });
-        const chain: Chain = {
-          phases: [phase],
-          humanOnly: [],
-          worktreesBase: () => wtBase,
-        };
+        // The base rides the seam, as a real load reports it: `staticLoader`
+        // never runs a chain's `worktreesBase` callback, so declaring one here
+        // put the worktree back under the deep dock and the case walled on
+        // `git worktree add` instead of the reads it names.
+        const chain: Chain = { phases: [phase], humanOnly: [] };
 
         let observedCwd: string | undefined;
         const agent = fanoutAgent({
@@ -23035,7 +23035,7 @@ describe.runIf(process.platform === "win32")(
         });
 
         const dispatcher = new Dispatcher({
-          chainLoader: staticLoader(chain),
+          chainLoader: staticLoader(chain, wtBase),
           repoRoot: fx.repo,
           configDir: fx.configDir,
           flumeDir: deepDock,
