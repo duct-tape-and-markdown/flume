@@ -142,7 +142,7 @@ jobs:
           EOF
           cat > consumer.mts <<'EOF'
           import {
-            shellGate, tscGate, partitionByFileOverlap, renderPrompt,
+            shellGate, tscGate, partitionByFileOverlap,
             Baton, Dispatcher, claudeCode,
           } from "@dtmd/flume";
           import type {
@@ -151,7 +151,7 @@ jobs:
           } from "@dtmd/flume";
 
           const _v: unknown[] = [
-            shellGate, tscGate, partitionByFileOverlap, renderPrompt,
+            shellGate, tscGate, partitionByFileOverlap,
             Baton, Dispatcher, claudeCode,
           ];
           const _p: Phase = {

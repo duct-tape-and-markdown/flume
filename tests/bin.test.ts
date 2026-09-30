@@ -24,6 +24,7 @@ import { chmod, cp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/prom
 import { basename, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import ts from "typescript";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { declaration } from "../.flume/declaration.ts";
@@ -465,6 +466,67 @@ it("the CI consumer-install smoke runs scripts/smoke-install.mjs rather than re-
 
   const gate = stepBody(lines, "Consumer type-resolution gate");
   expect(gate.some((l) => l.includes(scratch![1]!))).toBe(true);
+});
+
+/**
+ * The type-resolution gate's consumer probe is a hand-written import list
+ * against the package root, and no typecheck reads it before CI: when the
+ * root stopped exporting `renderPrompt` as a value, the probe kept importing
+ * it and the `ci` job went red where nothing local could see it. So the list
+ * is read out of the step and resolved against the root module through the
+ * checker — the same resolution `tsc` gives a consumer
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*). A value import must name an exported value; a type import, any
+ * export.
+ */
+it("every value the CI consumer probe imports from the package root is one the package's export surface hands out", async () => {
+  const lines = (await readFile(CI_WORKFLOW, "utf8")).split(/\r?\n/);
+  const probe = stepBody(lines, "Consumer type-resolution gate").join("\n");
+
+  const clauses = (typeOnly: boolean): string[] =>
+    [
+      ...probe.matchAll(
+        new RegExp(`import${typeOnly ? " type" : ""} \\{([^}]*)\\} from "@dtmd/flume"`, "g"),
+      ),
+    ].flatMap((m) =>
+      m[1]!
+        .split(",")
+        .map((name) => name.trim())
+        .filter((name) => name !== ""),
+    );
+  const values = clauses(false);
+  const types = clauses(true);
+
+  // Non-vacuity: the probe imports both kinds, so the verdicts below judge
+  // names rather than an empty read of a renamed step.
+  expect(values.length).toBeGreaterThan(0);
+  expect(types.length).toBeGreaterThan(0);
+
+  const root = fileURLToPath(new URL("../src/index.ts", import.meta.url));
+  const program = ts.createProgram([root], {
+    module: ts.ModuleKind.NodeNext,
+    moduleResolution: ts.ModuleResolutionKind.NodeNext,
+    target: ts.ScriptTarget.ES2022,
+    noEmit: true,
+  });
+  const checker = program.getTypeChecker();
+  const moduleSymbol = checker.getSymbolAtLocation(program.getSourceFile(root)!)!;
+  const exported = new Map(
+    checker.getExportsOfModule(moduleSymbol).map((sym) => {
+      const target = sym.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(sym) : sym;
+      return [sym.getName(), (target.flags & ts.SymbolFlags.Value) !== 0] as const;
+    }),
+  );
+  expect(exported.size).toBeGreaterThan(0);
+
+  expect(
+    values.filter((name) => exported.get(name) !== true),
+    "the probe imports these as values, and the package root exports no value by that name",
+  ).toEqual([]);
+  expect(
+    types.filter((name) => !exported.has(name)),
+    "the probe imports these as types, and the package root exports nothing by that name",
+  ).toEqual([]);
 });
 
 /**
