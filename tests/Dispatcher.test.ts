@@ -90,7 +90,7 @@ import {
   type PriorAttemptRef,
 } from "../src/priorAttempts.ts";
 import type { Agent } from "../src/Agent.ts";
-import { extractFinalMessage } from "../src/claudeCode.ts";
+import { abortError, extractFinalMessage } from "../src/claudeCode.ts";
 import { withTerminalRenderer } from "../src/terminalRender.ts";
 import { Baton } from "../src/Baton.ts";
 import { superviseLoop } from "../src/loopSupervisor.ts";
@@ -13048,6 +13048,89 @@ describe("Dispatcher — no-commit outcome taxonomy", () => {
     expect(prompts[0]).not.toContain(GATE_REVERT_INTRO);
     expect(prompts[0]).not.toContain(CLEAN_EXIT_INTRO);
     expect(prompts[0]).not.toContain(PREEMPT_INTRO);
+  });
+
+  // ---------- the abort seam: the real mint through the real classifier ----------
+
+  /**
+   * One real singleton tick whose agent invocation rejects with `rejection`,
+   * reported as the tick saw it. Both arms of `invokeAgent`'s catch
+   * (`src/tickAttempt.ts`) run this same leg and differ only in the shape
+   * handed in, so the shared steps are spelled once
+   * (`.claude/rules/engineering.md`, *A module is one job*).
+   *
+   * `platformFailures` is the surface, not the log line: the class reaches a
+   * supervisor by riding out with the mode, and it is what one tick's preempt
+   * is compared against the next's by (`PlatformFailure`,
+   * `src/tickVerdict.ts`).
+   */
+  async function preemptFrom(rejection: unknown) {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    // Rejects on purpose, so it stays outside `runAgentBody` — that wrapper
+    // exists for a wait a body blew, not for a case whose subject is the
+    // throw (tests/helpers/dispatcherFixture.ts).
+    const agent: Agent = {
+      name: "rejecting-singleton",
+      invoke: () => Promise.reject(rejection),
+    };
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [makePhase({ name: "plan", concurrency: "singleton" })],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+    const outcome = await dispatcher.tick();
+    expect(
+      outcome.result?.committed,
+      "the invocation rejected, so the tick committed nothing",
+    ).toBe(false);
+    return {
+      noCommit: outcome.noCommit,
+      platformFailures: outcome.result?.platformFailures ?? [],
+    };
+  }
+
+  it("the abort an agent invocation rejects with classifies as the platform-preempt abort class a tick reports", async () => {
+    // The real mint over the reason a real aborted signal carries — the
+    // rejection `claudeCode`'s spawn settles with when the signal fired
+    // before the process started. Neither `name` nor `code` is spelled here:
+    // a one-sided rename of either key reds this case.
+    const { noCommit, platformFailures } = await preemptFrom(
+      abortError(AbortSignal.abort().reason),
+    );
+
+    expect(noCommit).toBe("platform-preempt");
+    expect(
+      platformFailures,
+      "the tick reported one preempt for the class to be read off",
+    ).toHaveLength(1);
+    expect(platformFailures[0]!.message).toBe(
+      "agent process aborted (per-tick timeout or dispatcher signal)",
+    );
+  });
+
+  it("an agent rejection carrying no abort shape classifies as the pre-exit error class naming its own message", async () => {
+    // The other arm, so the case above is not green over a classifier that
+    // answers "aborted" to everything: a hand-authored rejection is right
+    // here, because no mint in `src/claudeCode.ts` produces a non-abort
+    // one (`.claude/rules/engineering.md`, *A seam gate reads what the real
+    // writer wrote*: refusal and shape inputs stay hand-authored).
+    const { noCommit, platformFailures } = await preemptFrom(
+      new Error("spawn claude ENOENT"),
+    );
+
+    expect(noCommit).toBe("platform-preempt");
+    expect(
+      platformFailures,
+      "the tick reported one preempt for the class to be read off",
+    ).toHaveLength(1);
+    expect(platformFailures[0]!.message).toBe(
+      "agent process error before exit: spawn claude ENOENT",
+    );
   });
 });
 

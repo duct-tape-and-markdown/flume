@@ -287,12 +287,16 @@ function budgetSettings(budget: BudgetDeclaration): string {
 /**
  * The rejection an aborted invocation settles with, in the shape Node's own
  * `spawn({ signal })` produced before the teardown above replaced it: `name`
- * and `code` are what a tick classifies a platform-preempt by
+ * and `code` are the two keys a tick's classifier reads
  * (`invokeAgent`, `src/tickAttempt.ts`), and the signal's own reason rides as
  * `cause` so a
  * timeout and a stop signal stay distinguishable to a reader.
+ *
+ * Exported for the one consumer that drives this mint through that classifier
+ * rather than re-spelling the keys beside it (`tests/Dispatcher.test.ts`) —
+ * the agreement neither side now asserts in prose.
  */
-function abortError(reason: unknown): Error {
+export function abortError(reason: unknown): Error {
   const err = new Error("The operation was aborted", { cause: reason }) as Error & {
     code?: string;
   };

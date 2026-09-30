@@ -600,8 +600,9 @@ async function invokeAgent(
     // so any commit the agent managed to make before aborting is honored;
     // otherwise the phase falls through with `committed: false`. Either way
     // this is a platform-preempt — not a defect in the work. The two keys
-    // read below are the abort's own shape, spelled by the provider that
-    // rejects with it (`abortError`, `src/claudeCode.ts`).
+    // read below are `abortError`'s (`src/claudeCode.ts`), whose real mint
+    // reaches this arm through a pin rather than a prose cite
+    // (`tests/Dispatcher.test.ts`).
     const e = err as Error & { name?: string; code?: string };
     const failureClass =
       e.name === "AbortError" || e.code === "ABORT_ERR"
