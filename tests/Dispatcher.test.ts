@@ -56,6 +56,7 @@ import {
   type RequiredInvocationRowField,
   type RequiredTickVerdictField,
   type TickVerdict,
+  type TickVerdictInvocation,
 } from "../src/tickVerdict.ts";
 import { frictionCountLine } from "../src/friction.ts";
 import {
@@ -65,12 +66,14 @@ import {
 } from "../src/worktrees.ts";
 import {
   RENDERED_PROMPT_PREFIX,
+  renderedPromptFileName,
   renderedPromptName,
+  renderedPromptNames,
+  runWindowStamp,
   trimRenderedPrompts,
 } from "../src/renderedPrompts.ts";
 import {
   defaultStateRoot,
-  fsStamp,
   invocationsPath,
   loopLockPath,
   mergingDir,
@@ -499,6 +502,40 @@ function singleAgent(action: (cwd: string) => Promise<void>): Agent {
       return { exitCode: 0, stdout: "", stderr: "" };
     },
   };
+}
+
+/**
+ * One real singleton tick of `phase`, whose agent commits `file`. The tick
+ * renders its own prompt and persists it under the name the engine composes
+ * (`renderedPromptFileName`, `src/renderedPrompts.ts`), so a case needing that
+ * name asks the writer for it instead of spelling the stamp-key-extension
+ * grammar a second time (`.claude/rules/engineering.md`, *A seam gate reads
+ * what the real writer wrote*). Returns the tick's own invocation row, which
+ * is where the writer states the path it wrote.
+ */
+async function tickRenderingPrompt(
+  phase: string,
+  file: string,
+): Promise<TickVerdictInvocation> {
+  new Baton(join(fx.repo, ".flume")).wake(phase);
+  const dispatcher = new Dispatcher({
+    chainLoader: staticLoader({
+      phases: [makePhase({ name: phase, concurrency: "singleton" })],
+      humanOnly: [],
+    }),
+    repoRoot: fx.repo,
+    configDir: fx.configDir,
+    agent: singleAgent(async (cwd) => {
+      await writeAndCommit(cwd, file, `${file}\n`, `${phase}: ${file}`);
+    }),
+    log: silent,
+  });
+  const outcome = await dispatcher.tick();
+  // Non-vacuity for every caller: the tick really ran an agent, so there is a
+  // rendered prompt and a row naming it.
+  expect(outcome.result?.committed, `the ${phase} tick committed`).toBe(true);
+  expect(outcome.verdict!.invocations).toHaveLength(1);
+  return outcome.verdict!.invocations[0]!;
 }
 
 /**
@@ -14478,13 +14515,12 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
     const flumeDir = join(fx.repo, ".flume");
     const dir = renderedPromptsDir(flumeDir);
     await mkdir(dir, { recursive: true });
-    // One more invocation than the window holds lines for. Names are stamped
-    // through `fsStamp`, the way `recordRenderedPrompt` stamps them, so they
-    // sort chronologically as plain text.
-    const names = Array.from(
-      { length: MAX_TICK_VERDICTS + 1 },
-      (_, i) =>
-        `${fsStamp(new Date(Date.UTC(2024, 0, 1) + i * 1_000))}-build.md`,
+    // One more invocation than the window holds lines for, named through the
+    // engine's own composer rather than a second spelling of the grammar here
+    // — the rows below are hand-written, but the names the trim matches them
+    // against are the writer's.
+    const names = Array.from({ length: MAX_TICK_VERDICTS + 1 }, (_, i) =>
+      renderedPromptFileName("build", new Date(Date.UTC(2024, 0, 1) + i * 1_000)),
     );
     for (const [i, name] of names.entries()) {
       await writeFile(join(dir, name), `rendered ${i}`, "utf8");
@@ -14522,32 +14558,51 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
    * for being unnamed. The run's start instant is the lock's own second line,
    * the same fact that count is bounded by, and a prompt from before it is
    * no longer anyone's flight.
+   *
+   * Both prompts are written by real ticks under the name the engine composes,
+   * and the window is a string compare against that whole name — correct only
+   * while the stamp leads it. A fixture spelling the two names itself would
+   * pin the tester's grammar against the reader's and stay green through a
+   * one-sided respell at the writer (`.claude/rules/engineering.md`, *A seam
+   * gate reads what the real writer wrote*).
    */
-  it("a rendered prompt inside a live run's window is kept though no verdict names it yet", async () => {
+  it("the run-window trim keeps a real tick's own rendered prompt and takes one written before the live run's claim", async () => {
     const flumeDir = join(fx.repo, ".flume");
     const dir = renderedPromptsDir(flumeDir);
-    await mkdir(dir, { recursive: true });
+
+    // A prompt from the run before this one…
+    const earlierRow = await tickRenderingPrompt("plan", "src/earlier.ts");
+    // …then the instant a fresh run claims the lock, which falls between the
+    // two ticks…
+    const runStartMs = Date.now();
+    // …and the prompt this run's own tick left, still unreported.
+    const liveRow = await tickRenderingPrompt("plan", "src/live.ts");
+
+    const before = renderedPromptName(earlierRow.promptPath)!;
+    const inWindow = renderedPromptName(liveRow.promptPath)!;
+    // Non-vacuity: two real prompts on disk, straddling the claim instant as
+    // the writer's own names order them — so the keep and the take below are
+    // the window's doing and not a coincidence of which file exists.
+    expect((await renderedPromptNames(flumeDir)).sort()).toEqual(
+      [before, inWindow].sort(),
+    );
+    const startStamp = runWindowStamp(runStartMs);
+    expect(before < startStamp, `${before} precedes ${startStamp}`).toBe(true);
+    expect(inWindow >= startStamp, `${inWindow} is at or after ${startStamp}`).toBe(
+      true,
+    );
+
     // This process plays the live supervisor — its own pid is guaranteed
     // alive for the duration of the test.
-    const runStart = new Date("2024-06-01T12:00:00.000Z");
     await writeFile(
       loopLockPath(flumeDir),
-      renderPidClaim(process.pid, runStart),
+      renderPidClaim(process.pid, new Date(runStartMs)),
       "utf8",
     );
-    const inWindow = `${fsStamp(new Date(runStart.getTime() + 1_000))}-build.md`;
-    const before = `${fsStamp(new Date(runStart.getTime() - 60_000))}-build.md`;
-    for (const name of [before, inWindow]) {
-      await writeFile(join(dir, name), "rendered", "utf8");
-    }
 
-    // Non-vacuity: both prompts are on disk, and the verdict about to be
-    // written names neither of them.
-    expect((await readdir(dir)).sort()).toEqual([before, inWindow]);
-    const v = verdictFixture({ summary: "tick 0" });
-    expect(v.invocations).toEqual([]);
-
-    await writeTickVerdict(flumeDir, v);
+    // The retention every verdict write runs, over a retained set naming
+    // neither file: the window is all that can spare either.
+    await trimRenderedPrompts(flumeDir, new Set());
 
     expect(existsSync(join(dir, inWindow))).toBe(true);
     expect(existsSync(join(dir, before))).toBe(false);
@@ -15527,9 +15582,15 @@ describe("Uncommitted tracked edits ride the tick verdict (spec/loop.md 'Tip ver
 
 
 describe("The rendered prompt is persisted before the agent runs (spec/prompt.md)", () => {
-  /** Files under `<flumeDir>/rendered-prompts/`, or [] when the dir is absent. */
+  /**
+   * Files under the rendered-prompts dir, or [] when it is absent — raw disk,
+   * through the engine's own path so the directory's name is not spelled here.
+   * Deliberately not `renderedPromptNames`: this is the independent view the
+   * real listing is agreed against below, and a case that read the listing to
+   * prove the listing would pin nothing.
+   */
   async function renderedFiles(): Promise<string[]> {
-    const dir = join(fx.repo, ".flume", "rendered-prompts");
+    const dir = renderedPromptsDir(join(fx.repo, ".flume"));
     return existsSync(dir) ? readdir(dir) : [];
   }
 
@@ -15652,6 +15713,30 @@ describe("The rendered prompt is persisted before the agent runs (spec/prompt.md
     // this row resolving and not a trim that spares everything.
     await trimRenderedPrompts(flumeDir, new Set());
     expect(existsSync(kept)).toBe(false);
+  });
+
+  /**
+   * The listing's own half of that seam. `renderedPromptNames` selects on the
+   * extension the writer composes into the name, and it is the listing `flume
+   * status` counts a run's outstanding agents from (`src/runSpend.ts`) and the
+   * trim iterates — so a writer that stopped spelling that extension would
+   * leave every prompt on disk and invisible to both, with no reader failing.
+   * The real writer's file is read back through the real listing, against raw
+   * disk as the independent view.
+   */
+  it("the rendered-prompt listing returns the file a real tick's writer left", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const row = await tickRenderingPrompt("plan", "src/listed.ts");
+
+    // Non-vacuity: the writer left exactly one file, and the row it reported
+    // names that file — so the listing below has something to find.
+    const onDisk = await renderedFiles();
+    expect(onDisk).toHaveLength(1);
+    expect(renderedPromptName(row.promptPath)).toBe(onDisk[0]);
+
+    // Agreement: the listing returns it, rather than a subset its own filter
+    // dropped.
+    expect(await renderedPromptNames(flumeDir)).toEqual(onDisk);
   });
 
   it("fanout: each entry's row names its own file, and each file matches the prompt that entry's agent received", async () => {

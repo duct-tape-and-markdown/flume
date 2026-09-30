@@ -52,7 +52,6 @@ import {
   awakeDir,
   computeStateRootRel,
   DEFAULT_PENDING_REL,
-  fsStamp,
   loopLockPath,
   renderedPromptsDir,
   resolvePendingDir,
@@ -60,6 +59,10 @@ import {
   STATE_ROOT_NAMES,
   stopFlagPath,
 } from "../src/paths.ts";
+import {
+  RENDERED_PROMPT_PREFIX,
+  renderedPromptFileName,
+} from "../src/renderedPrompts.ts";
 import { entryFileName } from "../src/PendingSchema.ts";
 import { acquireTipClaim, gitCommonDir, tipClaimPath } from "../src/git.ts";
 import {
@@ -2611,16 +2614,19 @@ describe("flume status — the live run's spend (spec/cli.md \"flume status owes
 
   /**
    * The name a rendered prompt written at `at` carries, through the engine's
-   * own stamp writer rather than a second spelling of the format here — the
-   * window the verb bounds by is a comparison against exactly this
-   * (`fsStamp`, `src/paths.ts`).
+   * own composer rather than a second spelling of the format here — the window
+   * the verb bounds by is a comparison against exactly this name, and only the
+   * writer's own grammar puts the stamp where that comparison reads it
+   * (`renderedPromptFileName`, `src/renderedPrompts.ts`).
    */
   const promptName = (at: number, key: string): string =>
-    `${fsStamp(new Date(at))}-${key}.md`;
+    renderedPromptFileName(key, new Date(at));
 
-  /** That name as a usage row spells it: state-root-relative, forward slashes. */
-  const promptRel = (name: string): string =>
-    `${STATE_ROOT_NAMES.renderedPrompts}/${name}`;
+  /**
+   * That name as a usage row spells it: state-root-relative, forward slashes —
+   * the prefix taken from the same module both sides of the row take it from.
+   */
+  const promptRel = (name: string): string => RENDERED_PROMPT_PREFIX + name;
 
   /**
    * The rendered prompt an invocation persists before its agent runs

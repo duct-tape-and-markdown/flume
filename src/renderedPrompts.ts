@@ -3,13 +3,16 @@
  * per invocation, written before that agent runs (spec/prompt.md, *The
  * rendered prompt is persisted before the agent runs*).
  *
- * One job: what the directory holds, and for how long. The write is the
- * dispatcher's (`recordRenderedPrompt`, `src/tickAttempt.ts`); the listing,
- * the run window a filename is read against, and the trim that bounds the
- * directory live here because two callers share one edge — `flume status`
- * counts the run's outstanding agents by it (`src/runSpend.ts`) and the
- * verdict-history append trims by it (`src/tickVerdict.ts`) — and a second
- * spelling of "at or after the stamp" is how the two drift apart
+ * One job: what the directory holds, how a file in it is named, and for how
+ * long. The write is the dispatcher's (`recordRenderedPrompt`,
+ * `src/tickAttempt.ts`), but the name it writes under is composed here
+ * ({@link renderedPromptFileName}), beside every reader that depends on how
+ * it is spelled: the listing filters on its extension, the run window
+ * compares the whole name as a string, and the trim bounds the directory by
+ * both. Two callers share that edge — `flume status` counts the run's
+ * outstanding agents by it (`src/runSpend.ts`) and the verdict-history append
+ * trims by it (`src/tickVerdict.ts`) — and a second spelling of the name, or
+ * of "at or after the stamp", is how the writer and those readers drift apart
  * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
  *
  * The window is one predicate over one alphabet: every prompt file is named
@@ -28,6 +31,7 @@ import {
   fsStamp,
   namespacedJoin,
   renderedPromptsDir,
+  slugify,
   STATE_ROOT_NAMES,
 } from "./paths.js";
 import { liveLoopClaim } from "./pidClaim.js";
@@ -40,6 +44,36 @@ import { liveLoopClaim } from "./pidClaim.js";
  * through it, so neither side can respell it alone.
  */
 export const RENDERED_PROMPT_PREFIX = `${STATE_ROOT_NAMES.renderedPrompts}/`;
+
+/**
+ * The extension every rendered prompt carries. One spelling, taken by the
+ * composer below and by the listing that selects on it, so a change of format
+ * cannot leave the writer naming files the listing skips.
+ */
+const RENDERED_PROMPT_EXT = ".md";
+
+/**
+ * The filename one invocation's rendered prompt is written under: `at`'s
+ * {@link fsStamp}, then the invocation's prior-attempt `key` — the phase name
+ * for a singleton, the entry tag for a fanout leg — folded into a path
+ * component, then {@link RENDERED_PROMPT_EXT}. The stamp keeps ticks apart;
+ * the key keeps a wave's entries apart.
+ *
+ * Composed here rather than at the write (`recordRenderedPrompt`,
+ * `src/tickAttempt.ts`) because every reader of the name is here, and each
+ * reads a different part of this grammar: {@link renderedPromptNames} selects
+ * on the extension, and {@link withinRunWindow} compares the whole name as a
+ * string, which answers about the right instant only while the stamp leads it.
+ * A name spelled again at the writer is a grammar either side can respell
+ * alone (`.claude/rules/engineering.md`, *A seam gate reads what the real
+ * writer wrote*).
+ */
+export function renderedPromptFileName(
+  key: string,
+  at: Date = new Date(),
+): string {
+  return `${fsStamp(at)}-${slugify(key)}${RENDERED_PROMPT_EXT}`;
+}
 
 /**
  * The window's edge, as a filename of this directory would spell it — what a
@@ -99,7 +133,7 @@ export async function renderedPromptNames(flumeDir: string): Promise<string[]> {
       { cause: err },
     );
   }
-  return names.filter((name) => name.endsWith(".md"));
+  return names.filter((name) => name.endsWith(RENDERED_PROMPT_EXT));
 }
 
 /**
