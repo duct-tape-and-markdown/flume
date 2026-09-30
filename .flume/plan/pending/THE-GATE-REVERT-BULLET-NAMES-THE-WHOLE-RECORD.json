@@ -1,0 +1,27 @@
+{
+  "tag": "THE-GATE-REVERT-BULLET-NAMES-THE-WHOLE-RECORD",
+  "gate": { "kind": "open" },
+  "priority": 0,
+  "files": {
+    "edit": [
+      {
+        "path": "docs/CHAIN-AUTHORING.md",
+        "description": "the `gate-revert` bullet's roster at :2105 — widen per the cite"
+      },
+      {
+        "path": "tests/examples.test.ts",
+        "description": "pin that bullet against the record; `bulletOf` is in tests/helpers/docSections.ts"
+      }
+    ]
+  },
+  "summary": "docs/CHAIN-AUTHORING.md's gate-revert bullet rosters name/message/details/digest; the record and the renderer also carry verdict, failingFiles and the blamesSpan arm",
+  "per": {
+    "path": "spec/loop.md",
+    "section": "Prior-outcome feedback to the retrying tick"
+  },
+  "acceptance": "The bullet names every field the cite says the block carries, and a pin reds when a field GateRevertAttempt declares goes unnamed there.",
+  "tests": [
+    "docs/CHAIN-AUTHORING.md's gate-revert bullet names every field the record carries"
+  ],
+  "notes": "Sibling precedent: tests/cliHelp.test.ts:3140 holds the render-refused bullet of the same list this way, which is why that one did not drift. The undrained note THE-GATE-REVERT-BLOCK-CARRIES-THE-GATES-OWN-ATTRIBUTION asks for a lens over the same page's rendered sample; if plan-inbox files it, it is a sibling on docs/CHAIN-AUTHORING.md and collides on that literal path."
+}
