@@ -12,6 +12,7 @@ import {
   describe,
   expect,
   it,
+  onTestFinished,
   vi,
 } from "vitest";
 import { z } from "zod";
@@ -12176,16 +12177,70 @@ describe("Dispatcher fanout — a merge-stage throw outside the ledger rewrite c
 
 // ---------- two walls at once ----------
 
+/** The words BOOM-B's refused tip read raises, which its wave's summary then
+ * carries — distinct enough that a case matching it cannot be matching some
+ * other git refusal. */
+const BOOM_B_TIP_READ_REFUSED =
+  "fatal: flume-test refused the tip read in BOOM-B's worktree";
+
+/**
+ * BOOM-B's wall, shared by both armings below: the tip read `runAttempt` makes
+ * once its agent returns refuses, which is no refusal the attempt classifies —
+ * it leaves `runFanoutEntry` whole and lands in the wave's `slotError`. The
+ * shape the field hit: an agent that explodes, a hook that throws, a read of
+ * the tree that will not resolve.
+ *
+ * Injected at `git.revParse`, not armed by wrecking the `.git` file the
+ * worktree is addressed through. That wreck — a `gitdir:` pointer at a path
+ * that is not there — denied on posix and denied nothing on the windows lane:
+ * the leg never threw, the wave never walled, the slot's tail removed the
+ * worktree, and the cases here asserted a wall that never happened while
+ * reading evidence off a directory that was already gone. Why git's discovery
+ * stops refusing there is unsettled, and no case below needs it settled: the
+ * injection denies identically on every host, and `denials()` is the `n > 0`
+ * each case pins its wall on — read off the arming, never off the verdict
+ * field under test (`.claude/rules/engineering.md`, *A green verdict is
+ * proven non-vacuous*).
+ *
+ * Scoped to BOOM-B's worktree and to the reads that follow `arm()`, which its
+ * agent calls: the span base that attempt read before its agent, every sibling
+ * slot's reads, and the wave's own tip reads all resolve for real.
+ */
+function refuseBoomBTipRead(): { arm: () => void; denials: () => number } {
+  const boomWorktree = join("worktrees", worktreeDirName("BOOM-B"));
+  let armed = false;
+  let denials = 0;
+  const realRevParse = git.revParse;
+  const spy = vi.spyOn(git, "revParse").mockImplementation(async (cwd, ref) => {
+    if (armed && cwd.includes(boomWorktree)) {
+      denials++;
+      throw new Error(BOOM_B_TIP_READ_REFUSED);
+    }
+    return realRevParse(cwd, ref);
+  });
+  // Restored per case rather than by an `afterEach`: both armings are reached
+  // from top-level `it`s with no hook of their own, and a `git.revParse` left
+  // mocked would follow the suite into whatever runs next.
+  onTestFinished(() => {
+    spy.mockRestore();
+  });
+  return {
+    arm: () => {
+      armed = true;
+    },
+    denials: () => denials,
+  };
+}
+
 /**
  * A wave that hits both of its walls, driven once per case.
  *
  * SHIP-A's agent commits a corrupt entry file into the queue before its own
  * span, so the strict read behind its pick refuses and the merge stage
  * records the refusal (`commitAttemptLedger`, `src/waveMerge.ts`). BOOM-B's
- * agent wrecks the `.git` file its worktree is addressed through, so the tip
- * read that follows its agent refuses and lands in the wave's `slotError` —
- * the same arming `waveTornDownByASlotLeg` below uses, and the shape the
- * field hits: a hook that throws, a read of the tree that will not resolve.
+ * tip read refuses and lands in the wave's `slotError`
+ * ({@link refuseBoomBTipRead}) — the same arming `waveTornDownByASlotLeg`
+ * below uses.
  *
  * Nothing here orders the two: a slot leg's throw does not stop a sibling's
  * merge (only the merge holder does), so both walls stand by the time the
@@ -12199,7 +12254,8 @@ async function waveHoldingBothWalls(): Promise<{
   thrown: unknown;
   corruptEntry: string;
   corruptBytes: string;
-  boomCwd: string | undefined;
+  /** How many times BOOM-B's tip read actually refused — the wall's `n > 0`. */
+  tipDenials: number;
 }> {
   await writePending(fx.repo, [
     makeEntry("SHIP-A", ["src/a.ts"]),
@@ -12209,7 +12265,7 @@ async function waveHoldingBothWalls(): Promise<{
 
   const corruptEntry = join(queueDirOf(fx.repo), entryFileName("CORRUPT"));
   const corrupt = "{ corrupted mid-wave, not json";
-  let boomCwd: string | undefined;
+  const tip = refuseBoomBTipRead();
 
   const dispatcher = new Dispatcher({
     chainLoader: staticLoader({
@@ -12223,13 +12279,9 @@ async function waveHoldingBothWalls(): Promise<{
         await commitEntryFile(fx.repo, entryFileName("CORRUPT"), corrupt);
         await writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(SHIP-A): ship");
       },
-      "boom-b": async (cwd) => {
-        boomCwd = cwd;
-        await writeFile(
-          join(cwd, ".git"),
-          "gitdir: /flume-no-such-gitdir\n",
-          "utf8",
-        );
+      // Commits nothing: the wall is the read that follows this return.
+      "boom-b": async () => {
+        tip.arm();
       },
     }),
     log: silent,
@@ -12241,12 +12293,18 @@ async function waveHoldingBothWalls(): Promise<{
     thrown = err;
     return undefined;
   });
-  return { outcome, thrown, corruptEntry, corruptBytes: corrupt, boomCwd };
+  return {
+    outcome,
+    thrown,
+    corruptEntry,
+    corruptBytes: corrupt,
+    tipDenials: tip.denials(),
+  };
 }
 
 describe("Dispatcher fanout — a recorded ledger refusal outranks a slot leg's throw", () => {
   it("a wave whose merge stage refused its ledger rewrite reports that refusal when a slot leg also threw", async () => {
-    const { outcome, thrown, corruptEntry, corruptBytes, boomCwd } =
+    const { outcome, thrown, corruptEntry, corruptBytes, tipDenials } =
       await waveHoldingBothWalls();
 
     // Vacuity, both walls, because a class asserted over a wave that hit only
@@ -12259,14 +12317,12 @@ describe("Dispatcher fanout — a recorded ledger refusal outranks a slot leg's 
     expect(outcome?.failed).toBe(true);
     expect(outcome?.verdict?.shippedTags).toEqual(["SHIP-A"]);
     expect(await readFile(corruptEntry, "utf8")).toBe(corruptBytes);
-    // The slot leg's, read off the fact the engine now reports rather than
-    // off a row BOOM-B is missing from: an absent merge row is what a
-    // declined, render-refused or nothing-committed slot leaves too, so it
-    // pins "BOOM-B did not merge" where this case needs "BOOM-B's leg threw".
-    expect(boomCwd).toBeDefined();
-    expect(await readFile(join(boomCwd!, ".git"), "utf8")).toContain(
-      "gitdir: /flume-no-such-gitdir",
-    );
+    // The slot leg's, pinned on the arming that raised it and then read off
+    // the fact the engine reports — never off a row BOOM-B is missing from: an
+    // absent merge row is what a declined, render-refused or nothing-committed
+    // slot leaves too, so it pins "BOOM-B did not merge" where this case needs
+    // "BOOM-B's leg threw".
+    expect(tipDenials).toBeGreaterThan(0);
     expect(outcome?.verdict?.unclassedWalls?.map((wall) => wall.event)).toEqual(
       ["a slot leg threw"],
     );
@@ -12295,18 +12351,16 @@ describe("Dispatcher fanout — a recorded ledger refusal outranks a slot leg's 
 
 describe("Dispatcher fanout — a walled wave reports every wall it held", () => {
   it("a wave holding a refused ledger rewrite and a slot leg's throw reports both walls on its verdict", async () => {
-    const { outcome, corruptEntry, corruptBytes, boomCwd } =
+    const { outcome, corruptEntry, corruptBytes, tipDenials } =
       await waveHoldingBothWalls();
 
-    // Vacuity: this wave really held two walls, each still standing on disk.
-    // A verdict naming one of them is what every sibling case here pins, so a
-    // "both" claim over a one-wall wave would read green on the ranking alone.
+    // Vacuity: this wave really held two walls — the corrupt queue still on
+    // disk, and a tip read that really refused. A verdict naming one of them is
+    // what every sibling case here pins, so a "both" claim over a one-wall wave
+    // would read green on the ranking alone.
     expect(outcome?.failed).toBe(true);
     expect(await readFile(corruptEntry, "utf8")).toBe(corruptBytes);
-    expect(boomCwd).toBeDefined();
-    expect(await readFile(join(boomCwd!, ".git"), "utf8")).toContain(
-      "gitdir: /flume-no-such-gitdir",
-    );
+    expect(tipDenials).toBeGreaterThan(0);
 
     // The classed wall, unchanged: it still decides the summary line and the
     // exit arm, which is what the ranking is for.
@@ -12330,13 +12384,16 @@ describe("Dispatcher fanout — a walled wave reports every wall it held", () =>
   });
 
   it("the wall a wave's ranking did not class rides the TickResult beside the class it did", async () => {
-    const { outcome } = await waveHoldingBothWalls();
+    const { outcome, tipDenials } = await waveHoldingBothWalls();
 
     // Vacuity: the handoff really is the walled-wave arm — a class it named,
-    // over a wave that shipped a span before it walled.
+    // over a wave that shipped a span before it walled — and the second wall
+    // this case is about really happened, rather than being a field the engine
+    // could have left absent with nothing wrong.
     expect(outcome?.failed).toBe(true);
     expect(outcome?.ledgerRefusal).toBe("parse-failure");
     expect(outcome?.verdict?.shippedTags).toEqual(["SHIP-A"]);
+    expect(tipDenials).toBeGreaterThan(0);
 
     // The claim: a supervisor reading the handoff sees the second wall
     // without opening the verdict file beside it, and the two surfaces carry
@@ -26232,23 +26289,20 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
 /**
  * A two-entry wave where one slot's own leg throws outside any ledger read.
  *
- * The arming is the tip read `runAttempt` makes once its agent returns:
- * BOOM-B's agent wrecks the tree under its own feet, so `git.revParse` on
- * that worktree refuses and the throw is no refusal the attempt classifies —
- * it leaves `runFanoutEntry` whole and lands in the wave's `slotError`.
- * Structural denial rather than a permission bit, which denies on every host
- * (`.claude/rules/platform-facts.md`, *`chmod` denies nothing on win32*).
- * Which is the shape the field hit: an agent that explodes, a hook that
- * throws, a read of the tree that will not resolve. SHIP-A's slot is
- * untouched, so its span cherry-picks, gates and lands on trunk while
+ * The arming is the tip read `runAttempt` makes once its agent returns,
+ * refused for BOOM-B's worktree alone ({@link refuseBoomBTipRead}). SHIP-A's
+ * slot is untouched, so its span cherry-picks, gates and lands on trunk while
  * BOOM-B's leg is tearing the wave down beside it.
  *
  * Returns the tick settled either way — outcome or throw — because whether it
- * throws at all is one of the properties under test.
+ * throws at all is one of the properties under test, and the denial count so
+ * each case pins the wall it is about on the arming rather than on the surface
+ * the wall is supposed to reach.
  */
 async function waveTornDownByASlotLeg(): Promise<{
   outcome: Awaited<ReturnType<Dispatcher["tick"]>> | undefined;
   thrown: unknown;
+  tipDenials: number;
 }> {
   await writePending(fx.repo, [
     makeEntry("SHIP-A", ["src/a.ts"]),
@@ -26256,6 +26310,7 @@ async function waveTornDownByASlotLeg(): Promise<{
   ]);
   new Baton(join(fx.repo, ".flume")).wake("build");
   await writeFile(join(fx.configDir, "prompt.md"), "task: {{TASK}}\n", "utf8");
+  const tip = refuseBoomBTipRead();
 
   const phase = makePhase({
     name: "build",
@@ -26271,11 +26326,11 @@ async function waveTornDownByASlotLeg(): Promise<{
     agent: fanoutAgent({
       "ship-a": (cwd) =>
         writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(SHIP-A): ship"),
-      // The `.git` file a linked worktree is addressed through, pointed at a
-      // gitdir that is not there: every later git call in this leg refuses,
-      // starting with the tip read that follows the agent.
-      "boom-b": (cwd) =>
-        writeFile(join(cwd, ".git"), "gitdir: /flume-no-such-gitdir\n", "utf8"),
+      // Commits nothing and arms the wall: the read that follows this return
+      // is the one that refuses.
+      "boom-b": async () => {
+        tip.arm();
+      },
     }),
     log: silent,
     maxParallel: 2,
@@ -26286,18 +26341,19 @@ async function waveTornDownByASlotLeg(): Promise<{
     thrown = err;
     return undefined;
   });
-  return { outcome, thrown };
+  return { outcome, thrown, tipDenials: tip.denials() };
 }
 
 it("a wave whose slot leg throws outside a ledger read still writes the settled wave's verdict", async () => {
-  const { outcome, thrown } = await waveTornDownByASlotLeg();
+  const { outcome, thrown, tipDenials } = await waveTornDownByASlotLeg();
 
-  // Vacuity pins for the arm this case exists to judge: the tick really was
-  // torn down, and by a throw that is no ledger refusal — without the second
-  // the assertions below would hold over the `WaveLedgerRefusal` arm the
-  // suites above already cover.
+  // Vacuity pins for the arm this case exists to judge: a slot leg's read
+  // really refused, the tick really was torn down, and by a throw that is no
+  // ledger refusal — without the last the assertions below would hold over the
+  // `WaveLedgerRefusal` arm the suites above already cover.
+  expect(tipDenials).toBeGreaterThan(0);
   expect(outcome?.failed).toBe(true);
-  expect(outcome?.summary).toMatch(/fatal: not a git repository/);
+  expect(outcome?.summary).toContain(BOOM_B_TIP_READ_REFUSED);
   expect(outcome?.ledgerRefusal).toBeUndefined();
 
   // The claim, in three parts. `tick()` returns rather than re-throwing…
@@ -26325,12 +26381,13 @@ it("a wave whose slot leg throws outside a ledger read still writes the settled 
 });
 
 it("the verdict a wave writes after a slot leg throws names every span it landed on trunk", async () => {
-  const { outcome, thrown } = await waveTornDownByASlotLeg();
+  const { outcome, thrown, tipDenials } = await waveTornDownByASlotLeg();
 
   // Same vacuity pins, plus the one this case turns on: the wave really did
   // carry a span onto trunk before it was torn down, so "names every span"
   // is a claim over a non-empty set.
   expect(thrown).toBeUndefined();
+  expect(tipDenials).toBeGreaterThan(0);
   expect(outcome?.failed).toBe(true);
   expect(outcome?.ledgerRefusal).toBeUndefined();
   expect(existsSync(join(fx.repo, "src", "a.ts"))).toBe(true);
