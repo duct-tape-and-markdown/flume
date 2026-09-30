@@ -1,0 +1,31 @@
+{
+  "tag": "A-HOST-GATED-CASE-RIDES-LANETESTS-OWED-TO-ITS-LANE",
+  "gate": {
+    "kind": "blockedBy",
+    "tags": ["A-RED-STANDING-LANE-IS-READ-FROM-AN-ANCESTORS-FAILED-RUN"]
+  },
+  "priority": 10,
+  "files": {
+    "edit": [
+      { "path": "harness/entryExtension.ts", "description": "the laneTests[] field beside tests[] and pins[], its schema and its hint" },
+      { "path": "harness/runner.ts", "description": "the seam: a named line's report distinguishing a skipped carrier from none" },
+      { "path": "harness/vitestRunner.ts", "description": "readRun reading the skipped status beside passed" },
+      { "path": "harness/scriptRunner.ts", "description": "the default reader's construction of the widened report" },
+      { "path": "harness/judge.ts", "description": "the owed line state and the ruling over lane lines" },
+      { "path": "harness/judgeGate.ts", "description": "narrowing an entry's lane lines and rendering owed in the verdict" },
+      { "path": "tests/harnessEntryExtension.test.ts", "description": "the field's schema and hint" },
+      { "path": "tests/harnessRunner.test.ts", "description": "the skipped read" },
+      { "path": "tests/harnessJudge.test.ts", "description": "the owed ruling and the gate verdict over it" }
+    ]
+  },
+  "summary": "the entry surface cannot name a host-gated case, so the judge walls the build tick that follows the host-proof rule",
+  "per": { "path": "spec/harness.md", "section": "The judges" },
+  "acceptance": "an entry names laneTests[] lines, each a declared lane and a title; the judge reports one whose case is skipped on the build host as owed to that lane, and refuses one no case carries",
+  "tests": [
+    "the vitest runner reports a line carried only by a skipped test as skipped rather than uncarried",
+    "a laneTests line carried only by a skipped test reports owed rather than proven",
+    "a laneTests line no test on the build host names is refused as unnamed",
+    "a judge gate over an entry whose only named lines are laneTests passes with every line owed to its lane"
+  ],
+  "notes": "Answers the win32-gated-case question, closed this tick: option (b), as its own field rather than a qualifier on tests[]. Two senses of \"lane\" meet here — a runner Lane (`harness/runner.ts`) and a CI lane (`harness/ciLane.ts`); the line's key is the CI lane's, as that lane already keys its findings. `spec/harness.md`, *The runner interface* still states run's report as passing-only, so the skipped status this needs runs ahead of that sentence."
+}
