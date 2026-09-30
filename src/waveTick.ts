@@ -699,10 +699,11 @@ export async function runFanout(
   // straight to `tick()`'s catch, over the worktree and the claim of every
   // slot that settled behind the refusal — `settleSlot` above takes neither
   // half once this holder is set. Surviving worktrees are the accepted cost
-  // of refusing rather than proceeding; the next `pruneWorktrees` call
-  // reclaims their metadata once a human has cleared the refusal, and those
-  // claim files stay staked for the same reason — the reclaim needs no
-  // repair.
+  // of refusing rather than proceeding, and they are the next `flume loop`
+  // start's sweep to remove (`sweepStaleWorktrees`, `src/worktrees.ts`),
+  // which takes the directory and the branch it was cut on — a prune takes
+  // neither. Those claim files stay staked for the same reason, and the next
+  // selection's liveness probe reclaims them — that reclaim needs no repair.
   if (mergeError !== undefined) throw await waveMergeError(merge, mergeError);
 
   // Close the stage: the fold over what the picks observed. Each of them

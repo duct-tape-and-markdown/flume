@@ -589,8 +589,9 @@ async function foldAttemptFacts(
     // at the merge": this entry's worktree is done being written —
     // its agent, its tip-verify soft reset and its afterCommit
     // revert all ran inside `runAttempt`, and the pick touches
-    // trunk alone — but teardown is still a whole wave away, so the
-    // set is readable here.
+    // trunk alone — and the teardown that follows this read is the
+    // slot's own tail, one `await` past this fold (`settleSlot`,
+    // `src/waveTick.ts`), so the set is readable here.
     await appendInvocationRow(w.setup.leg.flumeDir, w.setup.phase.name, {
       entryTag: r.entry.tag,
       promptPath: r.termination.promptPath,
@@ -1145,8 +1146,11 @@ async function commitAttemptLedger(
   // it names, which fatals under a paused merge or cherry-pick in the primary
   // checkout and on a path git finds unchanged. Already-shipped commits stay
   // on trunk in every case. Surviving worktrees are the accepted cost of
-  // refusing rather than proceeding; the next `pruneWorktrees` call reclaims
-  // their metadata once a human has cleared the refusal.
+  // refusing rather than proceeding, and they stand on disk until the sweep
+  // the next `flume loop` start runs (`sweepStaleWorktrees`,
+  // `src/worktrees.ts`) takes the directory and the branch it was cut on — a
+  // prune, which drops the metadata of a directory already gone, takes
+  // neither.
   let update: PendingRewriteResult;
   try {
     update = await commitPendingUpdate(
