@@ -1,18 +1,5 @@
 {
-  "sweptThrough": "5ebc0fbf309da4381d5fda45e9c4bd560a6ac87d",
-  "rotation": {
-    "kind": "open",
-    "covered": [
-      "harness/planState.ts",
-      "harness/vitestRunner.ts",
-      "src/budgetHook.ts",
-      "src/friction.ts",
-      "src/singletonTick.ts",
-      "src/thrown.ts",
-      "src/waveMerge.ts",
-      "src/waveTick.ts",
-      "src/worktrees.ts"
-    ]
-  },
-  "retiredThrough": "0bb99164c311a47de243828c1e91eb54e0202c8b"
+  "sweptThrough": "6faf94cf843b8de328766b93fb1e8c6a6e5694c9",
+  "rotation": { "kind": "closed" },
+  "retiredThrough": "6faf94cf843b8de328766b93fb1e8c6a6e5694c9"
 }

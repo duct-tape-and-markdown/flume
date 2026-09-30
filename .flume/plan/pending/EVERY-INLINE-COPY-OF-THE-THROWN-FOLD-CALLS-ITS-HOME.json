@@ -1,0 +1,84 @@
+{
+  "tag": "EVERY-INLINE-COPY-OF-THE-THROWN-FOLD-CALLS-ITS-HOME",
+  "gate": { "kind": "open" },
+  "priority": 0,
+  "files": {
+    "edit": [
+      {
+        "path": "src/thrown.ts",
+        "description": "the home (`thrownMessage`, :55) — unchanged; the seam every site below calls"
+      },
+      {
+        "path": "src/cliStatus.ts",
+        "description": ":77, :106, :146, :256 — four copies, no import of the home yet"
+      },
+      {
+        "path": "src/cliLoop.ts",
+        "description": ":120, :226, :282"
+      },
+      {
+        "path": "src/cliFriction.ts",
+        "description": ":104, :132, :150"
+      },
+      {
+        "path": "src/tickVerdict.ts",
+        "description": ":1148 (`unreadable`) and :1183 (`VerdictHistoryUnreadableError`) — in a module whose header (:19-:20) already names `src/thrown.ts` as that reading's home"
+      },
+      {
+        "path": "src/git.ts",
+        "description": ":193 (`resetKeepTo`) and :1186 (`currentRefPath`) — module already imports the home at :27"
+      },
+      {
+        "path": "src/cli.ts",
+        "description": ":123, :250"
+      },
+      {
+        "path": "src/pendingLedger.ts",
+        "description": ":767 — module already imports the home at :53 and calls it at :478"
+      },
+      {
+        "path": "src/loopSupervisor.ts",
+        "description": ":711 — module already imports the home at :26 and calls it at :1124"
+      },
+      {
+        "path": "src/Prompt.ts",
+        "description": ":475"
+      },
+      {
+        "path": "src/renderedPrompts.ts",
+        "description": ":131"
+      },
+      {
+        "path": "src/stateRootAccess.ts",
+        "description": ":56"
+      },
+      {
+        "path": "src/cliChainLoad.ts",
+        "description": ":76"
+      },
+      {
+        "path": "src/cliCheck.ts",
+        "description": ":56"
+      },
+      {
+        "path": "src/cliHistory.ts",
+        "description": ":55"
+      },
+      {
+        "path": "src/cliRender.ts",
+        "description": ":72"
+      },
+      {
+        "path": "harness/exec.ts",
+        "description": ":111 — reached by the deep import spelling every harness module already uses for `src/`, never by widening `src/index.ts`"
+      }
+    ]
+  },
+  "summary": "26 call sites across 16 modules spell `thrownMessage` character for character beside it; third body naming the family, so it files",
+  "per": {
+    "path": ".claude/rules/posture-sweep.md",
+    "section": "Routing"
+  },
+  "acceptance": "`grep -rnE 'instanceof Error \\? [A-Za-z_$.]+\\.message : String\\(' src/ harness/` returns exactly two lines: `src/thrown.ts:39`, the home's own body, and `src/waveMerge.ts:211`, `refusalMessage` — a separate family, deliberately out of scope. Every site named in `files` calls `thrownMessage` (`src/thrown.ts`) instead, reached through a relative import; `src/index.ts` is not widened, so the export pin is untouched. Behavior-free: `pnpm tsc --noEmit` and `pnpm test` green, and every operator string is byte-identical — the fold's `Error` arm is `err.message` unchanged, so no log line, gate message or record text moves.",
+  "notes": "Family *the correct fold spelled inline beside its own home* — bodies 8cdecaf4 and 6faf94cf, which corrected an earlier overcount and named the next re-note as the filing. Measured on this tip: 28 grep hits, minus src/thrown.ts:39 (the home) and src/waveMerge.ts:211 (refusalMessage — the module-level-home family, and that file is in flight). Only 3 of 16 modules already import the home. The two throwFacts(err).message reads in src/Dispatcher.ts reach the home already and stay as they are."
+}
