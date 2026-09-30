@@ -177,8 +177,8 @@ function checkoutStateRootArtifact(repoRoot: string): string | undefined {
  * disagrees; a `FLUME_DIR` typed fresh for this invocation carries no
  * stamp and is never refused on that basis, whatever its path looks like.
  * *A different repo* is decided through `canonicalDir`
- * (`src/pathIdentity.ts`), the fold the second-root comparison below already
- * spends: one checkout reached under two on-disk spellings — a stamp written
+ * (`src/pathIdentity.ts`), the fold the second-root comparison below decides
+ * through too: one checkout reached under two on-disk spellings — a stamp written
  * for its real path, this invocation's root discovered through a link, or the
  * reverse — is one repo, and refusing it as another repo's hands the operator
  * a message naming one directory twice and a remedy that unsets the stamp it
@@ -201,19 +201,35 @@ function checkoutStateRootArtifact(repoRoot: string): string | undefined {
  * spends, shared rather than spelled again beside it
  * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
  *
- * That leaves two disk reads in the arithmetic, the fold's and
- * {@link checkoutStateRootArtifact}'s, and each earns its own: two names for
- * one directory is a question only the OS can answer, and relocating state
- * alone while the chain stays in the bay is the documented split, so the
- * bay's presence decides nothing here and its contents decide everything.
+ * Both comparisons fold **only where the two spellings differ**. Equal
+ * strings fold equal, so an unconditional fold over a pair that is one
+ * string by construction is a disk read spent to prove a string equals
+ * itself — and the default invocation is exactly that pair on both sides:
+ * `flumeDir` *is* `own` by assignment while `FLUME_DIR` is unset, and an
+ * inherited stamp *is* the `resolve(repoRoot)` a prior call wrote. So the
+ * arithmetic reaches the disk nowhere at all on the path every tick takes.
+ *
+ * What it reads when the spellings do differ still earns itself: two names
+ * for one directory is a question only the OS can answer, and
+ * {@link checkoutStateRootArtifact}'s reads sit past a fold that already
+ * disagreed, where relocating state alone while the chain stays in the bay
+ * is the documented split — so the bay's presence decides nothing here and
+ * its contents decide everything.
  */
 export function resolveStateDirs(
   env: NodeJS.ProcessEnv,
   repoRoot: string,
 ): { flumeDir: string; configDir: string } {
+  // This invocation's own name for the repo root: the spelling the stamp is
+  // written in below, and so the one an inherited stamp is compared against.
+  // A stamp this repo's own prior call wrote is that string character for
+  // character, and equal strings fold equal, so the fold is spent only on a
+  // stamp that actually reads differently.
+  const resolvedRepoRoot = resolve(repoRoot);
   if (
     env.FLUME_DIR_RESOLVED_FOR &&
-    canonicalDir(env.FLUME_DIR_RESOLVED_FOR) !== canonicalDir(repoRoot)
+    env.FLUME_DIR_RESOLVED_FOR !== resolvedRepoRoot &&
+    canonicalDir(env.FLUME_DIR_RESOLVED_FOR) !== canonicalDir(resolvedRepoRoot)
   ) {
     // Both halves of the message vary with whether `FLUME_DIR` came along:
     // an inherited stamp can outlive the dir it was written beside, and
@@ -236,11 +252,13 @@ export function resolveStateDirs(
   const own = defaultStateRoot(repoRoot);
   const flumeDir = env.FLUME_DIR ? resolve(env.FLUME_DIR) : own;
   const configDir = env.FLUME_CONFIG_DIR ? resolve(env.FLUME_CONFIG_DIR) : own;
-  // Folded on both sides, never compared raw: the refusal is about two
-  // directories, and the env carries whichever spelling the operator typed.
-  // What is published below stays that spelling — the fold decides identity,
-  // not what a child inherits.
-  if (canonicalDir(flumeDir) !== canonicalDir(own)) {
+  // Folded on both sides where they differ, never decided on the raw
+  // comparison alone: the refusal is about two directories, and the env
+  // carries whichever spelling the operator typed. What is published below
+  // stays that spelling — the fold decides identity, not what a child
+  // inherits. With `FLUME_DIR` unset `flumeDir` is `own` by assignment, and
+  // one string is one directory without asking the disk.
+  if (flumeDir !== own && canonicalDir(flumeDir) !== canonicalDir(own)) {
     const artifact = checkoutStateRootArtifact(repoRoot);
     if (artifact !== undefined)
       throw new SecondStateRootError(
@@ -256,6 +274,6 @@ export function resolveStateDirs(
   }
   env.FLUME_DIR = flumeDir;
   env.FLUME_CONFIG_DIR = configDir;
-  env.FLUME_DIR_RESOLVED_FOR = resolve(repoRoot);
+  env.FLUME_DIR_RESOLVED_FOR = resolvedRepoRoot;
   return { flumeDir, configDir };
 }
