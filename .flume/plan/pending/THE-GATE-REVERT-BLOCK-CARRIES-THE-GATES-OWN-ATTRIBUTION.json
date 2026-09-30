@@ -1,0 +1,28 @@
+{
+  "tag": "THE-GATE-REVERT-BLOCK-CARRIES-THE-GATES-OWN-ATTRIBUTION",
+  "gate": { "kind": "open" },
+  "priority": 30,
+  "files": {
+    "edit": [
+      {
+        "path": "src/Prompt.ts",
+        "description": "gate-revert arm of `modeLines` renders the gate's own attribution per the cite"
+      },
+      {
+        "path": "tests/Prompt.test.ts",
+        "description": "gate-revert fixture and block assertions for the widened arm"
+      }
+    ]
+  },
+  "summary": "The gate-revert <prior-attempt> block renders the gate's verdict and failingFiles, and states a blamesSpan:false revert as a disowned blame",
+  "per": {
+    "path": "spec/loop.md",
+    "section": "Prior-outcome feedback to the retrying tick"
+  },
+  "acceptance": "A gate-revert block shows `verdict` and `failingFiles` where the record carries them; a `blamesSpan: false` record's block says the revert happened and the gate disowned the blame, in place of the change-your-approach instruction.",
+  "tests": [
+    "the gate-revert block renders the gate's verdict and failing files where the record carries them",
+    "a gate-revert block whose record disowns the blame says so instead of instructing the agent to change approach"
+  ],
+  "notes": "The record's three fields are already stamped by `buildGateRevert` (src/priorAttempts.ts); only the renderer is short of the cite. The per-mode case in tests/Prompt.test.ts reads every non-envelope field's value lines off its fixture, so a fixture carrying `blamesSpan: false` demands the literal `false` somewhere in the block while the cite asks for prose — how that case reads a boolean field is build's call."
+}
