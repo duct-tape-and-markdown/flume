@@ -1,0 +1,31 @@
+{
+  "tag": "THE-WAVE-WALLED-ROW-NAMES-EVERY-WALL-THAT-RECORDS-IT",
+  "gate": { "kind": "open" },
+  "priority": 0,
+  "files": {
+    "edit": [
+      {
+        "path": "src/tickVerdict.ts",
+        "description": "`MergeOutcome`'s `wave-walled` arm, and the `headSha`/`buildTickVerdict` docs beside it, name the wall as any merge-stage throw"
+      },
+      {
+        "path": "src/Dispatcher.ts",
+        "description": "the verdict-build comment's named sharer widens past the ledger refusal"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the pin: a wave-walled row from a wall no ledger refused"
+      }
+    ]
+  },
+  "summary": "`MergeOutcome`'s `wave-walled` doc names a refused ledger rewrite as the wall, but the row is recorded for every merge-stage throw",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Narration is the ladder's bottom rung"
+  },
+  "acceptance": "`MergeOutcome`'s `wave-walled` arm states the wall as any throw the merge stage holds, not a refused ledger rewrite alone; the sibling narrowings named in notes move with it; the pin below is green.",
+  "pins": [
+    "records a wave-walled row for a span that settled after a merge-stage wall no ledger refused"
+  ],
+  "notes": "`MergeOutcome` is exports-reachable, so the arm is hover text a chain routes on. `foldUncarriedAttempt` (`src/waveMerge.ts`) rows on `mergeError`, which holds every throw out of `mergeAttempt` — a marker write, a prior-attempt record, a revParse. Sibling narrowings, same commit: `TickVerdictFacts.headSha` and `buildTickVerdict`'s own doc (`src/tickVerdict.ts`), and the verdict-build comment in `src/Dispatcher.ts`."
+}
