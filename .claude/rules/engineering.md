@@ -215,6 +215,9 @@ names it and the commit body says what it pins.
   symptom instead of a reproduced one is a guess.
 - A fix whose regression genuinely cannot be pinned decidably says so out
   loud in the commit body — the named exception, never the default.
+- A defect only one host exhibits ships its case gated to that host; the
+  lane that runs there is the proof, the case need not red on the build
+  host's base, and the commit body names the lane.
 
 ## The fix lands at the mechanism
 

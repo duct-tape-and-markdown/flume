@@ -615,7 +615,7 @@ receives a **`PriorAttempt` record** — a mode-tagged union, exactly one varian
 dispatcher-owned `<prior-attempt>` block:
 
 - `gate-revert` — which gate phase reverted (`afterCommit` or `afterMerge`), the gate's
-  `name`, its one-line `message`, its full `details`, its `verdict` and `failingFiles`
+  `name`, its one-line `message`, its bounded `details`, its `verdict` and `failingFiles`
   where it returned them, and a stat digest of the reverted span — every commit the
   tick added, base to head. A gate that declared the failure not the span's
   (`blamesSpan: false`) is stated as that: the block says the revert happened and
