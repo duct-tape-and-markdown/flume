@@ -1,0 +1,20 @@
+{
+  "tag": "THE-RECORD-STORES-TWO-ERROR-FOLDS-HAVE-ONE-HOME",
+  "gate": { "kind": "open" },
+  "priority": 0,
+  "files": {
+    "edit": [
+      {
+        "path": "src/priorAttempts.ts",
+        "description": "the guarded fold in `readRecord`'s refusal (:500) and the unguarded cast in `snapshotReverted`'s whole-artifact catch (:809)"
+      }
+    ]
+  },
+  "summary": "One module folds an unknown thrown value to a message two ways — guarded at :500, an unguarded cast at :809 — and two plan bodies have taken the shape as debt",
+  "per": {
+    "path": ".claude/rules/posture-sweep.md",
+    "section": "Routing"
+  },
+  "acceptance": "Both catches in `src/priorAttempts.ts` fold an unknown thrown value through one module-private helper, spelling the guarded reading `readRecord` already gives it, so the snapshot warn can neither print `undefined` for a thrown non-`Error` nor throw inside its own catch for a thrown `null` — the one outcome `snapshotReverted`'s doc rules out. Module-private: no new export (*An export earns its consumer*), and no cross-module home — the repo-wide cast/guard split is a wider finding, not this entry's. Every operator-visible string on the `Error` path stays byte-identical, which `tests/priorAttempts.test.ts:1059` and `:517` hold at the two sites. `pnpm tsc --noEmit` and `pnpm test` green; no reachable behaviour change.",
+  "notes": "Third body, `git log` unbounded over every `plan:` body: 47ea025d first, 6b7e5ebd second. Both sites re-verified on disk this tick. Still unreachable: every thrower inside that `try` is `node:fs/promises` or `promisify(execFile)` (`spawnGit`, `src/git.ts`), and both reject with an `Error` — so no title names a behaviour that fires and the entry claims no property."
+}
