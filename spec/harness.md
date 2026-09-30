@@ -110,7 +110,11 @@ for a field it declared.
 ### The judges
 
 `tests[]` lines are proven green on the merged tree and red on
-the base; `pins[]` lines green only. A merged suite red only in files the
+the base; `pins[]` lines green only; `laneTests[]` lines — each a declared
+lane and a test title — are the cases only another host runs: skipped on the
+build host, never failed, and reported **owed** to that lane, never green. The
+lane is their proof: a red title files as the lane's finding, and a run on the
+tip reporting it green closes it (*CI lanes as a findings source*). A merged suite red only in files the
 span never touched is re-run at the base; failing there too, the judge
 refuses with `base-red` rather than blaming the span (`spec/chain.md`, *What
 a gate returns*). The judge speaks to the consumer's test runner through the
