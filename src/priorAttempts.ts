@@ -745,8 +745,21 @@ export class PriorAttemptStore {
  * block (`.claude/rules/engineering.md`, "Loud or nothing").
  *
  * Must be called while the span's head is still reachable (before the hard
- * reset / commit drop). Best-effort: a failure here must not block the revert
- * path.
+ * reset / commit drop).
+ *
+ * Best-effort, and the warrant is the record's: a reverted tick that forwards
+ * no signal leaves the loop amnesiac, re-deriving the wall it just hit, which
+ * is what this record exists to close (`spec/loop.md`, *Prior-outcome
+ * feedback to the retrying tick*). So the record still reaches the retry when
+ * the digest cannot be read — a `git show --stat` failure is not worth the
+ * gate name, message and details it rides with, nor the drop this runs ahead
+ * of.
+ *
+ * Nothing downstream refuses on the substituted digest, so what bounds it is
+ * where it lands visibly, as it does for the empty-range answer above: the
+ * retrying tick's `<prior-attempt>` block, where a failed capture reads as
+ * one rather than as a span that changed nothing
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
  */
 async function capturedDiffStat(
   cwd: string,

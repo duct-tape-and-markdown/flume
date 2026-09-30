@@ -774,8 +774,21 @@ async function revertAfterCommitFailure(
 
 /**
  * Subject + body of a commit, read while `sha` is still reachable (before
- * the hard reset / commit drop). Best-effort: a failure here must not
- * block the revert path.
+ * the hard reset / commit drop).
+ *
+ * Best-effort, and the warrant is the note's own: the revert note is the
+ * operator's only copy of a verdict that otherwise dies with the worktree,
+ * so its write never blocks the revert it documents (`spec/worktrees.md`,
+ * *The revert note — the operator's copy of the verdict*). Reading the
+ * message that note quotes is that same call one level in — a subject the
+ * reset is about to destroy is not worth the gate name, message and details
+ * the note carries beside it, nor the drop this runs ahead of.
+ *
+ * Nothing downstream refuses on the substituted subject, so what bounds it
+ * is where it lands visibly: the note's own "Reverted commit" section, where
+ * the operator reads the placeholder in the subject's position rather than an
+ * absent or blank heading (`.claude/rules/engineering.md`, *Loud or
+ * nothing*).
  */
 async function capturedCommitMessage(
   cwd: string,
