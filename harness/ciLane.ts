@@ -249,6 +249,11 @@ function wokenLanes(
  * run, which is the rule spelled rather than inherited from an empty set
  * that would otherwise read as "matching" every stamp holding none.
  *
+ * A red the forge made on an ancestor of the tip wakes the lane on the same
+ * three questions, unmarked here: it is the failing kind (`ci.ts`,
+ * `standing`), its titles are findings, and the one thing it does not license
+ * is closing — which is the render's to say and no part of a wake.
+ *
  * A stamp the lane has never carried wakes it whatever the titles say: the
  * lane has been drained by nothing, and an absent stamp carries no set for a
  * set to match.
@@ -307,6 +312,32 @@ function renderRun(at: CiRunEvidence): string {
     `verdict this block heads with.`
   );
 }
+
+/**
+ * What a red-standing block says about the run its findings came off: the
+ * forge made it on an ancestor of this tree's tip rather than on the tip
+ * itself (`spec/harness.md`, *CI lanes as a findings source*).
+ *
+ * **Stated beside the run, because the verdict word alone does not say what
+ * diverges.** A standing red is filed exactly as the tip's own red is filed —
+ * the failure holds until a later run stops reporting it — while closing a
+ * title, and reading this lane green, both need a run the forge made on the
+ * tip itself. A block heading `RED-STANDING` with nothing under it would leave
+ * that difference to an agent looking at two commits and guessing which of its
+ * moves each one licenses.
+ *
+ * Both commits, off the reading's own evidence (`ci.ts`, `CiRunEvidence`): an
+ * ancestry verdict is about a pair, and a sentence naming one end of it is a
+ * distance the agent has to ask git for (`.claude/rules/engineering.md`, *A
+ * fact the engine holds is reported, never rediscovered*).
+ */
+const renderStanding = (at: CiRunEvidence): string =>
+  `This run was made on commit ${at.run.headSha}, an ancestor of this tree's ` +
+  `tip ${at.tip} rather than the tip itself. Its failing titles stand as ` +
+  `findings — a failure on an ancestor holds until a later run stops ` +
+  `reporting it — so file them as you would this tip's own. Close nothing ` +
+  `against this run and read no green off this lane: both need a run the ` +
+  `forge made on ${at.tip} itself.`;
 
 /**
  * The stamp that closes a lane, named rather than left for the agent to
@@ -421,9 +452,13 @@ function renderLane(reading: CiLaneReading, woke: boolean): string {
     ].join("\n");
   }
   return [
-    `=== ${head}: FAILING ===`,
+    // One heading for the two reds, because the drain's filing move is the
+    // same over both and only what closes diverges — which the sentence
+    // {@link renderStanding} writes under the run is where it is said.
+    `=== ${head}: ${reading.standing ? "RED-STANDING" : "FAILING"} ===`,
     wake,
     renderRun(reading),
+    ...(reading.standing ? [renderStanding(reading)] : []),
     // Stamped either way. A red lane this tick was not woken by reports
     // nothing its stamp does not already carry, and advancing the stamp on
     // the tick that ran anyway is what keeps a red that persists across runs

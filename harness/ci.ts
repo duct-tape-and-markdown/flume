@@ -23,9 +23,11 @@
  * vocabulary — not reconstructing a statement out of prose the log's author
  * wrote. What the author wrote survives byte for byte.
  *
- * **A lane is failing, green, or unread — never green by default.** Every way
- * the read can come up short — no forge CLI on the host, no completed run
- * yet, a newest completed run the forge made on another commit, a run the
+ * **A lane is failing, red-standing, green, or unread — never green by
+ * default.** Every way the read can come up short — no forge CLI on the host,
+ * no completed run yet, a newest completed run the forge made on a commit
+ * this tree's tip does not descend from, a pass the forge made on an ancestor
+ * rather than on the tip, a run the
  * declared job is not in, a conclusion that is neither a pass nor a failure, a
  * CLI that refused, a log the forge would not hand over —
  * resolves to the `unread` arm {@link CiLaneStatus} declares, carrying the
@@ -43,7 +45,9 @@
  * of one window agree on which runs they are talking about (`ciLane.ts`).
  * That same tip is a commit, and the forge states the commit it made each run
  * on, so which tree a run judged is a fact both sides state rather than one
- * either side's clock reconstructs ({@link CiTip}).
+ * either side's clock reconstructs ({@link CiTip}) — and how far behind this
+ * tip that tree sits is git's to answer, never an ordering of instants
+ * ({@link runTree}).
  *
  * This module is the reader alone: how a reading is rendered into a prompt,
  * and which slice that prompt belongs to, are `ciLane.ts`'s and the inbox
@@ -233,6 +237,19 @@ export interface CiRun {
 export interface CiRunEvidence {
   /** The branch the run is keyed to — the repository's, not the tick's. */
   readonly branch: string;
+  /**
+   * The commit git holds as this tree's tip, as git stated it — the other
+   * side of the comparison that decided what this run is evidence about
+   * ({@link runTree}).
+   *
+   * Carried rather than left for a reader to resolve, for the reason the
+   * run's own commit is: an ancestry verdict names two commits, and a block
+   * stating only one leaves how far behind the run sits to be rebuilt from a
+   * tree the reader may not be standing in
+   * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+   * never rediscovered*).
+   */
+  readonly tip: string;
   readonly run: CiRun;
   /**
    * The forge invocation whose answer chose this verdict, exactly as this
@@ -279,6 +296,21 @@ export type CiLaneStatus =
        * reported, never rediscovered*).
        */
       readonly jobId: number;
+      /**
+       * Whether this failure is **red-standing**: the forge made the run on an
+       * ancestor of the tip rather than on the tip itself (`spec/harness.md`,
+       * *CI lanes as a findings source*).
+       *
+       * The failing titles are findings either way — a failure on an ancestor
+       * holds until a later run stops reporting it — which is why this rides
+       * the failing arm rather than standing beside it as a fourth kind: the
+       * wake, the stamp and the title read are the same derivation over both,
+       * and a separate kind would have every one of them spell the pair.
+       * What the two do not share is what closes: a standing red closes
+       * nothing and never reads green, and the render is where that is said
+       * (`ciLane.ts`).
+       */
+      readonly standing: boolean;
     })
   | (CiLaneRun & { readonly kind: "green" })
   | {
@@ -419,6 +451,7 @@ export function ciLaneReading(
       reason: readFailure(err),
       over: {
         branch: status.branch,
+        tip: status.tip,
         run: status.run,
         asked: status.asked,
         conclusion: status.conclusion,
@@ -573,16 +606,35 @@ function commitAt(repoRoot: string): { sha: string } | { reason: string } {
 }
 
 /**
- * Why `run` cannot be read as `tip`'s verdict, or `undefined` where it can.
+ * Which tree a run judged, relative to this tip: the tip's own commit, or a
+ * commit the tip descends from.
+ *
+ * The two are not one verdict, because only one of them closes anything — see
+ * {@link runTree}.
+ */
+type CiRunTree = "tip" | "ancestor";
+
+/**
+ * Where `run`'s own commit sits relative to `tip`, or why `run` cannot be read
+ * as evidence about this tree at all (`spec/harness.md`, *CI lanes as a
+ * findings source*).
  *
  * **A forge index can answer about a tree other than the one it is asked
  * about.** The newest *completed* run for a branch is the newest run the forge
  * has finished, not the newest push: seconds after a push, and for as long as
- * this tip's own run is queued or running, that answer belongs to the tip
- * before this one. Read as current it reports another tree's verdict as this
- * tree's — a red the tick would drain findings out of, or a green it would
- * close entries on — so the refusal is in both directions (`spec/harness.md`,
- * *CI lanes as a findings source*).
+ * this tip's own run is queued or running, that answer belongs to a tip before
+ * this one.
+ *
+ * **A tip before this one is not the same as another history.** A run the
+ * forge made on a commit this tip descends from judged a tree this one was
+ * built on, so a failure it reports **stands**: the failure holds until a
+ * later run stops reporting it, and its titles are findings now rather than
+ * findings the loop goes dark on while it ships. A *pass* off that same run
+ * says nothing about what has landed since, so it closes nothing and reads
+ * unread — the asymmetry the `ancestor` arm exists to carry, and the reason
+ * this answers a position rather than a yes or no. A run made on a commit the
+ * tip does not descend from judged a tree off this history altogether, and is
+ * no evidence in either direction.
  *
  * Decided on the commit the forge says it made the run on, never on when it
  * created the run. The commit is the forge's own statement of which tree it
@@ -590,20 +642,65 @@ function commitAt(repoRoot: string): { sha: string } | { reason: string } {
  * statement out of evidence, and an amended tip, a re-run of an older run, and
  * a push made after the tip was committed each pass such an ordering while
  * naming the wrong tree (`.claude/rules/engine-boundary.md`, *Told, not
- * inferred*).
+ * inferred*). Which of two commits the other descends from is likewise git's
+ * statement, asked of git ({@link ancestryAt}).
  */
-function notTheTipsRun(
+function runTree(
   lane: CiLane,
   run: CiRun,
   tip: CiTip,
-): string | undefined {
-  if (run.headSha === tip.sha) return undefined;
-  return (
+  repoRoot: string,
+): { tree: CiRunTree } | { reason: string } {
+  if (run.headSha === tip.sha) return { tree: "tip" };
+  const lead =
     `the newest completed run of ${lane.workflow} for branch ${tip.branch} — ` +
-    `run ${run.id} — was made on commit ${run.headSha}, and this tree's tip ` +
-    `is ${tip.sha}, so that run judged another tree and neither a green nor ` +
-    `a red off it is this tip's`
-  );
+    `run ${run.id} — was made on commit ${run.headSha}`;
+  const ancestry = ancestryAt(repoRoot, run.headSha, tip.sha);
+  if (typeof ancestry !== "boolean") {
+    return {
+      reason:
+        `${lead}, and whether this tree's tip ${tip.sha} descends from that ` +
+        `commit could not be read, so nothing off that run is this tip's: ` +
+        `${ancestry.unreadable}`,
+    };
+  }
+  if (ancestry) return { tree: "ancestor" };
+  return {
+    reason:
+      `${lead}, which this tree's tip ${tip.sha} does not descend from, so ` +
+      `that run judged another history and neither a green nor a red off it ` +
+      `is this tip's`,
+  };
+}
+
+/**
+ * Whether git holds `commit` as an ancestor of `tip` — `git merge-base
+ * --is-ancestor`, exit `0` for yes and exit `1` for no. Any other exit is a
+ * failure the probe cannot explain — a commit this repository never fetched,
+ * a tree git will not read — and is answered as unreadable rather than folded
+ * into the negative case (`.claude/rules/engine-boundary.md`, *Told, not
+ * inferred*).
+ *
+ * The engine's own `isAncestor` (`src/git.ts`) is the home of that taxonomy
+ * and keys its probe on the same exit status; it is `async`, and a window's
+ * `args` is not, so the sync spelling stays here rather than turning every
+ * slice render asynchronous — the declared divergence {@link branchAt} takes
+ * for `currentRefPath`, for the same reason.
+ */
+function ancestryAt(
+  repoRoot: string,
+  commit: string,
+  tip: string,
+): boolean | { unreadable: string } {
+  try {
+    captureSync("git", ["merge-base", "--is-ancestor", commit, tip], {
+      cwd: repoRoot,
+    });
+    return true;
+  } catch (err) {
+    if (exitStatusOf(err) === 1) return false;
+    return { unreadable: detailOf(err) };
+  }
 }
 
 /**
@@ -677,11 +774,11 @@ function readLaneStatus(
       headSha: latest.headSha,
     };
 
-    // Before the declared job's conclusion is even asked for: a run made on
-    // another commit has no verdict to give about this tree, and the
-    // conclusion would only make that tree's answer look like this one's.
-    const elsewhere = notTheTipsRun(lane, run, tip);
-    if (elsewhere !== undefined) return unread(elsewhere);
+    // Before the declared job's conclusion is even asked for: a run made off
+    // this history has no verdict to give about this tree, and the conclusion
+    // would only make that history's answer look like this one's.
+    const where = runTree(lane, run, tip, options.repoRoot);
+    if ("reason" in where) return unread(where.reason);
 
     const jobsAsk = ["run", "view", run.id, "--json", "jobs"];
     const { jobs } = forgeJson(RunJobsSchema, options.repoRoot, jobsAsk);
@@ -699,12 +796,29 @@ function readLaneStatus(
     // did make instead.
     const at: CiRunEvidence = {
       branch: tip.branch,
+      tip: tip.sha,
       run,
       asked: invocation(jobsAsk),
       conclusion: job.conclusion,
     };
 
-    if (job.conclusion === PASSED) return { kind: "green", lane, ...at };
+    if (job.conclusion === PASSED) {
+      // A pass is this tip's only where the forge made the run on this tip.
+      // On an ancestor it states that a tree this one was built on was green,
+      // which is no statement about what has landed since — and read as green
+      // it would close this lane's findings over a tree nobody ran
+      // (`spec/harness.md`, *CI lanes as a findings source*). The asymmetry
+      // with the failing arm below is {@link runTree}'s.
+      if (where.tree === "ancestor") {
+        return unread(
+          `job ${lane.job} of run ${run.id} passed, but the forge made that ` +
+            `run on commit ${run.headSha} — an ancestor of this tree's tip ` +
+            `${tip.sha}, not the tip itself — so its pass says nothing about ` +
+            `what has landed since and this lane reads no green off it`,
+        );
+      }
+      return { kind: "green", lane, ...at };
+    }
     if (!FAILED.has(job.conclusion)) {
       return unread(
         `job ${lane.job} of run ${run.id} concluded ${job.conclusion || "nothing"}, ` +
@@ -712,7 +826,13 @@ function readLaneStatus(
       );
     }
 
-    return { kind: "failing", lane, ...at, jobId: job.databaseId };
+    return {
+      kind: "failing",
+      lane,
+      ...at,
+      jobId: job.databaseId,
+      standing: where.tree === "ancestor",
+    };
   } catch (err) {
     return unread(readFailure(err));
   }

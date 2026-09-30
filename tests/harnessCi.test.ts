@@ -389,19 +389,51 @@ const listed = (over: Record<string, unknown> = {}) => ({
 });
 
 /**
- * A commit this tree's tip is not — what the forge made the run it lists on
- * while this tip's own run is still queued, what an amended tip's predecessor
- * was, what an older run somebody re-ran was made on.
+ * A commit this repository holds that its tip does not descend from — what an
+ * amended tip's predecessor is, and what an older run somebody re-ran on a
+ * branch since rewritten was made on.
  *
- * A sha this repository does not hold, deliberately: the reader compares the
- * commit the forge stated against the commit git states, and never asks git
- * to resolve the forge's word.
+ * A parentless commit written straight into the object store, because the
+ * reader asks git whether the forge's commit is an ancestor of the tip
+ * (`harness/ci.ts`). A sha the repository does not hold would take that
+ * probe's unreadable arm instead of its negative one — {@link ANOTHER_COMMIT}
+ * is that case, and it has a case of its own.
+ */
+const unrelatedCommit = (): string =>
+  git("commit-tree", git("rev-parse", "HEAD^{tree}"), "-m", "another history");
+
+/**
+ * A sha this repository does not hold at all — what the forge names when the
+ * commit it ran on was never fetched here, or was garbage-collected out from
+ * under the branch.
  */
 const ANOTHER_COMMIT = "5f3a9c1e7b2d4086a1c3e5079bd24f6810a9c3e7";
 
-/** {@link RUN} as the forge lists it when the run judged another tree. */
+/** {@link RUN} as the forge lists it when the run judged another history. */
 const elsewhere = (over: Record<string, unknown> = {}) =>
-  listed({ headSha: ANOTHER_COMMIT, ...over });
+  listed({ headSha: unrelatedCommit(), ...over });
+
+/**
+ * An instant after {@link TIP_AT} — when a second commit lands on top of the
+ * one a run below was made on.
+ */
+const AFTER_TIP = "2026-09-14T10:00:00Z";
+
+/**
+ * Commit once more, answering the commit that was the tip before: a commit
+ * this tree's tip descends from, which is what a forge run one push behind a
+ * shipping loop was made on.
+ */
+function ancestorOfTip(): string {
+  const ancestor = tipCommit();
+  writeFileSync(join(repo, "b.txt"), "next\n");
+  git("add", "-A");
+  commitAt(AFTER_TIP, "advance the tip past the run's commit");
+  return ancestor;
+}
+
+/** The verdict heading one lane's block opens with — the block's first line. */
+const verdictLine = (block: string): string => block.split("\n")[0] ?? "";
 
 /** The declared job within that run, as `run view --json jobs` prints it. */
 const job = (conclusion: string) => ({
@@ -652,8 +684,93 @@ it("a lane read gives a verdict off the tip's own run whatever instant the forge
   expect(laneLive()).toBe(true);
 }, SPAWN_BUDGET_MS);
 
+/**
+ * The three cases below are the ancestry split: a run the tip descends from
+ * is not a run off another history (`spec/harness.md`, *CI lanes as a findings
+ * source*). Each advances the fixture's tip past the commit the forge names,
+ * so the relation under test is one git itself answers over two commits this
+ * repository holds — never a sha this file asserted the relation of.
+ */
+it("a lane whose newest completed run failed on an ancestor of the tip reads red-standing carrying that run's failing titles", () => {
+  const ancestor = ancestorOfTip();
+  const failure = "FAIL tests/paths.test.ts > a long path is refused by name";
+  plantForge({
+    runs: [listed({ headSha: ancestor })],
+    jobs: [job("failure")],
+    log: `${framed("pnpm test")}\n${framed(failure)}\n`,
+  });
+
+  const rendered = laneBlock();
+
+  // Vacuity, and the relation this case turns on: the commit the forge named
+  // really is an ancestor of this tree's tip and really is not the tip, as
+  // git itself answers — and the read really reached the declared job's log,
+  // so the titles below came off a log the forge handed over.
+  const tip = tipCommit();
+  expect(ancestor).not.toBe(tip);
+  expect(() => git("merge-base", "--is-ancestor", ancestor, tip)).not.toThrow();
+  expect(calls().some((call) => call.includes("--log-failed"))).toBe(true);
+
+  expect(verdictLine(rendered)).toContain("RED-STANDING");
+  expect(rendered).toContain(failure);
+  expect(rendered).toContain(ancestor);
+  expect(rendered).toContain(tip);
+  // And what a standing red does not license, said rather than left to the
+  // heading: the titles are findings, closing and green are not.
+  expect(rendered).toContain("Close nothing against this run");
+}, SPAWN_BUDGET_MS);
+
+it("a lane whose newest completed run failed on an ancestor of the tip makes the inbox slice live until that run is stamped", () => {
+  const ancestor = ancestorOfTip();
+  plantForge({
+    runs: [listed({ headSha: ancestor })],
+    jobs: [job("failure")],
+    log: `${framed("FAIL tests/loop.test.ts > a tick puts the rotation down")}\n`,
+  });
+
+  // Vacuity: the commit the forge named really is an ancestor of the tip and
+  // really is not the tip, so the wake below is the standing arm's and not
+  // the tip's own run's.
+  const tip = tipCommit();
+  expect(ancestor).not.toBe(tip);
+  expect(() => git("merge-base", "--is-ancestor", ancestor, tip)).not.toThrow();
+
+  expect(laneLive()).toBe(true);
+
+  // And the stamp closes it, exactly as it closes a red on the tip: a failure
+  // that stands is still one run's worth of findings.
+  stampLanes({ [LANE.name]: { run: String(RUN.databaseId), titles: [] } });
+  expect(laneLive()).toBe(false);
+}, SPAWN_BUDGET_MS);
+
+it("a lane whose newest completed run passed on an ancestor of the tip reads unread rather than green", () => {
+  const ancestor = ancestorOfTip();
+  plantForge({
+    runs: [listed({ headSha: ancestor, conclusion: "success" })],
+    jobs: [job("success")],
+  });
+
+  const rendered = laneBlock();
+
+  // Vacuity: the forge was reached and did list a run, on a commit that
+  // really is an ancestor of this tip and really is not it — so this is a
+  // pass refused for the tree it was made on.
+  const tip = tipCommit();
+  expect(calls().length).toBeGreaterThan(0);
+  expect(ancestor).not.toBe(tip);
+  expect(() => git("merge-base", "--is-ancestor", ancestor, tip)).not.toThrow();
+
+  expect(verdictLine(rendered)).toContain("UNREAD");
+  expect(verdictLine(rendered)).not.toContain("GREEN");
+  expect(rendered).toContain(ancestor);
+  expect(rendered).toContain(tip);
+  // A green nobody may read is not a finding either: nothing to wake on.
+  expect(laneLive()).toBe(false);
+}, SPAWN_BUDGET_MS);
+
 it("the unread reason a run made on another commit resolves to names both commits", () => {
-  plantForge({ runs: [elsewhere()], jobs: [job("failure")] });
+  const other = unrelatedCommit();
+  plantForge({ runs: [listed({ headSha: other })], jobs: [job("failure")] });
 
   // The tip as git states it, not as this file spells it: the block quotes
   // git's own word for the commit. Vacuity rides the read — git really
@@ -661,13 +778,39 @@ it("the unread reason a run made on another commit resolves to names both commit
   // string the block is searched for below is blank or the other.
   const tip = tipCommit();
   expect(tip).toMatch(/^[0-9a-f]{40}$/);
-  expect(tip).not.toBe(ANOTHER_COMMIT);
+  expect(tip).not.toBe(other);
 
   const rendered = laneBlock();
 
-  expect(rendered).toContain("UNREAD");
-  expect(rendered).toContain(ANOTHER_COMMIT);
+  expect(verdictLine(rendered)).toContain("UNREAD");
+  expect(rendered).toContain(other);
   expect(rendered).toContain(tip);
+}, SPAWN_BUDGET_MS);
+
+it("a lane whose newest completed run names a commit this repository does not hold reads as unread", () => {
+  plantForge({
+    runs: [listed({ headSha: ANOTHER_COMMIT })],
+    jobs: [job("failure")],
+  });
+
+  const rendered = laneBlock();
+
+  // Vacuity, and the arm this case exists for: the sha the forge named really
+  // is one git here cannot resolve, so the ancestry probe fails rather than
+  // answering no — and that failure is not folded into "another history"
+  // (`.claude/rules/engine-boundary.md`, *Told, not inferred*). The forge was
+  // reached and did list that run; its job is never bought.
+  // `cat-file -e`, not `rev-parse --verify`: a full-length hex sha is a valid
+  // object *name* whether or not the store holds the object, so only an
+  // existence probe states this fixture's premise.
+  expect(() => git("cat-file", "-e", ANOTHER_COMMIT)).toThrow();
+  expect(calls().length).toBe(1);
+
+  expect(verdictLine(rendered)).toContain("UNREAD");
+  expect(rendered).toContain(ANOTHER_COMMIT);
+  expect(rendered).toContain(tipCommit());
+  expect(rendered).toContain("could not be read");
+  expect(laneLive()).toBe(false);
 }, SPAWN_BUDGET_MS);
 
 /**
