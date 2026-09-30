@@ -368,15 +368,14 @@ export function stageFailureFacts(message: string): {
  * taken off trunk. The message names both shas, because the operator who
  * inherits the commit is the one who reads it.
  *
- * Both legs that can reach this state — a wave's per-entry merge
- * (`src/waveMerge.ts`) and a singleton phase's (`src/singletonTick.ts`) —
- * report the same two facts, so the words and the key they are compared by are
- * built once rather than spelled per leg, where a rewording would diverge
- * silently (`.claude/rules/engineering.md`, *A module is one job*). The
- * signature rides along: a key derived beside one leg's copy of the words is
- * the same duplicate one rung down.
+ * The one site that can reach this state is the span carry every
+ * concurrency's merge runs (`carryMergeSpan`, `src/mergeSpan.ts`), and the
+ * words and the key they are compared by are built here rather than there: the
+ * pairing is the verdict's own vocabulary, and a key derived beside a copy of
+ * the words is the same duplicate one rung down
+ * (`.claude/rules/engineering.md`, *A module is one job*).
  *
- * The blame half is the caller's: a wave attributes the refusal to the entry
+ * The blame half is the leg's: the wave attributes the refusal to the entry
  * whose gate failed unless that gate disowned the span, and a singleton has no
  * entry to blame at all ({@link GateFailure}).
  */
@@ -395,8 +394,8 @@ export function unrevertableMergeFailure(facts: {
 /**
  * The one construction of a {@link ReportedGateResult} from the
  * {@link GateResult} a gate just returned. Every reporting surface — the
- * afterCommit loop, both afterMerge loops, and the failure record each hands
- * to `buildGateRevert` — reads the row from here, so a field the engine
+ * afterCommit loop, the afterMerge loop, and the failure record each hands to
+ * `buildGateRevert` — reads the row from here, so a field the engine
  * decodes cannot reach one surface and be dropped from the next
  * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
  *

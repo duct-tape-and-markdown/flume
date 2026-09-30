@@ -4,14 +4,13 @@
  * whether another engine instance holds the claim on the ref, and whether
  * the commit a revert is about to reset past is still the tip it was.
  *
- * Both legs reach both — the singleton's one span (`src/singletonTick.ts`)
- * and the wave's per-entry pick (`src/waveMerge.ts`) each ask the claim
- * before their cherry-pick and the revert guard before their afterMerge
- * reset — and the wave's trailing ledger commit reaches the claim a third
- * time (`commitPendingUpdate`, `src/pendingLedger.ts`), so the pair lives
- * in the file its name is rather than as two methods on the class that
- * dispatches between the legs (`.claude/rules/engineering.md`, *A module is
- * one job*). Neither reads a recorded tip: there is no expected-sha
+ * One caller reaches both — the span carry every concurrency's merge runs
+ * (`carryMergeSpan`, `src/mergeSpan.ts`) asks the claim before its
+ * cherry-pick and the revert guard before its afterMerge reset — and the
+ * wave's trailing ledger commit reaches the claim a second time
+ * (`commitPendingUpdate`, `src/pendingLedger.ts`), so the pair lives in the
+ * file its name is rather than as two methods on the class that dispatches
+ * between the legs (`.claude/rules/engineering.md`, *A module is one job*). Neither reads a recorded tip: there is no expected-sha
  * bookkeeping here, only what the disk says at the moment of the check.
  */
 
@@ -22,10 +21,9 @@ import * as git from "./git.js";
  * spec/loop.md "Tip verify — one writer per branch, absorption at the
  * merge", "Harness-driven commits carry no expected-tip bookkeeping — the
  * claim refuses, git arbitrates": every harness-driven commit site asks this
- * instead of comparing an expected sha — each leg's cherry-pick (the wave's
- * per-entry pick, `src/waveMerge.ts`; the singleton's own span,
- * `src/singletonTick.ts`) and `commitPendingUpdate`'s ledger
- * commit, which is the wave's alone. A live claim on
+ * instead of comparing an expected sha — the span carry's cherry-pick
+ * (`carryMergeSpan`, `src/mergeSpan.ts`), whichever concurrency drove it, and
+ * `commitPendingUpdate`'s ledger commit, which is the wave's alone. A live claim on
  * the ref HEAD currently resolves to is a concurrent engine instance — the
  * one interference no cherry-pick/conflict check can catch on its own,
  * since two engines can each cherry-pick a distinct, individually-clean
