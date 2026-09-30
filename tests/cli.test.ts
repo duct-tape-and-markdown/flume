@@ -1440,6 +1440,14 @@ it(
  * not go is a phase left awake by a verb that reported success, which the
  * loop runs again forever (`.claude/rules/engineering.md`, *Loud or
  * nothing*).
+ *
+ * The denial lands on the flag's **parent** on purpose — the one converse the
+ * platform page sanctions (`.claude/rules/platform-facts.md`, *win32 reports
+ * a path through a non-directory as not found*; `tests/helpers/denial.ts`).
+ * That removal's silent arm is a descent rather than an errno fold, and an
+ * obstructed ancestor is the only input that exercises it: denying the leaf
+ * instead plants a directory where the flag stands, which the unlink refuses
+ * on its own and leaves the descent unexercised.
  */
 it(
   "flume sleep over an unwritable awake-flag directory refuses with the state-root write refusal",
@@ -1465,6 +1473,17 @@ it(
       // would be reporting a write this process never attempted.
       expect(refused.out).toContain(
         `[flume] state root at ${flumeDir} cannot be written: awake flag`,
+      );
+      // And the detail is the descent's own sentence rather than an errno's:
+      // the removal's silent arm proves the directory holding the flag
+      // instead of folding `ENOENT`, which win32 answers for an obstructed
+      // ancestor and for an absent leaf alike
+      // (`.claude/rules/platform-facts.md`, *win32 reports a path through a
+      // non-directory as not found*). This host raises `ENOTDIR` at the
+      // unlink and refused either way, so the sentence is what the case can
+      // red on here; on the win32 lane it is the exit code above that reds.
+      expect(refused.out).toContain(
+        `awake flag is unreadable: ${awakeDir(flumeDir)} is present but is not a directory`,
       );
       expect(refused.out).not.toContain("    at ");
       expect(refused.out).not.toContain("slept plan");

@@ -10,13 +10,15 @@
  * would be a second arm, one direction behind the next reader added
  * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
  *
- * Nothing beyond `node:fs`, `src/paths.ts` and `src/fsProbe.ts` here, so the
- * baton, the dispatcher, and any other reader or writer under the state root
- * can reach it without a cycle.
+ * Nothing beyond `node:fs`, `node:path`, `src/paths.ts` and `src/fsProbe.ts`
+ * here, so the baton, the dispatcher, and any other reader or writer under the
+ * state root can reach it without a cycle.
  */
 
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 
+import { isDirectoryOrAbsentUnder } from "./fsProbe.js";
 import { namespacedJoin } from "./paths.js";
 import { thrownMessage } from "./thrown.js";
 
@@ -134,8 +136,23 @@ export function writeFileUnderStateRoot(
  * the directory that holds the leaf, so it refuses in the write's own
  * direction rather than in a class of its own.
  *
- * `stateRoot` and `file` are plain paths, folded here for the reason the two
- * writes above fold their own.
+ * That tolerated absence is **proven**, never read off the errno. Win32
+ * answers an unlink beneath a plain file `ENOENT`, the code an absent leaf
+ * answers too (`.claude/rules/platform-facts.md`, *win32 reports a path
+ * through a non-directory as not found*), so an errno arm alone reports a
+ * removal that never happened on that host while refusing on posix — one
+ * marker, two hosts, two answers. The proof is the descent every reader's
+ * silent arm already takes (`isDirectoryOrAbsentUnder`, `src/fsProbe.ts`),
+ * shared rather than respelled beside it
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*): from
+ * `stateRoot` down to the directory holding the leaf, each rung asserted a
+ * directory, so the `ENOENT` left past it is the leaf's own and nothing
+ * else's. The descent runs inside the `try` because its refusal is this
+ * root's too, and reaches the operator as this module's one sentence.
+ *
+ * `stateRoot` and `file` are plain paths — the descent namespaces its own
+ * rungs, and the leaf is folded here for the reason the two writes above fold
+ * their own.
  */
 export function removeUnderStateRoot(
   stateRoot: string,
@@ -143,6 +160,7 @@ export function removeUnderStateRoot(
   file: string,
 ): void {
   try {
+    if (!isDirectoryOrAbsentUnder(what, stateRoot, dirname(file))) return;
     rmSync(namespacedJoin(file));
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
