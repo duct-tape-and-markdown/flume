@@ -1,0 +1,29 @@
+{
+  "tag": "THE-AUTHORING-PAGES-PRIOR-ATTEMPT-SAMPLE-IS-READ-BACK-FROM-THE-RENDERER",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 20,
+  "files": {
+    "edit": [
+      {
+        "path": "tests/Prompt.test.ts",
+        "description": "the renderer's block pins live here; add the doc-sample agreement pin beside them"
+      },
+      {
+        "path": "docs/CHAIN-AUTHORING.md",
+        "description": "the fenced sample, if it needs normalizing to be mechanically comparable"
+      }
+    ]
+  },
+  "summary": "Read the authoring page's rendered `<prior-attempt>` gate-revert sample back from the real renderer, per the seam gate's real-producer rule",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A seam gate reads what the real writer wrote"
+  },
+  "acceptance": "A maximal gate-revert record driven through the real renderer agrees with the authoring page's fenced sample on the set of line leads, both directions, so a lead added to one side alone reds.",
+  "pins": [
+    "the authoring page's rendered gate-revert sample shows every line lead the real renderer emits for a maximal record, and no lead it does not"
+  ],
+  "notes": "Build note off THE-GATE-REVERT-BLOCK-CARRIES-THE-GATES-OWN-ATTRIBUTION: widening `modeLines` (`src/Prompt.ts`) was a two-site change, renderer plus the page's fenced sample, with nothing holding the pair. `tests/helpers/docSections.ts` skips fenced blocks, so every standing doc pin is blind to it. Sample sits under *The `<prior-attempt>` block*. Green on base: the shipping tick updated it. Fixture must be maximal — `verdict` set, `failingFiles` non-empty — or the claim outruns its input."
+}
