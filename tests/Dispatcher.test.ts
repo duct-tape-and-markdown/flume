@@ -64,6 +64,11 @@ import {
   worktreeDirName,
 } from "../src/worktrees.ts";
 import {
+  RENDERED_PROMPT_PREFIX,
+  renderedPromptName,
+  trimRenderedPrompts,
+} from "../src/renderedPrompts.ts";
+import {
   defaultStateRoot,
   fsStamp,
   invocationsPath,
@@ -14488,7 +14493,10 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
         verdictFixture({
           summary: `tick ${i}`,
           invocations: [
-            { promptPath: `rendered-prompts/${name}`, uncommittedTracked: [] },
+            {
+              promptPath: RENDERED_PROMPT_PREFIX + name,
+              uncommittedTracked: [],
+            },
           ],
         }),
       );
@@ -15572,7 +15580,10 @@ describe("The rendered prompt is persisted before the agent runs (spec/prompt.md
     expect(handed).toContain("<harness>");
 
     const row = outcome.verdict!.invocations[0]!;
-    expect(row.promptPath).toMatch(/^rendered-prompts\/[^/]+-plan\.md$/);
+    // The row's path read by the reader that resolves it, not by a prefix
+    // spelled again here: the stamp-and-key filename is this case's claim,
+    // the prefix is the seam's.
+    expect(renderedPromptName(row.promptPath)).toMatch(/^[^/]+-plan\.md$/);
     const recorded = await readFile(
       join(fx.repo, ".flume", row.promptPath),
       "utf8",
@@ -15580,10 +15591,67 @@ describe("The rendered prompt is persisted before the agent runs (spec/prompt.md
     // Agreement: the real writer's bytes through the real reader — the
     // file the verdict names is byte-identical to `inv.prompt`.
     expect(recorded).toBe(handed);
-    expect(onDiskAtInvoke).toEqual([
-      row.promptPath.slice("rendered-prompts/".length),
-    ]);
+    expect(onDiskAtInvoke).toEqual([renderedPromptName(row.promptPath)]);
     expect(bytesAtInvoke).toBe(handed);
+  });
+
+  /**
+   * The seam under the two cases around it. `recordRenderedPrompt`
+   * (`src/tickAttempt.ts`) composes the row's `promptPath` and
+   * `renderedPromptName` resolves it back to a file in this directory, and
+   * that resolution is the whole of the trim's argument: a prefix respelled
+   * on one side leaves every retained row naming a file the trim cannot
+   * match, and the tick that just ran loses the record of what it sent. So
+   * the real writer's own output is driven through the real reader — a real
+   * tick's verdict row, handed to the real retention call — rather than
+   * either side being spelled again here
+   * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+   * wrote*).
+   */
+  it("a real tick's verdict row names a rendered prompt the retention reader resolves", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    new Baton(flumeDir).wake("plan");
+    await writeFile(join(fx.configDir, "prompt.md"), "plan: derive\n", "utf8");
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [makePhase({ name: "plan", concurrency: "singleton" })],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async (cwd) => {
+        await writeAndCommit(cwd, "src/out.ts", "x\n", "plan: derive");
+      }),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Non-vacuity: one real invocation, and the file it wrote is still there
+    // — the tick's own verdict write already trimmed this directory against
+    // the row below, so the seam has been driven once before it is read.
+    expect(outcome.result?.committed).toBe(true);
+    expect(outcome.verdict!.invocations).toHaveLength(1);
+    const row = outcome.verdict!.invocations[0]!;
+    const onDisk = await renderedFiles();
+    expect(onDisk).toHaveLength(1);
+
+    // Agreement: `renderedPromptName` — the reader `flume status` counts a
+    // run's outstanding agents through (`src/runSpend.ts`) and the trim below
+    // resolves by — names exactly the file the writer left.
+    expect(renderedPromptName(row.promptPath)).toBe(onDisk[0]);
+
+    // And the retention call keeps it while the row names it…
+    // Opened through the row's own path, the way every reader of a verdict
+    // reaches the record it names.
+    const kept = join(flumeDir, row.promptPath);
+    await trimRenderedPrompts(flumeDir, new Set([row.promptPath]));
+    expect(existsSync(kept)).toBe(true);
+
+    // …where a retained set naming nothing takes it, so the keep above was
+    // this row resolving and not a trim that spares everything.
+    await trimRenderedPrompts(flumeDir, new Set());
+    expect(existsSync(kept)).toBe(false);
   });
 
   it("fanout: each entry's row names its own file, and each file matches the prompt that entry's agent received", async () => {
@@ -15635,8 +15703,8 @@ describe("The rendered prompt is persisted before the agent runs (spec/prompt.md
     expect(new Set(rows.map((r) => r.promptPath)).size).toBe(2);
     for (const row of rows) {
       const slug = row.entryTag!.toLowerCase();
-      expect(row.promptPath).toMatch(
-        new RegExp(`^rendered-prompts/[^/]+-${slug}\\.md$`),
+      expect(renderedPromptName(row.promptPath)).toMatch(
+        new RegExp(`^[^/]+-${slug}\\.md$`),
       );
       const recorded = await readFile(
         join(fx.repo, ".flume", row.promptPath),

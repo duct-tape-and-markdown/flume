@@ -33,9 +33,11 @@ import {
 import { liveLoopClaim } from "./pidClaim.js";
 
 /**
- * The prefix `recordRenderedPrompt` (`src/tickAttempt.ts`) writes onto every
- * verdict row's `promptPath` — state-root-relative, forward slashes, git's
- * alphabet rather than the host's.
+ * The prefix on every verdict row's `promptPath` — state-root-relative,
+ * forward slashes, git's alphabet rather than the host's. Composed here and
+ * taken by both sides of that row: `recordRenderedPrompt`
+ * (`src/tickAttempt.ts`) writes it, and every reader below resolves a row
+ * through it, so neither side can respell it alone.
  */
 export const RENDERED_PROMPT_PREFIX = `${STATE_ROOT_NAMES.renderedPrompts}/`;
 

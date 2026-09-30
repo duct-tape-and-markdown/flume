@@ -35,10 +35,10 @@ import {
   namespacedJoin,
   renderedPromptsDir,
   slugify,
-  STATE_ROOT_NAMES,
 } from "./paths.js";
 import type { PendingEntry } from "./PendingSchema.js";
 import type { Chain, Phase, TickContext } from "./Phase.js";
+import { RENDERED_PROMPT_PREFIX } from "./renderedPrompts.js";
 import { blamedOn } from "./selection.js";
 import {
   buildCleanExit,
@@ -888,7 +888,12 @@ async function classifyNoCommit(
  * Persist the fully rendered prompt before the agent runs (spec/prompt.md
  * "The rendered prompt is persisted before the agent runs") and return
  * its path relative to `flumeDir`, forward-slash, for the verdict's
- * invocation row. `key` is the same prior-attempt key the retry record
+ * invocation row. The prefix is {@link RENDERED_PROMPT_PREFIX}, declared
+ * beside the readers that resolve a row's `promptPath` back to a file in
+ * that directory (`src/renderedPrompts.ts`) — one spelling for both sides
+ * of the row, never a second composed here
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*). `key` is the same prior-attempt key the retry record
  * uses — the phase name for a singleton, the slugified tag for a fanout
  * entry — so the two records for one span share a name. The timestamp
  * keeps ticks apart; the key keeps a wave's entries apart. A write
@@ -904,7 +909,7 @@ async function recordRenderedPrompt(
   const name = `${fsStamp()}-${slugify(key)}.md`;
   await mkdir(namespacedJoin(dir), { recursive: true });
   await writeFile(namespacedJoin(dir, name), prompt, "utf8");
-  return `${STATE_ROOT_NAMES.renderedPrompts}/${name}`;
+  return RENDERED_PROMPT_PREFIX + name;
 }
 
 /**
