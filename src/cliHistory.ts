@@ -1,5 +1,5 @@
 /**
- * `flume log` — the tick verdict history, read back newest-first
+ * `flume log` — the tick verdict history, read back oldest-first
  * (spec/cli.md, *Subcommand surface*).
  *
  * Named for the read and not the verb, because `src/cliLog.ts` beside it is
