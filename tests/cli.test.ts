@@ -965,6 +965,25 @@ describe("flume loop — supervisorPolicy reaching the real CLI", () => {
  * to a bare `.flume/loop.pid` rather than a relocated root's.
  */
 describe("flume status — supervisor liveness", () => {
+  /**
+   * The supervisor-liveness rows of a listing, read as whole lines — both
+   * spellings the verb prints for a present `loop.pid`, so a negative over
+   * this block still fires when either lands. Over the whole output the same
+   * negative turns on whatever else the listing quotes — a refusal naming the
+   * fixture's interpolated temp path, which carries the case's own words —
+   * rather than on the row the case is about
+   * (`.claude/rules/posture-sweep.md`, *Standing lenses*).
+   */
+  const supervisorRows = (out: string): string =>
+    out
+      .split("\n")
+      .filter(
+        (line) =>
+          line.startsWith("supervisor pid") ||
+          line.startsWith("loop.pid present,"),
+      )
+      .join("\n");
+
   it("names the pid of a live supervisor", async () => {
     const dir = await mkFixtureRoot("flume-status-live-");
     try {
@@ -994,7 +1013,7 @@ describe("flume status — supervisor liveness", () => {
       expect(r.code).toBe(0);
       expect(r.out).toContain("hibernating");
       expect(r.out).toContain("loop.pid present, process dead — stale");
-      expect(r.out).not.toContain("supervisor pid");
+      expect(supervisorRows(r.out)).not.toContain("supervisor pid");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -1017,8 +1036,8 @@ describe("flume status — supervisor liveness", () => {
       expect(r.code).toBe(EX_IOERR);
       expect(r.out).toContain("loop.pid");
       expect(r.out).toContain("failed to read");
-      expect(r.out).not.toContain("supervisor pid");
-      expect(r.out).not.toContain("stale");
+      expect(supervisorRows(r.out)).not.toContain("supervisor pid");
+      expect(supervisorRows(r.out)).not.toContain("stale");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -1049,8 +1068,8 @@ describe("flume status — supervisor liveness", () => {
       expect(r.out).toContain(
         `[flume] status: loop lock at ${pidPath} failed to read`,
       );
-      expect(r.out).not.toContain("supervisor pid");
-      expect(r.out).not.toContain("process dead — stale");
+      expect(supervisorRows(r.out)).not.toContain("supervisor pid");
+      expect(supervisorRows(r.out)).not.toContain("process dead — stale");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -1091,8 +1110,8 @@ describe("flume status — supervisor liveness", () => {
 
       expect(r.code).toBe(0);
       expect(r.out).toContain("hibernating");
-      expect(r.out).not.toContain("supervisor pid");
-      expect(r.out).not.toContain("stale");
+      expect(supervisorRows(r.out)).not.toContain("supervisor pid");
+      expect(supervisorRows(r.out)).not.toContain("stale");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
