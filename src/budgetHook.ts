@@ -26,6 +26,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { readBudgetLine, type BudgetReading } from "./budgetLine.js";
+import { thrownMessage } from "./thrown.js";
 
 /**
  * What a chain declares as `ClaudeCodeOptions.budget` — the facts about the
@@ -357,7 +358,7 @@ if (process.argv[1] === HOOK_MODULE_PATH) {
       if (stderr) process.stderr.write(stderr);
     })
     .catch((err: unknown) => {
-      process.stderr.write(`${(err as Error).message}\n`);
+      process.stderr.write(`${thrownMessage(err)}\n`);
       process.exitCode = 1;
     });
 }

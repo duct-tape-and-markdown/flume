@@ -54,6 +54,7 @@ import { INBOX_PHASE, PLAN_SLICES, type PlanSlice } from "./declaration.js";
 import { detailOf } from "./exec.js";
 import { planStatePath } from "./layout.js";
 import { parseOrThrow, strict } from "./refusal.js";
+import { thrownMessage } from "../src/thrown.js";
 
 /**
  * A git object name, abbreviated or full. Shape-checked because the package
@@ -376,7 +377,7 @@ export function readPlanState<S extends PlanSlice>(
     parsed = JSON.parse(text);
   } catch (error) {
     throw new Error(
-      `invalid plan state at ${path}: not JSON — ${(error as Error).message}`,
+      `invalid plan state at ${path}: not JSON — ${thrownMessage(error)}`,
     );
   }
 

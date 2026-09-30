@@ -35,6 +35,7 @@ import {
 } from "./paths.js";
 import { NAME_MAX } from "./PendingSchema.js";
 import type { Chain } from "./Phase.js";
+import { thrownMessage } from "./thrown.js";
 
 /**
  * What the channel's refusal calls the thing it could not read — the noun
@@ -296,7 +297,7 @@ export async function harvestFriction(
     // file stands at — the log-and-continue failure class, not a silent
     // no-op.
     ctx.log.warn(
-      `[flume] friction harvest: could not read ${mirrorDir}: ${(err as Error).message}`,
+      `[flume] friction harvest: could not read ${mirrorDir}: ${thrownMessage(err)}`,
     );
     return;
   }
@@ -319,7 +320,7 @@ export async function harvestFriction(
     headSha = await git.revParse(worktreePath, "HEAD");
   } catch (err) {
     ctx.log.warn(
-      `[flume] friction harvest: could not resolve HEAD in ${worktreePath}: ${(err as Error).message}`,
+      `[flume] friction harvest: could not resolve HEAD in ${worktreePath}: ${thrownMessage(err)}`,
     );
     return;
   }
@@ -335,7 +336,7 @@ export async function harvestFriction(
       // rather than aborting the wave's teardown. Left unmoved, matching
       // the fail-closed default a failed rename already leaves in place.
       ctx.log.warn(
-        `[flume] friction harvest: could not probe HEAD for ${relPath}: ${(err as Error).message}`,
+        `[flume] friction harvest: could not probe HEAD for ${relPath}: ${thrownMessage(err)}`,
       );
       continue;
     }
@@ -348,7 +349,7 @@ export async function harvestFriction(
     await mkdir(namespacedJoin(primaryDir), { recursive: true });
   } catch (err) {
     ctx.log.warn(
-      `[flume] friction harvest: could not create ${primaryDir}: ${(err as Error).message}`,
+      `[flume] friction harvest: could not create ${primaryDir}: ${thrownMessage(err)}`,
     );
     return;
   }
@@ -373,13 +374,13 @@ export async function harvestFriction(
           continue;
         } catch (copyErr) {
           ctx.log.warn(
-            `[flume] friction harvest: failed to move ${src}: ${(copyErr as Error).message}`,
+            `[flume] friction harvest: failed to move ${src}: ${thrownMessage(copyErr)}`,
           );
           continue;
         }
       }
       ctx.log.warn(
-        `[flume] friction harvest: failed to move ${src}: ${(err as Error).message}`,
+        `[flume] friction harvest: failed to move ${src}: ${thrownMessage(err)}`,
       );
     }
   }

@@ -66,6 +66,7 @@ import {
   type TickVerdictTiming,
 } from "./tickVerdict.js";
 import type { WorktreeContext } from "./worktrees.js";
+import { thrownMessage } from "./thrown.js";
 
 /**
  * The runtime state one attempt reads — the roots it resolves paths against,
@@ -869,7 +870,7 @@ async function writeRevertNote(
     );
   } catch (err) {
     ctx.log.warn(
-      `[flume] ${tag}: revert note write failed: ${(err as Error).message}`,
+      `[flume] ${tag}: revert note write failed: ${thrownMessage(err)}`,
     );
   }
 }

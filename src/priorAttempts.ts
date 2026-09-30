@@ -47,6 +47,7 @@ import type {
   TipMovedAttempt,
   NotShippedAttempt,
 } from "./Prompt.js";
+import { thrownMessage } from "./thrown.js";
 
 /**
  * One `PriorAttempt` variant as a builder produces it: before
@@ -358,26 +359,6 @@ export function priorAttemptRef(
         declaredAs: entryDeclaredKey(entry),
       }
     : { key: phase.name, keyspace: "phase" };
-}
-
-/**
- * The sentence to print for a value a `catch` in this module received.
- *
- * `catch` binds `unknown`, and the two places below that fold one into
- * operator-facing prose are `readRecord`'s refusal and `snapshotReverted`'s
- * whole-artifact warn — one home for both, so a thrown non-`Error` reads the
- * same at either (`.claude/rules/engineering.md`, *A module is one job*).
- *
- * The guarded reading is the one that holds for every input. A cast prints
- * `undefined` for a thrown string, and for a thrown `null` it throws inside
- * the `catch` itself — which would carry a snapshot failure back out into the
- * revert, the one thing `snapshotReverted` promises it cannot do.
- *
- * On the `Error` path the text is `err.message` unchanged, so the strings an
- * operator greps for are the ones both sites already emit.
- */
-function thrownMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 /**
@@ -824,7 +805,10 @@ export class PriorAttemptStore {
       // snapshot and the revert runs on. What bounds it is this line — the
       // operator is told the recovery artifact is gone, and where it would
       // have been, at the moment it fails rather than by discovering an
-      // absent directory later.
+      // absent directory later. `thrownMessage` (`src/thrown.ts`), never a
+      // cast: a thrown non-`Error` read through one would raise a second
+      // failure inside this handler and carry it back out into the revert,
+      // which is the one thing this method promises it cannot do.
       this.log.warn(
         `[flume] revert snapshot failed: ${dir}: ${thrownMessage(err)}`,
       );

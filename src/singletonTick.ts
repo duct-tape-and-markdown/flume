@@ -50,6 +50,7 @@ import {
   createWorktree,
   teardownWorktreeInstance,
 } from "./worktrees.js";
+import { thrownMessage } from "./thrown.js";
 
 export async function runSingleton(
   leg: TickLegContext,
@@ -180,7 +181,7 @@ export async function runSingleton(
   try {
     await git.pruneWorktrees(repoRoot, leg.log);
   } catch (err) {
-    const failure = stageFailureFacts((err as Error).message);
+    const failure = stageFailureFacts(thrownMessage(err));
     provisionFailures.push(failure);
     leg.log.warn(
       `[flume] ${phase.name}: worktree prune failed (${failure.signature}); continuing — worktree creation may still fail`,
@@ -191,7 +192,7 @@ export async function runSingleton(
   try {
     wt = await createWorktree(phase.name, preHead, leg.worktreeCtx);
   } catch (err) {
-    const failure = stageFailureFacts((err as Error).message);
+    const failure = stageFailureFacts(thrownMessage(err));
     leg.log.warn(
       `[flume] ${phase.name}: worktree provisioning failed (${failure.signature}); no tick this cycle`,
     );
@@ -217,7 +218,7 @@ export async function runSingleton(
       });
       if (r && r.extraEnv) extraEnv = r.extraEnv;
     } catch (err) {
-      const failure = stageFailureFacts((err as Error).message);
+      const failure = stageFailureFacts(thrownMessage(err));
       leg.log.warn(
         `[flume] ${phase.name}: setupWorktree hook failed (${failure.signature}); no tick this cycle`,
       );
@@ -418,7 +419,7 @@ export async function runSingleton(
         try {
           ({ absorbed } = await git.cherryPickRange(repoRoot, spanBase, spanHead));
         } catch (err) {
-          const message = (err as Error).message;
+          const message = thrownMessage(err);
           leg.log.warn(
             `[flume] cherry-pick failed for ${phase.name}: ${message}; commit stays on the worktree branch, retried next tick`,
           );

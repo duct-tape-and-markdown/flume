@@ -5723,6 +5723,61 @@ describe("Dispatcher fanout — setupWorktree hook throw isolates one entry (WOR
     ).toBe(true);
   });
 
+  // `setupWorktree` is chain-author code, so what it throws is the chain's
+  // choice and not always an `Error`. The fold the catch reads is
+  // `thrownMessage` (`src/thrown.ts`); under the cast it stood in for, the
+  // thrown string arrived as `undefined` and `stageFailureFacts` raised a
+  // `TypeError` from inside the handler that exists to record this failure.
+  it("a fanout entry whose setupWorktree hook throws a non-Error stays pending with the thrown text as its provisioning failure", async () => {
+    await writePending(fx.repo, [
+      makeEntry("FAIL-STRING", ["src/fail-string.ts"]),
+      makeEntry("OK-A", ["src/ok-a.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      setupWorktree: async (ctx) => {
+        if (ctx.worktreeKey === "FAIL-STRING") {
+          // A bare string, not an `Error` — the shape a `throw` in a chain
+          // hook may take at all.
+          throw "setupWorktree string boom for FAIL-STRING";
+        }
+        return undefined;
+      },
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const agent = fanoutAgent({
+      "ok-a": (cwd) =>
+        writeAndCommit(cwd, "src/ok-a.ts", "A\n", "build(OK-A): ship"),
+    });
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // The thrown text reaches both halves of the record, and the tick is a
+    // normal wave — not a rejection escaping `Dispatcher.tick`.
+    expect(outcome.provisionFailures).toEqual([
+      expect.objectContaining({
+        tag: "FAIL-STRING",
+        signature: "setupWorktree string boom for FAIL-STRING",
+        message: "setupWorktree string boom for FAIL-STRING",
+      }),
+    ]);
+    expect(outcome.result?.shippedTags).toEqual(["OK-A"]);
+    expect(readPendingFromDisk(fx.repo).map((e) => e.tag)).toEqual([
+      "FAIL-STRING",
+    ]);
+  });
+
   it("worktree/extraEnv indices stay aligned to the surviving entries after a sibling's hook failure is spliced out", async () => {
     const entries = [
       makeEntry("ENTRY-A", ["src/a.ts"]),
@@ -5939,6 +5994,55 @@ describe("Dispatcher fanout — a dropped entry is named on TickResult.provision
         signature: expect.stringContaining("setupWorktree boom"),
         message: expect.stringContaining("setupWorktree boom"),
       }),
+    ]);
+    expect(outcome.provisionFailures).toEqual(
+      handedToHandoff?.provisionFailures,
+    );
+  });
+
+  // The same hook, the same leg, a non-`Error` throw. Under the cast the
+  // catch read, the message was `undefined`, `stageFailureFacts` raised a
+  // `TypeError` on it, and that escaped `Dispatcher.tick` — so teardown, this
+  // record and the quarantine accounting downstream of it were all skipped.
+  it("a singleton whose setupWorktree hook throws a non-Error records the thrown text as a provisioning failure instead of escaping the tick", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+
+    let handedToHandoff: TickResult | undefined;
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      setupWorktree: async () => {
+        throw "setupWorktree string boom for the singleton";
+      },
+      handoff: (r) => {
+        handedToHandoff = r;
+        return [];
+      },
+    });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: {
+        name: "never-invoked",
+        async invoke() {
+          throw new Error("agent invoked after a failed setupWorktree hook");
+        },
+      },
+      log: silent,
+    });
+
+    // The tick resolves at all — the escape this pins was a rejection here.
+    const outcome = await dispatcher.tick();
+
+    expect(handedToHandoff?.committed).toBe(false);
+    expect(handedToHandoff?.provisionFailures).toEqual([
+      {
+        signature: "setupWorktree string boom for the singleton",
+        message: "setupWorktree string boom for the singleton",
+      },
     ]);
     expect(outcome.provisionFailures).toEqual(
       handedToHandoff?.provisionFailures,

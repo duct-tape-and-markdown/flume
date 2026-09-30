@@ -29,6 +29,7 @@ import {
   type EntryExtension,
   type PendingEntry,
 } from "./PendingSchema.js";
+import { thrownMessage } from "./thrown.js";
 
 /**
  * Inputs for `shellGate`. The gate spawns `cmd` with `args` in the
@@ -269,7 +270,7 @@ export const chainLoadGate: Gate = {
       return {
         ok: false,
         message: "chain.ts is broken — commit reverted",
-        details: (err as Error).message,
+        details: thrownMessage(err),
       };
     }
   },

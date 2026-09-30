@@ -71,6 +71,7 @@ import {
   type EntryAttempt,
 } from "./waveMerge.js";
 import { createWorktree, teardownWorktreeInstance } from "./worktrees.js";
+import { thrownMessage } from "./thrown.js";
 
 /**
  * The world one slot's entry was pulled from, as `TickContext` spells it:
@@ -194,7 +195,7 @@ export async function runFanout(
     // during validation.
     await git.pruneWorktrees(repoRoot, leg.log);
   } catch (err) {
-    const failure = stageFailureFacts((err as Error).message);
+    const failure = stageFailureFacts(thrownMessage(err));
     provisionFailures.push(failure);
     leg.log.warn(
       `[flume] ${phase.name}: worktree prune failed (${failure.signature}); continuing — per-entry provisioning may still fail`,
@@ -382,7 +383,7 @@ export async function runFanout(
         wt = await createWorktree(entry.tag, from, leg.worktreeCtx);
         provisioned.push(entry);
       } catch (err) {
-        const failure = stageFailureFacts((err as Error).message);
+        const failure = stageFailureFacts(thrownMessage(err));
         provisionFailures.push({ ...blamedOn(entry), ...failure });
         leg.log.warn(
           `[flume] ${phase.name}: worktree provisioning failed for ${entry.tag} (${failure.signature}); entry stays pending, continuing with the remaining batch`,
@@ -413,7 +414,7 @@ export async function runFanout(
         });
         if (setup && setup.extraEnv) extraEnv = setup.extraEnv;
       } catch (err) {
-        const failure = stageFailureFacts((err as Error).message);
+        const failure = stageFailureFacts(thrownMessage(err));
         provisionFailures.push({ ...blamedOn(entry), ...failure });
         leg.log.warn(
           `[flume] ${phase.name}: setupWorktree hook failed for ${entry.tag} (${failure.signature}); entry stays pending, continuing with the remaining batch`,

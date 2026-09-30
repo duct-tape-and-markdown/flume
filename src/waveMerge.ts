@@ -78,6 +78,7 @@ import {
   type TickVerdictMergeOutcome,
   type TickVerdictTiming,
 } from "./tickVerdict.js";
+import { thrownMessage } from "./thrown.js";
 
 /**
  * Rank of each no-commit mode in a wave's representative-cause fold — lowest
@@ -743,7 +744,7 @@ async function carrySpan(
     // holds exactly one commit.
     ({ absorbed } = await git.cherryPickRange(repoRoot, r.spanBase, r.headSha));
   } catch (err) {
-    const message = (err as Error).message;
+    const message = thrownMessage(err);
     leg.log.warn(
       `[flume] cherry-pick failed for ${r.entry.tag}: ${message}; entry stays in pending`,
     );

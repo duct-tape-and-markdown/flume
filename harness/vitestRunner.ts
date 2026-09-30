@@ -39,6 +39,7 @@ import type {
   TestFailure,
 } from "./runner.js";
 import { baseTree, captureRun, type CapturedRun } from "./toolRun.js";
+import { thrownMessage } from "../src/thrown.js";
 
 /**
  * One run of vitest in `cwd`, through the spawn every shipped runner makes
@@ -97,7 +98,7 @@ export function resolveVitest(cwd: string): VitestInvocation {
   } catch (err) {
     throw new Error(
       `vitestRunner: vitest does not resolve from ${cwd} — the tree's ` +
-        `dependencies are not installed there. (${(err as Error).message})`,
+        `dependencies are not installed there. (${thrownMessage(err)})`,
     );
   }
   const entry = join(dirname(pkg), "vitest.mjs");

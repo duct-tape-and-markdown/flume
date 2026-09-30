@@ -24,6 +24,7 @@
 import { z } from "zod";
 
 import type { StandardSchemaV1 } from "./standardSchema.js";
+import { thrownMessage } from "./thrown.js";
 
 // ---------- atoms ----------
 
@@ -499,7 +500,7 @@ function parseJsonOrFail(
           {
             file,
             path: "",
-            message: `invalid JSON: ${(err as Error).message}`,
+            message: `invalid JSON: ${thrownMessage(err)}`,
           },
         ],
       },

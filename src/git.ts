@@ -24,6 +24,7 @@ import {
   statedStateRoot,
 } from "./pidClaim.js";
 import { acquireWaitLock, type WaitLock } from "./waitLock.js";
+import { thrownMessage } from "./thrown.js";
 
 const exec = promisify(execFile);
 
@@ -1548,6 +1549,6 @@ export async function readGitVersion(cwd: string): Promise<GitVersion> {
     const { stdout } = await run(cwd, ["--version"]);
     return parseGitVersion(stdout);
   } catch (err) {
-    return { read: false, reason: (err as Error).message };
+    return { read: false, reason: thrownMessage(err) };
   }
 }

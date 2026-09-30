@@ -100,6 +100,7 @@ import {
   sweepStaleWorktrees,
   type WorktreeContext,
 } from "./worktrees.js";
+import { thrownMessage } from "./thrown.js";
 
 /**
  * The one name this module still re-exports rather than holds, and a
@@ -902,7 +903,7 @@ export class Dispatcher {
           summary: err.message,
         };
       }
-      const msg = (err as Error).message;
+      const msg = thrownMessage(err);
       this.log.error(
         `[flume] chain resolution failed: ${msg}. This tick does no work. ` +
           `A chainLoadGate-guarded chain.ts is reverted by its producing ` +

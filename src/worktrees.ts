@@ -40,6 +40,7 @@ import {
   worktreesBase,
 } from "./paths.js";
 import type { Chain, Phase } from "./Phase.js";
+import { thrownMessage } from "./thrown.js";
 
 /**
  * What the worktree lifecycle needs from the dispatcher that drives it: the
@@ -331,7 +332,7 @@ export async function readWorktreeRegistry(
   try {
     stdout = await git.worktreeListPorcelain(repoRoot);
   } catch (err) {
-    return { read: false, reason: (err as Error).message };
+    return { read: false, reason: thrownMessage(err) };
   }
   const worktrees = new Map<string, string | undefined>();
   // The same records keyed by the directory's on-disk identity rather than by
@@ -532,7 +533,7 @@ export async function withGateCheckouts<T>(
         await git.removeWorktree(c.repoRoot, c.path, ctx.log);
       } catch (err) {
         ctx.log.warn(
-          `[flume] could not reclaim the gate checkout at ${c.path}: ${(err as Error).message}`,
+          `[flume] could not reclaim the gate checkout at ${c.path}: ${thrownMessage(err)}`,
         );
       }
     }
@@ -679,7 +680,7 @@ export async function teardownWorktreeInstance(
       });
     } catch (err) {
       ctx.log.warn(
-        `[flume] teardownWorktree failed for ${wt.path}: ${(err as Error).message}`,
+        `[flume] teardownWorktree failed for ${wt.path}: ${thrownMessage(err)}`,
       );
     }
   }
@@ -695,7 +696,7 @@ export async function teardownWorktreeInstance(
     await git.deleteBranch(ctx.repoRoot, wt.branch);
   } catch (err) {
     ctx.log.warn(
-      `[flume] deleting branch ${wt.branch} failed: ${(err as Error).message}`,
+      `[flume] deleting branch ${wt.branch} failed: ${thrownMessage(err)}`,
     );
   }
   return removed;
@@ -837,7 +838,7 @@ export async function sweepStaleWorktrees(
     entries = await readdir(namespacedJoin(sweepBase));
   } catch (err) {
     ctx.log.warn(
-      `[flume] startup sweep: could not read ${sweepBase}: ${(err as Error).message}`,
+      `[flume] startup sweep: could not read ${sweepBase}: ${thrownMessage(err)}`,
     );
     return;
   }
@@ -910,7 +911,7 @@ export async function sweepStaleWorktrees(
     await git.pruneWorktrees(repoRoot, ctx.log);
   } catch (err) {
     ctx.log.warn(
-      `[flume] startup sweep: worktree prune failed: ${(err as Error).message}`,
+      `[flume] startup sweep: worktree prune failed: ${thrownMessage(err)}`,
     );
   }
 
@@ -922,7 +923,7 @@ export async function sweepStaleWorktrees(
       await git.deleteBranch(repoRoot, branch);
     } catch (err) {
       ctx.log.warn(
-        `[flume] startup sweep: deleting branch ${branch} failed: ${(err as Error).message}`,
+        `[flume] startup sweep: deleting branch ${branch} failed: ${thrownMessage(err)}`,
       );
     }
   }

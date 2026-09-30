@@ -23,6 +23,7 @@ import { frictionCountLine } from "./friction.js";
 import { existsLoudUnder } from "./fsProbe.js";
 import { defaultStateRoot, stopFlagPath } from "./paths.js";
 import { signalProcessTree, spawnProcessTree } from "./processTree.js";
+import { thrownMessage } from "./thrown.js";
 
 /**
  * Engine default for the run-scoped quarantine — the scope `superviseLoop`
@@ -1120,7 +1121,7 @@ function defaultTickRunner(
       child.on("exit", (code) => settle({ exitCode: code }));
       child.on("error", (err) => {
         log.error(
-          `[flume] failed to spawn 'flume tick': ${(err as Error).message}`,
+          `[flume] failed to spawn 'flume tick': ${thrownMessage(err)}`,
         );
         settle({ exitCode: 1 });
       });

@@ -50,6 +50,7 @@ import type {
 import type { Phase } from "./Phase.js";
 import type { TickVerdictMergeOutcome } from "./tickVerdict.js";
 import { liveForeignClaimPid } from "./tipVerify.js";
+import { thrownMessage } from "./thrown.js";
 
 /**
  * What the ledger's reads and its one rewrite take from whoever calls them:
@@ -474,7 +475,7 @@ export async function readPendingTolerant(
     // declared.
     ctx.log.warn(
       `[flume] ${reportedPendingDir(ctx)} could not be read (${
-        (err as Error).message
+        thrownMessage(err)
       }); treating as empty`,
     );
     return [];

@@ -647,6 +647,25 @@ describe("chainLoadGate — post-tick chain.ts validation", () => {
     expect(result.details ?? "").not.toBe("");
   });
 
+  // The module this gate loads is chain-author code, so a throw at load time
+  // is whatever that module threw. `details` folds it through `thrownMessage`
+  // (`src/thrown.ts`); the cast it replaced reported the string literally as
+  // `undefined`, telling the operator nothing about the chain they must fix.
+  it("chainLoadGate reports the thrown text in details when the committed chain.ts throws a non-Error at load", async () => {
+    await commitFiles(repo, { ".flume/chain.ts": VALID_CHAIN }, "build: good chain");
+    const sha = await commitFiles(
+      repo,
+      { ".flume/chain.ts": 'throw "chain.ts refused to load";\n' },
+      "build: rewrite chain (throws a string at load)",
+    );
+
+    const result = await chainLoadGate.run(
+      ctx(repo, { commitSha: sha, touchedPaths: await touchedFor(repo, sha) }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.details).toContain("chain.ts refused to load");
+  });
+
   it("fails a chain.ts that has no default export", async () => {
     const sha = await commitFiles(
       repo,
