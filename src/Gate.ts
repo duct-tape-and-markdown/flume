@@ -121,15 +121,16 @@ export interface GateContext {
   /**
    * The gated span's changed paths (relative to repo root, forward-slash) —
    * the cumulative `baseSha..commitSha` diff, computed once per commit by
-   * the dispatcher and shared across every gate this tick runs. A gate that
-   * needs touched-path detection reads this instead of shelling `git show
+   * the dispatcher and handed to every gate this tick runs; the `readonly`
+   * is that sharing, since one array reaches them all. A gate that needs
+   * touched-path detection reads this instead of shelling `git show
    * --name-only` out on its own (.claude/rules/engineering.md "The fix lands
    * at the mechanism"); no gate carries a second derivation to fall back to,
    * so a hand-built context states the same list a real tick would hand it
    * (.claude/rules/engineering.md "A seam gate reads what the real writer
    * wrote").
    */
-  touchedPaths: string[];
+  touchedPaths: readonly string[];
   /**
    * The sha the gated span started from — the worktree's tip when the tick
    * branched, the same value the dispatcher cherry-picks the span from. Set

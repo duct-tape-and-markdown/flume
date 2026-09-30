@@ -634,10 +634,11 @@ async function runAfterCommitGates(
    * here: the caller already read this diff to decide whether the span was
    * empty at all, and one span's footprint is one `git diff`
    * (.claude/rules/engineering.md "The fix lands at the mechanism"). The one
-   * array reaches every gate in the loop below by identity, so a gate cannot
-   * see a footprint a sibling gate did not.
+   * array reaches every gate in the loop below by identity; that no gate can
+   * edit it into what the next reads is `GateContext.touchedPaths`'s type
+   * (`src/Gate.ts`).
    */
-  spanTouchedPaths: string[],
+  spanTouchedPaths: readonly string[],
 ): Promise<{
   ok: boolean;
   /** First failing gate — the same row `results` carries, so a prior-attempt

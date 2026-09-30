@@ -738,7 +738,7 @@ describe("pendingGate — claim check over the merged tree (spec/pending.md 'Cla
     // Non-vacuity: the span is the two notes and no entry file, so the
     // verdict below is the records half of the check and not the ledger half
     // riding along.
-    expect(span.touchedPaths.sort()).toEqual([
+    expect([...span.touchedPaths].sort()).toEqual([
       ".flume/plan/notes/FREE.md",
       ".flume/plan/notes/HELD.md",
     ]);

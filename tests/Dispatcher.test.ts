@@ -19412,8 +19412,8 @@ describe("Dispatcher — GateContext.touchedPaths (GATECONTEXT-TOUCHED-PATHS-DED
   it("singleton tick: every afterCommit gate receives the identical touchedPaths array for the commit", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
 
-    let firstTouched: string[] | undefined;
-    let secondTouched: string[] | undefined;
+    let firstTouched: readonly string[] | undefined;
+    let secondTouched: readonly string[] | undefined;
     const gateA: Gate = {
       name: "capture-touched-a",
       when: "afterCommit",
@@ -19462,7 +19462,7 @@ describe("Dispatcher — GateContext.touchedPaths (GATECONTEXT-TOUCHED-PATHS-DED
     await writePending(fx.repo, [makeEntry("TP-FANOUT", ["src/tp.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
 
-    let commitTouched: string[] | undefined;
+    let commitTouched: readonly string[] | undefined;
     const captureCommit: Gate = {
       name: "capture-commit-touched",
       when: "afterCommit",
@@ -19472,7 +19472,7 @@ describe("Dispatcher — GateContext.touchedPaths (GATECONTEXT-TOUCHED-PATHS-DED
       },
     };
 
-    let mergeTouched: string[] | undefined;
+    let mergeTouched: readonly string[] | undefined;
     const captureMerge: Gate = {
       name: "capture-merge-touched",
       when: "afterMerge",
