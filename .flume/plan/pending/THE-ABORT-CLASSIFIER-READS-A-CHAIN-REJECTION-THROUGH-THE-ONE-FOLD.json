@@ -1,0 +1,53 @@
+{
+  "tag": "THE-ABORT-CLASSIFIER-READS-A-CHAIN-REJECTION-THROUGH-THE-ONE-FOLD",
+  "gate": {
+    "kind": "blockedBy",
+    "tags": [
+      "AN-UNKNOWN-THROWN-VALUE-FOLDS-THROUGH-ONE-HOME"
+    ]
+  },
+  "priority": 0,
+  "files": {
+    "edit": [
+      {
+        "path": "src/tickAttempt.ts",
+        "description": "the abort classifier's cast (:606) reads its two keys off a guarded shape and its message through the one fold; :872 is the blocker's"
+      },
+      {
+        "path": "src/thrown.ts",
+        "description": "takes the whole job the blocker gave it a file for: `throwFacts` lands here and `thrownMessage` computes from it"
+      },
+      {
+        "path": "src/tickVerdict.ts",
+        "description": "`throwFacts` (:407) leaves; the header's claim on it (:16-:20) shrinks to a pointer"
+      },
+      {
+        "path": "src/gateRun.ts",
+        "description": "`throwFacts` import re-points (:15)"
+      },
+      {
+        "path": "src/waveMerge.ts",
+        "description": "`throwFacts` import re-points (:67)"
+      },
+      {
+        "path": "src/Dispatcher.ts",
+        "description": "`throwFacts` import re-points (:83)"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "two cases beside `preemptFrom` (:13067), which already takes `unknown`"
+      }
+    ]
+  },
+  "summary": "the abort classifier casts a chain adapter's rejection to `Error`: a thrown string prints `undefined` into the failure signature, a thrown `null` raises past `Dispatcher.tick`",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Loud or nothing"
+  },
+  "acceptance": "`grep -n 'as Error' src/tickAttempt.ts` empty \u2014 the classifier reads its two abort keys off a guarded shape and its message through the one fold, so a chain adapter's non-`Error` rejection records the thrown text as a preempt instead of raising inside the catch. One home left in `src/` for that fold: `src/thrown.ts` carries `throwFacts` too, moved out of `src/tickVerdict.ts` with that header's claim shrunk to a pointer, and `thrownMessage` computes from it rather than respelling `String(err)`. The ~30 inline `instanceof Error ?` reads across `src/` and `harness/` stay \u2014 debt, out of scope. `Error`-path text byte-identical, so no standing expected string moves. `pnpm tsc --noEmit` and `pnpm test` green.",
+  "tests": [
+    "an agent adapter rejecting with a string classifies as the pre-exit error class naming the thrown text",
+    "an agent adapter rejecting with null classifies as a platform preempt instead of raising inside the classifier"
+  ],
+  "notes": "Measured this tick via two probes through `preemptFrom` (`tests/Dispatcher.test.ts:13067`), then reverted. A string rejection yields `agent process error before exit: undefined` \u2014 also the signature the consecutive-identical backstop compares on, so distinct rejections collapse to one. A `null` rejection raises `TypeError` at `src/tickAttempt.ts:608`, escaping `runAttempt` (:327), `src/singletonTick.ts:275` and `src/Dispatcher.ts:1055`. The thrower is chain code (`Phase.agent:756`)."
+}
