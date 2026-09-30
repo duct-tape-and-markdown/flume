@@ -773,6 +773,15 @@ async function revertAfterCommitFailure(
 }
 
 /**
+ * What stands in the reverted commit's subject position when the message
+ * could not be read before the reset destroyed it. The operator reads a
+ * failed capture as one — not an unnamed commit — which is the refusal-free
+ * bound {@link capturedCommitMessage} declares; the body it rides with is
+ * empty because there is none to quote, not because the commit had none.
+ */
+const UNREADABLE_COMMIT_SUBJECT = "(commit message unavailable)";
+
+/**
  * Subject + body of a commit, read while `sha` is still reachable (before
  * the hard reset / commit drop).
  *
@@ -797,7 +806,7 @@ async function capturedCommitMessage(
   try {
     return await git.commitMessage(cwd, sha);
   } catch {
-    return { subject: "(commit message unavailable)", body: "" };
+    return { subject: UNREADABLE_COMMIT_SUBJECT, body: "" };
   }
 }
 

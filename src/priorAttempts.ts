@@ -303,11 +303,29 @@ const MAX_PRIOR_DIFFSTAT = 4 * 1024;
  */
 const NO_SPAN_DIFFSTAT = "(no commit added to the tip)";
 /**
+ * The digest of a span whose `git show --stat` could not be read at all —
+ * the other half of the distinction {@link NO_SPAN_DIFFSTAT} draws. A retry
+ * reading this one knows what the span added is *unknown*; reading that one
+ * knows it added nothing. What warrants substituting either rather than
+ * failing the record is {@link capturedDiffStat}'s.
+ */
+const UNREADABLE_SPAN_DIFFSTAT = "(diff stat unavailable)";
+/**
  * Bound on the persisted clean-exit constraint / platform-preempt
  * failure class. Same telegraphic discipline as the gate digest: enough to
  * name the wall, not the transcript.
  */
 const MAX_PRIOR_NOCOMMIT = 4 * 1024;
+/**
+ * What a clean-exit record forwards when the agent's final message came back
+ * empty — the one signal that record exists to carry was not there to read.
+ * Stated rather than left blank so the retry reads "nothing was said" in the
+ * message's position instead of an empty quote; which of the mode's two exits
+ * happened is `spanBase`/`spanHead`'s to say, never this string's, and
+ * {@link buildCleanExit} spells why.
+ */
+const NO_FINAL_MESSAGE =
+  "(agent exited cleanly and produced no final message)";
 /**
  * Bound on the persisted not-shipped record's path list. A footprint, like a
  * diffstat, names what landed — a few hundred lines is already past what the
@@ -810,7 +828,7 @@ async function capturedDiffStat(
       ? NO_SPAN_DIFFSTAT
       : bound(stat, MAX_PRIOR_DIFFSTAT);
   } catch {
-    return "(diff stat unavailable)";
+    return UNREADABLE_SPAN_DIFFSTAT;
   }
 }
 
@@ -893,10 +911,7 @@ export function buildCleanExit(
   return {
     mode: "clean-exit",
     ...span,
-    finalMessage:
-      message.length > 0
-        ? message
-        : "(agent exited cleanly and produced no final message)",
+    finalMessage: message.length > 0 ? message : NO_FINAL_MESSAGE,
   };
 }
 
