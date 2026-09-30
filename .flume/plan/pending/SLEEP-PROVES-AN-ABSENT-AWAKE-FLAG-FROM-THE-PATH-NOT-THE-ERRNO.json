@@ -1,0 +1,34 @@
+{
+  "tag": "SLEEP-PROVES-AN-ABSENT-AWAKE-FLAG-FROM-THE-PATH-NOT-THE-ERRNO",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 30,
+  "files": {
+    "edit": [
+      {
+        "path": "src/stateRootAccess.ts",
+        "description": "removeUnderStateRoot's ENOENT arm becomes the proven-absence descent its own read wrapper already cites"
+      },
+      {
+        "path": "src/fsProbe.ts",
+        "description": "the shared detector, if the descent needs a write-side entry point"
+      },
+      {
+        "path": "tests/cli.test.ts",
+        "description": "the sleep refusal case the windows lane reds"
+      },
+      {
+        "path": "tests/cliHelp.test.ts",
+        "description": "the verb/clause agreement roster that loses `sleep` with it"
+      }
+    ]
+  },
+  "summary": "removeUnderStateRoot reads win32's ENOENT-through-a-plain-file as an absent flag, so `flume sleep` reports success over an obstructed awake dir",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "The fix lands at the mechanism"
+  },
+  "acceptance": "the removal's silent arm is a proven absence, not an errno match; `flume sleep` exits EX_IOERR over an obstructed awake dir on both hosts, and the cliHelp roster carries `sleep` on both sides",
+  "notes": "Two windows-lane reds, one root: cli.test.ts `expected 0 to be 74` and cliHelp.test.ts's roster, which derives `refusing` by running the real verbs. src/stateRootAccess.ts:148 matches ENOENT; its own neighbour already states proven absence is a descent and cites this section, and readQueueOnDisk does it right. Consequence is Baton.sleep's own warning: a phase left awake by a sleep that reported success. No tests[]: posix raises ENOTDIR and already refuses."
+}

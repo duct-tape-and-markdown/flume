@@ -1,0 +1,30 @@
+{
+  "tag": "A-RELOCATED-DEEP-QUEUE-STILL-READS-ITS-PICKABLE-ENTRIES-ON-WIN32",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 30,
+  "files": {
+    "edit": [
+      {
+        "path": "src/pendingLedger.ts",
+        "description": "the disk leg of readQueueFiles and the descent it proves absence with"
+      },
+      {
+        "path": "src/fsProbe.ts",
+        "description": "isDirectoryOrAbsentUnder's own path folding down the descent"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the win32 total-path-limit case that reds"
+      }
+    ]
+  },
+  "summary": "a relocated dock past win32's ~260-char limit reads its queue as empty, so the wave ships nothing instead of refusing",
+  "per": {
+    "path": "spec/pending.md",
+    "section": "Dispatch reads come from the tip, not the tree"
+  },
+  "acceptance": "a relocated pendingDir past ~260 chars yields its pickable entries, and a queue that cannot be read refuses rather than reading as drained",
+  "notes": "Windows-lane red: `expected [] to deeply equal ['RELOC-W32']` on shippedTags — the pickable entry vanished and the tick shipped nothing. readQueueOnDisk folds its own listing with namespacedJoin, so the suspect is the isDirectoryOrAbsentUnder descent above it (stateRoot down to dir), whose intermediate paths are the unfolded half. Silently degrading to [] is the Loud-or-nothing half. No tests[]: the case is describe.runIf(win32), which the default lane skips, so nothing reds on the base."
+}

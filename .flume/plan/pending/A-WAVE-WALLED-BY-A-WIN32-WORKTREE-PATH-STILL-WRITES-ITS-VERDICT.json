@@ -1,0 +1,30 @@
+{
+  "tag": "A-WAVE-WALLED-BY-A-WIN32-WORKTREE-PATH-STILL-WRITES-ITS-VERDICT",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 30,
+  "files": {
+    "edit": [
+      {
+        "path": "src/waveTick.ts",
+        "description": "the slot leg whose throw leaves the wave with no verdict"
+      },
+      {
+        "path": "src/worktrees.ts",
+        "description": "the worktree path the teardown/probe misses on win32"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the four walled-wave cases that red"
+      }
+    ]
+  },
+  "summary": "four walled-wave cases red on win32 with ENOENT at a worktree's .git and then an undefined verdict, so a wall loses the facts artifact",
+  "per": {
+    "path": "spec/loop.md",
+    "section": "The tick verdict — one facts artifact"
+  },
+  "acceptance": "a wave walled by a win32 worktree path reports the verdict naming the spans it shipped, rather than throwing out past it",
+  "notes": "Windows-lane reds, one family: \"a recorded ledger refusal outranks a slot leg's throw\" and \"a walled wave reports every wall it held\" fail with `ENOENT ... boom-b\\.git`, then two cases fail `expected undefined` where a verdict was due. Every tick that runs a phase writes one verdict, so the undefined is the defect and the ENOENT its likely cause. Shares tests/Dispatcher.test.ts with two siblings, which serializes the three. No tests[]: win32-only, so nothing reds on the base."
+}
