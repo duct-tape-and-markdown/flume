@@ -34,6 +34,7 @@ import type {
   TipMovedAttempt,
   NotShippedAttempt,
   PriorAttempt,
+  PriorAttemptEnvelope,
 } from "../src/Prompt.ts";
 import type { Phase } from "../src/Phase.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
@@ -804,6 +805,43 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     at: AT,
   };
 
+  /**
+   * The fields every record carries whatever tagged it — the envelope plus the
+   * discriminant. Spelled as keys of {@link PriorAttemptEnvelope}, so a field
+   * the envelope gains is a compile error here rather than a value the
+   * per-mode case below starts demanding of the block.
+   */
+  const SHARED_FIELDS: ReadonlyArray<keyof PriorAttemptEnvelope | "mode"> = [
+    "mode",
+    "key",
+    "keyedAs",
+    "declaredAs",
+    "headSha",
+    "at",
+  ];
+
+  /**
+   * Every line of every value a fixture carries *beyond* the envelope, paired
+   * with the field holding it — read off the record rather than restated
+   * beside it, so a field a variant gains is judged by the case already
+   * running over that variant. Lines, not whole values: `indentBlock` prefixes
+   * each line of a multi-line value, so the line is the unit that survives
+   * into the block.
+   */
+  function ownFieldLines(prior: PriorAttempt): Array<[string, string]> {
+    const lines: Array<[string, string]> = [];
+    for (const [field, value] of Object.entries(prior)) {
+      if ((SHARED_FIELDS as readonly string[]).includes(field)) continue;
+      if (value === undefined) continue;
+      for (const one of Array.isArray(value) ? value : [value]) {
+        for (const line of String(one).split("\n")) {
+          if (line.trim().length > 0) lines.push([field, line.trim()]);
+        }
+      }
+    }
+    return lines;
+  }
+
   const variants: Array<[string, PriorAttempt]> = [
     ["gate-revert", gateRevert],
     ["clean-exit", cleanExit],
@@ -835,13 +873,30 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
   }, SPAWN_BUDGET_MS);
 
   it.each(variants)(
-    "%s: the rendered block carries the anchor (headSha + at) alongside the mode's own fields",
+    "%s: every prior-attempt mode's own fields reach the rendered block, alongside the anchor (headSha + at)",
     async (_mode, prior) => {
       const out = await renderWithPrior(prior);
+      const block = priorAttemptBlock(out);
 
-      expect(out).toContain("<prior-attempt>");
-      expect(out).toContain(`Recorded ${AT}, trunk tip ${HEAD_SHA}.`);
-      // The anchor rides inside the block, before the task body.
+      // The mode's own half of the claim: every value this variant declares
+      // beyond the envelope is inside the block, named by its field when it
+      // is not. Vacuity first — a mode with no own fields would pass the loop
+      // below over nothing, and five of the six modes had no field assertion
+      // anywhere when the anchor was all this case read.
+      const own = ownFieldLines(prior);
+      expect(
+        own.length,
+        `the '${prior.mode}' fixture declares no fields of its own`,
+      ).toBeGreaterThan(0);
+      for (const [field, line] of own) {
+        expect(
+          block,
+          `${prior.mode}.${field} never reached the rendered block`,
+        ).toContain(line);
+      }
+
+      // The anchor's half: inside the block, before the task body.
+      expect(block).toContain(`Recorded ${AT}, trunk tip ${HEAD_SHA}.`);
       const blockStart = out.indexOf("<prior-attempt>");
       const anchorIdx = out.indexOf(`Recorded ${AT}, trunk tip ${HEAD_SHA}.`);
       const blockEnd = out.indexOf("</prior-attempt>");
