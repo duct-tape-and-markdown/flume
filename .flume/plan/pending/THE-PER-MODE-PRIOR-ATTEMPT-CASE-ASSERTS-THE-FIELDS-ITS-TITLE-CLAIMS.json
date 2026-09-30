@@ -1,0 +1,21 @@
+{
+  "tag": "THE-PER-MODE-PRIOR-ATTEMPT-CASE-ASSERTS-THE-FIELDS-ITS-TITLE-CLAIMS",
+  "gate": { "kind": "open" },
+  "priority": 0,
+  "files": {
+    "edit": [
+      {
+        "path": "tests/Prompt.test.ts",
+        "description": "the parametrized case over `variants` asserts each mode's own rendered fields, or drops the clause from its title"
+      }
+    ]
+  },
+  "summary": "the per-mode <prior-attempt> render case titles the mode's own fields and asserts only the anchor",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A green verdict is proven non-vacuous"
+  },
+  "acceptance": "The parametrized case over every PRIOR_ATTEMPT_MODES fixture asserts each mode's own rendered field values inside the extracted block, not the anchor alone; title and body agree.",
+  "pins": ["every prior-attempt mode's own fields reach the rendered block"],
+  "notes": "tests/Prompt.test.ts:838 titles \"alongside the mode's own fields\"; the body (:839-:855) asserts the block marker, the anchor line and block ordering, no mode field. Five of six modes have no field assertion anywhere — clean-exit alone has its own cases at :857 and :878. The warrant the two best-effort captures now cite, a placeholder landing visibly in the block (src/priorAttempts.ts:774, src/tickAttempt.ts:800), rests on the diffStat half of this."
+}
