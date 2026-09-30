@@ -12009,12 +12009,19 @@ describe("Dispatcher fanout — a merge-stage throw outside the ledger rewrite c
     // The claim. `tick()` returns rather than propagating — a bare re-throw
     // took every fact below with it — and the verdict it carries names the
     // span this wave had already landed, the ledger commit that retired it,
-    // and the entries it was provisioned for.
+    // and the entries it was provisioned for. `tags` is that provisioning as
+    // a set — it fills as slots refill, and the verdict promises the tags and
+    // no order (spec/loop.md, "The tick verdict — one facts artifact") — so it
+    // is read sorted, the way the invocation rows above are.
     expect(thrown).toBeUndefined();
     expect(outcome?.verdict).toBeDefined();
     expect(outcome?.verdict?.shippedTags).toEqual(["STAKE-A"]);
     expect(outcome?.verdict?.committed).toBe(true);
-    expect(outcome?.verdict?.tags).toEqual(["STAKE-A", "STAKE-B"]);
+    expect([...(outcome?.verdict?.tags ?? [])].sort()).toEqual([
+      "STAKE-A",
+      "STAKE-B",
+    ]);
+    expect(outcome?.verdict?.tags).toHaveLength(2);
     expect(outcome?.verdict?.phaseName).toBe("build");
     expect(
       outcome?.verdict?.mergeOutcomes.map((m) => [m.entryTag, m.outcome]),
