@@ -1,0 +1,40 @@
+{
+  "tag": "THE-TWO-MERGE-LEGS-CARRY-ONE-SPAN",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 0,
+  "files": {
+    "new": [
+      {
+        "path": "src/mergeSpan.ts",
+        "description": "the span carry, over a span whose entry is optional — the job neither leg's module is named for"
+      }
+    ],
+    "edit": [
+      {
+        "path": "src/waveMerge.ts",
+        "description": "`carrySpan` (:683) calls the new home; the marker (:733), `blamedOn`, the `shipped` consult (:978) and the ledger rewrite stay the wave's"
+      },
+      {
+        "path": "src/singletonTick.ts",
+        "description": "the merge stage (:346-:596) calls the same home; the untagged verdict vocabulary and the phase-keyed `ref` stay here"
+      },
+      {
+        "path": "src/tickVerdict.ts",
+        "description": "`unrevertableMergeFailure`'s doc (:369-:373) names two legs that reach it; one does after the fold"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "where both legs are driven end to end — the suite that holds the fold behavior-free"
+      }
+    ]
+  },
+  "summary": "the singleton leg and the wave's `carrySpan` spell one span-carry sequence twice — foreign claim, checkpoint, pick, afterMerge gates, revert; third body, so the family files",
+  "per": {
+    "path": ".claude/rules/posture-sweep.md",
+    "section": "Routing"
+  },
+  "acceptance": "One home for the span carry: `src/mergeSpan.ts` runs the live-foreign-claim refusal, the bystander checkpoint, `cherryPickRange` with its `cherryPickAbort` catch, the afterMerge gate loop, and the `buildGateRevert` + `checkMergedTipUnmoved` + `resetKeepTo`/`ResetKeepRefusedError` refusal legs, over a span whose entry is optional. `grep -n 'cherryPickRange\\|cherryPickAbort\\|checkMergedTipUnmoved\\|resetKeepTo\\|checkpointBystanderState' src/waveMerge.ts src/singletonTick.ts` empty — both legs call it and spell none of those steps. What stays per leg: the wave's merging marker, its `blamedOn` attribution, its `shipped` consult and its ledger rewrite; the singleton's untagged rows and its phase-keyed record ref. Behavior-free — `pnpm tsc --noEmit` and `pnpm test` green, and no log string, verdict field or merge-outcome shape moves.",
+  "notes": "Family *the singleton and wave merge legs spell one span sequence* — bodies 288cc224, 107bd9c0, 2cb7345a; the target shape is the one 2cb7345a records. Verified step-for-step on this tip: :379/:703 (foreign claim), :413/:725 (checkpoint), :420/:745 (pick), :426/:762 (abort), :442/:693 (gate filter), :449,:476/:811,:843 (gate loop), :495/:868 (revert record), :516/:926, :535/:933. The marker difference is a real one, ruled so already: spec/loop.md scopes it to an entry's span."
+}

@@ -1,0 +1,22 @@
+{
+  "tag": "THE-SINGLETON-PROVISIONING-NO-RUN-RETURNS-ARE-ONE-CALL",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 0,
+  "files": {
+    "edit": [
+      {
+        "path": "src/singletonTick.ts",
+        "description": "the `createWorktree` catch (:194-:209) and the `setupWorktree` catch (:220-:238) spell one return; one function, two callers"
+      }
+    ]
+  },
+  "summary": "`runSingleton`'s two provisioning no-run returns spell the same failure push, array copy and double report thirty lines apart; third body, so the family files",
+  "per": {
+    "path": ".claude/rules/posture-sweep.md",
+    "section": "Routing"
+  },
+  "acceptance": "`runSingleton` (`src/singletonTick.ts`) has one spelling of the provisioning no-run return: the `provisionFailures` push, the `[...provisionFailures]` copy, and the outcome naming that one array on both surfaces — `result.provisionFailures` for the handoff and the envelope's for the verdict and the quarantine accounting. Both catches call it; neither restates it. The `setupWorktree` leg's `teardownWorktreeInstance` stays at its own catch, ahead of the call, since the `createWorktree` leg has no worktree to take down. Behavior-free — `pnpm tsc --noEmit` and `pnpm test` green, and the two legs' `log.warn` wording is unchanged, each naming its own stage.",
+  "notes": "Family *the singleton's provisioning no-run returns spell one sequence* — bodies e0d17171 and 2cb7345a. Verified on this tip: :203-:208 against :234-:237, identical but for the teardown call (:225) between them. The prune catch above (:181-:189) pushes and continues rather than returning, so it is not a third caller."
+}

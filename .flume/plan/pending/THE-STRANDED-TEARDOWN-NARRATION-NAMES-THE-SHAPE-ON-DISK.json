@@ -1,0 +1,21 @@
+{
+  "tag": "THE-STRANDED-TEARDOWN-NARRATION-NAMES-THE-SHAPE-ON-DISK",
+  "gate": { "kind": "open" },
+  "priority": 0,
+  "files": {
+    "edit": [
+      {
+        "path": "src/waveMerge.ts",
+        "description": ":593 warrants the usage-row read on a teardown 'a whole wave away'; :1149 hands a walled wave's worktrees to the next `pruneWorktrees`"
+      },
+      {
+        "path": "src/waveTick.ts",
+        "description": ":703 makes the same prune claim; `settleSlot`'s own doc (:494-:503) twenty lines of scroll above denies it in terms"
+      }
+    ]
+  },
+  "summary": "three comments still name a wave-wide teardown and a `pruneWorktrees` reclaim that per-slot teardown and the startup sweep replaced; third body, so the family files",
+  "per": { "path": ".claude/rules/posture-sweep.md", "section": "Routing" },
+  "acceptance": "`grep -rn 'whole wave away' src/ harness/` and `grep -rn 'reclaims their metadata' src/ harness/` both empty. Each site states the shape on disk: `src/waveMerge.ts:593` names the teardown that actually follows that read — the slot's own tail, one `await` past it (`settleSlot`, `src/waveTick.ts`) — and keeps its conclusion; `src/waveMerge.ts:1149` and `src/waveTick.ts:703` name what `settleSlot` already names for a walled wave's residue, the next `flume loop` start's `sweepStaleWorktrees` (`src/worktrees.ts`) taking the directory and the branch it was cut on, a prune taking neither. Comment-only — `pnpm tsc --noEmit` and `pnpm test` green with no executable line changed.",
+  "notes": "Family *narration a reshape stranded*, bodies e0d17171 and 2cb7345a since it last filed (a49b545e → 216f03b9, which covered seven other sites). All three verified on this tip: per-slot teardown is b719a3f6's, and `sweepStaleWorktrees` removes a registered, stamped directory still standing — which is what a prune, dropping metadata for a directory already gone, cannot do. `src/waveMerge.ts:1149` is the site no prior body had found."
+}
