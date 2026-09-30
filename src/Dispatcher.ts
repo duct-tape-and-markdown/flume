@@ -1225,7 +1225,10 @@ export class Dispatcher {
     // landed — never inferred from which paths the last commit touched, and
     // left behind even on a quiet no-commit tick. The shaping itself, `at`
     // included, is `buildTickVerdict`'s (`src/tickVerdict.ts`), shared with
-    // the partial verdict a refused ledger rewrite rides out on.
+    // the partial verdict a walled wave rides out on — every throw its merge
+    // stage holds (`waveMergeError`, `src/waveMerge.ts`) and every throw out
+    // of a slot's own leg (`waveSlotThrow`, `src/waveMerge.ts`), not the
+    // refused ledger rewrite alone.
     const verdict = buildTickVerdict({
       phaseName: phase.name,
       tags: tags ?? [],

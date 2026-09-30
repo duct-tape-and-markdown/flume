@@ -201,11 +201,12 @@ export type LedgerRefusalClass = "parse-failure" | "commit-refusal";
 
 /**
  * Wave-level no-commit cause, only meaningful when the wave shipped
- * nothing usable — shared by the wave's normal-completion verdict and by
- * `WaveLedgerRefusal`'s partial verdict (.claude/rules/engineering.md
- * "Derived state is computed, never restated beside its source"), so a
- * ledger refusal reports the same cause a clean completion would have. The
- * precedence is {@link WAVE_NO_COMMIT_RANK}.
+ * nothing usable — shared by the wave's normal-completion verdict and by the
+ * partial verdict a walled wave rides out on, whatever threw to wall it
+ * ({@link settledWaveVerdict}) (.claude/rules/engineering.md "Derived state
+ * is computed, never restated beside its source"), so a wall reports the
+ * same cause a clean completion would have. The precedence is
+ * {@link WAVE_NO_COMMIT_RANK}.
  */
 function waveNoCommitCause(
   committedWave: boolean,
@@ -229,12 +230,13 @@ function waveNoCommitCause(
 
 /**
  * What the wave's fanout declares when it opens its merge stage. Beyond the
- * leg and phase every pick runs against, the wave facts a
- * {@link WaveLedgerRefusal}'s partial verdict has to name — the batch that
- * was provisioned, the provisioning walls already recorded, the entries a
- * sibling took before the stake reached them, and the records the wave's
- * opening queue read retired — since that verdict is assembled inside the
- * stage and never reaches the leg's own return.
+ * leg and phase every pick runs against, the wave facts the partial verdict
+ * of a walled wave has to name — the batch that was provisioned, the
+ * provisioning walls already recorded, the entries a sibling took before the
+ * stake reached them, and the records the wave's opening queue read retired —
+ * since that verdict is assembled inside the stage
+ * ({@link settledWaveVerdict}) and never reaches the leg's own return,
+ * whatever threw to wall the wave.
  *
  * The attempts are not here. A wave hands them over one at a time, each as
  * its own agent finishes ({@link mergeAttempt}), so the set is not known

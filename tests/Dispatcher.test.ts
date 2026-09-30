@@ -139,7 +139,7 @@ import { loopExitCode } from "../src/cliVerdict.ts";
 import * as git from "../src/git.ts";
 import { liveForeignClaimPid } from "../src/tipVerify.ts";
 import { parsePidClaim, renderPidClaim } from "../src/pidClaim.ts";
-import { waitFor } from "./helpers/waitFor.ts";
+import { waitFor, type WaitOptions } from "./helpers/waitFor.ts";
 // Barrel-export pin (.claude/rules/engineering.md "An export earns its
 // consumer"): both types are field types on the already-public
 // TickVerdict/TickOutcome, so a chain author needs to be able to name them from
@@ -466,6 +466,37 @@ async function awaitOnTrunk(repo: string, subject: string): Promise<void> {
     });
     return stdout.includes(subject) ? true : undefined;
   });
+}
+
+/**
+ * One pick's whole ship-lock span, as a wait a sibling slot can hold on: the
+ * lock file appears when `mergeAttempt` (`src/waveMerge.ts`) takes it and is
+ * gone when that span ends — past whatever the pick did inside it, and so
+ * past the point a verdict built at that pick was frozen (spec/loop.md "The
+ * ship lock and the worktree lock — sibling ticks take turns at git").
+ *
+ * Event-based rather than a sleep, so the ordering a case claims is the
+ * engine's own passage and not a guess at what a merge costs
+ * (`tests/helpers/waitFor.ts`). `opts` is how a caller sizes the probe gap to
+ * the hold it has to catch: a pick that refuses before its cherry-pick holds
+ * the lock for a handful of git spawns, not a whole carry, and a gap sized
+ * for the long hold can step over the short one — which reds as a blown wait
+ * rather than a silent reorder, but reds an innocent case all the same.
+ */
+async function shipLockSpanSettled(
+  lockPath: string,
+  opts?: WaitOptions,
+): Promise<void> {
+  await waitFor(
+    `a pick's ship-lock hold at ${lockPath}`,
+    () => (existsSync(lockPath) ? true : undefined),
+    opts,
+  );
+  await waitFor(
+    `that pick's ship-lock span to end at ${lockPath}`,
+    () => (existsSync(lockPath) ? undefined : true),
+    opts,
+  );
 }
 
 function makeEntry(tag: string, editPaths: string[]): PendingEntry {
@@ -11123,28 +11154,6 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
     expect(outcome.verdict?.phaseName).toBe("build");
   });
 
-  /**
-   * The refusing pick's whole ship-lock span, as a wait a sibling slot can
-   * hold on: the lock file appears when `mergeAttempt` takes it and is gone
-   * when that span ends — past the ledger
-   * rewrite that refused inside it, and so past the point a verdict built at
-   * the refusing pick was frozen (spec/loop.md "The ship lock and the
-   * worktree lock — sibling ticks take turns at git").
-   *
-   * Event-based rather than a sleep, so the ordering the two cases below
-   * claim is the engine's own passage and not a guess at what a merge costs
-   * (`tests/helpers/waitFor.ts`).
-   */
-  async function refusingPickSettled(lockPath: string): Promise<void> {
-    await waitFor(`the refusing pick's ship-lock hold at ${lockPath}`, () =>
-      existsSync(lockPath) ? true : undefined,
-    );
-    await waitFor(
-      `the refusing pick's ship-lock span to end at ${lockPath}`,
-      () => (existsSync(lockPath) ? undefined : true),
-    );
-  }
-
   it("the ledger-refusal verdict names a decline folded after the refusing pick", async () => {
     await writePending(fx.repo, [
       makeEntry("SHIP-A", ["src/a.ts"]),
@@ -11172,7 +11181,7 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
       setupWorktree: async (ctx: WorktreeSetupContext) => {
         if (ctx.worktreeKey !== "DECLINE-B") return undefined;
         try {
-          await refusingPickSettled(shipLock);
+          await shipLockSpanSettled(shipLock);
         } catch (err) {
           heldWait = (err as Error).message;
         }
@@ -11262,7 +11271,7 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
       setupWorktree: async (ctx: WorktreeSetupContext) => {
         if (ctx.worktreeKey !== "REFUSE-C") return undefined;
         try {
-          await refusingPickSettled(shipLock);
+          await shipLockSpanSettled(shipLock);
         } catch (err) {
           heldWait = (err as Error).message;
         }
@@ -11343,7 +11352,7 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
       setupWorktree: async (ctx: WorktreeSetupContext) => {
         if (ctx.worktreeKey !== "CARRY-D") return undefined;
         try {
-          await refusingPickSettled(shipLock);
+          await shipLockSpanSettled(shipLock);
         } catch (err) {
           heldWait = (err as Error).message;
         }
@@ -11986,6 +11995,119 @@ describe("Dispatcher fanout — a merge-stage throw outside the ledger rewrite c
     // (spec/loop.md, "Exit codes — the run never lies to CI").
     expect(tickExitCode(outcome!)).toBe(1);
     expect(tickExitCode(outcome!)).not.toBe(EX_MOUNT_DEAD);
+  });
+
+  /**
+   * The other side of the same wall: a span that reaches its own commit
+   * *behind* the throw. `foldUncarriedAttempt` (`src/waveMerge.ts`) rows on
+   * `mergeError` (`src/waveTick.ts`), which holds every throw out of
+   * `mergeAttempt` — so the `wave-walled` row is not the refused ledger
+   * rewrite's alone, and the sibling case that pins it drives it from the
+   * refusal side only.
+   *
+   * WALL-A's marker path is obstructed, so its pick throws inside the ship
+   * lock it took, and it is the only pick this wave reaches — CARRY-B is
+   * folded, never picked — so that one hold is what the held slot waits out
+   * unambiguously. The hold is short (a bystander checkpoint and a
+   * `revParse`, then the stake), which is why the probe gap is narrowed to
+   * catch it.
+   */
+  it("records a wave-walled row for a span that settled after a merge-stage wall no ledger refused", async () => {
+    await writePending(fx.repo, [
+      makeEntry("WALL-A", ["src/a.ts"]),
+      makeEntry("CARRY-B", ["src/b.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const obstructed = mergingMarkerPath(
+      join(fx.repo, ".flume"),
+      slugify("WALL-A"),
+    );
+    await mkdir(obstructed, { recursive: true });
+    const shipLock = join(fx.repo, ".git", "flume", "ship.lock");
+
+    let heldWait: string | undefined;
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [
+          makePhase({
+            name: "build",
+            concurrency: "fanout",
+            gates: [],
+            setupWorktree: async (ctx: WorktreeSetupContext) => {
+              if (ctx.worktreeKey !== "CARRY-B") return undefined;
+              try {
+                await shipLockSpanSettled(shipLock, { intervalMs: 1 });
+              } catch (err) {
+                heldWait = (err as Error).message;
+              }
+              return undefined;
+            },
+          }),
+        ],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "wall-a": (cwd) =>
+          writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(WALL-A): ship"),
+        "carry-b": (cwd) =>
+          writeAndCommit(
+            cwd,
+            "src/b.ts",
+            "from-B\n",
+            "build(CARRY-B): uncarried",
+          ),
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Vacuity, in the order the wave produced it. The held slot really waited
+    // WALL-A's whole hold out rather than giving up on its ceiling and
+    // landing ahead of the wall…
+    expect(heldWait).toBeUndefined();
+    expectNoFindings(blownWaitsInAgentBodies());
+    // …the obstruction still stands, so the marker write really refused…
+    expect(lstatSync(obstructed).isDirectory()).toBe(true);
+    // …both agents ran and were paid for, so CARRY-B's span exists and the
+    // wall is a merge stage's, not a batch that never reached one…
+    expect(outcome.verdict?.invocations.map((i) => i.entryTag).sort()).toEqual([
+      "CARRY-B",
+      "WALL-A",
+    ]);
+    // …neither span reached trunk, so the wave really walled on its first
+    // pick and carried nothing after it…
+    const subjects = await trunkSubjects();
+    expect(subjects).not.toContain("build(WALL-A): ship");
+    expect(subjects).not.toContain("build(CARRY-B): uncarried");
+    expect(outcome.failed).toBe(true);
+    // …and nothing about this wall was a pending-ledger refusal, which is the
+    // whole separation from the case that already pins this row.
+    expect(outcome.ledgerRefusal).toBeUndefined();
+    expect(outcome.verdict?.summary).toContain("the merge stage threw");
+
+    // The claim: the fold rows the uncarried span for this wall exactly as it
+    // does for a refused rewrite, and the pair it names is the span itself —
+    // re-cherry-pickable from the verdict alone.
+    const rows = outcome.verdict?.mergeOutcomes ?? [];
+    expect(rows.map((m) => `${m.entryTag}:${m.outcome}`)).toEqual([
+      "CARRY-B:wave-walled",
+    ]);
+    const walled = rows[0]!;
+    expect(walled.baseSha).toMatch(/^[0-9a-f]{40}$/);
+    expect(walled.headSha).toMatch(/^[0-9a-f]{40}$/);
+    const span = await exec(
+      "git",
+      ["log", "--format=%s", `${walled.baseSha!}..${walled.headSha!}`],
+      { cwd: fx.repo },
+    );
+    expect(span.stdout.trim().split("\n")).toEqual([
+      "build(CARRY-B): uncarried",
+    ]);
   });
 });
 

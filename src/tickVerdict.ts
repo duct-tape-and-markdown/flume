@@ -525,15 +525,21 @@ export function startTiming(): () => number {
  *                            over.
  *  - `wave-walled`           the span passed its afterCommit gates in its own
  *                            worktree and the wave was already walled when it
- *                            settled: a ledger rewrite behind an earlier pick
- *                            refused (`WaveLedgerRefusal`,
- *                            `src/waveMerge.ts`), so this attempt's facts
- *                            were folded and its span was never offered to
- *                            cherry-pick. Distinct from every kind above in
- *                            what did *not* happen — no pick was attempted,
+ *                            settled: an earlier pick's merge stage threw, so
+ *                            this attempt's facts were folded and its span
+ *                            was never offered to cherry-pick. Any throw that
+ *                            stage holds is the wall — a ledger rewrite that
+ *                            refused, a merge marker the disk would not take,
+ *                            a prior-attempt record the store refused, a
+ *                            `revParse` that failed (`mergeAttempt`,
+ *                            `src/waveMerge.ts`) — and the row is the same
+ *                            for every one of them, because the fold is keyed
+ *                            on the wave being walled and never on the cause.
+ *                            Distinct from every kind above in what did *not*
+ *                            happen — no pick was attempted,
  *                            so neither trunk nor this entry's own branch
  *                            refused anything — and the `baseSha`/`headSha`
- *                            pair is the whole of its point: the refusal
+ *                            pair is the whole of its point: the wall
  *                            leaves the worktree branch standing, the next
  *                            start's teardown does not, and the span is
  *                            re-cherry-pickable from this row alone.
@@ -872,8 +878,9 @@ interface TickVerdictFacts {
   /**
    * The trunk tip, read by the producer at the point its own stage says the
    * tip is final — after a tick's own commits landed, or after the picks a
-   * refused ledger rewrite left standing. Not read here, because which read
-   * point is the right one is the producer's fact, not the shaping's.
+   * walled wave left standing, whatever threw to wall it. Not read here,
+   * because which read point is the right one is the producer's fact, not
+   * the shaping's.
    */
   headSha: string;
 }
@@ -882,13 +889,15 @@ interface TickVerdictFacts {
  * The one shaping of a {@link TickVerdict}: every field, in one order, under
  * one rule for which optional fact is omitted.
  *
- * Two producers call it — the dispatcher at the end of a tick, and the wave's
- * merge stage for the partial verdict a refused pending-ledger rewrite rides
- * out on. They differ in the facts they hold and the summary they name,
- * nothing else, so the sequence is one function with two callers rather than
- * two copies that agree by discipline (`.claude/rules/engineering.md`, *A
- * module is one job*). A field the shape gains cannot reach one producer's
- * verdict and miss the other's.
+ * Two producers call it — the dispatcher at the end of a tick, and a walled
+ * wave for the partial verdict it rides out on, whatever threw to wall it: a
+ * pending-ledger rewrite that refused, anything else out of the merge stage
+ * (`waveMergeError`, `src/waveMerge.ts`), or a slot's own leg
+ * (`waveSlotThrow`, `src/waveMerge.ts`). They differ in the facts they hold
+ * and the summary they name, nothing else, so the sequence is one function
+ * with two callers rather than two copies that agree by discipline
+ * (`.claude/rules/engineering.md`, *A module is one job*). A field the shape
+ * gains cannot reach one producer's verdict and miss the other's.
  *
  * `at` is read here because here is when the verdict was built; every array
  * is copied, so a producer's own bookkeeping cannot mutate a verdict it
