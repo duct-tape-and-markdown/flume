@@ -1,0 +1,35 @@
+{
+  "tag": "A-RECORDED-LEDGER-REFUSAL-OUTRANKS-THE-SLOT-THROW-BESIDE-IT",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 0,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/waveMerge.ts",
+        "description": "one throw-selection for a walled wave, reading the refusal the stage recorded whichever holder the leg also filled"
+      },
+      {
+        "path": "src/waveTick.ts",
+        "description": "the seam both halves read: `runFanout`'s two tail throw sites choose through that one call"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "a wave carrying both walls at once, driven end to end"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "A wave that hit a slot-leg throw and a ledger-refusing merge reports no ledger class: `slotError` is read first and `WaveMerge.refusal` reaches no surface",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A fact the engine holds is reported, never rediscovered"
+  },
+  "acceptance": "A fanout wave whose merge stage recorded a pending-ledger refusal leaves as the `WaveLedgerRefusal` it recorded even when a slot leg also threw, so `tickExitCode` (`src/cliVerdict.ts`) exits `EX_MOUNT_DEAD` over a parse failure instead of the widest arm's 1. A wave carrying only one of the two walls keeps the class it reports today.",
+  "tests": [
+    "a wave whose merge stage refused its ledger rewrite reports that refusal when a slot leg also threw"
+  ],
+  "notes": "`waveMergeError` (`src/waveMerge.ts:1119`) already prefers the refusal the stage recorded over its holder's own cause; the wave leg does not. `src/waveTick.ts:697` reads `slotError` before `:715` reads `mergeError`, so a recorded `WaveMerge.refusal` reaches no surface and `TickOutcome.ledgerRefusal` is absent. Lever: a slot whose `settleSlot` teardown throws while a sibling pick's rewrite reads an unparseable queue."
+}
