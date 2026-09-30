@@ -14310,6 +14310,10 @@ describe("Dispatcher fanout — wave-level noCommit precedence across mixed per-
 
     const outcome = await dispatcher.tick();
 
+    // A wave that walled returns no `result`, and the assertions below would
+    // red on `undefined` with nothing said: name the wall first.
+    expect(outcome.failed, outcome.summary).toBeUndefined();
+
     // Non-vacuity: all four distinct causes actually fired this wave, not
     // just the winning one — otherwise "gate-revert wins" would be true
     // vacuously of a wave that only ever produced gate-revert.
@@ -14356,6 +14360,10 @@ describe("Dispatcher fanout — wave-level noCommit precedence across mixed per-
 
     const outcome = await dispatcher.tick();
 
+    // A wave that walled returns no `result`, and the assertions below would
+    // red on `undefined` with nothing said: name the wall first.
+    expect(outcome.failed, outcome.summary).toBeUndefined();
+
     expect(warnings.some((w) => w.includes("RENDER-FOUR") && w.includes("render-refused"))).toBe(true);
     expect(warnings.some((w) => w.includes("PREEMPT-TWO") && w.includes("platform-preempt"))).toBe(true);
     expect(warnings.some((w) => w.includes("BAIL-THREE") && w.includes("clean-exit"))).toBe(true);
@@ -14393,6 +14401,10 @@ describe("Dispatcher fanout — wave-level noCommit precedence across mixed per-
     });
 
     const outcome = await dispatcher.tick();
+
+    // A wave that walled returns no `result`, and the assertions below would
+    // red on `undefined` with nothing said: name the wall first.
+    expect(outcome.failed, outcome.summary).toBeUndefined();
 
     expect(warnings.some((w) => w.includes("PREEMPT-TWO") && w.includes("platform-preempt"))).toBe(true);
     expect(warnings.some((w) => w.includes("BAIL-THREE") && w.includes("clean-exit"))).toBe(true);
