@@ -693,7 +693,9 @@ export class PriorAttemptStore {
    * changed, so the dispatcher needs no chain-specific notion of which
    * artifact is "prose" vs "machine-checkable", and names no chain's file.
    * Must run while the span is still reachable (before the drop).
-   * Best-effort — a snapshot failure must never block or fail the revert.
+   * Best-effort — a snapshot failure must never block or fail the revert;
+   * it warns through the store's own logger instead, so the lost recovery
+   * artifact is stated rather than left to be noticed.
    */
   async snapshotReverted(
     cwd: string,
@@ -729,8 +731,17 @@ export class PriorAttemptStore {
         await mkdir(toNamespacedPath(dirname(dest)), { recursive: true });
         await writeFile(toNamespacedPath(dest), content, "utf8");
       }
-    } catch {
-      // Recovery is best-effort by spec; never block or fail the revert path.
+    } catch (err) {
+      // Declared degraded-but-proceeding path
+      // (`.claude/rules/engineering.md`, *Loud or nothing*): recovery is
+      // best-effort by spec, so nothing downstream refuses on the missing
+      // snapshot and the revert runs on. What bounds it is this line — the
+      // operator is told the recovery artifact is gone, and where it would
+      // have been, at the moment it fails rather than by discovering an
+      // absent directory later.
+      this.log.warn(
+        `[flume] revert snapshot failed: ${dir}: ${(err as Error).message}`,
+      );
     }
   }
 }

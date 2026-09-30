@@ -34,6 +34,7 @@ import { entryDeclaredKey } from "../src/entryKey.ts";
 // vacuity pins for the span cases below: what a head-only listing names, and
 // what the span's range names before `excludeDeleted` narrows it.
 import { diffNameOnly, showNameOnly } from "../src/git.ts";
+import type { Logger } from "../src/log.ts";
 import { slugify } from "../src/paths.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import type { Phase } from "../src/Phase.ts";
@@ -1007,6 +1008,56 @@ it("a snapshotReverted failure leaves the revert path unblocked", async () => {
     await expect(
       store.snapshotReverted(fx.repo, { base: missing, head: missing }, SNAP_REF),
     ).resolves.toBeUndefined();
+    expect(existsSync(store.snapshotDir(SNAP_REF))).toBe(false);
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+it("a failed reverted-prose snapshot warns with the directory it could not write", async () => {
+  const fx = await makeFixture();
+  try {
+    const warned: string[] = [];
+    const capture: Logger = {
+      ...silent,
+      warn: (line) => void warned.push(line),
+    };
+    const store = new PriorAttemptStore(
+      join(fx.repo, ".flume"),
+      fx.repo,
+      capture,
+    );
+
+    // Vacuity pin, and the expected text in one move: the failure below is
+    // the engine's own listing throwing on an unresolvable span, and the
+    // message the warn has to carry is the message that listing throws
+    // with — driven through the real reader rather than re-spelled here
+    // (`.claude/rules/engineering.md`, *A seam gate reads what the real
+    // writer wrote*).
+    const missing = "0".repeat(40);
+    let underlying = "";
+    try {
+      await diffNameOnly(fx.repo, missing, missing, { excludeDeleted: true });
+    } catch (err) {
+      underlying = (err as Error).message;
+    }
+    expect(underlying).not.toBe("");
+
+    await store.snapshotReverted(
+      fx.repo,
+      { base: missing, head: missing },
+      SNAP_REF,
+    );
+
+    // Silence here leaves the session log as the only route to "the recovery
+    // artifact is gone", and the operator does not know to look
+    // (spec/worktrees.md "Reverted prose survives the reset"). One warn, and
+    // it names where the snapshot would have been plus why it is not there.
+    expect(warned).toHaveLength(1);
+    expect(warned[0]).toContain(store.snapshotDir(SNAP_REF));
+    expect(warned[0]).toContain(underlying);
+    // Still best-effort: the warn is the whole of the change, and the revert
+    // path behind it is untouched.
     expect(existsSync(store.snapshotDir(SNAP_REF))).toBe(false);
   } finally {
     await fx.cleanup();
