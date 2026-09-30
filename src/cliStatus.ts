@@ -23,6 +23,7 @@ import { loopLockPath, resolvePendingDir, stopFlagPath } from "./paths.js";
 import { readPendingLoose } from "./pendingLedger.js";
 import { liveLoopClaim, statedStateRoot, type PidClaim } from "./pidClaim.js";
 import { readRunSpend, type RunSpend } from "./runSpend.js";
+import { thrownMessage } from "./thrown.js";
 
 export async function statusVerb(paths: FlumePaths): Promise<number> {
   const { repoRoot, flumeDir } = paths;
@@ -74,7 +75,7 @@ export async function statusVerb(paths: FlumePaths): Promise<number> {
     if (loopLockPresent) loopClaim = await liveLoopClaim(flumeDir);
   } catch (err) {
     operatorLog.error(
-      `[flume] status: loop lock at ${statusLockPath} failed to read: ${err instanceof Error ? err.message : String(err)}`,
+      `[flume] status: loop lock at ${statusLockPath} failed to read: ${thrownMessage(err)}`,
     );
     return EX_IOERR;
   }
@@ -103,7 +104,7 @@ export async function statusVerb(paths: FlumePaths): Promise<number> {
     stopFlagPresent = existsLoudUnder("stop flag", flumeDir, statusStopPath);
   } catch (err) {
     operatorLog.error(
-      `[flume] status: stop flag at ${statusStopPath} failed to stat: ${err instanceof Error ? err.message : String(err)}`,
+      `[flume] status: stop flag at ${statusStopPath} failed to stat: ${thrownMessage(err)}`,
     );
     return EX_IOERR;
   }
@@ -143,7 +144,7 @@ export async function statusVerb(paths: FlumePaths): Promise<number> {
       if (claimPresent) holder = await liveTipClaim(claimPath);
     } catch (err) {
       operatorLog.error(
-        `[flume] status: tip claim at ${claimPath} failed to read: ${err instanceof Error ? err.message : String(err)}`,
+        `[flume] status: tip claim at ${claimPath} failed to read: ${thrownMessage(err)}`,
       );
       return EX_IOERR;
     }
@@ -253,7 +254,7 @@ export async function statusVerb(paths: FlumePaths): Promise<number> {
       spend = await readRunSpend(flumeDir, startedAtMs);
     } catch (err) {
       operatorLog.error(
-        `[flume] status: the live run's spend failed to read: ${err instanceof Error ? err.message : String(err)}`,
+        `[flume] status: the live run's spend failed to read: ${thrownMessage(err)}`,
       );
       return EX_IOERR;
     }

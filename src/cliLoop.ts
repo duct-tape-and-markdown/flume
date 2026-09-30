@@ -36,6 +36,7 @@ import type { Chain } from "./Phase.js";
 import { stakePidClaim, type StakedPidClaim } from "./pidClaim.js";
 import { DEFAULT_KILL_GRACE_MS } from "./processTree.js";
 import { ensureRuntimeIgnores, frictionIgnoreEntry } from "./runtimeIgnores.js";
+import { thrownMessage } from "./thrown.js";
 
 /**
  * What a run has to say about the git it found, or nothing when that git
@@ -117,7 +118,7 @@ export async function loopVerb(run: CliVerbRun): Promise<number> {
     loopStopPresent = existsLoudUnder("stop flag", flumeDir, loopStopPath);
   } catch (err) {
     operatorLog.error(
-      `[flume] loop refuses: stop flag at ${loopStopPath} failed to stat: ${err instanceof Error ? err.message : String(err)}`,
+      `[flume] loop refuses: stop flag at ${loopStopPath} failed to stat: ${thrownMessage(err)}`,
     );
     return EX_IOERR;
   }
@@ -223,7 +224,7 @@ export async function loopVerb(run: CliVerbRun): Promise<number> {
     lockStake = await stakePidClaim(lockPath);
   } catch (err) {
     operatorLog.error(
-      `[flume] loop refuses: loop lock at ${lockPath} failed to read: ${err instanceof Error ? err.message : String(err)}`,
+      `[flume] loop refuses: loop lock at ${lockPath} failed to read: ${thrownMessage(err)}`,
     );
     return EX_IOERR;
   }
@@ -279,7 +280,7 @@ export async function loopVerb(run: CliVerbRun): Promise<number> {
     interrupted = await readMergingMarkers(flumeDir);
   } catch (err) {
     operatorLog.error(
-      `[flume] loop refuses: merging markers at ${mergingPath} failed to list: ${err instanceof Error ? err.message : String(err)}`,
+      `[flume] loop refuses: merging markers at ${mergingPath} failed to list: ${thrownMessage(err)}`,
     );
     operatorLog.error(
       "[flume] an unreadable merging dir is not an empty one — a marker " +

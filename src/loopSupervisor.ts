@@ -708,7 +708,7 @@ export async function superviseLoop(
       // names no path*). A second spelling beside it is the engine's own fact
       // restated by a consumer (`.claude/rules/engineering.md`, *A fact the
       // engine holds is reported, never rediscovered*).
-      const why = err instanceof Error ? err.message : String(err);
+      const why = thrownMessage(err);
       erroredTicks.push(
         `tick verdict present but unreadable (${why}); run ended before the verdict's facts could be counted`,
       );

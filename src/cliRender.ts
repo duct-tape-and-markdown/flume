@@ -19,6 +19,7 @@ import {
 } from "./Dispatcher.js";
 import { EX_DATAERR, EX_MOUNT_DEAD } from "./exitCodes.js";
 import { RenderRefusal } from "./Prompt.js";
+import { thrownMessage } from "./thrown.js";
 
 export async function renderVerb(run: CliVerbRun): Promise<number> {
   const { rest, dispatcher, log: operatorLog } = run;
@@ -69,7 +70,7 @@ export async function renderVerb(run: CliVerbRun): Promise<number> {
     // the chain cannot be run, rather than left to `main().catch`'s raw
     // stack and exit 1.
     operatorLog.error(
-      `[flume] render: nothing resolved: ${err instanceof Error ? err.message : String(err)}`,
+      `[flume] render: nothing resolved: ${thrownMessage(err)}`,
     );
     return EX_MOUNT_DEAD;
   }

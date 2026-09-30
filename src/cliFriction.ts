@@ -20,6 +20,7 @@ import { EX_IOERR } from "./exitCodes.js";
 import type { FlumePaths } from "./flumeApi.js";
 import { frictionNotes } from "./friction.js";
 import { namespacedJoin } from "./paths.js";
+import { thrownMessage } from "./thrown.js";
 
 export async function frictionVerb(
   paths: FlumePaths,
@@ -101,7 +102,7 @@ export async function frictionVerb(
           bytes = readFileSync(namespacedJoin(frictionDir, noteName));
       } catch (err) {
         operatorLog.error(
-          `[flume] friction: '${name}' failed to read: ${err instanceof Error ? err.message : String(err)}`,
+          `[flume] friction: '${name}' failed to read: ${thrownMessage(err)}`,
         );
         return EX_IOERR;
       }
@@ -129,7 +130,7 @@ export async function frictionVerb(
     files = frictionNotes(flumeDir, frictionDir);
   } catch (err) {
     operatorLog.error(
-      `[flume] friction: '${chain.friction}' failed to read: ${err instanceof Error ? err.message : String(err)}`,
+      `[flume] friction: '${chain.friction}' failed to read: ${thrownMessage(err)}`,
     );
     return EX_IOERR;
   }
@@ -147,7 +148,7 @@ export async function frictionVerb(
       stats = statSync(namespacedJoin(frictionDir, fileName));
     } catch (err) {
       operatorLog.error(
-        `[flume] friction: '${chain.friction}/${fileName}' failed to read: ${err instanceof Error ? err.message : String(err)}`,
+        `[flume] friction: '${chain.friction}/${fileName}' failed to read: ${thrownMessage(err)}`,
       );
       return EX_IOERR;
     }

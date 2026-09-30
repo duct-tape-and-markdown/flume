@@ -42,6 +42,7 @@ import { toNamespacedPath } from "node:path";
 import type { Phase } from "./Phase.js";
 import { entryWriteScope, phasePromptPath } from "./paths.js";
 import type { PendingEntry } from "./PendingSchema.js";
+import { thrownMessage } from "./thrown.js";
 
 const PLACEHOLDER_RE = /\{\{([A-Z][A-Z0-9_]*)\}\}/g;
 const INLINE_EXEC_RE = /!\s*`([^`]+)`/g;
@@ -472,7 +473,7 @@ export class PromptTemplateUnreadableError extends Error {
     super(
       `declared prompt file could not be read: ${resolvedPath} ` +
         `(promptPath: ${promptPath}) — ` +
-        (cause instanceof Error ? cause.message : String(cause)),
+        (thrownMessage(cause)),
       { cause },
     );
     this.name = "PromptTemplateUnreadableError";

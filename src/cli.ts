@@ -53,6 +53,7 @@ import { gitToplevel } from "./git.js";
 import { canonicalDir, onDiskIdentity } from "./pathIdentity.js";
 import { readPackageVersion } from "./selfPackage.js";
 import { StateRootAccessError } from "./stateRootAccess.js";
+import { thrownMessage } from "./thrown.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -120,7 +121,7 @@ async function dispatch(): Promise<number> {
     repoRoot = resolveRepoRoot(process.cwd());
   } catch (err) {
     operatorLog.error(
-      `[flume] bay discovery from ${process.cwd()} failed to stat an ancestor bay: ${err instanceof Error ? err.message : String(err)}`,
+      `[flume] bay discovery from ${process.cwd()} failed to stat an ancestor bay: ${thrownMessage(err)}`,
     );
     return EX_IOERR;
   }
@@ -247,7 +248,7 @@ async function dispatch(): Promise<number> {
     if (at !== undefined && !at.isDirectory())
       rootObstruction = "it is present and is not a directory";
   } catch (err) {
-    rootObstruction = err instanceof Error ? err.message : String(err);
+    rootObstruction = thrownMessage(err);
   }
   if (rootObstruction !== undefined) {
     // The root this process resolved, not the leaf an errno would have

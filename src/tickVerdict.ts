@@ -47,6 +47,7 @@ import {
 import type { PidClaim } from "./pidClaim.js";
 import { trimRenderedPrompts } from "./renderedPrompts.js";
 import type { NoCommitMode } from "./Prompt.js";
+import { thrownMessage } from "./thrown.js";
 
 /**
  * One pre-tick worktree provisioning failure — the
@@ -1144,9 +1145,7 @@ function isTickVerdict(rec: unknown): rec is TickVerdict {
  */
 function unreadable(what: string, path: string, cause: unknown): Error {
   return new Error(
-    `[flume] ${what} is unreadable: ${path} — ${
-      cause instanceof Error ? cause.message : String(cause)
-    }`,
+    `[flume] ${what} is unreadable: ${path} — ${thrownMessage(cause)}`,
     { cause },
   );
 }
@@ -1180,9 +1179,7 @@ export class VerdictHistoryUnreadableError extends Error {
   readonly path: string;
 
   constructor(path: string, cause: unknown) {
-    super(cause instanceof Error ? cause.message : String(cause), {
-      cause,
-    });
+    super(thrownMessage(cause), { cause });
     this.name = "VerdictHistoryUnreadableError";
     this.path = path;
   }

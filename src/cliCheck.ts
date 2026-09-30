@@ -21,6 +21,7 @@ import {
 } from "./paths.js";
 import { parsePendingQueue, type QueueFile } from "./PendingSchema.js";
 import { readQueueOnDisk } from "./pendingLedger.js";
+import { thrownMessage } from "./thrown.js";
 
 export async function checkVerb(
   paths: FlumePaths,
@@ -53,7 +54,7 @@ export async function checkVerb(
     files = readQueueOnDisk(flumeDir, pendingDir);
   } catch (err) {
     operatorLog.error(
-      `[flume] check: ${pendingRel} failed to read: ${err instanceof Error ? err.message : String(err)}`,
+      `[flume] check: ${pendingRel} failed to read: ${thrownMessage(err)}`,
     );
     return EX_IOERR;
   }

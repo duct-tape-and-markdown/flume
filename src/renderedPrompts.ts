@@ -35,6 +35,7 @@ import {
   STATE_ROOT_NAMES,
 } from "./paths.js";
 import { liveLoopClaim } from "./pidClaim.js";
+import { thrownMessage } from "./thrown.js";
 
 /**
  * The prefix on every verdict row's `promptPath` — state-root-relative,
@@ -127,9 +128,7 @@ export async function renderedPromptNames(flumeDir: string): Promise<string[]> {
     // the cause states which artifact and where, so an operator under a
     // relocatable state root is told the path to go fix.
     throw new Error(
-      `[flume] rendered prompts are unreadable: ${dir} — ${
-        err instanceof Error ? err.message : String(err)
-      }`,
+      `[flume] rendered prompts are unreadable: ${dir} — ${thrownMessage(err)}`,
       { cause: err },
     );
   }

@@ -190,7 +190,7 @@ export async function resetKeepTo(cwd: string, sha: string): Promise<void> {
   try {
     await run(cwd, ["reset", "--keep", sha]);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = thrownMessage(err);
     throw new ResetKeepRefusedError(cwd, sha, message);
   }
 }
@@ -1183,7 +1183,7 @@ export async function currentRefPath(cwd: string): Promise<CurrentRef> {
     if (typeof code === "number") {
       return code === 1 ? { kind: "detached" } : { kind: "not-a-repository" };
     }
-    const message = err instanceof Error ? err.message : String(err);
+    const message = thrownMessage(err);
     return { kind: "git-unavailable", message };
   }
 }

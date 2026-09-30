@@ -764,7 +764,7 @@ export async function commitPendingUpdate(
     throw new Error(
       `the rewritten queue stands on disk at ${reportedPendingDir(ctx)}, ` +
         `uncommitted — the pending-ledger commit refused: ` +
-        `${err instanceof Error ? err.message : String(err)}`,
+        thrownMessage(err),
       { cause: err },
     );
   }

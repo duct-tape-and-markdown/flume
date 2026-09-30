@@ -35,6 +35,7 @@ import {
   shimRetryRefusal,
   wordShimRetryWouldRewrite,
 } from "../src/spawnShim.js";
+import { thrownMessage } from "../src/thrown.js";
 
 /**
  * How much of one child's stdout is readable: a window-sized diff, a failing
@@ -108,7 +109,7 @@ export function captureSync(
 export function detailOf(err: unknown): string {
   const stderr = (err as { stderr?: unknown }).stderr;
   if (typeof stderr === "string" && stderr.trim() !== "") return stderr.trim();
-  return (err instanceof Error ? err.message : String(err)).trim();
+  return (thrownMessage(err)).trim();
 }
 
 /**

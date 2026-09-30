@@ -13,6 +13,7 @@ import { formatTickVerdictLine } from "./cliVerdict.js";
 import { EX_IOERR } from "./exitCodes.js";
 import type { FlumePaths } from "./flumeApi.js";
 import { STATE_ROOT_NAMES } from "./paths.js";
+import { thrownMessage } from "./thrown.js";
 import {
   DEFAULT_LOG_VERDICTS,
   readTickVerdicts,
@@ -52,7 +53,7 @@ export async function logVerb(
     verdicts = await readTickVerdicts(flumeDir, n);
   } catch (err) {
     operatorLog.error(
-      `[flume] log: ${STATE_ROOT_NAMES.tickVerdictsLog} failed to read: ${err instanceof Error ? err.message : String(err)}`,
+      `[flume] log: ${STATE_ROOT_NAMES.tickVerdictsLog} failed to read: ${thrownMessage(err)}`,
     );
     return EX_IOERR;
   }

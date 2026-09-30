@@ -18,6 +18,7 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 
 import { namespacedJoin } from "./paths.js";
+import { thrownMessage } from "./thrown.js";
 
 /**
  * An access under the state root that failed, named with **the root the
@@ -53,7 +54,7 @@ export class StateRootAccessError extends Error {
   ) {
     super(
       `state root at ${stateRoot} cannot be ${access}: ${what} — ${
-        cause instanceof Error ? cause.message : String(cause)
+        thrownMessage(cause)
       }`,
       { cause },
     );

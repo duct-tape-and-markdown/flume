@@ -48,6 +48,7 @@ import { operatorLog } from "./cliLog.js";
 import { EX_MOUNT_DEAD } from "./exitCodes.js";
 import type { Chain } from "./Phase.js";
 import type { FlumePaths } from "./flumeApi.js";
+import { thrownMessage } from "./thrown.js";
 
 /**
  * The shared CJS-context arm, for a `catch` that owns an exit code: prints
@@ -73,7 +74,7 @@ export function refuseCjsContextHost(err: unknown): number | undefined {
  * two cannot drift apart in what an operator reads.
  */
 function reportChainLoadFailure(surface: string, err: unknown): string {
-  const reason = err instanceof Error ? err.message : String(err);
+  const reason = thrownMessage(err);
   operatorLog.error(`[flume] ${surface}: chain failed to load: ${reason}`);
   return reason;
 }
