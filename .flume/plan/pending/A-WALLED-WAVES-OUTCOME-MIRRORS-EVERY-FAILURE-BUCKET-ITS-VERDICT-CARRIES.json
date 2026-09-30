@@ -1,0 +1,31 @@
+{
+  "tag": "A-WALLED-WAVES-OUTCOME-MIRRORS-EVERY-FAILURE-BUCKET-ITS-VERDICT-CARRIES",
+  "gate": {
+    "kind": "open"
+  },
+  "priority": 0,
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/Dispatcher.ts",
+        "description": "one projection off the carried verdict onto `TickOutcome`, called by both return arms instead of spelled per arm"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the walled render-refusal case reads the outcome's bucket beside the verdict's"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "A walled wave's `TickOutcome` mirrors `unclassedWalls` alone; the six stage-failure buckets its verdict carries are dropped, though each field's own doc promises presence",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "The fix lands at the mechanism"
+  },
+  "acceptance": "Both `Dispatcher.tick()` return arms spell the `TickOutcome` mirroring through one projection, so on the walled-wave `failed` arm `outcome.<bucket>` and `outcome.verdict.<bucket>` agree for every bucket the shape declares, and a bucket added later reaches both arms or neither. A completing tick reports exactly what it reports today.",
+  "tests": [
+    "a walled wave's tick outcome names the render failure its verdict carries"
+  ],
+  "notes": "`src/Dispatcher.ts:1111`-`:1125` is the walled arm's whole return literal: `unclassedWalls` is read off `carried.verdict`, the six siblings are not, though each doc (`:475`-`:501`) reads \"Present only when the tick hit at least one\". Measured: the fixture at `tests/Dispatcher.test.ts:11240` asserts `verdict.renderFailures` holds one row on that arm, where `outcome.renderFailures` is absent. Target shape: one projection, both arms."
+}
