@@ -73,7 +73,7 @@ import {
   type TickVerdictMergeOutcome,
   type TickVerdictTiming,
 } from "./tickVerdict.js";
-import { throwFacts } from "./thrown.js";
+import { thrownMessage } from "./thrown.js";
 
 /**
  * Rank of each no-commit mode in a wave's representative-cause fold — lowest
@@ -144,7 +144,7 @@ export type EntryAttempt = AttemptOutcome & {
 export class WaveCarriedThrow extends Error {
   readonly verdict: TickVerdict;
   constructor(cause: unknown, verdict: TickVerdict) {
-    super(refusalMessage(cause), { cause });
+    super(thrownMessage(cause), { cause });
     this.name = "WaveCarriedThrow";
     this.verdict = verdict;
   }
@@ -197,15 +197,6 @@ export class WaveLedgerRefusal extends WaveCarriedThrow {
  *   further.
  */
 export type LedgerRefusalClass = "parse-failure" | "commit-refusal";
-
-/**
- * The refusal's own words, for a {@link WaveLedgerRefusal}'s message and for
- * the verdict summary built beside it — one spelling, so the two cannot
- * describe one refusal differently.
- */
-function refusalMessage(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
-}
 
 /**
  * Wave-level no-commit cause, only meaningful when the wave shipped
@@ -845,7 +836,7 @@ async function carrySpan(
         repoRoot,
       }) ?? true;
   } catch (err) {
-    shipThrew = throwFacts(err).message;
+    shipThrew = thrownMessage(err);
     shipVerdict = false;
   }
   if (!shipVerdict) {
@@ -1166,6 +1157,10 @@ export async function waveSlotThrow(
  * the verdict carries: the callers are the rewrite behind a pick
  * ({@link waveMergeError}) and a slot leg that threw ({@link waveSlotThrow}),
  * and an operator reading the verdict has different repairs for them.
+ *
+ * `why` reads the cause through `thrownMessage` (`src/thrown.ts`) — the same
+ * fold {@link WaveCarriedThrow}'s own message takes, so the summary and the
+ * error carrying it cannot describe one refusal differently.
  */
 async function settledWaveVerdict(
   w: WaveMerge,
@@ -1182,7 +1177,7 @@ async function settledWaveVerdict(
     stakeLosses,
     clearedPriorAttempts,
   } = w.setup;
-  const why = refusalMessage(cause);
+  const why = thrownMessage(cause);
   const shippedTags = w.shipped.map((s) => s.tag);
   const committed = waveCommitted(w);
   return buildTickVerdict({
