@@ -1,0 +1,27 @@
+{
+  "tag": "A-SKIPPED-SNAPSHOT-PATH-SAYS-SO",
+  "gate": { "kind": "open" },
+  "priority": 20,
+  "files": {
+    "edit": [
+      {
+        "path": "src/priorAttempts.ts",
+        "description": "snapshotReverted's per-path null skip warns through the store's own Logger, naming the path"
+      },
+      {
+        "path": "tests/priorAttempts.test.ts",
+        "description": "real-writer span whose head holds a listed non-blob path; assert the warn"
+      }
+    ]
+  },
+  "summary": "snapshotReverted's per-path skip states the omitted path instead of dropping it silently",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Loud or nothing"
+  },
+  "acceptance": "A path the span's listing names and the head cannot hand back as a blob leaves a warn naming it; the rest of the snapshot and the revert are unchanged.",
+  "tests": [
+    "snapshotReverted warns and names a listed path it could not read at the span head"
+  ],
+  "notes": "Only silent arm left on the revert path after A-FAILED-PROSE-SNAPSHOT-SAYS-SO: the whole-artifact catch speaks, one missing file does not, while diffStat still advertises the path. Reachability measured this tick and cheaper than the note put it — no git race needed: a gitlink in the span is named by --diff-filter=d and readFileAtRef returns null on a non-blob row (src/git.ts:793), so the fixture is a real span, not a mock."
+}
