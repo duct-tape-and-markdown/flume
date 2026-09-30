@@ -1,0 +1,43 @@
+{
+  "tag": "THE-AGENT-SPEND-FOLD-TAKES-THE-FILE-ITS-NAME-IS",
+  "gate": { "kind": "open" },
+  "priority": 0,
+  "files": {
+    "new": [
+      {
+        "path": "src/agentSpend.ts",
+        "description": "the fold's own file: SummableUsageKey, AgentUsageTotals, totalAgentUsage, PhaseAgentUsage, PhaseInvocations, totalAgentUsageByPhase, with a header naming that one job"
+      }
+    ],
+    "edit": [
+      {
+        "path": "src/tickVerdict.ts",
+        "description": "the fold leaves; the header's roster stays as written and becomes true; `readAllInvocationRows` type-imports `PhaseInvocations` back"
+      },
+      {
+        "path": "src/loopSupervisor.ts",
+        "description": "imports `totalAgentUsageByPhase` and `PhaseAgentUsage` from the fold's own module"
+      },
+      {
+        "path": "src/runSpend.ts",
+        "description": "same three names, plus `PhaseInvocations`"
+      },
+      {
+        "path": "src/cliVerdict.ts",
+        "description": "`PhaseAgentUsage`'s import moves"
+      },
+      {
+        "path": "tests/cliVerdict.test.ts",
+        "description": "the spend-line agreement case's import of `totalAgentUsageByPhase`/`PhaseAgentUsage` moves; no assertion changes"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "src/tickVerdict.ts holds the agent-spend fold, a second job its header does not name and four modules read; third body of the family, so it files",
+  "per": {
+    "path": ".claude/rules/posture-sweep.md",
+    "section": "Routing"
+  },
+  "acceptance": "`src/tickVerdict.ts` declares none of `SummableUsageKey`, `AgentUsageTotals`, `totalAgentUsage`, `PhaseAgentUsage`, `PhaseInvocations`, `totalAgentUsageByPhase` — each stands in `src/agentSpend.ts` under a header naming the fold, and every reader imports it from there. Behavior-free: no field summed differently, no spend line rendered differently, no assertion edited beyond an import path. `pnpm tsc --noEmit`, the standing suite, and the export and citation pins green.",
+  "notes": "Third body of the family (posture-sweep.md, *Routing*): d54d8f9f first, c4bcc451 second. Verified on disk this tick: fold at src/tickVerdict.ts:676-:801; the header :1-:20 rosters the shape, the two vocabularies, the three files' I/O and the small constructors — not the fold. Readers: src/loopSupervisor.ts:541, src/runSpend.ts:111, src/cliVerdict.ts:315, tests/cliVerdict.test.ts:729. None of the six names is in src/index.ts's barrel, so no public export moves."
+}
