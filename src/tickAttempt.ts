@@ -601,7 +601,7 @@ async function invokeAgent(
     // otherwise the phase falls through with `committed: false`. Either way
     // this is a platform-preempt — not a defect in the work. The two keys
     // read below are `abortError`'s (`src/claudeCode.ts`), whose real mint
-    // reaches this arm through a pin rather than a prose cite
+    // reaches each of them through a pin of its own rather than a prose cite
     // (`tests/Dispatcher.test.ts`).
     const e = err as Error & { name?: string; code?: string };
     const failureClass =

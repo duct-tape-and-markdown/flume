@@ -13094,14 +13094,81 @@ describe("Dispatcher — no-commit outcome taxonomy", () => {
     };
   }
 
+  /**
+   * The mint's real product with one of the classifier's two keys removed, so
+   * a case reaches one arm of `invokeAgent`'s disjunction
+   * (`src/tickAttempt.ts`) with the other arm's key unsatisfied, and deleting
+   * that arm reds the case. Removing a key is hand-authored, which this is the
+   * sanctioned place for: no mint in `src/claudeCode.ts` settles with a
+   * one-key rejection (`.claude/rules/engineering.md`, *A seam gate reads what
+   * the real writer wrote*: shape inputs stay hand-authored). The key the case
+   * does keep is never spelled — it is whatever `abortError` wrote, so a
+   * rename on the mint's side arrives at the reader as a key it no longer
+   * finds.
+   *
+   * `delete` rather than assignment, because both keys are own properties the
+   * mint writes: `code` goes absent, and `name` falls back through
+   * `Error.prototype`'s, which is no abort name.
+   */
+  function mintedAbortWithout(key: "name" | "code"): Error {
+    const minted = abortError(AbortSignal.abort().reason) as Error &
+      Partial<Record<"name" | "code", string>>;
+    expect(
+      Object.hasOwn(minted, key),
+      `the mint wrote its own \`${key}\` for this case to remove`,
+    ).toBe(true);
+    delete minted[key];
+    return minted;
+  }
+
   it("the abort an agent invocation rejects with classifies as the platform-preempt abort class a tick reports", async () => {
-    // The real mint over the reason a real aborted signal carries — the
-    // rejection `claudeCode`'s spawn settles with when the signal fired
-    // before the process started. Neither `name` nor `code` is spelled here:
-    // a one-sided rename of either key reds this case.
+    // The real mint's whole product over the reason a real aborted signal
+    // carries — the rejection `claudeCode`'s spawn settles with when the
+    // signal fired before the process started. Both of the classifier's keys
+    // are satisfied here, so this case holds the mint and the reader agree at
+    // all; which key each arm reads is held one arm at a time by the two
+    // cases below.
     const { noCommit, platformFailures } = await preemptFrom(
       abortError(AbortSignal.abort().reason),
     );
+
+    expect(noCommit).toBe("platform-preempt");
+    expect(
+      platformFailures,
+      "the tick reported one preempt for the class to be read off",
+    ).toHaveLength(1);
+    expect(platformFailures[0]!.message).toBe(
+      "agent process aborted (per-tick timeout or dispatcher signal)",
+    );
+  });
+
+  it("the abort class holds when the mint's product reaches the classifier carrying only its name key", async () => {
+    const rejection = mintedAbortWithout("code") as Error & { code?: string };
+    expect(
+      rejection.code,
+      "only the name arm is satisfied, so the code arm cannot carry this case",
+    ).toBeUndefined();
+
+    const { noCommit, platformFailures } = await preemptFrom(rejection);
+
+    expect(noCommit).toBe("platform-preempt");
+    expect(
+      platformFailures,
+      "the tick reported one preempt for the class to be read off",
+    ).toHaveLength(1);
+    expect(platformFailures[0]!.message).toBe(
+      "agent process aborted (per-tick timeout or dispatcher signal)",
+    );
+  });
+
+  it("the abort class holds when the mint's product reaches the classifier carrying only its code key", async () => {
+    const rejection = mintedAbortWithout("name");
+    expect(
+      rejection.name,
+      "only the code arm is satisfied, so the name arm cannot carry this case",
+    ).toBe(Error.prototype.name);
+
+    const { noCommit, platformFailures } = await preemptFrom(rejection);
 
     expect(noCommit).toBe("platform-preempt");
     expect(
