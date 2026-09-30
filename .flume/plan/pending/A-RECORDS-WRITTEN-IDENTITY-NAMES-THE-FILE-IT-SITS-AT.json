@@ -1,0 +1,29 @@
+{
+  "tag": "A-RECORDS-WRITTEN-IDENTITY-NAMES-THE-FILE-IT-SITS-AT",
+  "gate": { "kind": "open" },
+  "priority": 0,
+  "files": {
+    "edit": [
+      {
+        "path": "src/priorAttempts.ts",
+        "description": "the accept predicate in `PriorAttemptStore.read` (:417-:427), which checks the keyspace half of a record's identity against the ref and only the shape of `keyedAs`"
+      },
+      {
+        "path": "tests/priorAttempts.test.ts",
+        "description": "beside the keyspace-disagreement and missing-identity cases at :1361 and :1480"
+      }
+    ]
+  },
+  "summary": "A prior-attempt record whose `keyedAs` composes to a file other than the one it sits at is accepted, and keyed into the chain's map under that other identity",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Loud or nothing"
+  },
+  "acceptance": "`PriorAttemptStore.read` accepts a decoded record only when the record's own ref (`refOfRecord`) composes back through `priorAttemptPath` to the path it was read from — the identity half of the agreement the keyspace half already gets at `src/priorAttempts.ts:423`. Asked of the path rule, never of `slugify` directly, the way the listing's stem round-trip at :568 already is (*The fix lands at the mechanism*). A disagreement reads as **absent**, like its keyspace sibling: no throw, no new operator-visible string, and no record deleted (deleting one this store cannot decode stays a guess). The legitimate divergence stays green — a phase name `slugify` rewrites still reads back and still keys the map by the raw name. `pnpm tsc --noEmit` and `pnpm test` green.",
+  "tests": [
+    "a prior-attempt record whose written identity composes to a path other than the file it sits at reads as no prior attempt",
+    "the prior-attempt listing files no record under an identity that reaches a different file than the one it was read from",
+    "clearStale reports no cleared key for a record it left standing on disk"
+  ],
+  "notes": "Reproduced through the real store this tick: a record at `phase/plan.json` stamped `keyedAs: \"build\"` is accepted, filed under `phase:build` — so `build`'s retry reads `plan`'s wall and `plan`'s reads none — and `entry/real-tag.json` stamped `keyedAs: \"ghost\"` has `clearStale` report `entry:ghost` cleared on every call while the file never leaves. Nothing `write` mints trips it; a renamed or hand-edited record does."
+}
