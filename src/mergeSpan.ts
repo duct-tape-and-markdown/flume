@@ -101,11 +101,11 @@ type SpanNarration = {
   /**
    * The revert off trunk was refused; the commit stays there for the operator.
    *
-   * Two spellings of the one refusal arrive, because the legs put the shas in
-   * different places. `failure` is what the leg records, and its words already
-   * name both shas wherever the refusal composed them into itself
-   * (`unrevertableMergeFailure`, `src/tickVerdict.ts`); `refusal` is the bare
-   * words the wall raised, for a leg whose line names the shas itself.
+   * One spelling of the refusal, because every leg's line names the two shas
+   * itself, in git's short form: the bare words the wall raised. What a leg
+   * *records* for the same refusal composes the full shas into the message
+   * (`unrevertableMergeFailure`, `src/tickVerdict.ts`), and that composition
+   * stays off the line — the row and the line correlate by sha, not by string.
    */
   revertRefused(facts: {
     /** The commit left standing on trunk. */
@@ -114,8 +114,6 @@ type SpanNarration = {
     landedOnSha: string;
     /** The words the refusal itself raised. */
     refusal: string;
-    /** The stage failure the leg records for it. */
-    failure: StageFacts;
   }): string;
   /**
    * The span is on trunk. `landedOnSha` equal to `mergedSha` is the whole span
@@ -378,15 +376,13 @@ export async function carryMergeSpan(carry: {
     };
     // Both refusals below end the span the same way: the commit stays on trunk
     // for the operator, and the leg reports it refused. One spelling, two
-    // callers; each hands in the words its own wall raised beside the stage
-    // failure it composes from them, which is the pair the leg's line is
-    // spelled from ({@link SpanNarration.revertRefused}) —
-    // `checkMergedTipUnmoved` (`src/tipVerify.ts`) composing nothing beyond
-    // them and `unrevertableMergeFailure` (`src/tickVerdict.ts`) both shas.
+    // callers; each hands in the words its own wall raised for the line
+    // ({@link SpanNarration.revertRefused}) and the stage failure it composed
+    // from them for the record — `checkMergedTipUnmoved` (`src/tipVerify.ts`)
+    // composing nothing beyond them and `unrevertableMergeFailure`
+    // (`src/tickVerdict.ts`) both shas.
     const refused = (refusal: string, failure: StageFacts): SpanCarried => {
-      leg.log.warn(
-        narrate.revertRefused({ mergedSha, landedOnSha, refusal, failure }),
-      );
+      leg.log.warn(narrate.revertRefused({ mergedSha, landedOnSha, refusal }));
       return { fate: "afterMerge-revert-refused", ...revert, failure };
     };
     // spec/loop.md "Tip verify — one writer per branch, absorption at the

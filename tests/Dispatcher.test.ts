@@ -9189,6 +9189,178 @@ describe("Dispatcher — a resetKeepTo collision at the primary-checkout afterMe
   });
 });
 
+// ---------- one revert-refused sentence for both merge legs: the line the
+// carry's narration renders (`SpanNarration.revertRefused`, `src/mergeSpan.ts`)
+// read against the merge row and the failure record the same refusal produced
+// ----------
+
+describe("Dispatcher — a refused afterMerge revert reads as one sentence in both legs", () => {
+  /**
+   * The gate that makes the revert refuse: red over the merged tip, and
+   * leaving an uncommitted change on the very path the reset would have to
+   * touch, which is what `git reset --keep` refuses atomically rather than
+   * discard either writer's work (`resetKeepTo`, `src/git.ts`). That refusal
+   * is the one whose *record* composes the two shas into its own message
+   * (`unrevertableMergeFailure`, `src/tickVerdict.ts`), so a line quoting the
+   * bare refusal is distinguishable here from one quoting the record.
+   */
+  const collideVeto = (path: string): Gate => ({
+    name: "collide-veto",
+    when: "afterMerge",
+    async run({ cwd }) {
+      await writeFile(join(cwd, path), "bystander collision\n");
+      return { ok: false, message: "collide veto" };
+    },
+  });
+
+  /** A logger keeping the warnings, which is the level a refused revert narrates at. */
+  function warnLog(): { log: Logger; warn: string[] } {
+    const warn: string[] = [];
+    return {
+      warn,
+      log: { info: () => {}, warn: (l) => warn.push(l), error: () => {} },
+    };
+  }
+
+  /**
+   * The one revert-refused warning a leg logged, located by the clause every
+   * spelling of it carries. Non-vacuity before wording: a leg that logged
+   * nothing at all cannot pass as one that logged the right sentence
+   * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
+   */
+  function refusedLine(warn: string[]): string {
+    const lines = warn.filter((l) => l.includes(": revert of "));
+    expect(lines).toHaveLength(1);
+    return lines[0]!;
+  }
+
+  /**
+   * The sentence both legs share, read against the merge row and the failure
+   * record the same refusal produced. Each sha is named once and short, and
+   * the parenthetical holds the bare words the wall raised — a strict prefix
+   * of what the record carries, since the record composes the two full shas
+   * onto that same refusal. The line and the row correlate by sha, never by
+   * string.
+   */
+  function expectOneSentence(
+    line: string,
+    span: { baseSha?: string; headSha?: string },
+    recorded: string,
+  ): void {
+    const parsed =
+      /revert of ([0-9a-f]+) back to ([0-9a-f]+) refused \(([\s\S]+)\); commit stays on trunk, left for the operator/.exec(
+        line,
+      );
+    expect(parsed, line).not.toBeNull();
+    const [, merged, landedOn, refusal] = parsed!;
+    expect(merged).toBe(span.headSha?.slice(0, 8));
+    expect(landedOn).toBe(span.baseSha?.slice(0, 8));
+    // Once each, and short: with the quoted refusal lifted out — it names the
+    // reset target in full itself — the frame holds exactly one occurrence of
+    // each short sha, and so no copy of either full one.
+    const frame = line.replace(refusal!, "");
+    expect(frame.split(merged!)).toHaveLength(2);
+    expect(frame.split(landedOn!)).toHaveLength(2);
+    expect(recorded.startsWith(refusal!)).toBe(true);
+    expect(recorded).not.toBe(refusal);
+  }
+
+  it("the wave's revert-refused line names each sha once, short, and quotes the bare refusal", async () => {
+    await writePending(fx.repo, [makeEntry("COLLIDE-BAD", ["src/collide.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    const chain: Chain = {
+      phases: [
+        makePhase({
+          name: "build",
+          concurrency: "fanout",
+          gates: [collideVeto("src/collide.ts")],
+        }),
+      ],
+      humanOnly: [],
+    };
+    const { log, warn } = warnLog();
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "collide-bad": async (cwd) => {
+          await writeAndCommit(
+            cwd,
+            "src/collide.ts",
+            "collide\n",
+            "build(COLLIDE-BAD)",
+          );
+        },
+      }),
+      log,
+    }).tick();
+
+    const mo = outcome.verdict?.mergeOutcomes.find(
+      (m) => m.entryTag === "COLLIDE-BAD",
+    );
+    expect(mo?.outcome).toBe("afterMerge-revert-refused");
+    const recorded = (outcome.verdict?.gateFailures ?? []).find(
+      (g) => g.tag === "COLLIDE-BAD" && g.message.includes("unrevertable to"),
+    );
+    expect(recorded).toBeDefined();
+
+    const line = refusedLine(warn);
+    expectOneSentence(line, mo!, recorded!.message);
+    // The wave's own subject and tail, which is all a wave adds to the shared
+    // sentence: the entry whose span this was, and that its siblings carry on.
+    expect(line.startsWith("[flume] COLLIDE-BAD: revert of ")).toBe(true);
+    expect(line.endsWith("; other entries continue")).toBe(true);
+  });
+
+  it("the singleton's revert-refused line names both shas short and quotes the bare refusal", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const chain: Chain = {
+      phases: [
+        makePhase({
+          name: "plan",
+          concurrency: "singleton",
+          gates: [collideVeto("src/plan-out.ts")],
+        }),
+      ],
+      humanOnly: [],
+    };
+    const { log, warn } = warnLog();
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async (cwd) => {
+        await writeAndCommit(
+          cwd,
+          "src/plan-out.ts",
+          "content\n",
+          "plan: attempt",
+        );
+      }),
+      log,
+    }).tick();
+
+    const mo = outcome.verdict?.mergeOutcomes.find(
+      (m) => m.outcome === "afterMerge-revert-refused",
+    );
+    expect(mo).toBeDefined();
+    const recorded = (outcome.verdict?.gateFailures ?? []).find((g) =>
+      g.message.includes("unrevertable to"),
+    );
+    expect(recorded).toBeDefined();
+
+    const line = refusedLine(warn);
+    expectOneSentence(line, mo!, recorded!.message);
+    // The phase names the span, and the sentence ends there: a singleton has
+    // no sibling entries to report on.
+    expect(line.startsWith("[flume] plan: revert of ")).toBe(true);
+    expect(line.endsWith("; commit stays on trunk, left for the operator")).toBe(
+      true,
+    );
+  });
+});
+
 // ---------- AFTERMERGE-REVERT-TIP-CHECK: a foreign commit landing atop the
 // merged span refuses the afterMerge revert instead of resetting over it
 // (spec/loop.md "Tip verify — one writer per branch, absorption at the

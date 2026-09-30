@@ -721,11 +721,11 @@ async function carrySpan(
         `[flume] ${r.entry.tag}: trunk already held ${shas.map((sha) => sha.slice(0, 8)).join(", ")} of ${r.spanBase.slice(0, 8)}..${r.headSha.slice(0, 8)}; absorbed, not a conflict`,
       gateFailed: (gate) =>
         `[flume] afterMerge gate '${gate}' failed for ${r.entry.tag}; reverting only that entry (clean siblings stay shipped)`,
-      // The recorded failure's own words, never the bare refusal beside them:
-      // where the refusal composed the shas into itself, the line would
-      // otherwise repeat them.
-      revertRefused: ({ mergedSha, failure }) =>
-        `[flume] ${r.entry.tag}: revert of ${mergedSha.slice(0, 8)} refused (${failure.message}); commit stays on trunk, left for the operator; other entries continue`,
+      // The bare refusal, with both shas short and named once each: the same
+      // sentence a singleton's leg reads (`src/singletonTick.ts`), plus the
+      // tail only a wave has to say.
+      revertRefused: ({ mergedSha, landedOnSha, refusal }) =>
+        `[flume] ${r.entry.tag}: revert of ${mergedSha.slice(0, 8)} back to ${landedOnSha.slice(0, 8)} refused (${refusal}); commit stays on trunk, left for the operator; other entries continue`,
       merged: (mergedSha, landedOnSha) =>
         mergedSha === landedOnSha
           ? `[flume] ${r.entry.tag}: trunk already holds the whole span ${r.spanBase.slice(0, 8)}..${r.headSha.slice(0, 8)}; merged with no commit to add`
