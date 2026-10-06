@@ -29,6 +29,9 @@ chain declarations the CLI reads in `spec/chain.md`.
 - `wake <phase>` / `sleep <phase>` — add / remove `<flumeDir>/awake/<phase>`.
 - `hold <phase>` — remove `<flumeDir>/awake/<phase>` and write `<flumeDir>/held/<phase>`;
   `wake` clears it (`spec/loop.md`, *Baton — presence wakes, absence hibernates*).
+- `exclusive -- <command…>` — run the command holding the ship lock (`spec/loop.md`,
+  *The ship lock and the worktree lock*) and exit with its code; a missing `--` or
+  command is a usage error.
 - `stop` — write `<flumeDir>/stop` and print what happens next: a live supervisor
   finishes its in-flight tick and ends the run; the next `loop` refuses
   until the flag is removed (`spec/loop.md`, *Graceful stop*). Idempotent — the

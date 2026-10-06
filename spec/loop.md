@@ -244,9 +244,14 @@ the tip; these say which of that run's ticks is touching git right now. Under a
   for seconds; the agent, the chain's `setupWorktree`, and the gates run outside it.
 
 Both live in the common dir so every linked worktree sees one file, and both are
-engine-created, engine-consumed, and engine-released: no verb takes or drops one,
-and `flume status` prints nothing about them — a held lock is a tick in flight, which
-the supervisor line already says.
+engine-created, engine-consumed, and engine-released, with one exception:
+`flume exclusive -- <command>` takes the ship lock — waiting as a sibling tick would —
+runs the command with it held, releases it, and exits with the command's code. It is
+how an operator lands a commit on trunk mid-run, a merged remote change or a hand
+fix, outside the window tip verify refuses (*Tip verify*); merges wait while it runs
+and agents keep working. No verb takes the worktree lock, and none drops either.
+`flume status` prints nothing about them — a held lock is a tick or an operator
+command in flight.
 
 ## Graceful stop — the stop flag
 
