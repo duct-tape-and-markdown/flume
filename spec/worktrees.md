@@ -299,11 +299,14 @@ reading session logs.**
 Before the drop, every file the reverted span touched that its head still holds is
 snapshotted verbatim — a path the span deleted, or created and deleted again, has no
 post-image to keep —
-post-image content, under a mirror of its repo path — into
-`<flumeDir>/prior-attempts/<key>.reverted/`.
+post-image content, under a mirror of its repo path with `.reverted` appended to each
+file name — into `<flumeDir>/prior-attempts/<key>.reverted/`.
 
 - It is a sibling of the prior-attempt JSON, under the state root and gitignored, **not** in
   the worktree — so it outlives both the reset and worktree teardown.
+- **Inert by name.** The suffix takes every snapshot file out of any tool's extension-keyed
+  collection, so a salvaged test is never collected and a salvaged source file never
+  compiled. Recovery is still "open the file", minus the suffix.
 - Recovery is "open the file". The prior-attempt digest is a stat digest: filenames and
   counts, never content, so it cannot recover findings. That is why this is a distinct artifact.
 - **Generic by construction.** It snapshots whatever the span changed, so the engine needs no
