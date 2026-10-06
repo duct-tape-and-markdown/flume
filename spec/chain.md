@@ -645,6 +645,9 @@ must state; a field the type carries and no bullet names is not absent
     handoff that wakes build on "anything pickable" reads this list; it does
     not call `isPickableNow` with a default resolver and an empty capability
     set, which is a different verdict with two inputs missing.
+  - **`gatedTip`** — the same sha the verdict records (`spec/loop.md`, *The tick
+    verdict*), so a handoff or a delivery script reads the judged tip instead of
+    rebuilding it.
   - **`flumeDir`** and **`configDir`** — the resolved roots, so a handoff that
     writes or reads a state-root file has them without `process.env`.
   - **`baseSha`** — the span's base, the same value `GateContext.baseSha`
