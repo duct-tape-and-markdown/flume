@@ -351,17 +351,17 @@ resolved `flumeDir`.
 ## Supervisor policy is a chain-overridable default
 
 `Chain.supervisorPolicy?: { quarantineScope?: "run" | "none"; abortThreshold?:
-number; maxTicks?: number; maxParallel?: number; tickTimeoutMs?: number;
-partitionIgnore?: string[]; killGraceMs?: number }`.
+number; maxTicks?: number; maxParallel?: number; mergeBatch?: number;
+tickTimeoutMs?: number; partitionIgnore?: string[]; killGraceMs?: number }`.
 The engine's loop policy — run-scoped quarantine of an
 entry slug whose worktree provisioning failed, abort after three consecutive
 identical failure signatures, how many phase ticks the supervisor runs at once
 (`spec/loop.md`, *Baton — presence wakes, absence hibernates*), fanout batch
-width, the per-invocation wall-clock cap, the paths the fanout partition
+width, how many finished spans of one wave a merge carries, the per-invocation wall-clock cap, the paths the fanout partition
 ignores, and the grace a signalled tick gives its agent tree before `SIGKILL`
 (`spec/loop.md`, *The loop lock and the tip claim*) — ships as **defaults, not
 behavior** (`superviseLoop`, `quarantineScope ?? "run"`, `abortThreshold ?? 3`,
-`maxTicks ?? 1`; `runFanout`, `maxParallel ?? 4`; `tickTimeoutMs` default unset
+`maxTicks ?? 1`; `runFanout`, `maxParallel ?? 4` and `mergeBatch ?? 1`; `tickTimeoutMs` default unset
 — no cap; `partitionIgnore` default `[]`; `killGraceMs ?? 5000`). A chain
 declaring nothing gets the defaults byte-identically — one phase tick at a
 time, which is the serial loop.
@@ -533,6 +533,12 @@ confines side effects to disk inside `cwd`.
   carries*); a gate the chain declares may, and the dispatcher already holds
   the entry for the scoped fence union, so it is reported rather than
   re-read from the queue.
+- **`batch`** — set when one merge carries several spans (`spec/worktrees.md`,
+  *Batched merges*): one record per span — its `entry`, `baseSha`, `landedOnSha` and
+  `touchedPaths` — in the order they were picked. Under a batch, `entry`, `baseSha`
+  and `landedOnSha` are absent, `commitSha` is the batch's last pick, and
+  `touchedPaths` is the union, so a gate written for one span never reads one span's
+  facts as the batch's. Only a gate that declares `batches: true` is ever handed one.
 - **`log`** is the harness-side output channel; a gate does not write to stdout
   itself.
 

@@ -155,7 +155,10 @@ tip reporting it green closes it (*CI lanes as a findings source*). A merged sui
 span never touched is re-run at the base; failing there too, the judge
 refuses with `base-red` rather than blaming the span (`spec/chain.md`, *What
 a gate returns*). The judge speaks to the consumer's test runner through the
-runner interface below and never assumes vitest.
+runner interface below and never assumes vitest. The judge accepts batches: over
+one it runs the suite once on the merged tree and proves each entry's `tests[]` red
+at that entry's own base, building one base tree per distinct base over the union
+of the files those entries' lines name.
 
 
 ### The gates the discipline needs
@@ -443,7 +446,7 @@ declaration already resolves.
 | `handoff` | A per-phase override of the default handoff — see *The default `handoff`*. Optional, per phase, so overriding build's routing never copies the slice ladder. |
 | `gates` | Extra gates per phase and `when`, by registry name, inline shell, or script. A shell or script gate runs in the gate's own tree, under the declared `shell` (its own row), with the engine's gate facts in its environment, `FLUME_`-prefixed — the gated commit, the span's base, the trunk the span landed onto (`FLUME_LANDED_ON_SHA`, `afterMerge` only), the state root and its repo-relative offset, the touched paths — so a gate that measures trunk before and after this entry reads `FLUME_LANDED_ON_SHA` rather than deriving `HEAD^`, which a multi-commit span makes wrong, and a gate that needs what the tick saw reads `FLUME_BASE_SHA`. The package's discipline gates are always present and always first; its judge runs after the consumer's declared gates at the same `when`, so a seconds-long typecheck reports before a minutes-long suite. |
 | `agents` | Model per phase, extra agent arguments, the model's context window in tokens (`contextWindow`, forwarded to the adapter's budget line — `spec/chain.md`, *The agent seam*), and whether the tick inherits the user's MCP servers (`inheritUserMcp`) or the user's own Claude Code settings, instructions and rules (`inheritUserSettings`), both off by default; absent means the package's default. |
-| `supervisor` | The engine's supervisor policy, passed through whole — `maxParallel`, `tickTimeoutMs`, `abortThreshold`, `quarantineScope`, `partitionIgnore`, `killGraceMs` — declared here so one file holds the environment and no knob is lost behind the factory. |
+| `supervisor` | The engine's supervisor policy, passed through whole — `maxParallel`, `mergeBatch`, `tickTimeoutMs`, `abortThreshold`, `quarantineScope`, `partitionIgnore`, `killGraceMs` — declared here so one file holds the environment and no knob is lost behind the factory. |
 | `shell` | The shell every command line the declaration carries runs under — a shell gate's, a script gate's, `setup.restore` — `sh` by default. Chain load refuses a shell the host does not resolve, naming the site that would have run it, since a win32 host resolves `sh` from one launch shell and not another; a bad shell surfaces at load, never hours in as a worktree that would not provision. |
 | `setup` | Directories to install and a restore command, run under the declared `shell` in every provisioned worktree, singleton and fanout alike. `serialize: true` runs the restore one worktree at a time across a fanout wave, for a restore whose shared cache is not safe to warm concurrently; the wave's other provisioning stays parallel. `serialize` is a property of the declared restore: a declaration naming no restore has nothing to serialize, parses, and holds nothing — the engine's own install is never what it covers. |
 | `slices` | Which plan slices run; the sweep's domain and posture pages. |

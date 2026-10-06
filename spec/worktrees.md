@@ -254,6 +254,22 @@ This is what makes "expensive correctness gates at `afterMerge`" safe as default
 (`spec/chain.md`): without it, one flaky merge-time gate reverts a whole wave of clean commits
 and the retry wave starts cold.
 
+## Batched merges
+
+A wave's merge may carry several spans: up to `supervisorPolicy.mergeBatch` of the
+spans that have finished and are waiting on the ship lock, from the same tick only — a
+sibling tick's spans merge on their own. Batching is off unless the chain raises
+`mergeBatch` above `1` and every `afterMerge` gate of the phase declares
+`batches: true`. A gate that does not declare it holds the phase to one span per merge,
+because a gate written for one entry would read a batch's facts as one entry's.
+
+- The batch's spans are cherry-picked onto the tip in order, and the `afterMerge` gates
+  run once over the result.
+- Green ships every span in one ledger commit.
+- Red, or a conflict while picking, resets to the tip before the batch and merges its
+  spans one at a time, gated individually, as above, so blame and revert stay per
+  entry. A red batch costs one gate run more than merging serially would have.
+
 ## An in-worktree revert still leaves a trunk footprint
 
 An `afterCommit` gate revert happens inside the fanout worktree: the commit is dropped there
@@ -427,8 +443,9 @@ stop*) at the only moment it is safe to.
 
 The build's `afterMerge` gate runs `pnpm test` (= the default `vitest run`) on the **trunk**,
 not inside a worktree: `runFanout` builds the gate context with
-`cwd: repoRoot` once the entry's cherry-pick has landed. It runs once per cherry-picked entry,
-serially, so a wave of N entries pays the default lane N times before the tick ends.
+`cwd: repoRoot` once the entry's cherry-pick has landed. It runs once per merge,
+serially — one entry, or a batch (*Batched merges*) — so a wave of N entries pays the
+default lane up to N times before the tick ends.
 
 The suite has two lanes:
 
