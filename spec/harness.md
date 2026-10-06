@@ -47,8 +47,7 @@ because the tick's worktree is cut from the tip: a file on the shared disk the
 tip does not hold is work the woken tick cannot route, and it would wake the
 slice again after every tick that could not. A
 tick that runs and files nothing is the shape this sentence exists to refuse.
-The drain files by the sweep's bar (`.claude/rules/posture-sweep.md`,
-*Routing*). An observation a build note carries becomes an entry when the
+The drain files by the sweep's bar (*The sweep procedure*, *Routing*). An observation a build note carries becomes an entry when the
 defect can change behavior, hide a failure, or leave a vacuous verdict over
 load-bearing machinery; anything else is an accepted-debt line in the plan
 commit body, and a family noted three times files once — counted over
@@ -61,11 +60,11 @@ with work nothing asked for.
 
 **Every entry a package producer files carries a `priority`, set by where
 the work came from**, because the engine's tie-break is the tag and a queue
-with no priorities is served in alphabetical order, whatever the work is.
+with no priorities is served in filing order, whatever the work is.
 An entry answering a downstream report, an operator's ruling, a declared
 friction note, or a failing title a CI lane reports files at `30`; one
 routed from a build note at `20`; one derived from a spec commit at `10`;
-one the sweep files at `0`. Within a band the tag decides, and an entry
+one the sweep files at `0`. Within a band the earliest filing goes first, and an entry
 `blockedBy` another inherits no rank from it. The drain re-ranks an
 entry already queued when a ruling says its source was misread, and never
 otherwise, so a rank is a fact about provenance rather than a lever a tick
@@ -79,6 +78,36 @@ default `handoff`*). And a finding two producers file at once is folded, not
 refused: the drain amends the entry that covers it rather than filing a
 sibling, and one that reaches build first costs a clean-exit record the next
 drain drops (*The gates the discipline needs*).
+
+
+### The sweep procedure
+
+The package ships how `plan-sweep` applies posture pages to code that already
+exists. A consumer declares the domain and the pages; the pages hold the
+standard, including any lens beyond their own sections, and the procedure is
+the package's.
+
+- **The frontier is read off git.** Commits past the stamp that touch the
+  domain put their modules in it. A commit that touches a posture page puts the
+  whole domain in it, because a changed phrase has been applied to nothing yet.
+  Spec lines a commit deleted put every site still asserting them in it,
+  searched once per rotation behind a cursor of their own.
+- **A neighborhood is a frontier module read with its immediate imports.** A
+  tick sweeps neighborhoods until its budget line puts the rotation down and
+  records each module it read as covered. Covered is settled for the rotation:
+  no later tick re-sweeps it.
+- **The rotation closes when the frontier empties**, stamped at the tip its
+  window was drawn from. A quiet tree closes in one tick.
+- **A finding counts only when verified on disk that tick**, cited by symbol
+  and line, and never against a divergence the site declares and cites as
+  deliberate.
+- **Routing.** A defect that can change behavior, hide a failure, or leave a
+  vacuous verdict over load-bearing machinery files as an entry at the sweep's
+  band. Any other shape is an accepted-debt line in the plan commit body, and a
+  family noted in three plan commit bodies files once, counted over every plan
+  commit body. A fix that needs a design decision is an open question, and so
+  is a defect no posture-page section covers, proposing the section that would
+  have named it.
 
 
 ### The prompts and their discipline
@@ -97,14 +126,22 @@ agent inert, whoever wrote it.
 
 The fields the package's discipline reads — a summary, a `per` cite, an
 acceptance criterion, the `tests[]` and `pins[]` lines the judge proves, a note
-to plan, and the contract-touching flag the default handoff stops on — with
-their caps and hints, held by the package's schema rather than by a roster
-here. A consumer may add fields; it may not remove the package's. A consumer's
+to plan, the contract-touching flag the default handoff stops on, and the
+interface an entry intends — with their caps and hints, held by the package's
+schema rather than by a roster here. A consumer may add fields; it may not remove the package's. A consumer's
 field is the same object the package's are — the engine's entry extension, a
 schema beside a hint — and the package renders its hint into the plan prompt
 through the same renderer as its own, so a consumer's parser and the prompt
 that fills it cannot drift either; a consumer never carries a prompt paragraph
 for a field it declared.
+
+An entry that adds or changes what code outside the modules it touches calls
+states the interface it intends: what it adds or changes, what it hides from
+its callers, and the alternative shape it rejected, with why. The field is
+optional, and whether an entry needs it is plan's judgment, which no gate
+re-decides; a field that is present carries all three parts, and the schema
+refuses it otherwise. Build reads it from the entry it is handed, beside the
+acceptance criterion.
 
 
 ### The judges
@@ -147,7 +184,9 @@ finding is a shape every legitimate decomposition shares, so the drain folds
 a duplicate rather than a gate refusing it (*The phases*).
 And the **filing band** gate: every entry a package producer adds carries the
 priority its slice's band states (*The phases*), refused otherwise, because a
-rank is a fact about provenance and one a producer chose would be a lever.
+rank is a fact about provenance and one a producer chose would be a lever. A
+commit that changes the `priority` of an entry already queued is refused unless
+it is the inbox slice's, which carries the rulings a re-rank answers.
 The record byte cap is not the gate's: a note over the cap ships with its entry,
 and the drain that reads it says so in the plan commit body — a shape rule on
 a prose channel refuses the prose, never the code it rode in with.
@@ -156,6 +195,14 @@ No state of the queue needs a hand edit. A queue a gate refuses is plan's to
 repair on its next tick, from the tree and the records; a refusal that leaves
 the queue in a state only a hand edit clears is a defect in the gate, filed
 against it, never a procedure a consumer learns.
+
+Every gate the package ships decides its verdict from what can be checked
+mechanically — the commit, the tree, a test run, the declaration — and never
+from a model's judgment of the delivery. A judgment the package wants applied
+to a delivery is applied to its input instead: the entry plan writes and the
+standard the agent's project instructions carry. A gate cannot improve a
+delivery whose input was wrong, and a verdict that changes from one run to the
+next cannot be held to account.
 
 
 ### Records as one file each
@@ -395,7 +442,7 @@ declaration already resolves.
 | `resolver` | A section resolver for `per` cites, replacing heading-text resolution — see *The cite resolver*. Optional. |
 | `handoff` | A per-phase override of the default handoff — see *The default `handoff`*. Optional, per phase, so overriding build's routing never copies the slice ladder. |
 | `gates` | Extra gates per phase and `when`, by registry name, inline shell, or script. A shell or script gate runs in the gate's own tree, under the declared `shell` (its own row), with the engine's gate facts in its environment, `FLUME_`-prefixed — the gated commit, the span's base, the trunk the span landed onto (`FLUME_LANDED_ON_SHA`, `afterMerge` only), the state root and its repo-relative offset, the touched paths — so a gate that measures trunk before and after this entry reads `FLUME_LANDED_ON_SHA` rather than deriving `HEAD^`, which a multi-commit span makes wrong, and a gate that needs what the tick saw reads `FLUME_BASE_SHA`. The package's discipline gates are always present and always first; its judge runs after the consumer's declared gates at the same `when`, so a seconds-long typecheck reports before a minutes-long suite. |
-| `agents` | Model per phase, extra agent arguments, the model's context window in tokens (`contextWindow`, forwarded to the adapter's budget line — `spec/chain.md`, *The agent seam*), and whether the tick inherits the user's MCP servers (`inheritUserMcp`, off by default); absent means the package's default. |
+| `agents` | Model per phase, extra agent arguments, the model's context window in tokens (`contextWindow`, forwarded to the adapter's budget line — `spec/chain.md`, *The agent seam*), and whether the tick inherits the user's MCP servers (`inheritUserMcp`) or the user's own Claude Code settings, instructions and rules (`inheritUserSettings`), both off by default; absent means the package's default. |
 | `supervisor` | The engine's supervisor policy, passed through whole — `maxParallel`, `tickTimeoutMs`, `abortThreshold`, `quarantineScope`, `partitionIgnore`, `killGraceMs` — declared here so one file holds the environment and no knob is lost behind the factory. |
 | `shell` | The shell every command line the declaration carries runs under — a shell gate's, a script gate's, `setup.restore` — `sh` by default. Chain load refuses a shell the host does not resolve, naming the site that would have run it, since a win32 host resolves `sh` from one launch shell and not another; a bad shell surfaces at load, never hours in as a worktree that would not provision. |
 | `setup` | Directories to install and a restore command, run under the declared `shell` in every provisioned worktree, singleton and fanout alike. `serialize: true` runs the restore one worktree at a time across a fanout wave, for a restore whose shared cache is not safe to warm concurrently; the wave's other provisioning stays parallel. `serialize` is a property of the declared restore: a declaration naming no restore has nothing to serialize, parses, and holds nothing — the engine's own install is never what it covers. |

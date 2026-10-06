@@ -39,7 +39,7 @@ is present and cannot be read — obstructed by a file, or denied — refuses at
   runs is a re-run queued, not a second worker.
 - **Handoff passes the baton.** After the phase's work, the dispatcher sleeps the
   phase that ran, calls `phase.handoff(result)`, and wakes every name it returns
-  that is not listed in `chain.humanOnly`. A handoff returning `[]` is how a chain
+  that is not listed in `chain.humanOnly` and not held. A handoff returning `[]` is how a chain
   ends the run. Handoff runs on every tick that ran a phase — committed, no-commit,
   or declined. **A wake that lands mid-tick is kept.** A wake writes a fresh token
   into the flag; a tick reads the token at start and sleeps its phase only while the
@@ -54,7 +54,14 @@ is present and cannot be read — obstructed by a file, or denied — refuses at
   fact of hibernating.
 - **Humans hold the other end.** `flume wake <phase>` / `flume sleep <phase>` touch
   and remove flags directly (`spec/cli.md`); `humanOnly` phases are reachable only
-  that way.
+  that way. **An operator hold outranks a handoff.** `flume hold <phase>` removes the
+  phase's flag and writes `<flumeDir>/held/<phase>`. While the hold stands, a
+  handoff's wake of that phase is declined, and every declined wake — held or
+  `humanOnly` — is reported on the tick verdict with its reason. Neither the
+  supervisor nor a bare `flume tick` runs a held phase; `flume tick --phase` does, as
+  the operator's own explicit action. `flume wake <phase>` removes the hold, wakes the
+  phase, and says it did. A handoff never removes a hold: the hold is the operator's,
+  and the wake a handoff performs is not the verb.
 
 ## One tick is one fresh process
 
@@ -307,6 +314,14 @@ defect rather than a workaround the operator owes the engine:
   engine revert touches may be the only home of two writers' work, including work
   the engine itself declined to sequence seconds earlier. Crash-equals-stop is
   hollow if the recovery a crash leaves intact is one the next merge deletes.
+- **A run records how it ended.** When the supervisor ends a run it writes
+  `<flumeDir>/run-end.json`: the reason — hibernation, the stop flag, the tick
+  budget, the abort threshold, or a signal — the signal or exit code, and the time.
+  A hangup or a closed console (`SIGHUP`, and `SIGBREAK` on win32) ends the run
+  through the same teardown as `SIGTERM`, so the run releases what it holds and
+  records its end. A death no handler runs on (`SIGKILL`, `TerminateProcess`)
+  records nothing, and `flume status` reports that case from the stale `loop.pid`,
+  never from a guess.
 - **A dead wave's residue is swept at the next start.** Worktrees and `flume/**`
   branches abandoned by a killed fanout tick are removed at the next `loop`
   start, under the tip claim — `spec/worktrees.md`, *Startup sweep*. Per-wave
@@ -594,6 +609,10 @@ attempted.
   ticks to `--max` — the live-lock the fields exist to make expressible. Absent on every
   tick that provisioned an entry; `quarantinedTags` is empty, never absent, on a
   nothing-pickable tick with no quarantine.
+- **A preempt records how the agent process ended** — its exit code, or on POSIX the
+  signal that ended it — never a placeholder in their place. The engine reports each
+  preempt's own ending and never merges several into one cause; agents ending together
+  is a pattern a reader may draw, not a verdict the engine records.
 - **The classification reaches disk.** It rides `TickOutcome.noCommit`, the tick verdict,
   and the per-entry prior-attempt record.
 - **A wave reports one representative cause** when it shipped nothing, by precedence

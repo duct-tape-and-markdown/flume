@@ -155,6 +155,12 @@ vacuous verdict over load-bearing machinery.
   per rotation never files; below it, shape stays out of the queue.
 - Needs a design decision → an **open question**, naming the section and the
   fork.
+- A defect no section of the posture pages covers → an **open question
+  proposing the section**: the site, the shape, and the sentence that would
+  have named it. The pages are build's input as well as the sweep's lens, so
+  a gap in them recurs in every tick until a human writes the rule; the site
+  rides the question, since no section exists for an entry's `per` or a debt
+  line to cite.
 
 Never file against a divergence the site declares and cites as deliberate.
 

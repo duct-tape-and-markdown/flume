@@ -27,6 +27,8 @@ chain declarations the CLI reads in `spec/chain.md`.
   supervisor that spawns one fresh `flume tick` process per phase it starts,
   each told its phase, up to `supervisorPolicy.maxTicks` at once.
 - `wake <phase>` / `sleep <phase>` — add / remove `<flumeDir>/awake/<phase>`.
+- `hold <phase>` — remove `<flumeDir>/awake/<phase>` and write `<flumeDir>/held/<phase>`;
+  `wake` clears it (`spec/loop.md`, *Baton — presence wakes, absence hibernates*).
 - `stop` — write `<flumeDir>/stop` and print what happens next: a live supervisor
   finishes its in-flight tick and ends the run; the next `loop` refuses
   until the flag is removed (`spec/loop.md`, *Graceful stop*). Idempotent — the
@@ -100,8 +102,8 @@ Usage-shaped failures exit 2 uniformly. The category is **any argv the surface
 cannot honor as typed** — the instances below are its members, not a closed
 enumeration: an unknown command; a missing `<phase>` or `<name>`; an
 unknown phase; **an unexpected trailing positional past what a subcommand
-consumes** (`tick`, `stop`, and `check` consume none; `wake`/`sleep` exactly
-one) — running something other than what the operator typed is the harm this
+consumes** (`tick`, `stop`, and `check` consume none; `wake`/`sleep`/`hold`
+exactly one) — running something other than what the operator typed is the harm this
 class exists to refuse, and `flume tick plan` silently ticking whichever phase
 was awake is the field-reported shape (gh#1); `--entry` with no matching
 entry; a `--max` that is missing, non-numeric, or negative (refused before any
@@ -119,27 +121,30 @@ side effects, and an example invocation.
 
 In printed order:
 
-1. Awake phases, or `hibernating`.
+1. Awake phases, or `hibernating`; held phases on a line of their own.
 2. **Supervisor liveness** — when `<flumeDir>/loop.pid` exists: `supervisor pid
    N live`, or `loop.pid present, process dead — stale`. No pidfile prints
    nothing extra.
-3. **Stop flag** — when `<flumeDir>/stop` exists, one line naming the path and
+3. **Last run end** — when `<flumeDir>/run-end.json` exists: the reason and
+   time it records. Beside a stale `loop.pid`, the line says the current run
+   died without recording an end.
+4. **Stop flag** — when `<flumeDir>/stop` exists, one line naming the path and
    the consequence: with a live supervisor, that it will finish the in-flight
    tick and end the run; without one, that the next `loop` refuses
    until the flag is removed. Absent flag prints nothing. This line exists
    because the ack ritual (`spec/loop.md`, *Graceful stop*) only works if the
    operator who forgot the flag finds it where they look first.
-4. **Tip claim state** — when HEAD names a ref and a claim file exists for it:
+5. **Tip claim state** — when HEAD names a ref and a claim file exists for it:
    `tip claimed by pid N for <state root>`, naming the root the claim was
    taken for, or `tip claim present, process dead — stale`. A
    detached HEAD or an absent claim both read as silence.
-5. **Pending entry count** from the chain's declared queue directory (`Chain.pendingDir`)
+6. **Pending entry count** from the chain's declared queue directory (`Chain.pendingDir`)
    when the chain loads, and from the default `<flumeDir>/plan/pending/` when it
    does not: `pending: N`,
    `pending: 0` when absent, `pending: unparsable` when an entry file is malformed —
    the same loose read every observational verb performs, so a corrupt queue
    reads identically on every surface.
-6. **Chain-declared extras**, behind a best-effort chain load that can never
+7. **Chain-declared extras**, behind a best-effort chain load that can never
    fail status — a missing or broken chain withholds them and says so **as a
    row of this listing**, `chain: failed to load — <reason>`, printed before
    the pending count on the same stream as the rest, so a status over a chain
@@ -149,7 +154,7 @@ In printed order:
    friction count when `Chain.friction` is declared and its dir holds files,
    and one line per pending entry blocked on a `requiresCapability` the chain
    has not asserted.
-7. **The live run's spend so far** — when a supervisor is live, agent usage
+8. **The live run's spend so far** — when a supervisor is live, agent usage
    totalled by phase from the usage rows written since the instant the lock
    states it started — each agent's row lands when that agent returns, so a
    tick still running is counted up to its last returned agent, and the line

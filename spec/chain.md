@@ -224,10 +224,14 @@ decorator stack, different model". There is no `Phase.model`.
 The model itself is a typed option on the adapter: `claudeCode({ model })`
 (`ClaudeCodeOptions.model`), rendered to `--model <value>` on the
 argv. It has **no default** — undeclared, the binary's own default applies and
-the engine passes nothing. A tick loads only the MCP configuration the chain
-hands it: the adapter passes `--strict-mcp-config` unless
-`ClaudeCodeOptions.inheritUserMcp` is set, because by-user runtime state is what
-a stateless tick excludes, and a wedged inherited server has stalled a wave.
+the engine passes nothing. A tick loads only the configuration the chain hands it.
+The adapter passes `--strict-mcp-config` unless
+`ClaudeCodeOptions.inheritUserMcp` is set, and `--setting-sources project`
+unless `ClaudeCodeOptions.inheritUserSettings` is set, because by-user runtime
+state is what a stateless tick excludes: a wedged inherited server has stalled
+a wave, and the operator's own instructions, rules, hooks and settings are
+input the repository cannot see. A settings file the adapter passes itself
+applies either way.
 `extraArgs` remains the passthrough for every other
 flag; the engine types the one knob every consumer varies per phase and
 declines to mirror the rest of the CLI (`.claude/rules/engine-boundary.md`,

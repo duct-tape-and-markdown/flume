@@ -33,8 +33,11 @@ rewrites an entry's file on ship, so a stripped field would be destroyed on disk
   unblocked entry.
 - **`dependsOnForks`** — array of opaque fork slugs, defaulting to `[]`. A cross-cutting
   pickability predicate, not a gate kind (below).
-- **`priority`** — optional integer, defaulting to `0`. Higher is picked first; ties break on
-  tag, ascending. The one ordering the engine consumes (*The ledger is a directory — one entry
+- **`priority`** — optional integer, defaulting to `0`. Higher is picked first; among equal
+  priorities the entry whose tag was filed earliest is picked first — the oldest commit that
+  added a file under that tag, read from git, so re-filing never moves an entry and one no
+  commit has added yet is the newest — and tag ascending breaks what remains. The one
+  ordering the engine consumes (*The ledger is a directory — one entry
   per file*, below).
 - **`files`** — `{ new: FileChange[], edit: FileChange[], retire: string[] }`, each `FileChange`
   a `{ path, description }`. The fence declaration and the partition input.
@@ -45,7 +48,7 @@ The parsed type is `PendingEntry = z.infer<typeof PendingEntryCore> & Record<str
 extension fields are typed `unknown`, because the chain that declared them is the side that
 knows their shape and narrows locally.
 
-The queue's order is `priority` descending, then tag ascending — a listing, never an array
+The queue's order is the one the `priority` bullet states — a listing, never an array
 position. An empty directory, or an absent one, is valid and means nothing pending.
 
 ## Tag grammar is mechanical safety, nothing more
@@ -86,8 +89,8 @@ tick ends `tip-moved`, and the loser re-runs against the tip that won.
 - **The listing is the queue.** Every `*.json` directly under `Chain.pendingDir` is an entry;
   nothing else is. Subdirectories are not walked, so a chain may keep sidecars beside the
   entries without the engine reading them as work.
-- **Order is a field, never a position.** `priority` descending, then tag ascending (*The
-  entry core*). A producer that wants an entry next raises its priority; the engine consumes
+- **Order is a field, never a position.** `priority`, then filing order (*The entry
+  core*). A producer that wants an entry next raises its priority; the engine consumes
   the number and nothing about what it means.
 - **A ship removes exactly the shipped entries' files** — `git rm` in the ledger commit,
   alongside the records it moves — and edits no other file in the directory.
@@ -383,7 +386,11 @@ refusal of the work — plan cannot know which files a move breaks without doing
   (`flume check` and the pending gate alike) judges a different set — the phase's own
   fence — and shares that computation's one spelling of the union, not its operands.
   Path matching is `matchesAny` — regex specials escaped, `*` and `**` the only
-  wildcards, so a declared literal path matches only itself. `matchesAny` rides `FlumeApi`
+  wildcards, so a declared literal path matches only itself. A glob that opens with `!`, or
+  holds a `{…,…}` alternation, means a negation or a set in most dialects and a literal in
+  this one, so chain load refuses it in a phase's `writablePaths` or channel paths, naming
+  the glob and the dialect; a fence never carries a pattern that silently matches nothing.
+  `matchesAny` rides `FlumeApi`
   (`spec/chain.md`), so a chain predicate over the same globs shares the enforcing matcher
   instead of hand-rolling one.
 - **Failure semantics are the phase guard's**: whole-commit revert. The violation message
