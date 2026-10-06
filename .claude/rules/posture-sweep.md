@@ -6,6 +6,11 @@ it a newly-ratified phrase governs only code written after it.
 
 Binds on plan's **Sweep** dimension.
 
+The procedure is the package's (`spec/harness.md`, *The sweep procedure*);
+this page carries it only until the sweep prompt does. The interactive
+session that confirms the shipped prompt trims this page to this repo's
+domain and *Standing lenses*.
+
 ## The pages are the authority as they read this tick
 
 The sweep domain is `src/`, `harness/`, `bin/`, `examples/`, `scripts/`
