@@ -42,6 +42,18 @@ I would take (a) now and (b) if it lags again — the disclaimer already
 predicts this failure, so a second lag is the evidence that the enumeration
 cannot be kept beside a schema that grows.
 
+**It has lagged again, one page over.** `spec/chain.md`, *What a hook
+receives* enumerates `TickResult`'s existing facts in the same parenthetical
+shape; that list last grew with `priorAttempts`, and `platformFailures`
+reached `TickResult` after it (`cb20a56a`), so it is one field short today.
+That page is **not** a third item below, because it carries the sentence this
+one lacks — "a field the type carries and no bullet names is not absent" — so
+its omission is ruled rather than open. It is evidence on the fork above: an
+enumeration lags beside a disclaimer as readily as without one, and only (b)
+retires the upkeep. Should you take (a), `spec/chain.md` is worth reading in
+the same pass for whether its non-naming rule is meant to cover its own
+parenthetical as well as its bullets.
+
 ## 2. *The runner interface* describes `run`'s report as passing-only
 
 The bullet reads: "**`run(names, cwd)`** — run the tests whose full names
@@ -80,6 +92,6 @@ consumer to discover from a red gate; the sentence that prevents that is one
 clause long. (c) is defensible for a report the spec never characterized, but
 this bullet already characterizes it.
 
-**Blocking on:** nothing in the queue. Both are prose on a human-owned
+**Blocking on:** nothing in the queue. Both items are prose on a human-owned
 surface; no entry waits on either, and the entry filed beside this question is
 independent of both.
