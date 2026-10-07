@@ -655,11 +655,8 @@ must state; a field the type carries and no bullet names is not absent
     map; it does not `readdirSync` the engine's directory. A park is in the
     same map (`not-shipped`), so "build parked, plan reconciles" is a read of
     this field too — never of the verdict log.
-- **`TickResult`** (`handoff`) — the existing
-  facts (`committed`, `commitSha`, `gateResults`, `pendingAfter`,
-  `shippedTags`, `revertedTags`, `noCommit`, `quarantinedTags`,
-  `nothingPickable`, and `priorAttempts`, the record store as the tick left
-  it, which the package's refusal leg reads) plus:
+- **`TickResult`** (`handoff`) — every fact the type carries; the ones a chain
+  most often needs are:
   - **`pickableAfter`** — `pendingAfter` filtered by the same dispatcher
     verdict as `TickContext.pickable`, taken at the post-tick re-read. A
     handoff that wakes build on "anything pickable" reads this list; it does

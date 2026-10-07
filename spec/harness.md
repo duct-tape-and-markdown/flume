@@ -134,11 +134,8 @@ agent inert, whoever wrote it.
 
 ### The entry extension
 
-The fields the package's discipline reads — a summary, a `per` cite, an
-acceptance criterion, the `tests[]` and `pins[]` lines the judge proves, a note
-to plan, the contract-touching flag the default handoff stops on, and the
-interface an entry intends — with their caps and hints, held by the package's
-schema rather than by a roster here. A consumer may add fields; it may not remove the package's. A consumer's
+The fields the package's discipline reads, with their caps and hints, are held
+by the package's schema rather than by a roster here. A consumer may add fields; it may not remove the package's. A consumer's
 field is the same object the package's are — the engine's entry extension, a
 schema beside a hint — and the package renders its hint into the plan prompt
 through the same renderer as its own, so a consumer's parser and the prompt
@@ -484,7 +481,10 @@ declared value with three operations, each returning structured results rather
 than exit codes the judge would have to interpret:
 
 - **`run(names, cwd)`** — run the tests whose full names contain each of `names`
-  and report, per name, whether one passing test carried it.
+  and report, per name, whether one passing test carried it and whether a
+  skipped test names it. The skipped half is what a `laneTests[]` line is owed
+  on (*The judges*): a runner whose tool cannot report skips reports `false`,
+  and its consumer has no `laneTests[]`.
 - **`runAtBase(names, files, baseSha, cwd)`** — lay the merged bytes of `files`
   over a detached checkout of `baseSha` and run the same names there; the judge
   refuses a `tests[]` line that passes here. The checkout is the engine's and is
