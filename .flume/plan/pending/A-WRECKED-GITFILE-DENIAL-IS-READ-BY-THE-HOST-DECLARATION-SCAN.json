@@ -1,0 +1,34 @@
+{
+  "tag": "A-WRECKED-GITFILE-DENIAL-IS-READ-BY-THE-HOST-DECLARATION-SCAN",
+  "gate": { "kind": "open" },
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "tests/helpers/hostDeclarations.ts",
+        "description": "the denial scan, widened to the second primitive beside the permission bit"
+      },
+      {
+        "path": "tests/hostDeclarations.test.ts",
+        "description": "the detector's gitfile fixtures and the suite's own empty gitfile set"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "the suite's denial scan reads a wrecked worktree gitfile as a denial primitive, so a case armed that way outside a declared host reds instead of standing green over a wall win32 never raised",
+  "per": {
+    "path": ".claude/rules/platform-facts.md",
+    "section": "`chmod` denies nothing on win32"
+  },
+  "acceptance": "the denial scan files a `gitdir:` write standing outside a host-declared case, attributes one inside such a case to it, passes over a write that is not a gitdir pointer, and reports the suite's own gitfile set empty in its own assertion",
+  "tests": [
+    "the host-declaration scan reads a planted dangling gitfile as an undeclared denial",
+    "the host-declaration scan attributes a dangling gitfile to the innermost host-declared case around it",
+    "the host-declaration scan passes over a write whose content is not a gitdir pointer"
+  ],
+  "pins": [
+    "no case in tests/ denies by wrecking a worktree's gitfile"
+  ],
+  "laneTests": [],
+  "notes": "Measured drift: five walled-wave cases armed on `writeFile(join(cwd, '.git'), 'gitdir: /flume-no-such-gitdir')` — green on posix, silently unarmed on the windows lane until 1f397af0 replaced the arming. The scan reads a permission bit alone, so a recurrence is undetectable. A source scan cannot decide the gitdir is absent, so any `gitdir:` write is the primitive; the suite holds none today, which is why the suite arm is a pin."
+}
