@@ -451,15 +451,28 @@ export interface RenderOptions {
   /**
    * Pending entry assigned to this tick (fanout phases only), read from the
    * same `TickContext` the dispatcher already threads through. When present,
-   * the `<harness>` block states the *effective* fence — `entry.files ∪
-   * phase.entryChannelPaths` — as what the write guard (`runAfterCommitGates`,
-   * `src/tickAttempt.ts`) actually enforces on this tick, naming
-   * `phase.writablePaths` separately as the outer ceiling. Absent (singleton
-   * ticks, or a fanout tick with no assignment) renders the unscoped block —
-   * exact byte shape pinned by tests/Prompt.test.ts's "byte-identical to the
-   * collapsed rendering that predates the effective fence" case.
+   * the `<harness>` block states the *effective* fence — the entry's and its
+   * steps' `files` ∪ `phase.entryChannelPaths` — as what the write guard
+   * (`runAfterCommitGates`, `src/tickAttempt.ts`) actually enforces on this
+   * tick, naming `phase.writablePaths` separately as the outer ceiling.
+   * Absent (singleton ticks, or a fanout tick with no assignment) renders the
+   * unscoped block — exact byte shape pinned by tests/Prompt.test.ts's
+   * "byte-identical to the collapsed rendering that predates the effective
+   * fence" case.
    */
   assignedEntry?: PendingEntry;
+  /**
+   * `assignedEntry`'s steps, as the listing the slot pulled from held them
+   * (`ShipContext.steps`, `src/Phase.ts`). The effective fence is the whole
+   * session's footprint — the entry's files and its steps' together
+   * (`spec/pending.md`, *The queue is a forest*) — and this is the listing
+   * `declaredPaths` reads them from, the same value the dispatcher configures
+   * the write guard with, so the fence rendered here is the fence enforced.
+   * Travels with `assignedEntry`: absent, the block states a fence narrower
+   * than the guard's by exactly the steps it did not see. Empty for an entry
+   * no producer decomposed, which every queue of flat entries is.
+   */
+  assignedSteps?: readonly PendingEntry[];
 }
 
 /**
@@ -545,7 +558,12 @@ export async function renderPrompt(opts: RenderOptions): Promise<string> {
   const withArgs = substitutePlaceholders(raw, args);
   const withExec = await evaluateInlineExec(withArgs, opts.cwd);
   const withPrior = prependPriorAttemptBlock(opts.priorAttempt, withExec);
-  return prependHarnessBlock(opts.phase, opts.assignedEntry, withPrior);
+  return prependHarnessBlock(
+    opts.phase,
+    opts.assignedEntry,
+    opts.assignedSteps ?? [],
+    withPrior,
+  );
 }
 
 // ---------- transformations ----------
@@ -811,6 +829,8 @@ function runInlineExec(
 function prependHarnessBlock(
   phase: Phase,
   assignedEntry: PendingEntry | undefined,
+  /** {@link RenderOptions}'s own — the listing the fence's steps are read from. */
+  assignedSteps: readonly PendingEntry[],
   body: string,
 ): string {
   const gateLines = phase.gates
@@ -820,7 +840,7 @@ function prependHarnessBlock(
   // Scoped-or-not is decided once, in `src/paths.ts` — the same call the
   // dispatcher makes to configure `writablePathsGate`, so the fence this
   // block renders and the fence that guard enforces are one value.
-  const entryScope = entryWriteScope(phase, assignedEntry);
+  const entryScope = entryWriteScope(phase, assignedEntry, assignedSteps);
 
   const harness = [
     `<harness>`,
@@ -853,9 +873,9 @@ function unscopedFenceLines(phase: Phase): string[] {
 
 /**
  * Scoped rendering: states the fence the write guard actually enforces on this
- * tick — `entry.files ∪ phase.entryChannelPaths` — separately from
- * `phase.writablePaths`, the outer ceiling both this fence and the guard's
- * ceiling check must clear. `fence` arrives already derived from
+ * tick — the entry's and its steps' `files` ∪ `phase.entryChannelPaths` —
+ * separately from `phase.writablePaths`, the outer ceiling both this fence and
+ * the guard's ceiling check must clear. `fence` arrives already derived from
  * `entryWriteScope` (`src/paths.ts`); this function renders it and derives
  * nothing, so it cannot state a scope the guard does not enforce.
  */

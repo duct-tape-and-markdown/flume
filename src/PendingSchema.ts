@@ -1150,11 +1150,12 @@ export function isPickableNow(
 }
 
 /**
- * The set of file paths an entry declares it will touch — files.new/edit/retire
- * only. This is what the entry's author committed to; it excludes
- * dispatcher-observed writes (`observedFiles`), which the entry never declared.
+ * One entry's own `files.new`/`edit`/`retire`, in declaration order — the
+ * paths that entry's record states, with nothing read off the queue around
+ * it. The two footprints below fold this over a subtree; nothing else reads
+ * it, because no consumer of a footprint wants one entry's share of it.
  */
-export function declaredPaths(entry: PendingEntry): string[] {
+function ownDeclaredPaths(entry: PendingEntry): string[] {
   return [
     ...entry.files.new.map((f) => f.path),
     ...entry.files.edit.map((f) => f.path),
@@ -1163,9 +1164,72 @@ export function declaredPaths(entry: PendingEntry): string[] {
 }
 
 /**
- * The set of file paths an entry would touch. Used by the fanout partitioner
- * to decide which entries can run in parallel worktrees.
+ * A footprint: one entry's share of it, folded over that entry and every
+ * descendant {@link descendantsOf} finds below it, deduped with first-seen
+ * order kept.
+ *
+ * The one fold both footprints are made of, so the subtree a fence is composed
+ * from and the subtree a partition collides on cannot be two different walks
+ * (`.claude/rules/engineering.md`, *A module is one job*).
  */
-export function touchedPaths(entry: PendingEntry): string[] {
-  return [...declaredPaths(entry), ...(entry.observedFiles ?? [])];
+function foldFootprint(
+  listing: readonly PendingEntry[],
+  entry: PendingEntry,
+  share: (member: PendingEntry) => string[],
+): string[] {
+  const union = new Set<string>();
+  for (const member of [entry, ...descendantsOf(listing, entry.tag)]) {
+    for (const path of share(member)) union.add(path);
+  }
+  return [...union];
+}
+
+/**
+ * The set of file paths an entry declares it will touch — its own
+ * `files.new`/`edit`/`retire` and every one of its steps' together
+ * (`spec/pending.md`, *The queue is a forest*). This is what the entry's
+ * author committed to; it excludes dispatcher-observed writes
+ * (`observedFiles`), which the entry never declared.
+ *
+ * A footprint is a property of an entry **in a listing**, never of the entry
+ * alone, so the listing leads — as it does for {@link descendantsOf}, whose
+ * walk this shares with the group's retirement rather than spelling a second
+ * descent. `listing` is any listing the entry's descendants are in: the queue
+ * a selection read, or the `steps` the engine already resolved for the slot
+ * carrying the entry (`ShipContext.steps`, `src/Phase.ts`) — the walk reads
+ * `parent` links alone, so either answers.
+ *
+ * Required and never defaulted: a listing that holds none of the descendants
+ * yields a *narrower* footprint, which is a fence and a partition that both
+ * read short, and silently (`.claude/rules/engineering.md`, *Loud or
+ * nothing*). An empty listing is the caller saying there are no steps, which
+ * every call site that has no queue to hand means literally.
+ *
+ * The fold is downward only. A leaf's subtree is empty, so an entry a
+ * producer never decomposed reads exactly its own files, and a step reads its
+ * own alone — never the work entry's above it.
+ */
+export function declaredPaths(
+  listing: readonly PendingEntry[],
+  entry: PendingEntry,
+): string[] {
+  return foldFootprint(listing, entry, ownDeclaredPaths);
+}
+
+/**
+ * The set of file paths an entry would touch: {@link declaredPaths} over the
+ * same subtree plus whatever `observedFiles` each of those entries carries.
+ * Used by the fanout partitioner to decide which entries can run in parallel
+ * worktrees, so two entries colliding only through a step never share a batch.
+ *
+ * `listing` is read exactly as {@link declaredPaths} reads it.
+ */
+export function touchedPaths(
+  listing: readonly PendingEntry[],
+  entry: PendingEntry,
+): string[] {
+  return foldFootprint(listing, entry, (member) => [
+    ...ownDeclaredPaths(member),
+    ...(member.observedFiles ?? []),
+  ]);
 }

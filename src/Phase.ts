@@ -72,6 +72,10 @@ export interface ShipContext {
    * dispatch unit, so none of them was selected and none has a span of its
    * own: what they are here is the rest of the work this one session was
    * handed.
+   *
+   * The same set the engine composed this entry's fence and its partition
+   * collision from, since a `work` entry's footprint is its steps' too
+   * (`declaredPaths`, `src/PendingSchema.ts`).
    */
   steps: readonly PendingEntry[];
   /** Sha of this entry's commit as cherry-picked onto trunk. */
@@ -896,7 +900,8 @@ export interface Phase {
 
   /**
    * Opt in to narrowing a fanout tick's write allowance to the assigned
-   * entry (`declaredPaths(entry) ∪ entryChannelPaths`), with
+   * entry and its steps (`declaredPaths(queue, entry) ∪ entryChannelPaths`,
+   * `spec/pending.md`, *The queue is a forest*), with
    * `writablePaths` as the outer ceiling both checks apply against. Default
    * `false`: a scoped tick's write allowance and rendered prompt fence are
    * then byte-identical to a singleton tick's — `writablePaths` alone,

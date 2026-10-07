@@ -1477,7 +1477,7 @@ describe("renderSchemaForPrompt", () => {
         retire: ["src/deprecated.ts"],
       },
     });
-    expect(declaredPaths(entry)).toEqual(["src/deprecated.ts"]);
+    expect(declaredPaths([entry], entry)).toEqual(["src/deprecated.ts"]);
   });
 
   it("renders every declared extension field with its hint, after the core", () => {
@@ -1869,16 +1869,128 @@ describe("declaredPaths vs touchedPaths (.claude/rules/engineering.md § The fix
       gate: { kind: "open" },
       observedFiles: ["src/other.ts"],
     });
-    expect(declaredPaths(entry)).toEqual([
+    expect(declaredPaths([entry], entry)).toEqual([
       "src/foo.ts",
       "src/bar.ts",
       "src/baz.ts",
     ]);
-    expect(touchedPaths(entry)).toEqual([
+    expect(touchedPaths([entry], entry)).toEqual([
       "src/foo.ts",
       "src/bar.ts",
       "src/baz.ts",
       "src/other.ts",
     ]);
+  });
+});
+
+// ---------- a work entry's footprint is its steps' too ----------
+
+/** A step entry as a producer writes it: one edited file, one parent. */
+function stepOf(tag: string, parent: string, path: string): unknown {
+  return {
+    tag,
+    kind: "step",
+    parent,
+    gate: { kind: "open" },
+    files: {
+      new: [],
+      edit: [{ path, description: "the step's file" }],
+      retire: [],
+    },
+  };
+}
+
+/**
+ * A `work` entry with two steps, one of which has a step of its own, driven
+ * through the real strict queue read — so the `parent` links the footprint
+ * walk follows are the ones the forest rules admit, not a fixture's own
+ * spelling (`spec/pending.md`, *The queue is a forest*).
+ */
+function forest(): PendingEntry[] {
+  const result = parseQueue([
+    { ...baseEntry, tag: "WORK", gate: { kind: "open" } },
+    stepOf("WORK.1", "WORK", "src/step-one.ts"),
+    stepOf("WORK.2", "WORK", "src/step-two.ts"),
+    stepOf("WORK.2.1", "WORK.2", "src/step-two-a.ts"),
+  ]);
+  expect(result.ok, JSON.stringify(result.errors)).toBe(true);
+  return result.entries;
+}
+
+const entryIn = (queue: readonly PendingEntry[], tag: string): PendingEntry => {
+  const found = queue.find((e) => e.tag === tag);
+  expect(found, `no entry ${tag} in the fixture queue`).toBeDefined();
+  return found!;
+};
+
+describe("declaredPaths over a forest (spec/pending.md § The queue is a forest)", () => {
+  it("a work entry's declared paths include its steps' files", () => {
+    const queue = forest();
+    const work = entryIn(queue, "WORK");
+
+    // Non-vacuity: the fixture's work entry really carries steps, and none of
+    // their paths is one it declared itself — so the union below is the fold
+    // and not the entry's own `files` read twice.
+    expect(queue.filter((e) => e.kind === "step")).toHaveLength(3);
+    expect(work.files.edit.map((f) => f.path)).not.toContain("src/step-one.ts");
+
+    expect([...declaredPaths(queue, work)].sort()).toEqual([
+      "src/bar.ts",
+      "src/baz.ts",
+      "src/foo.ts",
+      "src/step-one.ts",
+      "src/step-two-a.ts",
+      "src/step-two.ts",
+    ]);
+  });
+
+  it("a step's own declared paths are its files alone", () => {
+    const queue = forest();
+
+    // The fold is downward only. The work entry above this step declares
+    // three files and a sibling step declares another, and the read below
+    // sees none of them.
+    expect(declaredPaths(queue, entryIn(queue, "WORK"))).toHaveLength(6);
+
+    expect(declaredPaths(queue, entryIn(queue, "WORK.1"))).toEqual([
+      "src/step-one.ts",
+    ]);
+  });
+
+  it("a step carrying steps of its own folds them, and one path two of them declare is one member", () => {
+    const result = parseQueue([
+      { ...baseEntry, tag: "WORK", gate: { kind: "open" } },
+      stepOf("WORK.1", "WORK", "src/shared.ts"),
+      stepOf("WORK.1.1", "WORK.1", "src/shared.ts"),
+    ]);
+    expect(result.ok, JSON.stringify(result.errors)).toBe(true);
+    const queue = result.entries;
+
+    expect(declaredPaths(queue, entryIn(queue, "WORK.1"))).toEqual([
+      "src/shared.ts",
+    ]);
+    expect([...declaredPaths(queue, entryIn(queue, "WORK"))].sort()).toEqual([
+      "src/bar.ts",
+      "src/baz.ts",
+      "src/foo.ts",
+      "src/shared.ts",
+    ]);
+  });
+
+  it("touchedPaths folds every step's observedFiles beside its declarations", () => {
+    const result = parseQueue([
+      { ...baseEntry, tag: "WORK", gate: { kind: "open" } },
+      {
+        ...(stepOf("WORK.1", "WORK", "src/step-one.ts") as object),
+        observedFiles: ["src/stray.ts"],
+      },
+    ]);
+    expect(result.ok, JSON.stringify(result.errors)).toBe(true);
+    const queue = result.entries;
+    const work = entryIn(queue, "WORK");
+
+    expect(entryIn(queue, "WORK.1").observedFiles).toEqual(["src/stray.ts"]);
+    expect(declaredPaths(queue, work)).not.toContain("src/stray.ts");
+    expect(touchedPaths(queue, work)).toContain("src/stray.ts");
   });
 });

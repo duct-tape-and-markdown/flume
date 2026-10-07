@@ -573,9 +573,19 @@ export function nextDisjointPick(opts: {
   inFlight: readonly PendingEntry[];
   /** `BatchSelection.partitionIgnore`, so a refill collides on the list the batch did. */
   ignore: string[];
+  /**
+   * The listing the refill reads every footprint against — the live queue the
+   * candidates came from, steps included, so a refill collides on the same
+   * whole-session footprint the batch partition did (`PartitionOptions`,
+   * `src/partition.ts`).
+   */
+  listing: readonly PendingEntry[];
 }): PendingEntry | undefined {
   return opts.candidates.find((e) =>
-    isDisjointFrom(e, opts.inFlight, { ignore: opts.ignore }),
+    isDisjointFrom(e, opts.inFlight, {
+      ignore: opts.ignore,
+      listing: opts.listing,
+    }),
   );
 }
 
@@ -652,6 +662,11 @@ export function selectBatch(opts: {
     batches: partitionByFileOverlap(pickable, {
       maxParallel,
       ignore: partitionIgnore,
+      // The whole queue, not `pickable`: a step is no dispatch unit, so it is
+      // never among the candidates, and its files reach the partition only
+      // through the entry above it (`spec/pending.md`, *The queue is a
+      // forest*).
+      listing: pending,
     }),
     partitionIgnore,
     maxParallel,

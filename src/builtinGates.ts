@@ -595,9 +595,9 @@ function touchedEntryRecords(
  *
  * `entryScope` is whatever `entryWriteScope` (`src/paths.ts`) returned for
  * this tick — the same value `effectiveFenceLines` (`src/Prompt.ts`)
- * rendered to the agent, already resolved to `entry.files ∪
- * entryChannelPaths`. The gate never re-decides whether a tick is scoped and
- * never rebuilds the union: `undefined` here *is* an unscoped tick.
+ * rendered to the agent, already resolved to the entry's and its steps'
+ * `files` ∪ `entryChannelPaths`. The gate never re-decides whether a tick is
+ * scoped and never rebuilds the union: `undefined` here *is* an unscoped tick.
  *
  * A refusal names its violating paths on `GateResult.failingFiles` as well as
  * in `details` prose. Those paths are by construction a subset of the span's

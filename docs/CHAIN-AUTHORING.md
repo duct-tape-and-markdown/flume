@@ -543,7 +543,7 @@ omitted; the rest are required.
 | `agent`         | Optional per-phase `Agent` override; resolution `phase.agent ?? chainModule.agent ?? dispatcher default`. See §4.                  |
 | `writablePaths` | Globs the agent's commit must stay inside. Outside-of-glob writes revert the commit.                                              |
 | `entryChannelPaths` | Optional globs always writable on an entry-scoped fanout tick, whatever the assigned entry declared — the cross-tick channel (a build phase reporting into `.flume/plan/open-questions.md`). Only consulted when `scopeWritesToEntry` is `true`, and declaring it without that flag is refused at chain load. Default `[]`. |
-| `scopeWritesToEntry` | Optional opt-in narrowing a fanout tick's write allowance to `entry.files ∪ entryChannelPaths`, with `writablePaths` as the outer ceiling both checks clear. Default `false` — the fence is `writablePaths` alone, byte-identical to a singleton tick's. See the `<harness>` block in §5. |
+| `scopeWritesToEntry` | Optional opt-in narrowing a fanout tick's write allowance to the entry's and its steps' `files` ∪ `entryChannelPaths`, with `writablePaths` as the outer ceiling both checks clear. Default `false` — the fence is `writablePaths` alone, byte-identical to a singleton tick's. See the `<harness>` block in §5. |
 | `gates`         | Validation steps the harness runs post-commit. See §2.                                                                            |
 | `promptArgs`    | Optional builder for the `{{KEY}}` substitution map. Receives the per-tick `TickContext`.                                          |
 | `handoff`       | Returns sibling phases to wake based on the tick's `TickResult`.                                                                  |
@@ -1443,13 +1443,18 @@ per entry under `<flumeDir>/worktrees/<entry-slug>/` (base overridable via
 parallel; the wave then merges to trunk and runs `afterMerge`.
 
 ```ts
-partitionByFileOverlap(entries, { maxParallel: 4 });
+partitionByFileOverlap(pickable, { maxParallel: 4, listing: queue });
 // => [[entryA, entryC], [entryB]]   // A and C disjoint; B overlaps both
 ```
 
 The partition reads `entry.files.new[].path`/`.edit[].path`/`.retire[]`
 (see `touchedPaths()` in `PendingSchema.ts`); declare files truthfully
-when hand-authoring entries. When a merge-time failure reverts an entry,
+when hand-authoring entries. A `work` entry's footprint is its own files
+**and its steps'** together, so `listing` is the whole queue the candidates
+were drawn from rather than the candidates alone — a step is no dispatch
+unit, and its files reach the collision set only through the entry above
+it. Two entries colliding only through a step therefore never share a
+batch. When a merge-time failure reverts an entry,
 the dispatcher persists the attempt's *actual* commit footprint onto it as
 `PendingEntry.observedFiles`, and the partition reads that alongside the
 declared `files` — so the retry is separated from whatever it collided
@@ -2190,7 +2195,8 @@ for your loop stays yours.
 The renderer prepends a `<harness>` block to every prompt with the phase's
 declared capabilities. On an entry-scoped fanout tick (one carrying an
 `assignedEntry`), it states the **effective** fence the write guard will
-actually enforce — `entry.files ∪ phase.entryChannelPaths` — separately
+actually enforce — the entry's and its steps' `files` ∪
+`phase.entryChannelPaths` — separately
 from `phase.writablePaths`, the outer ceiling both checks must clear
 (`spec/prompt.md`, "The harness block"):
 

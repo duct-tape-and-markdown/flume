@@ -697,6 +697,9 @@ export async function runFanout(
         candidates,
         inFlight: [...inFlight.values()],
         ignore: partitionIgnore,
+        // The live queue, so a refill collides on each candidate's steps too,
+        // exactly as the batch partition did.
+        listing: liveQueue,
       });
       if (entry === undefined) return;
       candidates = candidates.filter((e) => e.tag !== entry.tag);
@@ -1032,6 +1035,7 @@ async function runFanoutEntry(
       ref,
       label: entry.tag,
       entry,
+      steps,
       ...(extraEnv !== undefined ? { extraEnv } : {}),
     })),
   };

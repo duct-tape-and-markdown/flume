@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { chainLoadGate } from "../src/builtinGates.ts";
+import { chainLoadGate, writablePathsGate } from "../src/builtinGates.ts";
 import { loadChainModule } from "../src/chainLoad.ts";
 import type { GateContext } from "../src/Gate.ts";
 import type { Phase } from "../src/Phase.ts";
@@ -169,7 +169,7 @@ describe("entryWriteScope — the one scoped-or-not decision", () => {
       entryChannelPaths: ["notes/**", "src/New.ts"],
     });
 
-    expect(entryWriteScope(p, scoped)).toEqual([
+    expect(entryWriteScope(p, scoped, [])).toEqual([
       "src/New.ts",
       "tests/New.test.ts",
       "src/Old.ts",
@@ -178,7 +178,7 @@ describe("entryWriteScope — the one scoped-or-not decision", () => {
     // All three `files` sub-lists contribute, and the channel path that
     // repeats a declared file is deduped rather than listed twice — the
     // union's own shape, reached through this decision.
-    expect(entryWriteScope(p, scoped)).toEqual(
+    expect(entryWriteScope(p, scoped, [])).toEqual(
       entryWriteScopeUnion(
         ["src/New.ts", "tests/New.test.ts", "src/Old.ts"],
         ["notes/**", "src/New.ts"],
@@ -186,10 +186,12 @@ describe("entryWriteScope — the one scoped-or-not decision", () => {
     );
     // `observedFiles` is the partition's input, never the write allowance.
     expect(
-      entryWriteScope(p, { ...scoped, observedFiles: ["src/Observed.ts"] }),
+      entryWriteScope(p, { ...scoped, observedFiles: ["src/Observed.ts"] }, []),
     ).not.toContain("src/Observed.ts");
     // Channel paths omitted: the scope is the declaration alone, still scoped.
-    expect(entryWriteScope(phase({ scopeWritesToEntry: true }), scoped)).toEqual([
+    expect(
+      entryWriteScope(phase({ scopeWritesToEntry: true }), scoped, []),
+    ).toEqual([
       "src/New.ts",
       "tests/New.test.ts",
       "src/Old.ts",
@@ -199,20 +201,83 @@ describe("entryWriteScope — the one scoped-or-not decision", () => {
   it("the shared entry write scope is absent when the phase omits scopeWritesToEntry, and when no entry is assigned", () => {
     // Undeclared flag with an entry in hand: unscoped, so `writablePaths`
     // alone binds — not an empty allowance that rejects everything.
-    expect(entryWriteScope(phase(), scoped)).toBeUndefined();
-    expect(entryWriteScope(phase({ scopeWritesToEntry: false }), scoped)).toBeUndefined();
+    expect(entryWriteScope(phase(), scoped, [])).toBeUndefined();
+    expect(
+      entryWriteScope(phase({ scopeWritesToEntry: false }), scoped, []),
+    ).toBeUndefined();
     // Declared flag, no entry (a singleton tick, or a fanout tick that picked
     // nothing): equally unscoped.
     expect(
-      entryWriteScope(phase({ scopeWritesToEntry: true }), undefined),
+      entryWriteScope(phase({ scopeWritesToEntry: true }), undefined, []),
     ).toBeUndefined();
     expect(
       entryWriteScope(
         phase({ scopeWritesToEntry: true, entryChannelPaths: ["notes/**"] }),
         undefined,
+        [],
       ),
     ).toBeUndefined();
-    expect(entryWriteScope(phase(), undefined)).toBeUndefined();
+    expect(entryWriteScope(phase(), undefined, [])).toBeUndefined();
+  });
+
+  /** The minimum a `writablePathsGate` run needs: the span's touched paths. */
+  const scopeGateCtx = (touchedPaths: string[]): GateContext => ({
+    cwd: "/repo",
+    repoRoot: "/repo",
+    flumeDir: "/repo/.flume",
+    stateRootRel: ".flume",
+    pendingDir: "/repo/.flume/plan/pending",
+    configDir: "/repo/.flume",
+    phaseName: "build",
+    commitSha: "0".repeat(40),
+    baseSha: "b".repeat(40),
+    touchedPaths,
+    log: () => {},
+  });
+
+  // `spec/pending.md`, "The queue is a forest": the scoped allowance is the
+  // whole session's footprint, so a file only a step declares is one the
+  // session may write. Driven through the real guard the dispatcher
+  // configures from this scope, not asserted of the list alone.
+  it("the entry-scoped write guard admits a path only one of the entry's steps declared", async () => {
+    const p = phase({ scopeWritesToEntry: true });
+    const work = entry({
+      files: {
+        new: [],
+        edit: [{ path: "src/New.ts", description: "edit" }],
+        retire: [],
+      },
+    });
+    const step: PendingEntry = {
+      ...entry({
+        tag: "TEST-TAG.1",
+        files: {
+          new: [],
+          edit: [{ path: "tests/New.test.ts", description: "the step's" }],
+          retire: [],
+        },
+      }),
+      kind: "step",
+      parent: work.tag,
+    };
+    const stepPath = step.files.edit[0]!.path;
+
+    // The premise: the work entry declares nothing at the step's path, so a
+    // scope read over it alone is the pre-fold answer the guard refuses on.
+    const own = entryWriteScope(p, work, []);
+    expect(own).toEqual(["src/New.ts"]);
+    expect(
+      (await writablePathsGate(p.writablePaths, own).run(
+        scopeGateCtx([stepPath]),
+      )).ok,
+    ).toBe(false);
+
+    const scope = entryWriteScope(p, work, [step]);
+    expect(scope).toEqual(["src/New.ts", stepPath]);
+    const admitted = await writablePathsGate(p.writablePaths, scope).run(
+      scopeGateCtx([stepPath]),
+    );
+    expect(admitted.ok).toBe(true);
   });
 });
 

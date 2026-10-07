@@ -226,7 +226,7 @@ describe("renderPrompt — <harness> states the effective fence", () => {
     // The claim, byte for byte: the entry reaches the render through
     // `entryWriteScope` alone, and that returns nothing without the opt-in,
     // so the two renders are one string.
-    expect(entryWriteScope(p, e)).toBeUndefined();
+    expect(entryWriteScope(p, e, [])).toBeUndefined();
     expect(withEntry).toBe(withoutEntry);
 
     // Non-vacuity, both halves. The block the two agree on is the unscoped
@@ -242,7 +242,7 @@ describe("renderPrompt — <harness> states the effective fence", () => {
     // identity above is the declined opt-in's doing rather than an inert
     // entry's.
     const optedIn = { ...p, scopeWritesToEntry: true };
-    expect(entryWriteScope(optedIn, e)?.length).toBeGreaterThan(0);
+    expect(entryWriteScope(optedIn, e, [])?.length).toBeGreaterThan(0);
     expect(harnessLeads(await render(optedIn, e))).toEqual([
       FENCE_LEAD,
       CEILING_LEAD,
@@ -450,6 +450,21 @@ describe("renderPrompt effective fence agrees with writablePathsGate's accepted 
         retire: [],
       },
     });
+    // The entry carries a step, so the fence this case drives through the
+    // guard is the whole session's footprint and not the entry's own share
+    // of it (`spec/pending.md`, *The queue is a forest*).
+    const step: PendingEntry = {
+      ...entry({
+        tag: "ENTRY-TAG.1",
+        files: {
+          new: [],
+          edit: [{ path: "tests/New.test.ts", description: "the step's" }],
+          retire: [],
+        },
+      }),
+      kind: "step",
+      parent: e.tag,
+    };
 
     const promptFile = join(dir, "prompt.md");
     await writeFile(promptFile, "task body\n", "utf8");
@@ -460,6 +475,7 @@ describe("renderPrompt effective fence agrees with writablePathsGate's accepted 
       cwd: dir,
       args: {},
       assignedEntry: e,
+      assignedSteps: [step],
     });
 
     // Parse the fence back out of the real renderer's output.
@@ -469,15 +485,22 @@ describe("renderPrompt effective fence agrees with writablePathsGate's accepted 
     const renderedFence = [...fenceSection.matchAll(/^ {2}- (.+)$/gm)].map(
       (m) => m[1]!,
     );
-    expect(renderedFence).toEqual(["src/New.ts", "notes/open-questions.md"]);
+    expect(renderedFence).toEqual([
+      "src/New.ts",
+      "tests/New.test.ts",
+      "notes/open-questions.md",
+    ]);
     // Exactly, not merely compatibly: the bullets are the shared derivation's
     // output verbatim, in order.
-    expect(renderedFence).toEqual(entryWriteScope(p, e));
+    expect(renderedFence).toEqual(entryWriteScope(p, e, [step]));
 
     // The gate's half comes from the same derivation the dispatcher calls —
     // never rebuilt here (`.claude/rules/engineering.md`, "A seam gate reads
     // what the real writer wrote").
-    const gate = writablePathsGate(p.writablePaths, entryWriteScope(p, e));
+    const gate = writablePathsGate(
+      p.writablePaths,
+      entryWriteScope(p, e, [step]),
+    );
 
     for (const path of renderedFence) {
       const result = await gate.run(gateCtx({ touchedPaths: [path] }));

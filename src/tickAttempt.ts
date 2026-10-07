@@ -287,10 +287,24 @@ export async function runAttempt(
     label: string;
     /** The entry a fanout attempt carries; absent for a singleton, which assigns none. */
     entry?: PendingEntry;
+    /**
+     * That entry's steps, as the listing the slot pulled from held them
+     * (`ShipContext.steps`, `src/Phase.ts`). The attempt's own fence is the
+     * whole session's footprint — the entry's files and its steps' together
+     * (`spec/pending.md`, *The queue is a forest*) — and this one value
+     * reaches both sides of it: the `<harness>` block the agent reads and the
+     * write guard that enforces it. Empty for a singleton and for an entry no
+     * producer decomposed.
+     */
+    steps?: readonly PendingEntry[];
     extraEnv?: Record<string, string>;
   },
 ): Promise<AttemptOutcome> {
   const { phase, chain, agent, wt, ctx: tickCtx, ref, label, entry } = opts;
+  // One listing for both sides of the fence — rendered and enforced — so
+  // neither can state a scope the other does not
+  // (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+  const steps = opts.steps ?? [];
   const prior = await ctx.attempts.read(ref);
 
   const argsResult = await resolvePromptArgs(ctx, phase, tickCtx, ref, label);
@@ -315,7 +329,7 @@ export async function runAttempt(
       template: ctx.promptTemplate,
       cwd: wt.path,
       args: argsResult.args,
-      ...(entry ? { assignedEntry: entry } : {}),
+      ...(entry ? { assignedEntry: entry, assignedSteps: steps } : {}),
       ...(prior ? { priorAttempt: prior } : {}),
     });
   } catch (err) {
@@ -435,6 +449,7 @@ export async function runAttempt(
     wt.path,
     headSha,
     entry,
+    steps,
     spanBase,
     spanTouchedPaths,
   );
@@ -675,6 +690,12 @@ async function runAfterCommitGates(
   commitSha: string,
   assignedEntry: PendingEntry | undefined,
   /**
+   * `assignedEntry`'s steps — the listing its own fence reads them from, the
+   * same value the `<harness>` block was rendered with
+   * (`RenderOptions`, `src/Prompt.ts`).
+   */
+  assignedSteps: readonly PendingEntry[],
+  /**
    * The span's base — `baseSha` on every gate context this loop builds.
    * Both a fanout entry's worktree branch and a
    * singleton phase's own (spec/worktrees.md "Singleton runs in a
@@ -715,7 +736,7 @@ async function runAfterCommitGates(
     ...phase.gates.filter((g) => g.when === "afterCommit"),
     writablePathsGate(
       phase.writablePaths,
-      entryWriteScope(phase, assignedEntry),
+      entryWriteScope(phase, assignedEntry, assignedSteps),
     ),
   ];
   // `cwd` here is the fanout worktree (or a singleton's own worktree,

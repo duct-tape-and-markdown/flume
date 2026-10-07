@@ -320,14 +320,23 @@ export function entryWriteScopeUnion(
  * `observedFiles` is deliberately not in scope: `declaredPaths` is the
  * entry's *declaration*, and observed files feed the fanout partition, not
  * the write allowance.
+ *
+ * `listing` is where the entry's steps are read from, so the allowance is the
+ * whole session's footprint and a path only a step declared is writable
+ * (`spec/pending.md`, *The queue is a forest*). The dispatcher hands the set
+ * its slot already resolved (`descendantsOf`, `src/waveTick.ts`) — the same
+ * value `renderPrompt` renders the fence from — so the fence stated and the
+ * fence enforced cannot differ by a step. Empty is the caller saying this
+ * entry has no steps, which is literally true of every singleton tick.
  */
 export function entryWriteScope(
   phase: Pick<Phase, "scopeWritesToEntry" | "entryChannelPaths">,
   assignedEntry: PendingEntry | undefined,
+  listing: readonly PendingEntry[],
 ): string[] | undefined {
   if (!assignedEntry || !phase.scopeWritesToEntry) return undefined;
   return entryWriteScopeUnion(
-    declaredPaths(assignedEntry),
+    declaredPaths(listing, assignedEntry),
     phase.entryChannelPaths ?? [],
   );
 }
@@ -365,6 +374,11 @@ interface QueueFenceViolation {
  * Reads `declaredPaths`, never `touchedPaths`: `observedFiles` is what a
  * tick reported touching, not what the entry declares, and the fence binds
  * on the declaration.
+ *
+ * The queue itself is the listing each row's footprint is read against, so a
+ * `work` entry whose *step* declares a path the phase could never write is
+ * named on the entry that will be dispatched — the row an operator can act
+ * on — as well as on the step's own row.
  */
 export function queueFenceViolations(
   entries: readonly PendingEntry[],
@@ -377,7 +391,9 @@ export function queueFenceViolations(
   return entries
     .map((entry) => ({
       tag: entry.tag,
-      offending: declaredPaths(entry).filter((p) => !matchesAny(p, fence)),
+      offending: declaredPaths(entries, entry).filter(
+        (p) => !matchesAny(p, fence),
+      ),
     }))
     .filter((v) => v.offending.length > 0);
 }
