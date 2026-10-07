@@ -29021,3 +29021,169 @@ it("a fanout ship whose ledger rewrite a foreign tip claim stopped reports no ga
   // the anchor still names a trunk the pick did move.
   expect(verdict?.headSha).toEqual(expect.stringMatching(/^[0-9a-f]{40}$/));
 });
+
+/**
+ * SELECTION-REPORTS-A-BLOCKER-NO-QUEUE-ENTRY-CARRIES (`spec/pending.md`,
+ * *Pickability*): a blocker tag the queue does not hold counts as landed, on
+ * purpose — leaving the queue is how a ship reads, so a restored or relocated
+ * queue stays runnable. The price is that a misspelled blocker reads exactly
+ * like a shipped one, and the gate switch settles it in silence. Selection
+ * reports the half it throws away on `TickResult.unresolvedBlockers`, a fact
+ * a chain's handoff may refuse on (`.claude/rules/engineering.md`, *A fact
+ * the engine holds is reported, never rediscovered*).
+ *
+ * Every case drives a whole `Dispatcher.tick()` rather than reading
+ * `pickableSelection` beside itself: the claim is about the set the engine
+ * *reports*, and a set asserted at its own producer proves only
+ * self-agreement (`.claude/rules/engineering.md`, *A seam gate reads what the
+ * real writer wrote*).
+ */
+describe("Dispatcher — selection reports a blocker no queue entry carries", () => {
+  /**
+   * A `work` entry gated on `blockers`. `work` rather than `step`, because a
+   * step's `blockedBy` is scoped to its own siblings and the queue read
+   * refuses a dangling one outright (`parsePendingQueue`,
+   * `src/PendingSchema.ts`) — the silent settle this entry is about is the
+   * work entry's.
+   */
+  const blockedEntry = (
+    tag: string,
+    blockers: string[],
+    editPaths: string[],
+  ): PendingEntry => ({
+    ...makeEntry(tag, editPaths),
+    gate: { kind: "blockedBy", tags: blockers },
+  });
+
+  /** A fanout `build` phase and the baton woken for it. */
+  const wakeBuild = (): Phase => {
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    return makePhase({ name: "build", concurrency: "fanout", gates: [] });
+  };
+
+  it("a blockedBy naming a tag no queue entry carries is reported as an unresolved blocker", async () => {
+    // One queue carrying every distinction the set makes: `ALIVE` is a
+    // blocker the queue does hold, `GHOST` is named twice by two entries, and
+    // `SPECTRE` is named by an entry the switch clears. `WAITS` is not
+    // pickable — `ALIVE` still blocks it — so its own `GHOST` is only
+    // reported if the read is over the whole queue rather than the pickable
+    // slice.
+    await writePending(fx.repo, [
+      makeEntry("ALIVE", ["src/alive.ts"]),
+      blockedEntry("TYPOD", ["GHOST", "SPECTRE"], ["src/typod.ts"]),
+      blockedEntry("WAITS", ["ALIVE", "GHOST"], ["src/waits.ts"]),
+    ]);
+    const chain: Chain = { phases: [wakeBuild()], humanOnly: [] };
+
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      // Neither pick commits, so the queue the post-tick selection re-reads
+      // is the queue this case wrote.
+      agent: fanoutAgent({ alive: async () => {}, typod: async () => {} }),
+      log: silent,
+    }).tick();
+
+    // Deduped and sorted, and `ALIVE` is absent: a blocker the queue holds
+    // resolved, which is the half the gate switch already reports by holding
+    // `WAITS` back.
+    expect(outcome.result?.unresolvedBlockers).toEqual(["GHOST", "SPECTRE"]);
+    // Non-vacuity: all three entries are still queued, so the set above was
+    // read over a populated listing and `ALIVE` really was resolvable.
+    expect(outcome.result?.pendingAfter.map((e) => e.tag).sort()).toEqual([
+      "ALIVE",
+      "TYPOD",
+      "WAITS",
+    ]);
+  });
+
+  it("an entry whose blockedBy names a tag no queue entry carries stays pickable", async () => {
+    await writePending(fx.repo, [
+      makeEntry("ALIVE", ["src/alive.ts"]),
+      blockedEntry("TYPOD", ["GHOST"], ["src/typod.ts"]),
+      blockedEntry("WAITS", ["ALIVE"], ["src/waits.ts"]),
+    ]);
+    const chain: Chain = { phases: [wakeBuild()], humanOnly: [] };
+
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({ alive: async () => {}, typod: async () => {} }),
+      log: silent,
+    }).tick();
+
+    // The ghost-blocked entry is carried and reported pickable; the entry
+    // waiting on a tag the queue does hold is not. The two together are what
+    // make the first a settle rather than an empty queue.
+    expect(outcome.result?.entries?.map((e) => e.tag).sort()).toEqual([
+      "ALIVE",
+      "TYPOD",
+    ]);
+    expect(outcome.result?.pickableAfter.map((e) => e.tag)).toEqual([
+      "ALIVE",
+      "TYPOD",
+    ]);
+  });
+
+  it("a singleton tick's result carries the unresolved blockers its selection found", async () => {
+    await writePending(fx.repo, [
+      makeEntry("ALIVE", ["src/alive.ts"]),
+      blockedEntry("TYPOD", ["GHOST"], ["src/typod.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const chain: Chain = {
+      phases: [makePhase({ name: "plan", concurrency: "singleton" })],
+      humanOnly: [],
+    };
+
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async (cwd) => {
+        await writeAndCommit(cwd, "src/plan-output.ts", "ok\n", "plan: derive");
+      }),
+      log: silent,
+    }).tick();
+
+    // A committed singleton tick: the field rides the post-tick selection a
+    // handoff routes on, beside `pickableAfter`.
+    expect(outcome.result?.committed).toBe(true);
+    expect(outcome.result?.unresolvedBlockers).toEqual(["GHOST"]);
+    expect(outcome.result?.pickableAfter.map((e) => e.tag)).toEqual([
+      "ALIVE",
+      "TYPOD",
+    ]);
+  });
+
+  it("a fanout tick's result carries the unresolved blockers its selection found", async () => {
+    // Nothing pickable: `HELD` is parked, and `WAITS` is blocked on it as
+    // well as on a tag nobody filed. So no agent runs, and the wave's
+    // nothing-pickable leg is the one that must carry the fact — a handoff
+    // reading `nothingPickable` alone would see a drained queue.
+    await writePending(fx.repo, [
+      { ...makeEntry("HELD", ["src/held.ts"]), gate: { kind: "parked", reason: "held by hand" } },
+      blockedEntry("WAITS", ["GHOST", "HELD"], ["src/waits.ts"]),
+    ]);
+    const chain: Chain = { phases: [wakeBuild()], humanOnly: [] };
+
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({}),
+      log: silent,
+    }).tick();
+
+    expect(outcome.result?.nothingPickable).toBe(true);
+    expect(outcome.result?.unresolvedBlockers).toEqual(["GHOST"]);
+    // Non-vacuity: the queue the empty selection was taken over still holds
+    // both entries.
+    expect(outcome.result?.pendingAfter.map((e) => e.tag).sort()).toEqual([
+      "HELD",
+      "WAITS",
+    ]);
+  });
+});

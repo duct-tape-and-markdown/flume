@@ -114,6 +114,10 @@ export async function runSingleton(
     // The set this tick read, paired with the selection above: no agent ran,
     // so nothing about the claims on disk changed under it.
     claimedTags: selected.claimedTags,
+    // The blocker tags that selection resolved to nothing, carried for the
+    // reason the two sets above are: the gate switch settled them silently,
+    // and a handoff cannot see a queue typo it is never told about.
+    unresolvedBlockers: selected.unresolvedBlockers,
     // Re-read, not the map above: a `shouldRun` that threw persisted its own
     // render-refused record between the two reads, and a handoff handed the
     // opening map would be told this tick left no refusal behind
@@ -573,6 +577,7 @@ export async function runSingleton(
       // handoff routes on what is pickable now.
       refusedTags: postSelection.refusedTags,
       claimedTags: postSelection.claimedTags,
+      unresolvedBlockers: postSelection.unresolvedBlockers,
       // One read, two readers: the map the refusal above was judged against
       // is the map the handoff is handed.
       priorAttempts: priorAttemptsAfter,

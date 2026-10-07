@@ -85,6 +85,40 @@ function blockedByGraph(
 }
 
 /**
+ * The blocker tags this queue's `blockedBy` gates name that no entry in the
+ * queue carries.
+ *
+ * The membership read is {@link blockedByGraph}'s complement, taken off the
+ * same set for the same reason: the queue is what settles a blocker, and
+ * absence from it counts as landed on purpose, so a restored or relocated
+ * queue stays runnable (`isPickableNow`, `src/PendingSchema.ts`). What that
+ * reading cannot tell apart is a blocker that shipped from one nobody ever
+ * filed, and this is the half of it the gate switch throws away — reported
+ * rather than left for a chain to re-walk the listing for
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*).
+ *
+ * Read over the whole listing, not the eligible slice: a misspelt blocker
+ * under a `parked` ancestor is the same typo, and a report that named only
+ * the tags of entries the gate switch happened to clear would go quiet
+ * exactly where a queue stalls. Deduped and sorted, because these tags name
+ * no entry — there is no queue order to serve them in.
+ */
+function unresolvedBlockerTags(
+  pending: readonly PendingEntry[],
+  queued: ReadonlySet<string>,
+): string[] {
+  const missing = new Set<string>();
+  for (const entry of pending) {
+    if (entry.gate.kind !== "blockedBy") continue;
+    for (const tag of entry.gate.tags) {
+      if (!queued.has(tag)) missing.add(tag);
+    }
+  }
+  return [...missing].sort();
+}
+
+/**
  * The queue one selection is taken over: the entries a tick read, and when
  * each of them was filed.
  *
@@ -413,6 +447,16 @@ interface PickableSelection {
    * otherwise have.
    */
   refusedTags: string[];
+  /**
+   * Blocker tags the queue's own `blockedBy` gates name that no entry in it
+   * carries ({@link unresolvedBlockerTags}).
+   *
+   * Not a fourth hold: such a tag counts as landed, so the entry declaring it
+   * is in `pickable` above like any other, and this is the fact that tells a
+   * blocker that shipped from one nobody filed (`spec/pending.md`,
+   * *Pickability*).
+   */
+  unresolvedBlockers: string[];
 }
 
 /**
@@ -526,6 +570,10 @@ export function pickableSelection(opts: {
       .map((e) => ({ tag: e.tag, key: entryDeclaredKey(e) })),
     claimedTags: claimed.map((e) => e.tag),
     refusedTags: refused.map((e) => e.tag),
+    // Off the same membership the gate read settled this queue's blockers
+    // with, so the set reported and the set the switch cleared on cannot be
+    // two opinions about what the queue still carries.
+    unresolvedBlockers: unresolvedBlockerTags(opts.pending, queued),
   };
 }
 

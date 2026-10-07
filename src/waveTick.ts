@@ -145,6 +145,7 @@ export async function runFanout(
     quarantinedTags,
     refusedTags,
     claimedTags,
+    unresolvedBlockers,
     partitionIgnore,
     maxParallel,
   } = leg.selection({
@@ -180,6 +181,11 @@ export async function runFanout(
         quarantinedTags,
         refusedTags,
         claimedTags,
+        // Reported on the path a queue typo is likeliest to be read from: a
+        // wave that found nothing to run may be stuck behind a blocker tag
+        // that resolved to nothing, and a handoff that only saw
+        // `nothingPickable` would read that as a drained queue.
+        unresolvedBlockers,
         nothingPickable: true,
         ...(queueParseFailure ? { queueParseFailure } : {}),
       },
@@ -899,6 +905,7 @@ export async function runFanout(
       // handoff routes on what is pickable now.
       refusedTags: postSelection.refusedTags,
       claimedTags: postSelection.claimedTags,
+      unresolvedBlockers: postSelection.unresolvedBlockers,
       // One read, two readers: the map the refusal above was judged against
       // is the map the handoff is handed, so a chain asking "which records
       // stand" and the engine's own post-wave verdict cannot disagree.

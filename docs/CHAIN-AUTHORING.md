@@ -2534,6 +2534,18 @@ queue rather than a set of tags you watched ship. Hand the listing an entry
 *would* join when it is not queued yet; a listing with none of its ancestors
 answers over the entry's own gate alone.
 
+That reading is what keeps a restored or relocated queue runnable, and the
+price of it is that a misspelled blocker reads exactly like a shipped one. So
+the dispatcher reports the half the gate switch throws away:
+`TickResult.unresolvedBlockers` names every blocker tag this tick's selection
+found no queue entry for, deduped and sorted, `[]` on a queue whose blockers
+all resolve against it. The entry declaring one stays pickable — nothing is
+held back — so a `handoff` that wants a queue typo to stop the run rather
+than ship through it reads that set beside `pickableAfter`, the same way it
+reads `refusedTags` and `claimedTags`. The engine states the fact and no
+verdict on it: a tag that resolves to nothing is a typo in one queue and a
+hand-trimmed backlog in the next.
+
 `backlog-groomer-chain.ts` uses the same gate kind for a non-infrastructure
 capability — a backlog item can require `"ops-access"` just as easily as a
 docker host; the engine's mechanism doesn't care what the string names, only

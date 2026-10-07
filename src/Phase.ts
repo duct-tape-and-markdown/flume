@@ -824,6 +824,31 @@ export interface TickResult {
    */
   claimedTags?: readonly string[];
   /**
+   * The blocker tags this tick's selection found no queue entry for — a
+   * `blockedBy` gate naming a tag the listing it was read with does not hold
+   * (`spec/pending.md`, *Pickability*).
+   *
+   * Such a tag counts as landed, which is what keeps a restored or relocated
+   * queue runnable: leaving the queue is how a ship reads. The entry
+   * declaring it is therefore pickable and sits on {@link pickableAfter} like
+   * any other — so without this field a misspelled blocker is an open gate
+   * nothing can see, the silent degradation `.claude/rules/engineering.md`,
+   * *Loud or nothing* refuses. A `handoff` that wants a queue typo to stop
+   * the run rather than ship through it refuses on this set.
+   *
+   * Read over the whole queue rather than the pickable slice — a typo under a
+   * `parked` ancestor is the same typo — then deduped and sorted, because
+   * these tags name no entry and so have no queue order to be served in.
+   * Empty, never absent, on every tick the engine computed a pickable set
+   * for, which is every tick that ran a phase under either concurrency.
+   *
+   * A fact, never a verdict: the engine says which blocker tags resolved to
+   * nothing and nothing about whether that is a typo, a hand-trimmed queue,
+   * or a restore (`.claude/rules/engine-boundary.md`, *Routing rule (plan,
+   * build, and interactive sessions)*).
+   */
+  unresolvedBlockers?: readonly string[];
+  /**
    * spec/loop.md "The no-commit taxonomy": true iff this fanout tick found
    * nothing pickable (after the quarantine drop above) and therefore never
    * invoked an agent. Absent on a tick that provisioned an entry — never
