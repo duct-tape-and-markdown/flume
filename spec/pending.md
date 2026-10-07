@@ -212,6 +212,16 @@ unresolved, the entry is not pickable, regardless of gate kind** — including `
 switch: `open` → pickable; `blockedBy` → iff **every** named blocker landed; `parked`/`deferred`
 → never; `requiresCapability` → iff the chain asserts the named string.
 
+**An entry inherits its ancestors' gates.** Both implementations read the entry's
+ancestors (*The queue is a forest*): an entry is pickable only when every ancestor's gate
+would pass too, so a `blockedBy` declared once on a goal holds its whole subtree and tooling
+and selection give one answer. `isPickableNow` therefore takes the queue the entry sits in.
+
+**A blocker no queue entry carries counts as landed** — absence from the queue is how a ship
+reads — so a restored or relocated queue stays runnable. Selection reports such tags on
+`TickResult.unresolvedBlockers`, a fact a chain may refuse on: a misspelled blocker is then
+visible rather than a silently open gate.
+
 Selection additionally drops entries whose slug the supervisor quarantined earlier in the run
 (spec/loop.md, *Repeated identical failures*); `pending.json` itself is untouched, so a fresh run
 retries from scratch. The drop is **reported, never hidden**: `TickResult.quarantinedTags` carries

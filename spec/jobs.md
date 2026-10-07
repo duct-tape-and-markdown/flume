@@ -16,18 +16,10 @@ this page and is the one that may.
 never commits a tick artifact because a line was missing from the repo's own
 ignore file:
 
-```
-awake/
-prior-attempts/
-rendered-prompts/
-worktrees/
-node_modules/
-loop.pid
-tick-verdict/
-tick-verdicts.jsonl
-stop
-merging/
-```
+Its members are the export's and are never listed here: a listing beside the
+set is a second copy that lags it (`.claude/rules/engineering.md`, *Derived state
+is computed, never restated beside its source*).
+
 
 - `node_modules/` stays even though no link is planted: it is harmless and keeps stray
   artifacts out of the baseline commit.

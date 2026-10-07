@@ -741,10 +741,13 @@ store until gc, and the verdict is the only place their sha outlives the branch.
   comparison against engine state, never an inference from which paths the last commit
   touched — and a phase need not commit on a quiet tick just to leave an anchor behind.
 - **`gatedTip`** is the trunk sha this tick's last ship left, read under the ship lock
-  once that ship's `afterMerge` gates passed and its ledger commit landed — a tip every
-  gate has judged, so a step that delivers trunk anywhere reads it rather than
-  inferring one from commit subjects. Absent on a tick that shipped nothing. `headSha`
-  is read without the ship lock and promises nothing about gating.
+  once that ship's `afterMerge` gates passed and its bookkeeping landed — a fanout
+  ship's ledger commit and a singleton's merged span alike — a tip every gate has
+  judged, so a step that delivers trunk anywhere reads it rather than inferring one
+  from commit subjects. Absent on a tick that shipped nothing, and on one whose ledger
+  rewrite a foreign tip claim stopped, since the tip may then name a commit no gate of
+  this tick judged; `tipMoved` says which. `headSha` is read without the ship lock and
+  promises nothing about gating.
 - **`bystanderCheckpointSha`** is the dangling commit that captured whatever was staged
   or unstaged on the primary checkout when the tick's merge stage began (*Crash equals
   stop*). Absent when the tree was clean at that point, or when no merge stage began.

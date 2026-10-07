@@ -230,7 +230,8 @@ The adapter passes `--strict-mcp-config` unless
 unless `ClaudeCodeOptions.inheritUserSettings` is set, because by-user runtime
 state is what a stateless tick excludes: a wedged inherited server has stalled
 a wave, and the operator's own instructions, rules, hooks and settings are
-input the repository cannot see. A settings file the adapter passes itself
+input the repository cannot see. `project` alone drops the gitignored local
+settings file too, which the repository cannot see either. A settings file the adapter passes itself
 applies either way.
 `extraArgs` remains the passthrough for every other
 flag; the engine types the one knob every consumer varies per phase and
@@ -553,8 +554,12 @@ confines side effects to disk inside `cwd`.
   carries*); a gate the chain declares may, and the dispatcher already holds
   the entry for the scoped fence union, so it is reported rather than
   re-read from the queue.
+- **`steps`** — that entry's steps (`spec/pending.md`, *The queue is a forest*),
+  set exactly where `entry` is and empty for an entry with none: an entry and its
+  steps are one session's assignment, so a gate judging paths reads the same
+  footprint the fence enforces.
 - **`batch`** — set when one merge carries several spans (`spec/worktrees.md`,
-  *Batched merges*): one record per span — its `entry`, `baseSha`, `landedOnSha` and
+  *Batched merges*): one record per span — its `entry`, `steps`, `baseSha`, `landedOnSha` and
   `touchedPaths` — in the order they were picked. Under a batch, `entry`, `baseSha`
   and `landedOnSha` are absent, `commitSha` is the batch's last pick, and
   `touchedPaths` is the union, so a gate written for one span never reads one span's

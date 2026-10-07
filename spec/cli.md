@@ -168,8 +168,9 @@ In printed order:
    keeps running is read where the operator looks first.
 9. **Goals** — one line per goal, in the order the queue serves them: each by
    the position of its earliest ready work under the chain's `order`, goals
-   with nothing ready last and marked so. Each line gives the goal's remaining
-   `work` entries and how long it has stood. Absent when no goal stands.
+   with nothing ready last and marked so. Each line names the first three of the
+   goal's remaining `work` entries in the order they will be served, counts the rest,
+   and says how long the goal has stood. Absent when no goal stands.
 10. **Flow** — over the verdict history: the median time from filing to
    shipping, the longest any ready `work` entry is waiting right now, and
    failed merges per shipped entry. Each is computed from git and the
@@ -202,6 +203,10 @@ so a log lines up against every other artifact of the run. The stamp is the
 CLI's, not the engine's: `consoleLogger` writes the line unstamped, and an
 embedder routing a `Logger` of its own times its lines its own way
 (`.claude/rules/engine-boundary.md`, *Surface, not prescription*).
+
+Stamped narration goes to stderr, at every level; stdout carries only a verb's
+own output — `status`'s rows, `log`'s history, the command `flume exclusive`
+runs — so a pipe reads what the verb produced and nothing the run narrated.
 
 ## State-root and config-dir resolution
 
