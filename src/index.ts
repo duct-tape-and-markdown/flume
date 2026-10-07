@@ -5,7 +5,13 @@
  * entry point re-exports is unreachable from outside the package.
  */
 
-export type { Agent, AgentInvocation, AgentResult, AgentUsage } from "./Agent.js";
+export type {
+  Agent,
+  AgentEnding,
+  AgentInvocation,
+  AgentResult,
+  AgentUsage,
+} from "./Agent.js";
 // `BudgetDeclaration` is what `ClaudeCodeOptions.budget` takes, so a chain
 // declaring its window and thresholds as a named constant needs the name
 // from this entry point (`.claude/rules/engineering.md`, *An export earns its

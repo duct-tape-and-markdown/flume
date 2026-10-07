@@ -95,7 +95,7 @@ import {
   priorAttemptsDir,
   type PriorAttemptRef,
 } from "../src/priorAttempts.ts";
-import type { Agent } from "../src/Agent.ts";
+import type { Agent, AgentEnding } from "../src/Agent.ts";
 import { abortError, extractFinalMessage } from "../src/claudeCode.ts";
 import { withTerminalRenderer } from "../src/terminalRender.ts";
 import { Baton } from "../src/Baton.ts";
@@ -138,6 +138,7 @@ import {
   PromptTemplateUnreadableError,
   RenderRefusal as realRenderRefusal,
   type CleanExitAttempt,
+  type PlatformPreemptAttempt,
   type PriorAttempt,
 } from "../src/Prompt.ts";
 import { loopExitCode } from "../src/cliVerdict.ts";
@@ -14123,6 +14124,35 @@ describe("Dispatcher — no-commit outcome taxonomy", () => {
     );
   });
 
+  it("an abort that tore a live process down carries that process's ending into the preempt record", async () => {
+    // The mint's real product again, this time from the leg that has an
+    // ending to pass: `claudeCode` settles the abort inside the child's own
+    // 'close', so the kill's signal is in hand exactly where the rejection is
+    // built, and the classifier reads it off the same guarded shape as the
+    // two keys above (`spec/loop.md`, *The no-commit taxonomy*).
+    const { noCommit, platformFailures } = await preemptFrom(
+      abortError(AbortSignal.abort().reason, {
+        exitCode: null,
+        signal: "SIGTERM",
+      }),
+    );
+
+    expect(noCommit).toBe("platform-preempt");
+    expect(
+      platformFailures,
+      "the tick reported one preempt for the ending to be read off",
+    ).toHaveLength(1);
+    expect(platformFailures[0]!.ending).toEqual({
+      exitCode: null,
+      signal: "SIGTERM",
+    });
+
+    // And an abort with no process behind it leaves the ending unstated
+    // rather than filled — the arm the record's absent `ending` is for.
+    const preSpawn = await preemptFrom(abortError(AbortSignal.abort().reason));
+    expect(preSpawn.platformFailures[0]!.ending).toBeUndefined();
+  });
+
   it("the abort class holds when the mint's product reaches the classifier carrying only its name key", async () => {
     const rejection = mintedAbortWithout("code") as Error & { code?: string };
     expect(
@@ -14220,6 +14250,161 @@ describe("Dispatcher — no-commit outcome taxonomy", () => {
     expect(platformFailures[0]!.message).toBe(
       "agent process error before exit: null",
     );
+  });
+});
+
+// ---------- a preempt records how the agent process ended ----------
+
+/**
+ * `spec/loop.md`, *The no-commit taxonomy*: a preempt records the agent
+ * process's own ending — its exit code, or on posix the signal that ended it
+ * — never a placeholder in their place, and the engine reports each preempt's
+ * ending rather than merging several into one cause.
+ *
+ * Read off `platformFailures` and the prior-attempt record together: the first
+ * is the surface a `handoff` reads this tick, the second is what the retry's
+ * own prompt reads next tick, and a leg that filled one and not the other
+ * would leave the ending reported in exactly one of the two places it is owed.
+ */
+describe("Dispatcher — a preempt records the agent process's own ending (A-PREEMPT-RECORDS-HOW-THE-AGENT-PROCESS-ENDED)", () => {
+  /** One singleton tick whose agent ends with `ending`, as the tick reported it. */
+  async function preemptEndedBy(ending: AgentEnding) {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const agent: Agent = {
+      name: "ends-as-told",
+      invoke: () => Promise.resolve({ ...ending, stdout: "", stderr: "" }),
+    };
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [makePhase({ name: "plan", concurrency: "singleton" })],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    });
+    const outcome = await dispatcher.tick();
+    expect(outcome.noCommit, outcome.summary).toBe("platform-preempt");
+    const record = JSON.parse(
+      await readFile(
+        priorAttemptPath(join(fx.repo, ".flume"), phaseRef("plan")),
+        "utf8",
+      ),
+    ) as PriorAttempt;
+    expect(record.mode).toBe("platform-preempt");
+    return {
+      reported: outcome.result?.platformFailures ?? [],
+      record,
+    };
+  }
+
+  it("a preempt records the agent process's exit code", async () => {
+    const { reported, record } = await preemptEndedBy({ exitCode: 137 });
+
+    expect(
+      reported,
+      "the tick reported one preempt for its ending to be read off",
+    ).toHaveLength(1);
+    expect(reported[0]!.ending).toEqual({ exitCode: 137 });
+    expect(record).toMatchObject({ ending: { exitCode: 137 } });
+  });
+
+  it("a preempt records the signal that ended the agent process", async () => {
+    // The leg that used to substitute `-1`: a signal kill carries a null code
+    // and the signal's own name, and both the reported record and the retry's
+    // record name the signal rather than a code the host never produced.
+    const { reported, record } = await preemptEndedBy({
+      exitCode: null,
+      signal: "SIGKILL",
+    });
+
+    expect(
+      reported,
+      "the tick reported one preempt for its ending to be read off",
+    ).toHaveLength(1);
+    expect(reported[0]!.ending).toEqual({ exitCode: null, signal: "SIGKILL" });
+    expect(reported[0]!.message).toContain("SIGKILL");
+    expect(reported[0]!.message).not.toContain("-1");
+    expect(record).toMatchObject({
+      ending: { exitCode: null, signal: "SIGKILL" },
+    });
+  });
+
+  it("two preempts in one wave each record their own ending rather than one shared cause", async () => {
+    await writePending(fx.repo, [
+      makeEntry("ENDS-BY-CODE", ["src/a.ts"]),
+      makeEntry("ENDS-BY-SIGNAL", ["src/b.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const endings: Record<string, AgentEnding> = {
+      "ends-by-code": { exitCode: 2 },
+      "ends-by-signal": { exitCode: null, signal: "SIGTERM" },
+    };
+    const agent: Agent = {
+      name: "two-endings-fanout",
+      async invoke(inv) {
+        const ending = endings[basename(inv.cwd)];
+        if (!ending) {
+          throw new Error(`no ending registered for slug '${basename(inv.cwd)}'`);
+        }
+        return { ...ending, stdout: "", stderr: "" };
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [
+          makePhase({
+            name: "build",
+            concurrency: "fanout",
+            writablePaths: ["src/**"],
+          }),
+        ],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+      maxParallel: 2,
+    });
+
+    const outcome = await dispatcher.tick();
+    expect(outcome.failed, outcome.summary).toBeUndefined();
+    expect(outcome.noCommit).toBe("platform-preempt");
+
+    // Two records, not one: the wave folds a single representative *mode*,
+    // and the endings behind it stay apart.
+    const reported = outcome.result?.platformFailures ?? [];
+    expect(
+      reported,
+      "both entries preempted, so the wave has two endings to report",
+    ).toHaveLength(2);
+    expect(reported.map((f) => f.ending)).toEqual(
+      expect.arrayContaining([
+        { exitCode: 2 },
+        { exitCode: null, signal: "SIGTERM" },
+      ]),
+    );
+    // …and distinct causes, so neither entry's wall reads as the other's.
+    expect(new Set(reported.map((f) => f.signature)).size).toBe(2);
+
+    // The same split on disk, where each entry's own retry reads it.
+    const flumeDir = join(fx.repo, ".flume");
+    const perEntry = await Promise.all(
+      ["ENDS-BY-CODE", "ENDS-BY-SIGNAL"].map(
+        async (tag) =>
+          JSON.parse(
+            await readFile(priorAttemptPath(flumeDir, entryRef(tag)), "utf8"),
+          ) as PriorAttempt,
+      ),
+    );
+    expect(perEntry.map((r) => (r as PlatformPreemptAttempt).ending)).toEqual([
+      { exitCode: 2 },
+      { exitCode: null, signal: "SIGTERM" },
+    ]);
   });
 });
 
@@ -18598,8 +18783,10 @@ describe("TickVerdict platformFailures — the platform stage names the class, n
     // Blamed on no entry, and by the record's own shape rather than by two
     // absent fields: a preempt's wall is the host's, so there is no key here
     // to hold a quarantine under and the record feeds the
-    // consecutive-identical-failure backstop alone.
+    // consecutive-identical-failure backstop alone. The one key beside the
+    // pairing is this preempt's own ending, which names the host's wall too.
     expect(Object.keys(reported[0]!).sort()).toEqual([
+      "ending",
       "message",
       "signature",
     ]);
@@ -18666,6 +18853,7 @@ describe("TickVerdict platformFailures — the platform stage names the class, n
       "PREEMPT-TWO",
     ]);
     expect(Object.keys(reported[0]!).sort()).toEqual([
+      "ending",
       "message",
       "signature",
     ]);

@@ -1709,6 +1709,26 @@ const agent = withTerminalRenderer(
 Order matters: capture innermost so the file holds the full NDJSON;
 render outermost so the terminal sees the human-readable summary.
 
+### What an agent returns
+
+`Agent.invoke` resolves an `AgentResult`: the invocation's captured `stdout`
+and `stderr`, an optional `finalMessage` (the agent's own closing prose,
+which `claudeCode` always lifts) and optional `usage`, carried together with
+the **`AgentEnding`** — how the process behind the invocation ended:
+
+- `{ exitCode: number }` — the process exited with that code.
+- `{ exitCode: null, signal: string }` — POSIX only: the process was ended by
+  that signal, named as the host named it.
+
+Exactly one arm, and never one standing in for the other: a signal kill
+reports the signal rather than a sentinel code, because the engine records
+that ending verbatim on the preempt it classifies (`platform-preempt`) — on
+`TickResult.platformFailures[].ending` for this tick's `handoff`, and on the
+`platform-preempt` prior-attempt record the next attempt's prompt reads. An
+adapter that cannot tell how its process ended resolves neither arm by
+failing the invocation; the record then states that no ending was reported
+rather than quoting one.
+
 ### What a decorator can read off the invocation
 
 A decorator is composed once, from a `Phase.agent` getter that holds no
@@ -2132,7 +2152,12 @@ per record — and the block renders the variant that fired:
   (rate-limit, auth, per-tick timeout, dispatcher-killed). Carries
   `failureClass`, bounded to 4 KiB keeping the head — that class as the engine
   named it, marked as explicitly **not** a defect in the prior work — the
-  retry resumes rather than treating the cut-off as a wall.
+  retry resumes rather than treating the cut-off as a wall — and `ending`,
+  how the process itself died: its exit code, or on POSIX the signal that
+  ended it, never one standing in for the other. `ending` is absent exactly
+  when the attempt reached no ending at all — the spawn failed, or the abort
+  fired before it — and the block says so in those words rather than
+  quoting a code nothing produced.
 - `render-refused` — the tick refused before invoking the agent: an inline-exec
   span that would not resolve, a `{{KEY}}` no arg filled, a `shouldRun` hook
   that threw, or a `promptArgs` hook that threw. Carries `failures`, bounded

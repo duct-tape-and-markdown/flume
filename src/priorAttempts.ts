@@ -19,6 +19,7 @@
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, toNamespacedPath } from "node:path";
 
+import type { AgentEnding } from "./Agent.js";
 import { bound, headTailBound, tailBound } from "./bounds.js";
 import { entryDeclaredKey } from "./entryKey.js";
 import type { Logger } from "./log.js";
@@ -939,13 +940,21 @@ export function buildCleanExit(
   };
 }
 
-/** Build the platform-preempt record from the non-work failure class. */
+/**
+ * Build the platform-preempt record from the non-work failure class and the
+ * ending the agent process reached, when it reached one — omitted rather
+ * than filled for an attempt that never got that far (a failed spawn, an
+ * abort before it), so the render says "not reported" instead of quoting a
+ * code nothing produced (`spec/loop.md`, *The no-commit taxonomy*).
+ */
 export function buildPlatformPreempt(
   failureClass: string,
+  ending?: AgentEnding,
 ): Unstamped<PlatformPreemptAttempt> {
   return {
     mode: "platform-preempt",
     failureClass: bound(failureClass, MAX_PRIOR_NOCOMMIT),
+    ...(ending !== undefined ? { ending } : {}),
   };
 }
 

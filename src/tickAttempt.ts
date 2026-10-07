@@ -22,7 +22,14 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { Agent, AgentUsage } from "./Agent.js";
+import {
+  agentEnding,
+  agentEndingWords,
+  readAgentEnding,
+  type Agent,
+  type AgentEnding,
+  type AgentUsage,
+} from "./Agent.js";
 import { bound } from "./bounds.js";
 import { writablePathsGate } from "./builtinGates.js";
 import type { Gate } from "./Gate.js";
@@ -56,6 +63,7 @@ import type { NoCommitMode } from "./Prompt.js";
 import {
   gateFailureSignature,
   MAX_FAILURE_SIGNATURE,
+  platformFailureFacts,
   reportedGateRow,
   stageFailureFacts,
   type GateFailure,
@@ -134,7 +142,20 @@ export interface AttemptContext {
  */
 type AgentTermination =
   | { kind: "clean"; promptPath: string; finalMessage: string; usage?: AgentUsage }
-  | { kind: "process-failure"; promptPath: string; failureClass: string; usage?: AgentUsage };
+  | {
+      kind: "process-failure";
+      promptPath: string;
+      failureClass: string;
+      /**
+       * How the process ended, when it reached an ending: the two legs that
+       * have one are a non-zero exit (or a signal kill) and an abort that
+       * tore a live process down. Absent for a spawn failure or an adapter
+       * that raised on its own account — there is no ending to state, and
+       * nothing is substituted for one.
+       */
+      ending?: AgentEnding;
+      usage?: AgentUsage;
+    };
 
 /**
  * What one agent attempt left behind, whatever fate it reached — the record
@@ -573,15 +594,23 @@ async function invokeAgent(
       ...(extraEnv ? { extraEnv } : {}),
     });
     if (result.exitCode !== 0) {
-      // A non-zero exit is a process failure, not the agent's own clean
-      // exit: crash, OOM/SIGKILL, auth, or rate-limit surfaced as a
-      // non-zero code. A platform-preempt — not a defect in the work.
-      const failureClass = `agent process exited with code ${result.exitCode} (non-work failure: crash, kill, auth, or rate-limit surfaced as a non-zero exit)`;
+      // Anything but a zero exit is a process failure, not the agent's own
+      // clean exit: crash, OOM/SIGKILL, auth, or rate-limit surfaced as a
+      // non-zero code — or, on posix, a signal, which arrives here as a null
+      // code and is the arm the class names rather than folding into a
+      // sentinel. A platform-preempt — not a defect in the work.
+      const ending = agentEnding(result);
+      const failureClass = `agent process ${agentEndingWords(ending)} (non-work failure: ${
+        ending.signal === undefined
+          ? "crash, kill, auth, or rate-limit surfaced as a non-zero exit"
+          : "an OOM kill, a crash, or a kill from outside the tick"
+      })`;
       ctx.log.warn(`[flume] ${phase.name}: ${failureClass}`);
       return {
         kind: "process-failure",
         promptPath,
         failureClass,
+        ending,
         ...(result.usage ? { usage: result.usage } : {}),
       };
     }
@@ -615,16 +644,27 @@ async function invokeAgent(
     // `Error`'s inherited `name` is: the mint writes both keys as own
     // properties, and a shape whose abort name arrives from a base class is
     // the same statement.
-    const abortKeys: { name?: unknown; code?: unknown } =
+    const abortKeys: { name?: unknown; code?: unknown; ending?: unknown } =
       typeof err === "object" && err !== null
-        ? (err as { name?: unknown; code?: unknown })
+        ? (err as { name?: unknown; code?: unknown; ending?: unknown })
         : {};
     const failureClass =
       abortKeys.name === "AbortError" || abortKeys.code === "ABORT_ERR"
         ? "agent process aborted (per-tick timeout or dispatcher signal)"
         : `agent process error before exit: ${thrownMessage(err)}`;
     ctx.log.warn(`[flume] ${phase.name}: ${failureClass}`);
-    return { kind: "process-failure", promptPath, failureClass };
+    // A third key off the same guarded shape, read the same way and for the
+    // same reason: the teardown waited for the child's own 'close', so an
+    // abort that killed a live process knows how it died and the record
+    // would otherwise lose it. Absent leaves the ending unstated, never
+    // filled (`spec/loop.md`, *The no-commit taxonomy*).
+    const ending = readAgentEnding(abortKeys.ending);
+    return {
+      kind: "process-failure",
+      promptPath,
+      failureClass,
+      ...(ending !== undefined ? { ending } : {}),
+    };
   }
 }
 
@@ -917,11 +957,11 @@ async function classifyNoCommit(
     );
     return { mode: "clean-exit" };
   }
-  const { failureClass } = termination;
-  await ctx.attempts.write(ref, buildPlatformPreempt(failureClass));
+  const { failureClass, ending } = termination;
+  await ctx.attempts.write(ref, buildPlatformPreempt(failureClass, ending));
   return {
     mode: "platform-preempt",
-    platformFailure: stageFailureFacts(failureClass),
+    platformFailure: platformFailureFacts(failureClass, ending),
   };
 }
 

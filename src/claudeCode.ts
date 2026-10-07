@@ -25,7 +25,7 @@ import {
   shimRetryRefusal,
   wordShimRetryWouldRewrite,
 } from "./spawnShim.js";
-import type { Agent } from "./Agent.js";
+import type { Agent, AgentEnding } from "./Agent.js";
 
 /**
  * Options for the `claudeCode()` provider. All fields are optional; defaults
@@ -218,19 +218,42 @@ export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
             }
             reject(err);
           });
-          proc.on("close", (exitCode) => {
+          proc.on("close", (exitCode, signal) => {
             if (abandoned) return;
             release();
+            // Node settles a 'close' with exactly one of the two: a code, or
+            // — posix only — the signal that ended the child. Neither is
+            // substituted for the other, so a signal kill records the signal
+            // rather than a sentinel code no exit ever produced
+            // (`spec/loop.md`, *The no-commit taxonomy*). A close reporting
+            // neither is a child whose ending the host did not state, and the
+            // run refuses rather than inventing one
+            // (`.claude/rules/engineering.md`, *Loud or nothing*).
+            const ending: AgentEnding | undefined =
+              typeof signal === "string"
+                ? { exitCode: null, signal }
+                : typeof exitCode === "number"
+                  ? { exitCode }
+                  : undefined;
             // The tree this invocation started is gone — only now is the
             // abort the caller asked for an accomplished fact, so only now
             // does it settle, as the error the dispatcher classifies as a
-            // platform-preempt.
+            // platform-preempt — carrying the ending the kill produced, which
+            // nothing else on the rejection path states.
             if (aborted) {
-              reject(abortError(effective?.reason));
+              reject(abortError(effective?.reason, ending));
+              return;
+            }
+            if (ending === undefined) {
+              reject(
+                new Error(
+                  `agent process closed reporting neither an exit code nor a signal (${binary})`,
+                ),
+              );
               return;
             }
             resolve({
-              exitCode: exitCode ?? -1,
+              ...ending,
               stdout,
               stderr,
               finalMessage: extractFinalMessage(stdout),
@@ -292,16 +315,25 @@ function budgetSettings(budget: BudgetDeclaration): string {
  * `cause` so a
  * timeout and a stop signal stay distinguishable to a reader.
  *
+ * `ending` rides beside them when the abort tore a live process down and the
+ * host said how it died: the teardown waits for the child's own 'close', so
+ * that ending is in hand exactly where the rejection is minted, and dropping
+ * it would leave the preempt record naming the abort with no ending at all
+ * (`spec/loop.md`, *The no-commit taxonomy*). Absent for an abort that fired
+ * before the spawn, where there is no process and so no ending to state.
+ *
  * Exported for the one consumer that drives this mint through that classifier
  * rather than re-spelling the keys beside it (`tests/Dispatcher.test.ts`) —
  * the agreement neither side now asserts in prose.
  */
-export function abortError(reason: unknown): Error {
+export function abortError(reason: unknown, ending?: AgentEnding): Error {
   const err = new Error("The operation was aborted", { cause: reason }) as Error & {
     code?: string;
+    ending?: AgentEnding;
   };
   err.name = "AbortError";
   err.code = "ABORT_ERR";
+  if (ending !== undefined) err.ending = ending;
   return err;
 }
 

@@ -39,6 +39,7 @@ import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { toNamespacedPath } from "node:path";
 
+import { agentEndingWords, type AgentEnding } from "./Agent.js";
 import type { Phase } from "./Phase.js";
 import { entryWriteScope, phasePromptPath } from "./paths.js";
 import type { PendingEntry } from "./PendingSchema.js";
@@ -291,6 +292,17 @@ export interface PlatformPreemptAttempt extends PriorAttemptEnvelope {
   mode: "platform-preempt";
   /** The non-work failure class, bounded. */
   failureClass: string;
+  /**
+   * How the agent process ended — its exit code, or on POSIX the signal
+   * that ended it ({@link AgentEnding}). The retry reads the wall it hit as
+   * the host stated it, rather than a sentinel code standing in for a kill
+   * (`spec/loop.md`, *The no-commit taxonomy*).
+   *
+   * Absent exactly when the attempt reached no ending at all — the spawn
+   * failed, or the abort fired before it. The render says so in those words
+   * instead of filling the field.
+   */
+  ending?: AgentEnding;
 }
 
 /**
@@ -986,6 +998,15 @@ function modeLines(prior: PriorAttempt): string[] {
         `A previous attempt was cut short by a PLATFORM failure — NOT a`,
         `defect in the work. The prior reasoning is not discredited; do not`,
         `treat this as a wall in the task. Resume the work. No commit, no gate.`,
+        // The ending as the host stated it, or the absence said out loud:
+        // a retry reading a blank cannot tell "the process died this way"
+        // from "nothing reported how it died".
+        prior.ending === undefined
+          ? `How the agent process ended: not reported — the attempt never ` +
+            `reached an ending (the spawn itself failed, or the abort fired ` +
+            `before it).`
+          : `How the agent process ended: the process ` +
+            `${agentEndingWords(prior.ending)}.`,
         `Failure class (not your fault):`,
         indentBlock(prior.failureClass),
       ];

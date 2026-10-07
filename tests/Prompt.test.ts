@@ -1004,6 +1004,56 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     expect(empty).not.toMatch(/refused/i);
   }, SPAWN_BUDGET_MS);
 
+  it("platform-preempt renders each ending as the host stated it, and says so when the attempt reached none", async () => {
+    // Vacuity: the fixture carries no ending of its own, so the absent arm
+    // below is the record as the engine writes it for a failed spawn rather
+    // than a field a test deleted.
+    expect(platformPreempt.ending).toBeUndefined();
+
+    /**
+     * The block's own ending line, read alone. Every assertion below is
+     * scoped to it rather than to the whole block, which also quotes the
+     * failure class — prose that happens to name a code
+     * (`.claude/rules/posture-sweep.md`, *A negative assertion over a whole
+     * rendered artifact*).
+     */
+    const endingLine = (block: string): string => {
+      const line = block
+        .split("\n")
+        .find((l) => l.startsWith("How the agent process ended:"));
+      expect(line, "the block states how the process ended").toBeDefined();
+      return line!;
+    };
+
+    const exited = endingLine(
+      priorAttemptBlock(
+        await renderWithPrior({ ...platformPreempt, ending: { exitCode: 137 } }),
+      ),
+    );
+    expect(exited).toContain("the process exited with code 137");
+
+    // The arm the `-1` placeholder used to swallow: a signal kill renders the
+    // signal's own name, and no code at all.
+    const killed = endingLine(
+      priorAttemptBlock(
+        await renderWithPrior({
+          ...platformPreempt,
+          ending: { exitCode: null, signal: "SIGKILL" },
+        }),
+      ),
+    );
+    expect(killed).toContain("the process was killed by signal SIGKILL");
+    expect(killed).not.toContain("exited with code");
+
+    // And no ending is stated as no ending, never left blank for a retry to
+    // read as one (`.claude/rules/engineering.md`, *Loud or nothing*).
+    const unstated = endingLine(
+      priorAttemptBlock(await renderWithPrior(platformPreempt)),
+    );
+    expect(unstated).toContain("not reported");
+    expect(unstated).toContain("never reached an ending");
+  }, SPAWN_BUDGET_MS);
+
   it("not-shipped renders the landed sha and every touched path, and states the elision when the writer bounded the list", async () => {
     // Vacuity: the record under test actually carries paths to list.
     expect(notShipped.touchedPaths.length).toBeGreaterThan(0);
@@ -1181,6 +1231,7 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
     {
       ...platformPreempt,
       declaredAs: DECLARED_AS,
+      ending: { exitCode: 137 },
     } satisfies Required<PlatformPreemptAttempt>,
     {
       ...renderRefused,
@@ -1225,6 +1276,7 @@ describe("renderPrompt <prior-attempt> — headSha/at anchor on every variant (s
       "blamesSpan",
       "threw",
       "omittedPaths",
+      "ending",
     ]) {
       expect(
         rostered,

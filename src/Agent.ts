@@ -1,10 +1,10 @@
 /**
  * Agent — the seam between the dispatcher and an LLM CLI, and nothing else.
  *
- * The four shapes a dispatcher and a provider agree on: an invocation, its
- * result, the usage facts that result may carry, and the `Agent` a chain
- * hands a phase. No provider, no decorator, no transcript alphabet — each
- * of those is its own module, named at {@link Agent}. We deliberately do not
+ * The shapes a dispatcher and a provider agree on: an invocation, its result,
+ * how the process behind it ended, the usage facts that result may carry, and
+ * the `Agent` a chain hands a phase. No provider, no decorator, no transcript
+ * alphabet — each of those is its own module, named at {@link Agent}. We deliberately do not
  * abstract over streaming, structured outputs, or session continuity; those
  * are non-goals.
  */
@@ -119,13 +119,67 @@ export interface AgentUsage {
 }
 
 /**
- * Captured output of a single agent invocation. Returned by `Agent.invoke`
- * once the process exits; the dispatcher reads `exitCode` to log warnings,
- * but stdout/stderr are surfaced as a whole for debugging and decorators.
+ * How an agent process ended: the code it exited with, or — POSIX only — the
+ * signal that ended it. Exactly one arm, enforced by the type, because the
+ * record a preempt leaves has to carry the real ending and never a sentinel
+ * standing in for the other arm (`spec/loop.md`, *The no-commit taxonomy*).
+ *
+ * The signal is the host's own name (`SIGKILL`, `SIGTERM`, …) as a plain
+ * string: the set belongs to the platform, not to the engine, so a provider
+ * on a host flume has never run on reports what that host said.
  */
-export interface AgentResult {
-  /** Final exit code from the agent process. */
-  exitCode: number;
+export type AgentEnding =
+  | { exitCode: number; signal?: undefined }
+  | { exitCode: null; signal: string };
+
+/**
+ * The ending alone, projected off a value that also carries an invocation's
+ * output — one home for the narrowing, so a caller persisting an ending does
+ * not re-spell which arm goes with which field.
+ */
+export function agentEnding(result: AgentEnding): AgentEnding {
+  return result.signal === undefined
+    ? { exitCode: result.exitCode }
+    : { exitCode: null, signal: result.signal };
+}
+
+/**
+ * Read an {@link AgentEnding} off a value the engine did not mint — the key
+ * an aborted invocation's rejection carries (`abortError`,
+ * `src/claudeCode.ts`), which reaches its reader through chain code and so
+ * arrives as `unknown`. Guarded on both arms rather than cast: a shape that
+ * is not an ending yields `undefined`, which is the record's "no ending was
+ * reported", never an ending assembled out of whatever was there.
+ */
+export function readAgentEnding(value: unknown): AgentEnding | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const { exitCode, signal } = value as { exitCode?: unknown; signal?: unknown };
+  if (typeof exitCode === "number" && signal === undefined) return { exitCode };
+  if (exitCode === null && typeof signal === "string") {
+    return { exitCode: null, signal };
+  }
+  return undefined;
+}
+
+/**
+ * An ending in words, for a failure class and for the prompt a retry reads.
+ * The one spelling: a second one beside it is how a signature and the prose
+ * it keys drift apart (`.claude/rules/engineering.md`, *Derived state is
+ * computed, never restated beside its source*).
+ */
+export function agentEndingWords(ending: AgentEnding): string {
+  return ending.signal === undefined
+    ? `exited with code ${ending.exitCode}`
+    : `was killed by signal ${ending.signal}`;
+}
+
+/**
+ * Captured output of a single agent invocation, together with the
+ * {@link AgentEnding} that closed it. Returned by `Agent.invoke` once the
+ * process exits; the dispatcher reads the ending to classify a preempt, and
+ * stdout/stderr are surfaced as a whole for debugging and decorators.
+ */
+export type AgentResult = AgentEnding & {
   /** Full captured stdout. */
   stdout: string;
   /** Full captured stderr. */
@@ -145,7 +199,7 @@ export interface AgentResult {
    * extraction leaves this absent; `claudeCode` always sets it.
    */
   finalMessage?: string;
-}
+};
 
 /**
  * Provider seam. One implementation per LLM CLI, and `claudeCode`

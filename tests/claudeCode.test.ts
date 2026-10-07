@@ -162,6 +162,60 @@ describe("claudeCode — outputFormat flags", () => {
   });
 });
 
+/**
+ * `spec/loop.md`, *The no-commit taxonomy*: the ending the adapter reports is
+ * the one the host stated — never a sentinel code standing in for a signal
+ * kill, which is what the preempt record downstream carries.
+ */
+describe("claudeCode — the ending a close reports", () => {
+  it("a child that exited reports its code and no signal", async () => {
+    const proc = fakeChildProcess();
+    spawnMock.mockReturnValueOnce(proc as never);
+
+    const result = claudeCode().invoke({ cwd: "/tmp", prompt: "p" });
+    proc.stdout.emit("data", "done");
+    proc.emit("close", 3, null);
+
+    await expect(result).resolves.toEqual({
+      exitCode: 3,
+      stdout: "done",
+      stderr: "",
+      finalMessage: "done",
+    });
+  });
+
+  it("a child a signal ended reports that signal and no code", async () => {
+    const proc = fakeChildProcess();
+    spawnMock.mockReturnValueOnce(proc as never);
+
+    const result = claudeCode().invoke({ cwd: "/tmp", prompt: "p" });
+    proc.stdout.emit("data", "partial");
+    // Node's own shape for a posix kill: a null code beside the signal's
+    // name. The `-1` that used to stand here read as an exit no host produces.
+    proc.emit("close", null, "SIGKILL");
+
+    await expect(result).resolves.toEqual({
+      exitCode: null,
+      signal: "SIGKILL",
+      stdout: "partial",
+      stderr: "",
+      finalMessage: "partial",
+    });
+  });
+
+  it("a close reporting neither a code nor a signal rejects rather than inventing an ending", async () => {
+    const proc = fakeChildProcess();
+    spawnMock.mockReturnValueOnce(proc as never);
+
+    const result = claudeCode().invoke({ cwd: "/tmp", prompt: "p" });
+    proc.emit("close", null, null);
+
+    await expect(result).rejects.toThrow(
+      /closed reporting neither an exit code nor a signal/,
+    );
+  });
+});
+
 describe("claudeCode — win32 .cmd shim fallback", () => {
   function enoent(): NodeJS.ErrnoException {
     return Object.assign(new Error("spawn claude ENOENT"), { code: "ENOENT" });

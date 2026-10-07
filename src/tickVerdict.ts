@@ -30,7 +30,7 @@ import {
 } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 
-import type { AgentUsage } from "./Agent.js";
+import type { AgentEnding, AgentUsage } from "./Agent.js";
 import type { PhaseInvocations } from "./agentSpend.js";
 import { bound } from "./bounds.js";
 import { existsLoudUnder, isDirectoryOrAbsentUnder } from "./fsProbe.js";
@@ -223,6 +223,38 @@ export interface PlatformFailure {
    */
   signature: string;
   message: string;
+  /**
+   * How the agent process itself ended — its exit code, or on POSIX the
+   * signal that ended it ({@link AgentEnding}). This record's own, never a
+   * cause shared with the siblings that died beside it: a wave with two
+   * preempts reports two endings, and that several agents ended together is
+   * a pattern a reader may draw rather than a verdict the engine records
+   * (`spec/loop.md`, *The no-commit taxonomy*).
+   *
+   * Absent exactly when there was no ending to state — the invocation threw
+   * before the process reached one (a spawn failure, a chain adapter raising
+   * on its own account), or the abort fired before the spawn. Absent is the
+   * fact "no ending was reported", never a stand-in for one.
+   */
+  ending?: AgentEnding;
+}
+
+/**
+ * The {@link PlatformFailure} a preempt leaves: the class in words, the key
+ * repeats are compared by, and the ending the process actually reached when
+ * it reached one. The one stage-failure record {@link stageFailureFacts}
+ * cannot build whole, so it has a builder of its own here beside the type
+ * rather than the pairing being assembled at each classifier
+ * (`.claude/rules/engineering.md`, *A module is one job*).
+ */
+export function platformFailureFacts(
+  failureClass: string,
+  ending?: AgentEnding,
+): PlatformFailure {
+  return {
+    ...stageFailureFacts(failureClass),
+    ...(ending !== undefined ? { ending } : {}),
+  };
 }
 
 /**
