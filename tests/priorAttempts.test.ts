@@ -877,12 +877,12 @@ it("snapshotReverted writes a non-ASCII path's content into the revert snapshot"
     await store.snapshotReverted(fx.repo, span, SNAP_REF);
 
     const dir = store.snapshotDir(SNAP_REF);
-    expect(await readFile(join(dir, "snap", "café.ts"), "utf8")).toBe(
+    expect(await readFile(join(dir, "snap", "café.ts.reverted"), "utf8")).toBe(
       "content of café.ts\n",
     );
     // The sibling git lists *after* the awkward one: a listing that throws on
     // `café.ts` truncates the whole snapshot from there on.
-    expect(await readFile(join(dir, "snap", "plain.ts"), "utf8")).toBe(
+    expect(await readFile(join(dir, "snap", "plain.ts.reverted"), "utf8")).toBe(
       "content of plain.ts\n",
     );
   } finally {
@@ -922,7 +922,7 @@ it.runIf(process.platform !== "win32")(
 
       expect(
         await readFile(
-          join(store.snapshotDir(SNAP_REF), "snap", "trailing.ts "),
+          join(store.snapshotDir(SNAP_REF), "snap", "trailing.ts .reverted"),
           "utf8",
         ),
       ).toBe("content of trailing.ts \n");
@@ -974,13 +974,13 @@ it.runIf(process.platform !== "win32")(
       await store.snapshotReverted(fx.repo, span, SNAP_REF);
 
       const dir = store.snapshotDir(SNAP_REF);
-      expect(await readFile(join(dir, ":colon.ts"), "utf8")).toBe(
+      expect(await readFile(join(dir, ":colon.ts.reverted"), "utf8")).toBe(
         "content of :colon.ts\n",
       );
       // The sibling git lists beside the awkward one: a drop that skipped
       // only `:colon.ts` still leaves this one, so the assertion above is
       // what carries the verdict.
-      expect(await readFile(join(dir, "plain.ts"), "utf8")).toBe(
+      expect(await readFile(join(dir, "plain.ts.reverted"), "utf8")).toBe(
         "content of plain.ts\n",
       );
     } finally {
@@ -1129,10 +1129,10 @@ it("snapshotReverted warns and names a listed path it could not read at the span
     // of the change, the skipped path stays out, and the prose beside it —
     // what the artifact exists for — is on disk.
     const dir = store.snapshotDir(SNAP_REF);
-    expect(await readFile(join(dir, "finding.md"), "utf8")).toBe(
+    expect(await readFile(join(dir, "finding.md.reverted"), "utf8")).toBe(
       "prose worth recovering\n",
     );
-    expect(existsSync(join(dir, "vendor", "dep"))).toBe(false);
+    expect(existsSync(join(dir, "vendor", "dep.reverted"))).toBe(false);
   } finally {
     await fx.cleanup();
   }
@@ -1210,12 +1210,176 @@ it("the revert snapshot carries a file only the span's first commit touched", as
     // the whole point of the artifact (spec/worktrees.md "Reverted prose
     // survives the reset"), and the reset destroys the first commit's work
     // exactly as it destroys the last's.
-    expect(await readFile(join(dir, "notes", "first.md"), "utf8")).toBe(
+    expect(await readFile(join(dir, "notes", "first.md.reverted"), "utf8")).toBe(
       "finding from commit one\n",
     );
-    expect(await readFile(join(dir, "notes", "second.md"), "utf8")).toBe(
-      "second commit's work\n",
+    expect(
+      await readFile(join(dir, "notes", "second.md.reverted"), "utf8"),
+    ).toBe("second commit's work\n");
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+/**
+ * The per-file half of "inert by name" (spec/worktrees.md, *Reverted prose
+ * survives the reset*): the snapshot dir's own `.reverted` suffix keeps the
+ * directory out of nobody's glob, so a salvaged `*.test.ts` under the state
+ * root was collected by the operator's own vitest run. The suffix on each
+ * file name is what takes it out of every extension-keyed collection.
+ *
+ * Driven as an agreement gate like the span cases above: a real commit, the
+ * engine's own listing and tip-read, and the snapshot on disk as the verdict.
+ *
+ * Deliberately top-level: these titles are the queue entry's own `tests[]`
+ * lines, matched on the full name.
+ */
+async function commitSalvageShape(
+  repo: string,
+): Promise<{ base: string; head: string }> {
+  const base = (await gitOut(repo, ["rev-parse", "HEAD"])).trim();
+  await mkdir(join(repo, "tests"), { recursive: true });
+  await mkdir(join(repo, "notes", "deep"), { recursive: true });
+  // One file per extension-keyed hazard the suffix exists for: a test a
+  // runner's `**/*.test.ts` would collect, a nested prose file whose
+  // directory mirror is the recovery path, and an extension-less name a
+  // suffix spliced before a dot would have nowhere to go.
+  await writeFile(
+    join(repo, "tests", "salvaged.test.ts"),
+    "it('collected by the operator', () => {});\n",
+  );
+  await writeFile(
+    join(repo, "notes", "deep", "finding.md"),
+    "prose written once\n",
+  );
+  await writeFile(join(repo, "Makefile"), "all:\n\t@true\n");
+  await gitOut(repo, ["add", "--all"]);
+  await gitOut(repo, ["commit", "-q", "-m", "a span worth salvaging"]);
+  return { base, head: (await gitOut(repo, ["rev-parse", "HEAD"])).trim() };
+}
+
+/** Every file the snapshot dir holds, as paths relative to it. */
+function snapshotFiles(dir: string): string[] {
+  return readdirSync(dir, { recursive: true, withFileTypes: true })
+    .filter((e) => e.isFile())
+    .map((e) => relative(dir, join(e.parentPath, e.name)))
+    .sort();
+}
+
+it("a salvaged file's name carries a .reverted suffix", async () => {
+  const fx = await makeFixture();
+  try {
+    const store = new PriorAttemptStore(
+      join(fx.repo, ".flume"),
+      fx.repo,
+      silent,
     );
+    const span = await commitSalvageShape(fx.repo);
+
+    // Vacuity pin: the span really names the test file, so the verdict below
+    // is judged over a path the store genuinely writes.
+    expect(
+      await diffNameOnly(fx.repo, span.base, span.head, {
+        excludeDeleted: true,
+      }),
+    ).toContain("tests/salvaged.test.ts");
+
+    await store.snapshotReverted(fx.repo, span, SNAP_REF);
+
+    const dir = store.snapshotDir(SNAP_REF);
+    expect(
+      await readFile(join(dir, "tests", "salvaged.test.ts.reverted"), "utf8"),
+    ).toBe("it('collected by the operator', () => {});\n");
+    // The suffix is the name's, not a second copy beside it: the spelling a
+    // runner globbing `**/*.test.ts` from the repo root would collect is
+    // absent.
+    expect(existsSync(join(dir, "tests", "salvaged.test.ts"))).toBe(false);
+
+    // And the whole snapshot, not just the file this case names: every file
+    // the store wrote is suffixed, so no extension-keyed tool reaches any of
+    // them. The length pin keeps the `every` from passing over an empty dir.
+    const files = snapshotFiles(dir);
+    expect(files).toHaveLength(3);
+    expect(files.every((f) => f.endsWith(".reverted")), files.join(", ")).toBe(
+      true,
+    );
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+it("a salvaged file keeps its repo-relative directory mirror under the snapshot dir", async () => {
+  const fx = await makeFixture();
+  try {
+    const store = new PriorAttemptStore(
+      join(fx.repo, ".flume"),
+      fx.repo,
+      silent,
+    );
+    const span = await commitSalvageShape(fx.repo);
+
+    // Vacuity pin: the prose file really is nested, so the mirror below is a
+    // claim about directories rather than a repo-root file's no-op.
+    expect(
+      await diffNameOnly(fx.repo, span.base, span.head, {
+        excludeDeleted: true,
+      }),
+    ).toContain("notes/deep/finding.md");
+
+    await store.snapshotReverted(fx.repo, span, SNAP_REF);
+
+    const dir = store.snapshotDir(SNAP_REF);
+    // Recovery is "open the file", minus the suffix: the directories are the
+    // repo's, spelled exactly, and only the leaf name changed.
+    expect(
+      await readFile(join(dir, "notes", "deep", "finding.md.reverted"), "utf8"),
+    ).toBe("prose written once\n");
+    expect(snapshotFiles(dir)).toContain(
+      join("notes", "deep", "finding.md.reverted"),
+    );
+    // No directory segment wears the suffix — a `.reverted` on a mirror
+    // directory would make the repo path unreadable off the snapshot.
+    expect(
+      readdirSync(dir, { recursive: true, withFileTypes: true })
+        .filter((e) => e.isDirectory())
+        .map((e) => e.name),
+    ).toEqual(expect.arrayContaining(["tests", "notes", "deep"]));
+    expect(
+      readdirSync(dir, { recursive: true, withFileTypes: true })
+        .filter((e) => e.isDirectory())
+        .map((e) => e.name),
+    ).toEqual(expect.not.arrayContaining(["notes.reverted", "deep.reverted"]));
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+it("a salvaged file with no extension still carries the .reverted suffix", async () => {
+  const fx = await makeFixture();
+  try {
+    const store = new PriorAttemptStore(
+      join(fx.repo, ".flume"),
+      fx.repo,
+      silent,
+    );
+    const span = await commitSalvageShape(fx.repo);
+
+    // Vacuity pin: the committed name genuinely carries no dot, so the suffix
+    // below is appended rather than spliced before an extension.
+    expect(
+      await diffNameOnly(fx.repo, span.base, span.head, {
+        excludeDeleted: true,
+      }),
+    ).toContain("Makefile");
+    expect("Makefile".includes(".")).toBe(false);
+
+    await store.snapshotReverted(fx.repo, span, SNAP_REF);
+
+    const dir = store.snapshotDir(SNAP_REF);
+    expect(await readFile(join(dir, "Makefile.reverted"), "utf8")).toBe(
+      "all:\n\t@true\n",
+    );
+    expect(existsSync(join(dir, "Makefile"))).toBe(false);
   } finally {
     await fx.cleanup();
   }
@@ -1251,10 +1415,14 @@ it("the revert snapshot omits a path the span deleted", async () => {
     // the null-skip beside it keeps meaning "the listing and the head's tree
     // disagree" (`snapshotReverted`, `src/priorAttempts.ts`).
     expect(
-      existsSync(join(store.snapshotDir(SNAP_REF), "notes", "doomed.md")),
+      existsSync(
+        join(store.snapshotDir(SNAP_REF), "notes", "doomed.md.reverted"),
+      ),
     ).toBe(false);
     expect(
-      existsSync(join(store.snapshotDir(SNAP_REF), "notes", "first.md")),
+      existsSync(
+        join(store.snapshotDir(SNAP_REF), "notes", "first.md.reverted"),
+      ),
     ).toBe(true);
   } finally {
     await fx.cleanup();

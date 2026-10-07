@@ -18668,11 +18668,11 @@ describe("Dispatcher — plan-tick prose durability", () => {
     // verbatim on disk in the durable, reset-surviving snapshot mirror.
     const snapDir = join(fx.repo, ".flume", "prior-attempts", "phase", "plan.reverted");
     const recoveredOQ = await readFile(
-      join(snapDir, ".flume", "plan", "open-questions.md"),
+      join(snapDir, ".flume", "plan", "open-questions.md.reverted"),
       "utf8",
     );
     const recoveredState = await readFile(
-      join(snapDir, ".flume", "plan", "state.md"),
+      join(snapDir, ".flume", "plan", "state.md.reverted"),
       "utf8",
     );
     expect(recoveredOQ).toContain(FINDING_OQ);
@@ -23135,14 +23135,14 @@ describe.runIf(process.platform === "win32")(
       expect(outcome.noCommit).toBe("gate-revert");
       expect(await head(fx.repo)).toBe(preHead);
 
-      const snapshotPath = join(
+      const snapshotPath = `${join(
         fx.repo,
         ".flume",
         "prior-attempts",
         "phase",
         "plan.reverted",
         deepRel,
-      );
+      )}.reverted`;
       expect(snapshotPath.length).toBeGreaterThan(260);
       expect(existsSync(snapshotPath)).toBe(true);
       expect(await readFile(snapshotPath, "utf8")).toBe("ok\n");
@@ -23210,7 +23210,7 @@ describe.runIf(process.platform === "win32")(
       expect(first.noCommit).toBe("gate-revert");
 
       const snapDir = join(fx.repo, ".flume", "prior-attempts", "phase", "plan.reverted");
-      const pathA = join(snapDir, deepRelA);
+      const pathA = `${join(snapDir, deepRelA)}.reverted`;
       expect(pathA.length).toBeGreaterThan(260);
       expect(existsSync(pathA)).toBe(true);
       expect(await readFile(pathA, "utf8")).toBe("first\n");
@@ -23220,7 +23220,7 @@ describe.runIf(process.platform === "win32")(
       expect(second.result?.committed).toBe(false);
       expect(second.noCommit).toBe("gate-revert");
 
-      const pathB = join(snapDir, deepRelB);
+      const pathB = `${join(snapDir, deepRelB)}.reverted`;
       expect(pathB.length).toBeGreaterThan(260);
       expect(existsSync(pathB)).toBe(true);
       expect(await readFile(pathB, "utf8")).toBe("second\n");
@@ -23298,7 +23298,7 @@ describe.runIf(process.platform === "win32")(
       expect(first.noCommit).toBe("gate-revert");
 
       const snapDir = join(fx.repo, ".flume", "prior-attempts", "phase", "plan.reverted");
-      const snapPath = join(snapDir, deepRel);
+      const snapPath = `${join(snapDir, deepRel)}.reverted`;
       expect(snapPath.length).toBeGreaterThan(260);
       expect(existsSync(snapPath)).toBe(true);
 

@@ -725,11 +725,20 @@ export class PriorAttemptStore {
    * A gate-reverted tick otherwise loses everything the commit carried to
    * `git reset --hard` — including whatever prose the agent wrote once and
    * cannot restate, recoverable only by a human reading an agent transcript.
-   * The snapshot is post-image content under a mirror of the repo path, so
-   * recovery is "open the file" — not "read a diff", not "grep a session
-   * log". `diffStat` (the record's digest) is `git show --stat`: filenames
-   * and counts, never content — it cannot recover findings, which is why
-   * this distinct artifact exists.
+   * The snapshot is post-image content under a mirror of the repo path with
+   * `.reverted` appended to each file name, so recovery is "open the file",
+   * minus the suffix — not "read a diff", not "grep a session log".
+   * `diffStat` (the record's digest) is `git show --stat`: filenames and
+   * counts, never content — it cannot recover findings, which is why this
+   * distinct artifact exists.
+   *
+   * **Inert by name.** The per-file suffix takes every snapshot file out of
+   * any tool's extension-keyed collection: a salvaged test is never
+   * collected, a salvaged source file never compiled. The dir's own
+   * `.reverted` suffix does not buy that — a runner globbing recursively for
+   * a `.test.ts` from the repo root descends into it, which is how the
+   * operator's own vitest run collected a salvaged test under the state
+   * root.
    *
    * **The span, never its head alone.** The digest beside this snapshot is
    * already taken over `base..head` ({@link capturedDiffStat}), and a tick
@@ -791,7 +800,16 @@ export class PriorAttemptStore {
           );
           continue;
         }
-        const dest = join(dir, rel);
+        // Inert by name: the directory mirror is the repo's, and the file
+        // name carries `.reverted` so no extension-keyed collection reaches
+        // it — a salvaged test is never collected by the operator's own
+        // vitest run, a salvaged source file never compiled by a typecheck
+        // that globs the state root. Appended to the whole mirrored path
+        // rather than spliced before the extension, so the original name
+        // stays whole and recovery is "open the file", minus the suffix — a
+        // splice has nowhere to go on an extension-less name, and leaves the
+        // operator reconstructing which part of the name the tool took.
+        const dest = `${join(dir, rel)}.reverted`;
         // win32 MAX_PATH (`.claude/rules/platform-facts.md`): dest depth
         // here is driven by the reverted diff's own path depth, not
         // chain.friction, but it's the same join(dir, rel) unwrapped shape
