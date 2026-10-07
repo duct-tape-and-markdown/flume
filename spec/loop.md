@@ -821,9 +821,14 @@ that leg writes no verdict at all (see *The tick verdict*).
 
 `flume loop`:
 
-- **Mount-dead aborts immediately.** The supervisor fail-fasts on a child's 69 and
-  propagates it, rather than burning the remaining `--max` ticks re-hitting the same
-  wall. A mount-dead chain is exactly as dead next tick as this one.
+- **Mount-dead aborts — once the mount is still dead.** On a child's 69 the
+  supervisor re-reads what the next child would — the chain's resolution and the
+  queue's parse, at the tip — and aborts, propagating 69, only if one of them still
+  fails, rather than burning the remaining `--max` ticks re-hitting the same wall. A
+  69 whose cause no longer holds, because a sibling's repair has landed (the queue's
+  declared writer runs over a failed parse, `spec/pending.md`, *Queue reads are
+  strict*) or an operator's fix has, is that tick's error and nothing more, and the
+  run goes on.
 - **78 propagates likewise.** Exiting 0 would re-mask the misconfiguration one process
   boundary up.
 - **Otherwise non-zero iff at least one tick errored AND zero entries shipped.**
