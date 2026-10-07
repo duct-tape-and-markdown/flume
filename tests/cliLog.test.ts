@@ -10,11 +10,15 @@
  * end-to-end in `tests/cli.test.ts`.
  */
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Logger } from "../src/log.ts";
-import { stampLines, stampedLogger } from "../src/cliLog.ts";
+import { operatorLog, stampLines, stampedLogger } from "../src/cliLog.ts";
 import { STAMPED_LINE, stampedContent } from "./helpers/stampedLine.ts";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 /** A `Logger` that keeps what it was handed, per level. */
 function recordingLogger(): { sink: Logger; lines: string[] } {
@@ -44,8 +48,9 @@ describe(
       expect(lines).toHaveLength(3);
       for (const [index, level] of ["info", "warn", "error"].entries()) {
         const line = lines[index]!;
-        // The level is the sink's, unchanged: a stamp that rerouted a warning
-        // to stdout would move it off the stream an operator greps.
+        // The level is the sink's, unchanged: the stamp prefixes a line and
+        // decides nothing about which method carries it, which is what lets
+        // the stream choice sit in the sink below.
         expect(line.startsWith(`${level} `)).toBe(true);
         const stamped = line.slice(level.length + 1);
         expect(stamped).toMatch(STAMPED_LINE);
@@ -76,3 +81,48 @@ describe(
     });
   },
 );
+
+/**
+ * The stream half of the same decision, at the same unit: `spec/cli.md`, *A
+ * log line carries the instant it was written* sends stamped narration to
+ * stderr at every level, so a verb's stdout carries only what the verb
+ * produced. The engine's own default keeps its split — `info` to stdout —
+ * and is pinned for that in `tests/log.test.ts`; the two verbs' whole streams
+ * are read end-to-end in `tests/cli.test.ts`.
+ *
+ * Driven through `operatorLog` (`src/cliLog.ts`) — this process's one
+ * construction, the value every verb narrates through — against the real
+ * console it writes to, because what a console method received is the only
+ * place the stream is decided (`.claude/rules/engineering.md`, *A seam gate
+ * reads what the real writer wrote*).
+ */
+describe("operatorLog (spec/cli.md §A log line carries the instant it was written)", () => {
+  it("the CLI's stamped narration writes an info line to stderr", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    operatorLog.info("an informational line");
+
+    // Vacuity, and the claim: the line was written at all, it went to
+    // stderr, and it is the line that was handed in — read back through the
+    // suite's one reader of a stamped line, so the stamp rode along.
+    expect(error.mock.calls).toHaveLength(1);
+    expect(stampedContent(error.mock.calls[0]![0] as string)).toBe(
+      "an informational line",
+    );
+    expect(log.mock.calls, "an info line reached stdout").toEqual([]);
+
+    // `warn` and `error` land where they already did: the same stream, each
+    // still stamped, so moving `info` moved nothing else.
+    operatorLog.warn("a warning line");
+    operatorLog.error("an error line");
+    expect(
+      error.mock.calls.map((call) => stampedContent(call[0] as string)),
+    ).toEqual(["an informational line", "a warning line", "an error line"]);
+    expect(log.mock.calls, "a narration line reached stdout").toEqual([]);
+    expect(warn.mock.calls, "a narration line reached console.warn").toEqual(
+      [],
+    );
+  });
+});

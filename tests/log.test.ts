@@ -43,4 +43,28 @@ describe("consoleLogger (.claude/rules/engine-boundary.md §Surface, not prescri
     expect(warn).toHaveBeenCalledWith("a warning line");
     expect(error).toHaveBeenCalledWith("an error line");
   });
+
+  /**
+   * The stream half of the same seam. The CLI sends every level of its own
+   * narration to stderr (`operatorLog`, `src/cliLog.ts`), and this default
+   * keeps the split it always had: an embedder that declines to route a
+   * `Logger` of its own gets `info` on stdout, where a consumer's pipeline
+   * may already be reading it. A consumer-side choice that drifted down to
+   * this side would arrive with the engine's authority behind it, which is
+   * the default `.claude/rules/engine-boundary.md`, *Surface, not
+   * prescription* refuses.
+   */
+  it("the engine's consoleLogger still writes an info line to stdout", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    consoleLogger.info("an informational line");
+
+    // Vacuity rides the comparison: an `info` that reached no console at all
+    // would compare an empty call list against the one line handed in.
+    expect(log.mock.calls).toEqual([["an informational line"]]);
+    expect(error.mock.calls, "the engine default routed info to stderr").toEqual(
+      [],
+    );
+  });
 });

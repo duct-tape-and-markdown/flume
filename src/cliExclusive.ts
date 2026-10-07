@@ -25,35 +25,15 @@ import { spawn } from "node:child_process";
 import { constants } from "node:os";
 
 import { splitAtSeparator } from "./cliArgs.js";
-import { operatorLog, stampedLogger } from "./cliLog.js";
+import { operatorLog } from "./cliLog.js";
 import { EX_MOUNT_DEAD } from "./exitCodes.js";
 import type { FlumePaths } from "./flumeApi.js";
 import { acquireShipLock } from "./git.js";
-import type { Logger } from "./log.js";
 import { thrownMessage } from "./thrown.js";
 import type { WaitLock } from "./waitLock.js";
 
 /** What this verb refuses an argv it cannot honor as typed with. */
 const USAGE = "usage: flume exclusive -- <command> [args...]";
-
-/**
- * What the lock's own narration — the wait announcement, and nothing else
- * reaches it — is written through: every level on stderr, stamped like any
- * other operator line (`stampedLogger`, `src/cliLog.ts`).
- *
- * Stdout is the command's here. The engine default routes `info` to stdout
- * because a tick's narration is the only thing writing there; under this verb
- * that would put a flume sentence into `flume exclusive -- git rev-parse HEAD
- * > sha`, which is the one stream the verb promises the operator gets whole.
- * So the choice is this consumer's, taken at the one site that has a command
- * to protect (`.claude/rules/engine-boundary.md`, *Surface, not
- * prescription*), never a default moved under every other caller.
- */
-const narration: Logger = stampedLogger({
-  info: (line) => console.error(line),
-  warn: (line) => console.error(line),
-  error: (line) => console.error(line),
-});
 
 /**
  * How the command ended: the code it exited with, or the signal that ended
@@ -166,7 +146,13 @@ export async function exclusiveVerb(
   // `sysexits.h`*).
   let lock: WaitLock;
   try {
-    lock = await acquireShipLock(paths.repoRoot, narration);
+    // The wait announcement — the lock's own narration, and the only line
+    // this verb writes that is not a refusal — goes out the same door as
+    // every other operator line, which is stderr at every level
+    // (`operatorLog`, `src/cliLog.ts`). Stdout is the command's: a flume
+    // sentence inside `flume exclusive -- git rev-parse HEAD > sha` is the
+    // one stream this verb promises the operator gets whole.
+    lock = await acquireShipLock(paths.repoRoot, operatorLog);
   } catch (err) {
     operatorLog.error(
       `[flume] exclusive refuses: the ship lock did not resolve under ` +

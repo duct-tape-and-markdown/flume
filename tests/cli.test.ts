@@ -7165,6 +7165,44 @@ describe("flume loop — the git floor warning", () => {
   );
 });
 
+/**
+ * What the agent below prints, as the operator's pipe reads it back: two rows
+ * of the chain's own output, which is the whole of what a tick writes to
+ * stdout (`onStdout`, `src/tickAttempt.ts`).
+ */
+const AGENT_ROWS = ["probe-row-one", "probe-row-two"];
+
+/**
+ * A chain whose one singleton phase is served by an agent that prints
+ * {@link AGENT_ROWS} through the invocation's own `onStdout` and commits
+ * nothing — the tick completes clean, and the bytes on stdout are the
+ * chain's, so a case can read that stream for what the run produced rather
+ * than for what it narrated.
+ */
+function printingAgentChainSrc(): string {
+  return (
+    `export default () => ({ chain: {\n` +
+    `  phases: [{\n` +
+    `    name: "probe",\n` +
+    `    description: "",\n` +
+    `    promptPath: "prompts/prompt.md",\n` +
+    `    concurrency: "singleton",\n` +
+    `    writablePaths: ["**"],\n` +
+    `    gates: [],\n` +
+    `    handoff: () => [],\n` +
+    `  }],\n` +
+    `  humanOnly: [],\n` +
+    `},\n` +
+    `agent: {\n` +
+    `  name: "printing-agent",\n` +
+    `  async invoke(inv) {\n` +
+    `    inv.onStdout?.(${JSON.stringify(AGENT_ROWS.join("\n") + "\n")});\n` +
+    `    return { exitCode: 0, stdout: "", stderr: "" };\n` +
+    `  },\n` +
+    `} });\n`
+  );
+}
+
 describe("the run log (spec/cli.md §A log line carries the instant it was written)", () => {
   it(
     "a flume loop run stamps every supervisor line with the instant it was written",
@@ -7638,6 +7676,51 @@ describe("the run log (spec/cli.md §A log line carries the instant it was writt
               `${where} stamped a line of its listing: ${line}`,
             ).toBe(false);
           }
+        }
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it(
+    "a verb's own listing reaches stdout while the narration of the same run does not",
+    async () => {
+      const repo = await makeScratchRepo("flume-cli-repo-", "main");
+      try {
+        await writeRepoConfig(repo.dir, printingAgentChainSrc());
+        new Baton(join(repo.dir, ".flume")).wake("probe");
+
+        const before = Date.now();
+        const tick = await runCliStreams(repo.dir, ["tick"]);
+        const after = Date.now();
+        expect(tick.code, tick.stderr).toBe(0);
+
+        // Stdout, whole: a tick's own output is what the chain's agent
+        // printed, forwarded byte for byte (`src/tickAttempt.ts`), and the
+        // rows are read as a set rather than searched for, so a narration
+        // line that landed beside them reds here. Vacuity rides the same
+        // assertion — an agent that printed nothing would compare an empty
+        // stream against the rows it was told to write.
+        expect(narratedLines(tick.stdout), tick.stdout).toEqual(AGENT_ROWS);
+
+        // The narration of that same run, on stderr and stamped — both the
+        // engine's dispatch line, written through the logger this verb hands
+        // it, and the verb's own summary of what the tick came back with
+        // (`src/cliTick.ts`). Each is an `info` line, and each used to arrive
+        // interleaved with the rows above.
+        const narratedOn = (opening: string): string[] =>
+          narratedLines(tick.stderr).filter((line) =>
+            (stampedContent(line) ?? line).startsWith(opening),
+          );
+        for (const opening of [
+          "[flume] tick \u2192 probe (singleton)",
+          "probe no commit",
+        ]) {
+          const found = narratedOn(opening);
+          expect(found, `${opening}: ${tick.stderr}`).toHaveLength(1);
+          expectStampedDuring(found, before, after);
         }
       } finally {
         await repo.cleanup();

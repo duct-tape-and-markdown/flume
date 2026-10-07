@@ -3,16 +3,16 @@
  * operator passes through: `flume loop`'s supervisor, its `flume tick`
  * children, and every verb's own refusal.
  *
- * Its own file because the stamp is the CLI's, never the engine's
- * (`spec/cli.md`, *A log line carries the instant it was written*).
+ * Its own file because both the stamp and the stream are the CLI's, never the
+ * engine's (`spec/cli.md`, *A log line carries the instant it was written*).
  * `src/log.ts` ships the `Logger` seam and the unstamped `consoleLogger` the
  * engine falls back to, and that default stays what it is: an embedder
- * routing a `Logger` of its own times its lines its own way
- * (`.claude/rules/engine-boundary.md`, *Surface, not prescription*). Timing
- * them this way is one consumer's opinion, so it lives on the consumer's
- * side of that seam and is handed down to `superviseLoop`
- * (`src/loopSupervisor.ts`) and the tick's `Dispatcher` (`src/Dispatcher.ts`)
- * in place of the default.
+ * routing a `Logger` of its own times its lines and picks its streams its own
+ * way (`.claude/rules/engine-boundary.md`, *Surface, not prescription*).
+ * Timing them this way, and sending every level of them to stderr, is one
+ * consumer's opinion, so it lives on the consumer's side of that seam and is
+ * handed down to `superviseLoop` (`src/loopSupervisor.ts`) and the tick's
+ * `Dispatcher` (`src/Dispatcher.ts`) in place of the default.
  *
  * {@link operatorLog} is this process's one construction of it, and this file
  * is where a verb reaches for it: the observational verbs import it, and the
@@ -21,7 +21,7 @@
  * value either way.
  */
 
-import { consoleLogger, type Logger } from "./log.js";
+import type { Logger } from "./log.js";
 
 /**
  * Open every line of `message` with `at` as an ISO-8601 UTC timestamp — the
@@ -42,17 +42,39 @@ export function stampLines(at: Date, message: string): string {
     .join("\n");
 }
 
+/** The one write {@link operatorSink} makes, whichever level was called. */
+const toStderr = (line: string): void => console.error(line);
+
+/**
+ * Where a stamped line goes: stderr, at every level, so a verb's stdout
+ * carries only what the verb itself produced — `flume status`'s rows, `flume
+ * log`'s history, the command `flume exclusive` runs — and a pipe over any of
+ * them reads the verb's output and nothing the run narrated.
+ *
+ * Only the CLI's own narration is routed this way. The engine default splits
+ * the levels — `consoleLogger` (`src/log.ts`) writes `info` to stdout — and
+ * stays what it is: an embedder routing a `Logger` of its own picks its own
+ * streams as it times its own lines
+ * (`.claude/rules/engine-boundary.md`, *Surface, not prescription*). So the
+ * choice sits on the consumer's side of the seam, beside the stamp, rather
+ * than as a default every consumer of the engine inherits.
+ *
+ * Module-private, and one writer for all three levels: {@link operatorLog} is
+ * the one line out of here, and a level spelled its own way is a level a later
+ * edit can move off this stream alone.
+ */
+const operatorSink: Logger = { info: toStderr, warn: toStderr, error: toStderr };
+
 /**
  * A `Logger` that stamps what it is handed through {@link stampLines} and
- * writes it on through `sink` — `consoleLogger` unless a caller names
- * another, so each level keeps the stream the engine default already writes
- * it to (`info` → stdout, `warn`/`error` → stderr).
+ * writes it on through `sink` — {@link operatorSink} unless a caller names
+ * another, so every level reaches stderr.
  *
  * The instant is read per call rather than per logger: a supervisor run is
  * one construction and many lines, and a stamp fixed at construction would
  * date every one of them to the start of the run.
  */
-export function stampedLogger(sink: Logger = consoleLogger): Logger {
+export function stampedLogger(sink: Logger = operatorSink): Logger {
   return {
     info: (line) => sink.info(stampLines(new Date(), line)),
     warn: (line) => sink.warn(stampLines(new Date(), line)),
@@ -78,10 +100,11 @@ export function stampedLogger(sink: Logger = consoleLogger): Logger {
  * takes one may write the only line of its run, which is the line an operator
  * most needs placed against the rest of the artifacts the run left.
  *
- * Refusals only — every line through here is stderr, so nothing an
- * observational verb pipes as data is touched: a verb's own listing still goes
- * straight to the console, a listing being read rather than a run being
- * narrated.
+ * Every level of it on stderr ({@link operatorSink}): a tick's summary and a
+ * supervisor's own lines are the run narrating itself, the same as a refusal,
+ * so none of them reaches the stream an observational verb pipes as data. A
+ * verb's own listing is written past this logger entirely — a listing being
+ * read rather than a run being narrated.
  *
  * One construction per process is exact rather than a shortcut:
  * {@link stampedLogger} reads the instant per call, never at construction.
