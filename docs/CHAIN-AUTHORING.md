@@ -2516,15 +2516,23 @@ stuck on it, rather than reading a bare `hibernating`/`awake` line and
 guessing.
 
 A chain asking the dispatcher's own question — would this entry be picked
-right now — calls `api.isPickableNow(entry, shippedTags, isForkResolved?, capabilities?)`
+right now — calls `api.isPickableNow(entry, queue, isForkResolved?, capabilities?)`
 rather than walking the gate kinds itself: one answer over every axis at once
 — the declared forks through your `forkResolver` (§6), the gate kind, a
-`blockedBy` entry's blockers against the tags that have shipped, and a
-`requiresCapability` entry's capability against the set the chain asserted. A hook that wants *this* tick's answer reads `ctx.pickable`, which
+`blockedBy` entry's blockers against the queue it sits in, a
+`requiresCapability` entry's capability against the set the chain asserted,
+and the same four over every ancestor the entry's `parent` chain names, since
+an entry inherits its ancestors' gates. A hook that wants *this* tick's answer reads `ctx.pickable`, which
 is the same predicate already applied by the dispatcher (§1). The function is
 for an entry the chain is holding but has not queued — a producer deciding
 whether the entry it is about to write would be buildable, or blocked on a
 fork nobody has resolved.
+
+`queue` is the listing the entry sits in, and a blocker tag it does not hold
+counts as landed: an entry leaves the queue when it ships, so you hand the
+queue rather than a set of tags you watched ship. Hand the listing an entry
+*would* join when it is not queued yet; a listing with none of its ancestors
+answers over the entry's own gate alone.
 
 `backlog-groomer-chain.ts` uses the same gate kind for a non-infrastructure
 capability — a backlog item can require `"ops-access"` just as easily as a

@@ -920,7 +920,12 @@ describe("parsePendingQueue/parsePendingQueueLoose — shared error mapping", ()
 });
 
 describe("dependsOnForks — foundations governor", () => {
-  const noForks = new Set<string>();
+  /**
+   * The gate read's queue argument where the case is about forks alone: a
+   * listing holding nothing settles every `blockedBy` tag and offers no
+   * ancestor, so the fork governor is the only thing left to decide.
+   */
+  const noQueue: PendingEntry[] = [];
 
   it("defaults to an empty array when omitted", () => {
     const parsed = roundTrip({ ...baseEntry, gate: { kind: "open" } });
@@ -945,7 +950,7 @@ describe("dependsOnForks — foundations governor", () => {
       gate: { kind: "open" },
       dependsOnForks: ["coldstart-2"],
     });
-    expect(isPickableNow(entry, noForks, () => false)).toBe(false);
+    expect(isPickableNow(entry, noQueue, () => false)).toBe(false);
   });
 
   it("an open entry whose forks all resolve IS pickable", () => {
@@ -954,7 +959,7 @@ describe("dependsOnForks — foundations governor", () => {
       gate: { kind: "open" },
       dependsOnForks: ["coldstart-2", "unread-count-model"],
     });
-    expect(isPickableNow(entry, noForks, () => true)).toBe(true);
+    expect(isPickableNow(entry, noQueue, () => true)).toBe(true);
   });
 
   it("blocks if ANY declared fork is unresolved", () => {
@@ -964,7 +969,7 @@ describe("dependsOnForks — foundations governor", () => {
       dependsOnForks: ["resolved-one", "open-one"],
     });
     const resolved = (slug: string) => slug === "resolved-one";
-    expect(isPickableNow(entry, noForks, resolved)).toBe(false);
+    expect(isPickableNow(entry, noQueue, resolved)).toBe(false);
   });
 
   it("the default predicate (no resolver) leaves pickability to the gate alone", () => {
@@ -974,13 +979,13 @@ describe("dependsOnForks — foundations governor", () => {
       dependsOnForks: ["anything"],
     });
     // No third argument → every fork treated as resolved → gate decides.
-    expect(isPickableNow(open, noForks)).toBe(true);
+    expect(isPickableNow(open, noQueue)).toBe(true);
 
     const parked = roundTrip({
       ...baseEntry,
       gate: { kind: "parked", reason: "x" },
     });
-    expect(isPickableNow(parked, noForks)).toBe(false);
+    expect(isPickableNow(parked, noQueue)).toBe(false);
   });
 
   it("an unresolved fork blocks even a blockedBy-satisfied entry", () => {
@@ -989,10 +994,9 @@ describe("dependsOnForks — foundations governor", () => {
       gate: { kind: "blockedBy", tags: ["UPSTREAM"] },
       dependsOnForks: ["open-one"],
     });
-    // Upstream shipped (gate would pass) but the fork is open → not pickable.
-    expect(isPickableNow(entry, new Set(["UPSTREAM"]), () => false)).toBe(
-      false,
-    );
+    // Upstream has left the queue (gate would pass) but the fork is open →
+    // not pickable.
+    expect(isPickableNow(entry, noQueue, () => false)).toBe(false);
   });
 });
 
@@ -1540,32 +1544,197 @@ describe("the queue's forest — the rules a whole listing keeps (spec/pending.m
   });
 });
 
-describe("gate=blockedBy — pickability against a tag list (spec/pending.md § The entry core)", () => {
-  const noForks = new Set<string>();
+describe("gate=blockedBy — pickability against the queue the entry sits in (spec/pending.md § Pickability)", () => {
+  /**
+   * The waiter plus whichever of `queued` blockers the queue still holds —
+   * through the real queue parse, so the listing the gate read is handed is
+   * one a producer could have written.
+   */
+  function queueHolding(
+    gateTags: readonly string[],
+    queued: readonly string[],
+  ): PendingEntry[] {
+    const result = parseQueue([
+      { ...baseEntry, tag: "WAITER", gate: { kind: "blockedBy", tags: gateTags } },
+      ...queued.map((tag) => ({ ...baseEntry, tag, gate: { kind: "open" } })),
+    ]);
+    expect(result.ok, JSON.stringify(result.errors)).toBe(true);
+    expect(result.entries).toHaveLength(queued.length + 1);
+    return result.entries;
+  }
 
-  it("is pickable once the single named blocker has shipped", () => {
-    const entry = roundTrip({
-      ...baseEntry,
-      gate: { kind: "blockedBy", tags: ["UPSTREAM"] },
-    });
-    expect(isPickableNow(entry, new Set(["UPSTREAM"]))).toBe(true);
-    expect(isPickableNow(entry, noForks)).toBe(false);
+  /** The waiter out of a listing {@link queueHolding} composed. */
+  const waiter = (queue: readonly PendingEntry[]): PendingEntry =>
+    queue.find((e) => e.tag === "WAITER")!;
+
+  it("is pickable once the single named blocker has left the queue", () => {
+    const standing = queueHolding(["UPSTREAM"], ["UPSTREAM"]);
+    expect(isPickableNow(waiter(standing), standing)).toBe(false);
+
+    const settled = queueHolding(["UPSTREAM"], []);
+    expect(isPickableNow(waiter(settled), settled)).toBe(true);
   });
 
   it("a multi-parent entry is not pickable until EVERY named blocker has shipped", () => {
-    const entry = roundTrip({
-      ...baseEntry,
-      gate: { kind: "blockedBy", tags: ["UPSTREAM-A", "UPSTREAM-B"] },
-    });
-    expect(isPickableNow(entry, new Set(["UPSTREAM-A"]))).toBe(false);
-    expect(isPickableNow(entry, new Set(["UPSTREAM-A", "UPSTREAM-B"]))).toBe(
-      true,
+    const oneLeft = queueHolding(
+      ["UPSTREAM-A", "UPSTREAM-B"],
+      ["UPSTREAM-B"],
     );
+    expect(isPickableNow(waiter(oneLeft), oneLeft)).toBe(false);
+
+    const both = queueHolding(["UPSTREAM-A", "UPSTREAM-B"], []);
+    expect(isPickableNow(waiter(both), both)).toBe(true);
+  });
+});
+
+/**
+ * `spec/pending.md`, *Pickability* — **an entry inherits its ancestors'
+ * gates**: a `blockedBy` declared once on a goal holds its whole subtree, so
+ * the gate read answers over every entry the child's `parent` chain names and
+ * not its own gate alone.
+ *
+ * Every listing here goes through the real queue parse, so the forest the
+ * climb walks is one the producer-side read would admit — a fixture hand-
+ * building `parent` links could gate a child under an ancestor pairing the
+ * queue refuses outright. Each case's child carries `gate: { kind: "open" }`
+ * and declares no fork, which is the direction pin the claim needs: nothing
+ * about the child itself can account for the verdict.
+ */
+describe("isPickableNow — an entry inherits its ancestors' gates (spec/pending.md § Pickability)", () => {
+  /**
+   * A forest of `specs`, through the real parse, with the entry named by
+   * `child` handed back beside the listing it sits in.
+   */
+  function forest(
+    specs: readonly Record<string, unknown>[],
+    child: string,
+  ): { entry: PendingEntry; queue: PendingEntry[] } {
+    const result = parseQueue(specs);
+    expect(result.ok, JSON.stringify(result.errors)).toBe(true);
+    expect(result.entries).toHaveLength(specs.length);
+    const entry = result.entries.find((e) => e.tag === child);
+    expect(entry, `no entry named ${child} in the parsed listing`).toBeDefined();
+    // Non-vacuity on the subject: what the cases below judge is a child whose
+    // own gate is open and whose own forks are none, in a listing that really
+    // holds a parent for it.
+    expect(entry!.gate).toEqual({ kind: "open" });
+    expect(entry!.dependsOnForks).toEqual([]);
+    expect(entry!.parent).toBeDefined();
+    return { entry: entry!, queue: result.entries };
+  }
+
+  /** A `group` entry carrying `gate`, with no files of its own. */
+  const group = (tag: string, gate: unknown, parent?: string): Record<string, unknown> => ({
+    tag,
+    kind: "group",
+    gate,
+    files: {},
+    ...(parent === undefined ? {} : { parent }),
+  });
+
+  /** An open `work` entry under `parent` — the subject of every case here. */
+  const workUnder = (tag: string, parent: string): Record<string, unknown> => ({
+    ...baseEntry,
+    tag,
+    parent,
+    gate: { kind: "open" },
+  });
+
+  it("a work entry under an open group stays pickable", () => {
+    const { entry, queue } = forest(
+      [group("GOAL", { kind: "open" }), workUnder("WORK-UNDER-GOAL", "GOAL")],
+      "WORK-UNDER-GOAL",
+    );
+    expect(isPickableNow(entry, queue)).toBe(true);
+  });
+
+  it("a work entry under a parked group is not pickable", () => {
+    const { entry, queue } = forest(
+      [
+        group("GOAL", { kind: "parked", reason: "decision on the shape" }),
+        workUnder("WORK-UNDER-GOAL", "GOAL"),
+      ],
+      "WORK-UNDER-GOAL",
+    );
+    expect(isPickableNow(entry, queue)).toBe(false);
+  });
+
+  it("a work entry under a group whose blockedBy has not settled is not pickable", () => {
+    const standing = forest(
+      [
+        group("GOAL", { kind: "blockedBy", tags: ["UPSTREAM"] }),
+        workUnder("WORK-UNDER-GOAL", "GOAL"),
+        { ...baseEntry, tag: "UPSTREAM", gate: { kind: "open" } },
+      ],
+      "WORK-UNDER-GOAL",
+    );
+    expect(isPickableNow(standing.entry, standing.queue)).toBe(false);
+
+    // Direction: the same forest with the blocker gone from the queue — the
+    // settled verdict — picks the child, so the refusal above is the standing
+    // blocker and not the `parent` link.
+    const settled = forest(
+      [
+        group("GOAL", { kind: "blockedBy", tags: ["UPSTREAM"] }),
+        workUnder("WORK-UNDER-GOAL", "GOAL"),
+      ],
+      "WORK-UNDER-GOAL",
+    );
+    expect(isPickableNow(settled.entry, settled.queue)).toBe(true);
+  });
+
+  it("a work entry under a group gated on an unasserted capability is not pickable", () => {
+    const { entry, queue } = forest(
+      [
+        group("GOAL", { kind: "requiresCapability", capability: "docker-host" }),
+        workUnder("WORK-UNDER-GOAL", "GOAL"),
+      ],
+      "WORK-UNDER-GOAL",
+    );
+    expect(isPickableNow(entry, queue, () => true, new Set())).toBe(false);
+    // Direction: the chain asserting it clears the inherited gate too.
+    expect(
+      isPickableNow(entry, queue, () => true, new Set(["docker-host"])),
+    ).toBe(true);
+  });
+
+  it("a work entry two groups below a parked root is not pickable", () => {
+    const { entry, queue } = forest(
+      [
+        group("GOAL", { kind: "parked", reason: "decision on the shape" }),
+        group("EPIC", { kind: "open" }, "GOAL"),
+        workUnder("WORK-UNDER-EPIC", "EPIC"),
+      ],
+      "WORK-UNDER-EPIC",
+    );
+    // The nearest ancestor is open, so a climb that stopped at the parent
+    // would read this pickable.
+    expect(queue.find((e) => e.tag === "EPIC")!.gate).toEqual({ kind: "open" });
+    expect(isPickableNow(entry, queue)).toBe(false);
+  });
+
+  it("an entry whose parent the listing does not hold answers over its own gate", () => {
+    // The tooling caller's reading: a producer asking whether the entry it is
+    // about to write would be buildable hands the queue it would join, which
+    // need not hold the group yet (`docs/CHAIN-AUTHORING.md`). The entry comes
+    // from a listing that does hold the group — a one-entry queue naming an
+    // absent parent is refused outright, so the climb's missing-ancestor arm
+    // is reachable only by narrowing the listing, never by a malformed one.
+    const { entry, queue } = forest(
+      [
+        group("GOAL", { kind: "parked", reason: "decision on the shape" }),
+        workUnder("WORK-UNDER-GOAL", "GOAL"),
+      ],
+      "WORK-UNDER-GOAL",
+    );
+    expect(isPickableNow(entry, queue)).toBe(false);
+    expect(isPickableNow(entry, [])).toBe(true);
   });
 });
 
 describe("gate=requiresCapability — pickability", () => {
-  const noForks = new Set<string>();
+  /** As in the fork describe above: a listing that decides nothing. */
+  const noQueue: PendingEntry[] = [];
 
   it("is pickable when the capability is asserted", () => {
     const entry = roundTrip({
@@ -1573,7 +1742,7 @@ describe("gate=requiresCapability — pickability", () => {
       gate: { kind: "requiresCapability", capability: "docker-host" },
     });
     expect(
-      isPickableNow(entry, noForks, () => true, new Set(["docker-host"])),
+      isPickableNow(entry, noQueue, () => true, new Set(["docker-host"])),
     ).toBe(true);
   });
 
@@ -1582,7 +1751,7 @@ describe("gate=requiresCapability — pickability", () => {
       ...baseEntry,
       gate: { kind: "requiresCapability", capability: "docker-host" },
     });
-    expect(isPickableNow(entry, noForks, () => true, new Set())).toBe(false);
+    expect(isPickableNow(entry, noQueue, () => true, new Set())).toBe(false);
   });
 
   it("defaults to non-pickable when no capabilities set is supplied", () => {
@@ -1590,7 +1759,7 @@ describe("gate=requiresCapability — pickability", () => {
       ...baseEntry,
       gate: { kind: "requiresCapability", capability: "docker-host" },
     });
-    expect(isPickableNow(entry, noForks)).toBe(false);
+    expect(isPickableNow(entry, noQueue)).toBe(false);
   });
 });
 
@@ -2026,7 +2195,7 @@ describe("files — an all-empty declaration is not a floor (spec/pending.md § 
     expect(result.ok, JSON.stringify(result.errors)).toBe(true);
     const entry = result.entries[0]!;
     expect(entry.files).toEqual({ new: [], edit: [], retire: [] });
-    expect(isPickableNow(entry, new Set())).toBe(true);
+    expect(isPickableNow(entry, result.entries)).toBe(true);
   });
 
   it("parses clean when only files.new declares a path", () => {

@@ -11545,6 +11545,87 @@ describe("Dispatcher fanout — empty pickable set", () => {
   });
 });
 
+/**
+ * `spec/pending.md`, *Pickability* — **an entry inherits its ancestors'
+ * gates**, and selection gives the same answer the exported read does
+ * (`tests/PendingSchema.test.ts`). Driven through a real fanout tick rather
+ * than the gate read alone: the claim is that the queue reaches the gate read
+ * whole, which only the tick that composes the selection can prove.
+ */
+describe("Dispatcher fanout — a group's gate holds the work entries under it (spec/pending.md § Pickability)", () => {
+  /** A `group` entry carrying `gate`, declaring no files of its own. */
+  function groupEntry(tag: string, gate: PendingEntry["gate"]): PendingEntry {
+    return { ...makeEntry(tag, []), kind: "group", gate };
+  }
+
+  /** The open `work` entry under `GOAL` — the subject, identical in both ticks. */
+  const child = (): PendingEntry => ({
+    ...makeEntry("WORK-UNDER-GOAL", ["src/under-goal.ts"]),
+    parent: "GOAL",
+  });
+
+  it("a fanout tick picks nothing for an open work entry under a parked group, and ships it once the group opens", async () => {
+    const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
+    const chain: Chain = { phases: [phase], humanOnly: [] };
+    const dispatcherOpts = {
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      log: silent,
+    };
+
+    await writePending(fx.repo, [
+      groupEntry("GOAL", { kind: "parked", reason: "decision on the shape" }),
+      child(),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    // Non-vacuity on the subject: the entry the wave declines reads `open`
+    // on disk, so nothing about its own gate accounts for the verdict.
+    const onDisk = readPendingFromDisk(fx.repo);
+    expect(
+      onDisk.find((e) => e.tag === "WORK-UNDER-GOAL")?.gate,
+    ).toEqual({ kind: "open" });
+
+    const preHead = await head(fx.repo);
+    // An agent with no registered action: an invocation here throws rather
+    // than quietly shipping, so "picked nothing" is proven by the wave never
+    // opening a slot and not only by the tip standing still.
+    const held = await new Dispatcher({
+      ...dispatcherOpts,
+      agent: fanoutAgent({}),
+    }).tick();
+
+    expect(held.result?.committed).toBe(false);
+    expect(held.result?.nothingPickable).toBe(true);
+    expect(held.result?.shippedTags).toEqual([]);
+    expect(held.result?.pickableAfter.map((e) => e.tag)).toEqual([]);
+    expect(await head(fx.repo)).toBe(preHead);
+
+    // Direction: the group opens, nothing else changes, and the same entry
+    // ships — so the hold above was the inherited gate and not the `parent`
+    // link, the group's empty file list, or the `group` kind.
+    await writePending(fx.repo, [groupEntry("GOAL", { kind: "open" }), child()]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const shipped = await new Dispatcher({
+      ...dispatcherOpts,
+      agent: fanoutAgent({
+        "work-under-goal": (cwd) =>
+          writeAndCommit(
+            cwd,
+            "src/under-goal.ts",
+            "shipped\n",
+            "build(WORK-UNDER-GOAL): ship",
+          ),
+      }),
+    }).tick();
+
+    expect(shipped.result?.nothingPickable).toBeUndefined();
+    expect(shipped.result?.shippedTags).toEqual(["WORK-UNDER-GOAL"]);
+  });
+});
+
 describe("Dispatcher fanout — quarantine visibility on TickResult (dispatcher-quarantine-visibility)", () => {
   it("a fanout tick with every open entry quarantined reports nothingPickable:true, and a quarantined tag is reported with the key its hold stands under", async () => {
     const entries: PendingEntry[] = [
@@ -18982,7 +19063,7 @@ describe("TickContext.pickable / priorAttempts — dispatcher-computed facts a h
 
     // The next fanout tick's own selection ships exactly the tags the
     // singleton hook's ctx.pickable named — the two reads cannot disagree
-    // because both are the same `isPickable` computation over the same
+    // because both are the same `selectBatch` computation over the same
     // on-disk pending.json.
     expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual(
       capturedPickable!.map((e) => e.tag).sort(),
@@ -19198,7 +19279,7 @@ describe("TickResult.pickableAfter / entries — dispatcher-computed facts a han
     expect(outcome.result?.configDir).toBe(fx.configDir);
 
     // Proven against a fresh tick's own pre-tick `ctx.pickable` over the same
-    // on-disk pending.json, never a second `isPickable` call inlined here —
+    // on-disk pending.json, never a second `selectBatch` call inlined here —
     // the same agreement shape as the singleton/fanout pair above.
     let capturedPickable: readonly PendingEntry[] | undefined;
     new Baton(join(fx.repo, ".flume")).wake("build");

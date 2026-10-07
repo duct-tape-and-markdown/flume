@@ -2915,11 +2915,11 @@ describe("backlog-groomer-chain.ts — where the session capture lands", () => {
 
 /**
  * `.claude/rules/engineering.md`, *Loud or nothing* — the groomer's `reason`
- * is interpolated into `SHIPPED.md`'s ledger line (`- <tag>: <reason>`), and
- * the same chain reads that file back line by line to learn which tags have
- * shipped. Bounded by length alone, a `reason` carrying a newline writes a
- * second line the reader takes for a ledger entry: a shipped tag nothing
- * shipped, silently unblocking a `blockedBy` backlog item on the next tick.
+ * is interpolated into `SHIPPED.md`'s ledger line (`- <tag>: <reason>`), the
+ * append-only record of what that chain shipped. Bounded by length alone, a
+ * `reason` carrying a newline writes a second line shaped exactly like a
+ * ledger entry: a shipped tag nothing shipped, in the one artifact a reader
+ * audits the run against.
  *
  * Driven through the chain object's own `entryExtension` — the declaration
  * the engine composes and the agent parses against — and then through the

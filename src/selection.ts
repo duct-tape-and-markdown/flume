@@ -22,9 +22,10 @@
  * ({@link orderedForSelection}), so no two reported sets can be in two
  * orders.
  *
- * The gate switch is not among them either: it lives at the exported read every
- * consumer already takes it from (`isPickableNow`, `src/PendingSchema.ts`),
- * and this module composes its `blockedBy` input off the queue and calls it.
+ * The gate switch is not among them either, nor the climb through an entry's
+ * ancestors that decides which gates answer for it: both live at the exported
+ * read every consumer already takes it from (`isPickableNow`,
+ * `src/PendingSchema.ts`), and this module hands it the queue this tick read.
  * The identity the hold and the refusal both key on is not this module's
  * either — an entry's declaration key has a second reader in the
  * prior-attempt record, so it lives at its own door (`entryDeclaredKey`,
@@ -56,31 +57,15 @@ export function blamedOn(entry: PendingEntry): {
 }
 
 /**
- * The blocker tags this entry names that the queue no longer holds — the
- * `shippedTags` set {@link isPickableNow} reads, composed for the caller
- * whose fact is the queue rather than a set of tags it watched ship. An
- * entry leaves the queue when it ships, so absence from `queued` — every tag
- * the queue this selection is taken over holds — *is* the settled verdict.
- *
- * Only this entry's own blockers are answered, because they are every tag
- * the `blockedBy` arm asks about; an entry naming none contributes none.
- */
-function settledBlockers(
-  entry: PendingEntry,
-  queued: ReadonlySet<string>,
-): ReadonlySet<string> {
-  if (entry.gate.kind !== "blockedBy") return new Set();
-  return new Set(entry.gate.tags.filter((tag) => !queued.has(tag)));
-}
-
-/**
  * {@link OrderContext.blockedBy} — the dependency edges still standing over
  * this queue, keyed by the entry that declares them.
  *
- * The complement of {@link settledBlockers} over the same membership read,
- * computed here rather than by the policy that reads it: the queue is what
- * settles a blocker, and a chain re-walking it for the fact the gate switch
- * just resolved is the restatement the posture names
+ * The membership read is the gate switch's own — an entry leaves the queue
+ * when it ships, so a blocker tag `queued` no longer holds has settled
+ * (`isPickableNow`, `src/PendingSchema.ts`) — and the edges are the tags it
+ * still does hold. Computed here rather than by the policy that reads it:
+ * the queue is what settles a blocker, and a chain re-walking it for the
+ * fact the gate switch just resolved is the restatement the posture names
  * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
  * never rediscovered*).
  */
@@ -97,33 +82,6 @@ function blockedByGraph(
     );
   }
   return graph;
-}
-
-/**
- * Pickability in the fanout context — the same rule the exported tooling read
- * answers, taken against the queue this tick read.
- *
- * The switch over `gate.kind` is {@link isPickableNow}'s, and the foundations
- * governor that precedes it is too; neither is restated here. What the two
- * callers hold differently is one arm's input, so that is all this one
- * composes: tooling holds the tags it watched ship, selection holds the
- * queue, and {@link settledBlockers} turns the second into the first.
- *
- * `isForkResolved` and `capabilities` default as they do there, so a caller
- * that wires neither gets the same no-op checks.
- */
-function isPickable(
-  entry: PendingEntry,
-  queued: ReadonlySet<string>,
-  isForkResolved: (slug: string) => boolean = () => true,
-  capabilities: ReadonlySet<string> = new Set(),
-): boolean {
-  return isPickableNow(
-    entry,
-    settledBlockers(entry, queued),
-    isForkResolved,
-    capabilities,
-  );
 }
 
 /**
@@ -157,16 +115,26 @@ function isDispatchUnit(entry: PendingEntry): boolean {
   return entry.kind === "work";
 }
 
-/** The entries `isPickable` clears, before this run's live quarantine is applied. */
+/**
+ * The entries the gate read clears, before this run's live quarantine is
+ * applied.
+ *
+ * The queue goes through whole, as the one argument the exported read
+ * resolves both of its queue-shaped facts from: which blockers have settled,
+ * and which of this entry's ancestors still gate it (`isPickableNow`,
+ * `src/PendingSchema.ts`). Nothing is composed for it here — a set of
+ * settled tags assembled on this side would be selection holding a second
+ * opinion about what a ship is, and the ancestor climb a second time.
+ */
 function gateEligible(
   pending: readonly PendingEntry[],
-  queued: ReadonlySet<string>,
   isForkResolved: (slug: string) => boolean,
   capabilities: ReadonlySet<string>,
 ): PendingEntry[] {
   return pending.filter(
     (e) =>
-      isDispatchUnit(e) && isPickable(e, queued, isForkResolved, capabilities),
+      isDispatchUnit(e) &&
+      isPickableNow(e, pending, isForkResolved, capabilities),
   );
 }
 
@@ -198,12 +166,7 @@ export function gateReadyEntries(
   capabilities: ReadonlySet<string>,
   isForkResolved: (slug: string) => boolean = () => true,
 ): PendingEntry[] {
-  return gateEligible(
-    pending,
-    new Set(pending.map((e) => e.tag)),
-    isForkResolved,
-    capabilities,
-  );
+  return gateEligible(pending, isForkResolved, capabilities);
 }
 
 /**
@@ -401,7 +364,7 @@ function orderedForSelection(
 }
 
 /**
- * The pickable set and the three holds that shrank it — what `isPickable`
+ * The pickable set and the three holds that shrank it — what `gateEligible`
  * cleared, minus this run's live quarantine, minus the entries a sibling
  * tick holds a claim on, minus what the chain's own refusal declined, with
  * each hold named by the entries it took.
@@ -520,14 +483,13 @@ export function pickableSelection(opts: {
   // surface that reports one of them can order it differently. The order is
   // the queue's own default — this tick's filing times, and the tag beneath
   // them (`byFilingThenTag`, `src/filingOrder.ts`).
-  // Every tag this queue holds — the membership both blocker reads take
-  // ({@link settledBlockers}, {@link blockedByGraph}), taken once so the
-  // gate switch's verdict and the graph the order hook is handed cannot
-  // disagree about what the queue still carries.
+  // Every tag this queue holds — the membership the edge graph the order
+  // hook is handed is read against ({@link blockedByGraph}). The gate read
+  // takes the same fact off the queue it is handed, so neither side can hold
+  // a second opinion about what this queue still carries.
   const queued = new Set(opts.pending.map((e) => e.tag));
   const eligible = gateEligible(
     opts.pending,
-    queued,
     opts.isForkResolved,
     opts.capabilities,
   ).sort(byFilingThenTag(opts.filingTimes));

@@ -1085,8 +1085,8 @@ function queueForestErrors(
  *
  * A tag naming no entry in the queue is **not** an edge here and not a
  * finding: a blocker outside the queue has already shipped by the membership
- * read selection takes (`settledBlockers`, `src/selection.ts`), so it closes
- * nothing and is admitted. The search is over reachability of `entry.tag`, so
+ * read the gate switch takes ({@link gateSettled}), so it closes nothing and
+ * is admitted. The search is over reachability of `entry.tag`, so
  * one visited set spans every branch — a blocker that led nowhere back on one
  * path leads nowhere back on the next.
  */
@@ -1158,6 +1158,42 @@ export function descendantsOf(
     }
   }
   return below;
+}
+
+/**
+ * Every entry above `entry` in the queue's forest — its parent, that
+ * parent's parent, and on to the root — nearest first.
+ *
+ * The complement of {@link descendantsOf}, and a separate walk rather than
+ * that one inverted: a descent has to index every `parent` link in the
+ * listing to find a subtree, while an ascent follows one link per level and
+ * reads the rest of the queue not at all.
+ *
+ * A `parent` tag the listing does not hold ends the climb — the same reading
+ * {@link descendantsOf} takes of a tag naming no entry, and the reading a
+ * caller holding an entry it has not queued needs: the entry's own gate is
+ * then the whole answer rather than an ancestor the listing cannot show.
+ * Termination is the walk's to guarantee and not the caller's: a chain of
+ * parents that closes on itself is refused by the queue-wide read
+ * ({@link queueForestErrors}), but this function is handed a list, not that
+ * verdict, so a tag already seen ends the climb too.
+ */
+function ancestorsOf(
+  listing: readonly PendingEntry[],
+  entry: PendingEntry,
+): PendingEntry[] {
+  const byTag = new Map(listing.map((e) => [e.tag, e] as const));
+  const above: PendingEntry[] = [];
+  const seen = new Set<string>([entry.tag]);
+  let next = entry.parent;
+  while (next !== undefined && !seen.has(next)) {
+    seen.add(next);
+    const parent = byTag.get(next);
+    if (parent === undefined) break;
+    above.push(parent);
+    next = parent.parent;
+  }
+  return above;
 }
 
 // ---------- prompt rendering ----------
@@ -1279,27 +1315,63 @@ One entry per file, named "<tag>.json" directly under the queue directory — th
 // ---------- pickability ----------
 
 /**
- * An entry is pickable when every foundational fork it declares is resolved
- * AND its gate is open AND it is not waiting on a capability the chain
- * hasn't asserted.
+ * Pickability's one switch over `gate.kind`, over one entry's own gate —
+ * {@link isPickableNow} folds it over the entry and each of its ancestors,
+ * and nothing else reads it, because no consumer of a gate verdict wants one
+ * entry's share of it.
  *
- * Pickability's one switch over `gate.kind` lives here, and both of its
- * readers take it from here. Tooling holding its own shipped-tags set reads
- * it off the package's exports and the chain API (`FlumeApi`,
- * `src/flumeApi.ts`); the dispatcher's own selection reaches it through
- * `isPickable` (`src/selection.ts`), which composes `shippedTags` off the
- * pending queue, where a blocker has settled exactly when it is no longer
- * in it. A second spelling of the switch on either side is how the two
- * could come to disagree about what "pickable" means.
+ * `blockedBy` is pickable iff every named blocker has left the queue — a DAG
+ * with several parents resolves only once all of them land, never on the
+ * first, and a blocker `queuedTags` does not hold counts as landed, since
+ * leaving the queue is how a ship reads (`spec/pending.md`, *Pickability*).
+ */
+function gateSettled(
+  entry: PendingEntry,
+  queuedTags: ReadonlySet<string>,
+  capabilities: ReadonlySet<string>,
+): boolean {
+  switch (entry.gate.kind) {
+    case "open":
+      return true;
+    case "blockedBy":
+      return entry.gate.tags.every((tag) => !queuedTags.has(tag));
+    case "parked":
+    case "deferred":
+      return false;
+    case "requiresCapability":
+      return capabilities.has(entry.gate.capability);
+  }
+}
+
+/**
+ * An entry is pickable when every foundational fork it declares is resolved
+ * AND its own gate and every one of its ancestors' gates are settled AND
+ * none of them waits on a capability the chain hasn't asserted.
+ *
+ * Pickability's one switch lives at {@link gateSettled} and both of this
+ * read's consumers reach it through here. Tooling reads it off the package's
+ * exports and the chain API (`FlumeApi`, `src/flumeApi.ts`); the
+ * dispatcher's own selection reaches it through `gateEligible`
+ * (`src/selection.ts`), which hands over the queue this tick read and
+ * composes nothing. A second spelling of the switch — or of the ancestor
+ * climb — on either side is how the two could come to disagree about what
+ * "pickable" means.
+ *
+ * `queue` is the listing the entry sits in, and the two facts it carries are
+ * which blockers have settled and which gates stand above the entry: a
+ * `blockedBy` declared once on a goal therefore holds its whole subtree
+ * ({@link ancestorsOf}). A caller holding an entry it has not queued hands
+ * the listing the entry *would* join; a listing that holds none of its
+ * ancestors answers over the entry's own gate alone, which is the reading a
+ * tooling caller with no forest means literally.
  *
  * `isForkResolved` is the foundations governor's injected predicate: it
  * answers "is this fork slug resolved?" for the consuming project. It
  * defaults to always-resolved, so a caller that supplies none — or an entry
- * that declares no `dependsOnForks` — behaves exactly as before.
- *
- * `blockedBy` is pickable iff every named blocker tag has shipped — a DAG
- * with several parents resolves only once all of them land, never on the
- * first.
+ * that declares no `dependsOnForks` — leaves the verdict to the gates. The
+ * governor reads the entry's own declaration: `dependsOnForks` is a
+ * side-array and not a gate kind (`spec/pending.md`, *Pickability*), so it
+ * is not what an ancestor hands down.
  *
  * `capabilities` is the chain's declared `Chain.capabilities` — the
  * environment facts it asserts. Defaults to empty, so a `requiresCapability`
@@ -1308,24 +1380,18 @@ One entry per file, named "<tag>.json" directly under the queue directory — th
  */
 export function isPickableNow(
   entry: PendingEntry,
-  shippedTags: ReadonlySet<string>,
+  queue: readonly PendingEntry[],
   isForkResolved: (slug: string) => boolean = () => true,
   capabilities: ReadonlySet<string> = new Set(),
 ): boolean {
   // Foundations governor: a settled gate is not enough — every declared fork
   // must resolve. Cross-cuts every gate kind, so it precedes the switch.
   if (!entry.dependsOnForks.every(isForkResolved)) return false;
-  switch (entry.gate.kind) {
-    case "open":
-      return true;
-    case "blockedBy":
-      return entry.gate.tags.every((tag) => shippedTags.has(tag));
-    case "parked":
-    case "deferred":
-      return false;
-    case "requiresCapability":
-      return capabilities.has(entry.gate.capability);
+  const queuedTags = new Set(queue.map((e) => e.tag));
+  for (const member of [entry, ...ancestorsOf(queue, entry)]) {
+    if (!gateSettled(member, queuedTags, capabilities)) return false;
   }
+  return true;
 }
 
 /**

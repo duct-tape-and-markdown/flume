@@ -73,12 +73,11 @@ const GIT_OUTPUT_CAP_BYTES = 8 << 20;
  *
  * "One line" is a bound the schema holds, not a convention the writer
  * remembers. `reason` is interpolated into `SHIPPED.md`'s ledger line
- * (`- <tag>: <reason>`), and `readShippedTags` reads that file back line by
- * line to decide which `blockedBy` items have unblocked. An embedded newline
- * would write a second line shaped exactly like a ledger entry — forging a
- * shipped tag nothing shipped, and unblocking a backlog item silently.
- * Refusing it at parse is the one place the writer and the reader cannot
- * disagree.
+ * (`- <tag>: <reason>`), which is the append-only record a human audits a
+ * run against. An embedded newline would write a second line shaped exactly
+ * like a ledger entry — a shipped tag nothing shipped, in the one artifact
+ * that says what this chain did. Refusing it at parse is the one place the
+ * writer and every reader of that file cannot disagree.
  *
  * `tag` is refined to a lowercase-kebab convention — the opposite of
  * cascade's ALL-CAPS grammar — proving the refinement is this chain's
@@ -135,18 +134,6 @@ const factory: ChainFactory = (api) => {
   // the call site, and not a green tick on your host, is what carries it.
 
   // ---------- the groom agent ----------
-
-  /** Tags already shipped, read back from `SHIPPED.md` so a `blockedBy` item unblocks across ticks. */
-  function readShippedTags(cwd: string): Set<string> {
-    const path = namespacedJoin(cwd, SHIPPED_PATH);
-    if (!existsSync(path)) return new Set();
-    const tags = new Set<string>();
-    for (const line of readFileSync(path, "utf8").split("\n")) {
-      const m = /^- ([a-z0-9-]+):/.exec(line);
-      if (m) tags.add(m[1]!);
-    }
-    return tags;
-  }
 
   /**
    * `BACKLOG.json`'s own parse, shared by the groom agent and the gate below
@@ -235,9 +222,16 @@ const factory: ChainFactory = (api) => {
       }
       const entries = backlog.entries;
 
-      const shippedTags = readShippedTags(cwd);
+      // The gate read is handed this backlog whole: a groomed item is
+      // *removed* from `BACKLOG.json`, so absence from the listing is how a
+      // ship reads, and the same listing is where an item's `parent` chain
+      // resolves. A second shipped-tags set read back off `SHIPPED.md` would
+      // be this chain holding its own opinion about what the engine already
+      // answers (`.claude/rules/engineering.md`, *A fact the engine holds is
+      // reported, never rediscovered*) — and a ledger-derived one would miss
+      // an ancestor's gate entirely.
       const pick = entries.find((entry) =>
-        isPickableNow(entry, shippedTags, undefined, new Set()),
+        isPickableNow(entry, entries, undefined, new Set()),
       );
       if (!pick) {
         return { exitCode: 0, stdout: say("no pickable backlog item"), stderr: "" };
@@ -249,7 +243,7 @@ const factory: ChainFactory = (api) => {
       // Narrows the parsed payload's `unknown` to `string`, and re-asserts
       // the one-line bound at the interpolation it protects: a `reason` that
       // reached here carrying a newline throws rather than writing a ledger
-      // line `readShippedTags` would read as a second tag.
+      // line a reader of the ledger would take for a second tag.
       const reason = entryExtension.reason.schema.parse(pick.reason);
       const shippedPath = namespacedJoin(cwd, SHIPPED_PATH);
       const prior = existsSync(shippedPath) ? readFileSync(shippedPath, "utf8") : "";
