@@ -345,6 +345,17 @@ export interface SuperviseResult {
    * a stopped run's exit code stays decided by the run totals alone.
    */
   stoppedByFlag?: boolean;
+  /**
+   * spec/loop.md "Baton — presence wakes, absence hibernates": set when the
+   * run ended because every flag standing names a phase an operator holds,
+   * naming those phases. Distinct from `hibernated` — flags stand, so the
+   * baton is not empty — and distinct from `terminal`: a hold is the
+   * operator's own, lifted by `flume wake <phase>`, while an orphaned flag
+   * is a chain to fix. Read by `flume loop`'s completion summary; never
+   * consulted by `loopExitCode`, which leaves a held stop's code to the run
+   * totals the way it does hibernation's.
+   */
+  heldPhases?: readonly string[];
 }
 
 /**
@@ -609,6 +620,15 @@ export async function superviseLoop(
    */
   const fill = (): void => {
     const awake = baton.awake();
+    // The operator's hold markers, read at this boundary with the flags: the
+    // supervisor does not start a held phase (spec/loop.md, *Baton —
+    // presence wakes, absence hibernates*). A flag standing under a hold is
+    // left exactly where it is — the queued run is the operator's to release
+    // by lifting the hold, not the supervisor's to clear by declining it.
+    //
+    // Nothing to do with `liftStaleHolds` below, which is the run-scoped
+    // entry quarantine: this `held` is the operator's end of the baton.
+    const heldPhases = baton.held();
     liftStaleHolds();
     // One snapshot per fill, so every child this call starts is told the same
     // set and none of them holds a reference the loop keeps mutating.
@@ -616,6 +636,7 @@ export async function superviseLoop(
     for (const phase of phaseOrder ?? awake) {
       if (inFlight.size >= maxTicks || started >= tickBudget) return;
       if (!awake.includes(phase) || inFlight.has(phase)) continue;
+      if (heldPhases.includes(phase)) continue;
       started++;
       inFlight.set(
         phase,
@@ -1025,6 +1046,21 @@ export async function superviseLoop(
     // would be a second answer, and a child settling between them would make
     // the two disagree.
     const awake = baton.awake();
+    // One read beside it, for the same reason: the arms below and the record
+    // they write must name the set one answer, not two.
+    const heldAwake = baton.held();
+    // Which standing flags `fill` could ever have started: declared by the
+    // chain, and not held. The same two conditions `fill` itself applies, so
+    // "no child started and none in flight" is decided here by the reason
+    // rather than by a predicate per arm that leaves a state neither claims
+    // (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+    const startable = awake.filter(
+      (name) =>
+        (phaseOrder?.includes(name) ?? true) && !heldAwake.includes(name),
+    );
+    const orphans = awake.filter(
+      (name) => !(phaseOrder?.includes(name) ?? true),
+    );
     if (awake.length === 0) {
       ending = {
         stop: { hibernated: true },
@@ -1043,13 +1079,18 @@ export async function superviseLoop(
           await logFrictionSummary();
         },
       };
-    } else if (!awake.some((name) => phaseOrder?.includes(name) ?? true)) {
-      // Axis C from the supervisor's side: every flag standing names a phase
-      // the chain it resolved does not declare, so there is no child left to
-      // classify it. Same verdict the child's own 78 carries below — read
-      // from the roster the chain stated rather than guessed at
-      // (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
-      const phases = awake;
+    } else if (startable.length === 0 && orphans.length > 0) {
+      // Axis C from the supervisor's side: nothing standing can be started,
+      // and a flag among them names a phase the chain it resolved does not
+      // declare, so there is no child left to classify it. Same verdict the
+      // child's own 78 carries below — read from the roster the chain stated
+      // rather than guessed at (`.claude/rules/engine-boundary.md`, *Told,
+      // not inferred*).
+      //
+      // Read ahead of the held arm below, and naming the orphans alone: a
+      // chain to fix outranks a hold to lift, and a declared phase an
+      // operator put down is not an orphan.
+      const phases = orphans;
       ending = {
         stop: {
           hibernated: false,
@@ -1067,13 +1108,34 @@ export async function superviseLoop(
           );
         },
       };
+    } else if (startable.length === 0) {
+      // Nothing startable and no orphan among the flags: every one of them
+      // is a declared phase an operator holds, so `fill` started nothing and
+      // never will until a hold is lifted. A clean stop, not a wall — the
+      // operator put these phases down themselves, the flags stand for the
+      // runs they owe, and `loopExitCode` leaves the code to the run totals
+      // the way hibernation and the stop flag do.
+      const phases = heldAwake.filter((name) => awake.includes(name));
+      ending = {
+        stop: { hibernated: false, heldPhases: phases },
+        cause: { reason: "all-held" },
+        finish: async () => {
+          log.info(
+            `[flume] every awake phase is held (${phases.join(", ")}); ` +
+              `ending run after ${ticks} tick(s). ` +
+              `\`flume wake <phase>\` lifts a hold.`,
+          );
+          await logFrictionSummary();
+        },
+      };
     } else {
-      // Unreachable while `maxTicks` is at least one: a flag the chain
-      // declares, budget left, and an empty table is a supervisor that may
-      // hold no child. Loud rather than reported as a quiet hibernation
-      // (`.claude/rules/engineering.md`, *Loud or nothing*).
+      // Unreachable while `maxTicks` is at least one: a startable flag — one
+      // the chain declares and no hold stands over — budget left, and an
+      // empty table is a supervisor that may hold no child. Loud rather than
+      // reported as a quiet hibernation (`.claude/rules/engineering.md`,
+      // *Loud or nothing*).
       throw new Error(
-        `the loop supervisor started no child for awake phase(s) ${awake.join(", ")} ` +
+        `the loop supervisor started no child for awake phase(s) ${startable.join(", ")} ` +
           `with ${tickBudget - started} of its ${tickBudget}-tick budget left: ` +
           `maxTicks is ${maxTicks}, and a supervisor that may hold no child can ` +
           `never run one. Declare supervisorPolicy.maxTicks as a positive integer.`,

@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { Baton } from "../src/Baton.ts";
+import { heldDir } from "../src/paths.ts";
 import { mkTempDirSync } from "./helpers/fixtureRoot.ts";
 import {
   describeBareCall,
@@ -196,6 +197,104 @@ describe("Baton — the flag carries a token", () => {
 
     expect(baton.sleepIfUnchanged("plan", "")).toBe(true);
     expect(baton.isAwake("plan")).toBe(false);
+  });
+});
+
+/**
+ * spec/loop.md "Baton — presence wakes, absence hibernates": the hold
+ * marker, the operator's end of the baton that outranks a handoff's wake.
+ * A second directory beside the awake flags rather than something a flag
+ * carries, because a hold has to survive the flag being removed and re-stood.
+ */
+describe("Baton — the hold marker beside the awake flag", () => {
+  it("hold writes the marker, held() lists it, isHeld reads it", () => {
+    const baton = new Baton(flumeDir);
+
+    // Non-vacuity in the direction the title claims: nothing is held before
+    // the write, so the listing below is the write's.
+    expect(baton.held()).toEqual([]);
+    expect(baton.isHeld("plan")).toBe(false);
+
+    baton.hold("plan");
+    baton.hold("build");
+
+    expect(baton.held()).toEqual(["build", "plan"]);
+    expect(baton.isHeld("plan")).toBe(true);
+    expect(baton.isHeld("review")).toBe(false);
+  });
+
+  it("the hold directory is the first hold's, and reading the holds creates nothing", () => {
+    const fresh = mkTempDirSync("flume-baton-held-");
+    try {
+      const stateRoot = join(fresh, ".flume");
+      expect(existsSync(stateRoot)).toBe(false);
+
+      const baton = new Baton(stateRoot);
+
+      // Absence is the empty hold set, proven rather than created: reading
+      // it leaves the state root exactly as it found it.
+      expect(baton.held()).toEqual([]);
+      expect(baton.isHeld("plan")).toBe(false);
+      expect(existsSync(stateRoot)).toBe(false);
+
+      baton.hold("plan");
+      expect(baton.held()).toEqual(["plan"]);
+    } finally {
+      rmSync(fresh, { recursive: true, force: true });
+    }
+  });
+
+  it("hold is idempotent, and a hold and an awake flag are independent on disk", () => {
+    const baton = new Baton(flumeDir);
+
+    baton.hold("plan");
+    baton.hold("plan");
+    expect(baton.held()).toEqual(["plan"]);
+
+    // The two markers are separate facts: waking a held phase stands its
+    // flag up and leaves the hold, and sleeping it again leaves the hold
+    // standing too. That independence is what lets the pick and the handoff
+    // filter decline a flag that re-stood under a hold.
+    baton.wake("plan");
+    expect(baton.isAwake("plan")).toBe(true);
+    expect(baton.isHeld("plan")).toBe(true);
+
+    baton.sleep("plan");
+    expect(baton.isAwake("plan")).toBe(false);
+    expect(baton.isHeld("plan")).toBe(true);
+
+    // And a hold is not a flag: holding a phase never wakes it, so the baton
+    // still hibernates over holds alone.
+    expect(baton.hibernating()).toBe(true);
+  });
+});
+
+describe.runIf(process.platform !== "win32")("Baton — an unstattable hold marker is loud", () => {
+  it("held() and isHeld both throw on one unstattable hold directory", () => {
+    const baton = new Baton(flumeDir);
+    // The real writer makes the directory; the fixture then replaces it with
+    // a symlink to itself, so `readdirSync` on it and `statSync` under it
+    // both raise ELOOP. Not a permission bit — a root-run test would bypass
+    // chmod (`.claude/rules/platform-facts.md`, *`chmod` denies nothing on
+    // win32*).
+    baton.hold("probe");
+    // The accessor's path, never a second spelling of the layout here
+    // (`heldDir`, `src/paths.ts`).
+    const dir = heldDir(flumeDir);
+    rmSync(dir, { recursive: true });
+    symlinkSync(basename(dir), dir);
+
+    // A hold silently read as absent is the one wake the operator asked the
+    // loop not to take, so neither reader may answer "no hold".
+    expect(() => baton.held()).toThrow(/ELOOP/);
+    expect(() => baton.isHeld("probe")).toThrow(/ELOOP/);
+  });
+
+  it("absence stays silent — a name with no hold is plainly unheld", () => {
+    const baton = new Baton(flumeDir);
+    baton.hold("plan");
+
+    expect(baton.isHeld("build")).toBe(false);
   });
 });
 

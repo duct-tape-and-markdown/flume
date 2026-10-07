@@ -44,6 +44,7 @@ import { gitPath, namespacedJoin, STATE_ROOT_NAMES } from "./paths.js";
  */
 export const RUNTIME_IGNORES = [
   `${STATE_ROOT_NAMES.awake}/`,
+  `${STATE_ROOT_NAMES.held}/`,
   `${STATE_ROOT_NAMES.priorAttempts}/`,
   `${STATE_ROOT_NAMES.renderedPrompts}/`,
   `${STATE_ROOT_NAMES.worktrees}/`,

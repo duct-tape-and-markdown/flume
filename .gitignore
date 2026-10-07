@@ -3,6 +3,7 @@ dist/
 *.log
 .DS_Store
 .flume/awake/
+.flume/held/
 .flume/sessions/
 .flume/prior-attempts/
 .flume/rendered-prompts/

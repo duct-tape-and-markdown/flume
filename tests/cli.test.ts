@@ -5604,6 +5604,79 @@ describe("flume tick --phase <name> (spec/loop.md §Baton — presence wakes, ab
     },
     SPAWN_BUDGET_MS,
   );
+
+  it(
+    "a bare flume tick does not run a held phase",
+    async () => {
+      const repo = await makeScratchRepo("flume-tick-held-", "main");
+      try {
+        const marker = join(repo.dir, "agent-ran");
+        await writeRepoConfig(repo.dir, markerAgentChainSrc(marker));
+        const baton = new Baton(join(repo.dir, ".flume"));
+        baton.wake("probe");
+
+        // The control the claim rests on: with the flag alone this repo
+        // ticks and the agent leaves its marker, so the hold below is what
+        // stops the run rather than a chain that never ran anything.
+        const unheld = await runCli(repo.dir, ["tick"]);
+        expect(unheld.code).toBe(0);
+        expect(existsSync(marker)).toBe(true);
+        await rm(marker, { force: true });
+
+        baton.wake("probe");
+        baton.hold("probe");
+
+        const r = await runCli(repo.dir, ["tick"]);
+
+        // A clean no-op, not a failure: the flag stands for a run the
+        // operator chose to withhold, and the line says how to get it.
+        expect(r.code).toBe(0);
+        expect(r.out).toContain("every awake phase is held: probe");
+        expect(existsSync(marker)).toBe(false);
+        // Neither the flag nor the hold moved — a tick that slept either
+        // would be acknowledging the hold on the operator's behalf.
+        expect(baton.isAwake("probe")).toBe(true);
+        expect(baton.isHeld("probe")).toBe(true);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it(
+    "flume tick --phase runs a held phase",
+    async () => {
+      const repo = await makeScratchRepo("flume-tick-held-", "main");
+      try {
+        const marker = join(repo.dir, "agent-ran");
+        await writeRepoConfig(repo.dir, markerAgentChainSrc(marker));
+        const baton = new Baton(join(repo.dir, ".flume"));
+        baton.wake("probe");
+        baton.hold("probe");
+
+        // The control: bare, this very tree declines (the case above), so a
+        // run here is the `--phase` request's doing and not the flag's.
+        const bare = await runCli(repo.dir, ["tick"]);
+        expect(bare.code).toBe(0);
+        expect(existsSync(marker)).toBe(false);
+
+        const named = await runCli(repo.dir, ["tick", "--phase", "probe"]);
+
+        // The operator's own explicit action runs it (spec/loop.md, *Baton —
+        // presence wakes, absence hibernates*).
+        expect(named.code).toBe(0);
+        expect(named.out).toMatch(/tick → probe/);
+        expect(existsSync(marker)).toBe(true);
+        // And running it did not lift the hold: that is `flume wake`'s, not
+        // a tick's.
+        expect(baton.isHeld("probe")).toBe(true);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
 });
 
 

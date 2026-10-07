@@ -54,6 +54,8 @@ const RUN_END_REASONS = [
   "mount-dead",
   /** Awake flags name phases the resolved chain does not declare. */
   "terminal-misconfiguration",
+  /** Every flag standing names a phase an operator holds. */
+  "all-held",
   /** A tick's verdict was present and would not read. */
   "unreadable-verdict",
 ] as const;

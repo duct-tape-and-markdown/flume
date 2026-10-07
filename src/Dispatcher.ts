@@ -80,6 +80,7 @@ import {
   buildTickVerdict,
   clearInvocationRows,
   readInvocationRows,
+  type DeclinedWake,
   type GateFailure,
   type MergeFailure,
   type PlatformFailure,
@@ -88,6 +89,7 @@ import {
   type ShipFailure,
   type TickVerdict,
   type UnclassedWall,
+  type WakeDeclineReason,
 } from "./tickVerdict.js";
 import * as git from "./git.js";
 import {
@@ -368,6 +370,22 @@ export interface TickOutcome {
    * reachable only through an explicit name.
    */
   undeclaredPhase?: { requested: string; declared: readonly string[] };
+  /**
+   * Set when a bare tick found flags standing and a hold over every one of
+   * them: the phases it declined to pick, in baton order (spec/loop.md,
+   * *Baton — presence wakes, absence hibernates*). Neither a failure nor
+   * hibernation — the flags stand, the holds are the operator's, no agent
+   * ran and no flag moved, so the process exits 0 the way a hibernated tick
+   * does.
+   *
+   * Reachable only through a bare tick: `flume tick --phase <name>` runs a
+   * held phase as the operator's own explicit action, and never reaches this
+   * arm. Reported rather than left to a caller comparing `awakeAfter`
+   * against a hold set of its own (`.claude/rules/engineering.md`, *A fact
+   * the engine holds is reported, never rediscovered*); what to do about it
+   * stays the caller's.
+   */
+  heldPhases?: readonly string[];
   /**
    * Set when the phase this tick selected declares a prompt file that could
    * not be read — nothing at the address, a directory, a denial. Rides
@@ -995,14 +1013,28 @@ export class Dispatcher {
     const forkResolver = chainModule.forkResolver ?? this.opts.forkResolver;
 
     // Which phase this tick is: the name it was handed, or the first awake
-    // one in declared order. A named phase runs whatever the baton says —
-    // the request is the statement, and re-reading the flags behind it would
-    // be the engine second-guessing what it was told
-    // (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+    // one in declared order that no hold stands over. A named phase runs
+    // whatever the baton says — hold included, which is the operator's own
+    // explicit action (spec/loop.md, *Baton — presence wakes, absence
+    // hibernates*): the request is the statement, and re-reading the flags
+    // or the holds behind it would be the engine second-guessing what it was
+    // told (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+    //
+    // The holds are read here, where the pick is made, and again before the
+    // handoff's wakes below — each at its own decision point, because a hold
+    // placed mid-tick is a statement about the wake and not about the pick
+    // that already happened.
     const requested = request.phase;
+    // Read for the bare pick alone, and not at all for a named one: a tick
+    // told which phase it is consults no marker to second-guess the telling,
+    // and the decline arm below that reads this is reachable only past the
+    // named request's own refusal.
+    const held = requested === undefined ? this.baton.held() : [];
     const phase =
       requested === undefined
-        ? chain.phases.find((p) => awake.includes(p.name))
+        ? chain.phases.find(
+            (p) => awake.includes(p.name) && !held.includes(p.name),
+          )
         : chain.phases.find((p) => p.name === requested);
 
     if (!phase) {
@@ -1027,18 +1059,49 @@ export class Dispatcher {
         };
       }
       if (awake.length > 0) {
-        // Axis C: every awake flag names a phase the chain does not
-        // declare. Not Axis B (nothing here is quiescent — the flags persist)
-        // and not Axis A (no agent ran, nothing to retry). The flags stay on
-        // disk so the human inspects, then `flume sleep <phase>` or fixes
-        // the chain; clearing them would be a silent ack.
+        // Two ways a standing flag reaches no phase, and they are not the
+        // same finding. Orphans — flags naming phases this chain does not
+        // declare — are read first: the misconfiguration is terminal and the
+        // hold is not, so a tree with both says the thing a human has to fix
+        // rather than the thing they chose.
+        const declaredNames = new Set(chain.phases.map((p) => p.name));
+        const orphans = awake.filter((name) => !declaredNames.has(name));
+        if (orphans.length > 0) {
+          // Axis C: an awake flag names a phase the chain does not
+          // declare. Not Axis B (nothing here is quiescent — the flags persist)
+          // and not Axis A (no agent ran, nothing to retry). The flags stay on
+          // disk so the human inspects, then `flume sleep <phase>` or fixes
+          // the chain; clearing them would be a silent ack.
+          const msg =
+            `awake flags reference unknown phases: ${orphans.join(", ")}; ` +
+            `terminal misconfiguration (orphaned-awake), flags left on disk`;
+          this.log.error(`[flume] ${msg}`);
+          return {
+            hibernated: false,
+            terminal: { kind: "orphaned-awake", phases: orphans },
+            awakeAfter: awake,
+            summary: msg,
+          };
+        }
+        // Every flag standing names a declared phase, and a hold stands over
+        // each of them: a bare tick does not run a held phase, so this tick
+        // has no work (spec/loop.md, *Baton — presence wakes, absence
+        // hibernates*). A clean no-op, not a failure and not hibernation —
+        // the flags stand, so the loop has work the moment the operator
+        // lifts a hold, and `flume tick --phase <name>` runs one now.
+        //
+        // The flags are left exactly as they are. Sleeping them here would
+        // be the engine acknowledging a hold on the operator's behalf and
+        // losing the queued run they stand for.
+        const heldAwake = awake.filter((name) => held.includes(name));
         const msg =
-          `awake flags reference unknown phases: ${awake.join(", ")}; ` +
-          `terminal misconfiguration (orphaned-awake), flags left on disk`;
-        this.log.error(`[flume] ${msg}`);
+          `every awake phase is held: ${heldAwake.join(", ")}; ` +
+          `no work this tick — \`flume tick --phase <name>\` runs a held ` +
+          `phase, or lift the hold`;
+        this.log.info(`[flume] ${msg}`);
         return {
           hibernated: false,
-          terminal: { kind: "orphaned-awake", phases: awake },
+          heldPhases: heldAwake,
           awakeAfter: awake,
           summary: msg,
         };
@@ -1271,8 +1334,45 @@ export class Dispatcher {
       );
       handoff = [];
     }
-    const allowed = handoff.filter((n) => !chain.humanOnly.includes(n));
+    // Which of the names the handoff returned the engine actually wakes, and
+    // what declined the rest. Two standing reasons, each read off a
+    // statement rather than guessed at: the chain's own `humanOnly`
+    // declaration, and the operator's hold markers on disk
+    // (spec/loop.md, *Baton — presence wakes, absence hibernates*).
+    //
+    // The holds are re-read here, not carried down from the pick at the top
+    // of this tick: a hold placed while the phase's work ran is placed
+    // precisely to stop the wake this line is about, and a set read minutes
+    // ago would wake over it. Disk is truth at the moment of the decision.
+    //
+    // Every decline is a row, never a silent filter — including `humanOnly`,
+    // which dropped names without a word before. A handoff asking for a
+    // successor and getting none is otherwise indistinguishable, from
+    // `awakeAfter` alone, from a handoff that asked for nothing
+    // (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+    // never rediscovered*). A name the handoff returned twice is two rows:
+    // the engine states what it was handed, and does not dedupe a
+    // counterparty's list on its behalf.
+    const heldAtHandoff = this.baton.held();
+    const allowed: string[] = [];
+    const declinedWakes: DeclinedWake[] = [];
+    for (const name of handoff) {
+      const reason: WakeDeclineReason | undefined = chain.humanOnly.includes(
+        name,
+      )
+        ? "human-only"
+        : heldAtHandoff.includes(name)
+          ? "held"
+          : undefined;
+      if (reason === undefined) allowed.push(name);
+      else declinedWakes.push({ phase: name, reason });
+    }
     for (const name of allowed) this.baton.wake(name);
+    if (declinedWakes.length > 0)
+      this.log.info(
+        `[flume] ${phase.name}: handoff wake declined for ` +
+          `${declinedWakes.map((d) => `${d.phase} (${d.reason})`).join(", ")}`,
+      );
 
     const summary = summarize(
       phase.name,
@@ -1281,6 +1381,7 @@ export class Dispatcher {
       noCommit,
       tipMoved,
       declined,
+      declinedWakes,
     );
 
     // The unified facts artifact — a pure value, built here so
@@ -1333,6 +1434,7 @@ export class Dispatcher {
       platformFailures,
       shipFailures,
       clearedPriorAttempts,
+      declinedWakes,
       summary,
       headSha: await git.revParse(this.opts.repoRoot),
     });
@@ -1564,6 +1666,7 @@ function summarize(
   noCommit?: NoCommitMode,
   tipMoved?: boolean,
   declined?: boolean,
+  declinedWakes?: readonly DeclinedWake[],
 ): string {
   const parts: string[] = [phaseName];
   if (result.committed) {
@@ -1596,5 +1699,12 @@ function summarize(
   }
   if (awaking.length > 0) parts.push(`→ ${awaking.join(",")}`);
   else parts.push(`→ hibernate`);
+  // A declined wake rides the one-liner because the arrow above lies without
+  // it: a handoff whose only successor is held reads as `→ hibernate`, which
+  // is the chain ending the run and not the operator holding one phase of it.
+  if (declinedWakes && declinedWakes.length > 0)
+    parts.push(
+      `(declined ${declinedWakes.map((d) => `${d.phase}: ${d.reason}`).join(", ")})`,
+    );
   return parts.join(" ");
 }

@@ -1,9 +1,12 @@
 /**
- * Baton — the filesystem-flag mechanism that decides which phase wakes next.
+ * Baton — the filesystem-marker mechanism that decides which phase wakes next.
  *
- * The baton is the *only* mutable harness state outside committed files.
- * Presence of `.flume/awake/<name>` wakes the corresponding phase on the
- * next tick. Absence hibernates. No daemon, no database, no in-memory state.
+ * The baton is the *only* mutable harness state outside committed files, and
+ * it is two directories of per-phase marker files. Presence of
+ * `.flume/awake/<name>` wakes the corresponding phase on the next tick;
+ * absence hibernates. Presence of `.flume/held/<name>` is an operator's hold,
+ * which outranks a handoff's wake of that phase. No daemon, no database, no
+ * in-memory state.
  *
  * Disk is truth, including the baton.
  */
@@ -13,7 +16,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { existsLoud, isDirectoryOrAbsentUnder } from "./fsProbe.js";
-import { awakeDir, namespacedJoin } from "./paths.js";
+import { awakeDir, heldDir, namespacedJoin } from "./paths.js";
 import {
   mkdirUnderStateRoot,
   readUnderStateRoot,
@@ -45,12 +48,36 @@ export type BatonToken = string;
  */
 const AWAKE_DIR_SUBJECT = "awake-flag directory";
 const AWAKE_FLAG_SUBJECT = "awake flag";
+const HELD_DIR_SUBJECT = "hold-marker directory";
+const HELD_MARKER_SUBJECT = "hold marker";
 
 /**
- * Filesystem-flag mechanism for which phases wake next. Presence of
+ * One directory of per-phase marker files, with the two sentences a refusal
+ * over it names — the directory's subject, and one entry's.
+ *
+ * Two such directories live under the state root and the reads below are the
+ * same walk over either: the awake flags, whose presence wakes a phase, and
+ * the hold markers, whose presence outranks that wake. Spelled once so a
+ * loud-or-nothing reading earned on one of them cannot be the quieter one on
+ * the other (`.claude/rules/engineering.md`, *The fix lands at the
+ * mechanism*).
+ */
+interface MarkerDir {
+  readonly dir: string;
+  readonly dirSubject: string;
+  readonly entrySubject: string;
+}
+
+/**
+ * Filesystem-marker mechanism for which phases wake next. Presence of
  * `<flumeDir>/awake/<name>` wakes the named phase on the next tick; absence
- * sleeps it. Idempotent — wake/sleep tolerate repeated calls and missing
- * flags so concurrent ticks and partial crashes don't corrupt state.
+ * sleeps it. Idempotent — wake/sleep/hold tolerate repeated calls and missing
+ * markers so concurrent ticks and partial crashes don't corrupt state.
+ *
+ * Beside the flags, the hold markers under `<flumeDir>/held` — the operator's
+ * end of the baton. A hold is not a flag: it wakes nothing and never empties
+ * the baton, and what it does is outrank a handoff's wake of the phase it
+ * names ({@link hold}, {@link held}, {@link isHeld}).
  *
  * A flag is a **queue of depth one**, not a level: each {@link wake} writes a
  * fresh {@link BatonToken}, and a tick that read a token at its start sleeps
@@ -82,6 +109,31 @@ export class Baton {
   }
 
   /**
+   * The awake flags as the reads below take them. Composed per call for the
+   * same reason {@link dir} is: one truth, one home.
+   */
+  private get awakeFlags(): MarkerDir {
+    return {
+      dir: this.dir,
+      dirSubject: AWAKE_DIR_SUBJECT,
+      entrySubject: AWAKE_FLAG_SUBJECT,
+    };
+  }
+
+  /**
+   * The hold markers — `<flumeDir>/held/<phase>`, the operator's end of the
+   * baton that outranks a handoff's wake (`spec/loop.md`, *Baton — presence
+   * wakes, absence hibernates*).
+   */
+  private get holdMarkers(): MarkerDir {
+    return {
+      dir: heldDir(this.stateRoot),
+      dirSubject: HELD_DIR_SUBJECT,
+      entrySubject: HELD_MARKER_SUBJECT,
+    };
+  }
+
+  /**
    * Holds the root and touches nothing: constructing the baton is not
    * reading it, and reading it creates nothing (`spec/loop.md`, *Baton —
    * presence wakes, absence hibernates*). {@link wake} makes the directory
@@ -94,23 +146,50 @@ export class Baton {
   }
 
   /**
-   * Whether the awake-flag directory stands: `true` when a directory is
-   * there, `false` when it — or a directory between the state root and it —
-   * is absent, and a throw for everything else.
+   * Whether one {@link MarkerDir} stands: `true` when a directory is there,
+   * `false` when it — or a directory between the state root and it — is
+   * absent, and a throw for everything else.
    *
-   * `false` is the **empty baton**, and it has to be a proven absence rather
-   * than an errno: a plain file at `<flumeDir>/awake` answers a single stat
-   * beneath it `ENOENT` on win32 (`.claude/rules/platform-facts.md`, *win32
-   * reports a path through a non-directory as not found*), so a reader keyed
-   * off that errno would hibernate over an obstructed baton on one host and
-   * refuse on the other. The descent answers alike on both.
+   * `false` is the **empty set** — the empty baton for the awake flags, no
+   * hold at all for the markers — and it has to be a proven absence rather
+   * than an errno: a plain file at the directory's own path answers a single
+   * stat beneath it `ENOENT` on win32
+   * (`.claude/rules/platform-facts.md`, *win32 reports a path through a
+   * non-directory as not found*), so a reader keyed off that errno would
+   * hibernate over an obstructed baton — or run a held phase over an
+   * obstructed hold dir — on one host and refuse on the other. The descent
+   * answers alike on both.
    */
-  private dirStands(): boolean {
+  private dirStands(markers: MarkerDir): boolean {
     return isDirectoryOrAbsentUnder(
-      AWAKE_DIR_SUBJECT,
+      markers.dirSubject,
       this.stateRoot,
-      this.dir,
+      markers.dir,
     );
+  }
+
+  /**
+   * Every marker standing in `markers`, sorted by name for stable iteration.
+   * The one walk behind {@link awake} and {@link held}.
+   */
+  private namesIn(markers: MarkerDir): string[] {
+    return readUnderStateRoot(this.stateRoot, markers.dirSubject, () => {
+      if (!this.dirStands(markers)) return [];
+      return readdirSync(namespacedJoin(markers.dir))
+        .filter((name) => !name.startsWith("."))
+        .sort();
+    });
+  }
+
+  /**
+   * Whether one named marker stands in `markers`. The one probe behind
+   * {@link isAwake} and {@link isHeld}.
+   */
+  private standsIn(markers: MarkerDir, name: string): boolean {
+    return readUnderStateRoot(this.stateRoot, markers.entrySubject, () => {
+      if (!this.dirStands(markers)) return false;
+      return existsLoud(namespacedJoin(markers.dir, name));
+    });
   }
 
   /**
@@ -121,12 +200,7 @@ export class Baton {
    * `EX_IOERR` an unwritable flag refuses with.
    */
   awake(): string[] {
-    return readUnderStateRoot(this.stateRoot, AWAKE_DIR_SUBJECT, () => {
-      if (!this.dirStands()) return [];
-      return readdirSync(namespacedJoin(this.dir))
-        .filter((name) => !name.startsWith("."))
-        .sort();
-    });
+    return this.namesIn(this.awakeFlags);
   }
 
   /**
@@ -140,10 +214,7 @@ export class Baton {
    * decides nothing about whether the phase is awake.
    */
   isAwake(name: string): boolean {
-    return readUnderStateRoot(this.stateRoot, AWAKE_FLAG_SUBJECT, () => {
-      if (!this.dirStands()) return false;
-      return existsLoud(namespacedJoin(this.dir, name));
-    });
+    return this.standsIn(this.awakeFlags, name);
   }
 
   /**
@@ -157,7 +228,7 @@ export class Baton {
    */
   token(name: string): BatonToken | undefined {
     return readUnderStateRoot(this.stateRoot, AWAKE_FLAG_SUBJECT, () => {
-      if (!this.dirStands()) return undefined;
+      if (!this.dirStands(this.awakeFlags)) return undefined;
       try {
         return readFileSync(namespacedJoin(this.dir, name), "utf8");
       } catch (err) {
@@ -243,6 +314,59 @@ export class Baton {
     if (standing !== token) return false;
     this.sleep(name);
     return true;
+  }
+
+  /**
+   * Phases an operator is holding, sorted by name — the markers standing
+   * under `<flumeDir>/held`. An absent directory is no holds at all, and
+   * reading that creates nothing; a directory that is present and will not
+   * read refuses the way {@link awake} does, because a hold silently read as
+   * absent is the one wake the operator asked the loop not to take
+   * (`.claude/rules/engineering.md`, *Loud or nothing*).
+   *
+   * Read at each decision point rather than once per tick: the pick asks at
+   * the pick, and the handoff's wake filter asks again after the phase's
+   * work, so a hold the operator placed mid-tick is honoured by the wake it
+   * was placed to stop. Disk is truth, including when it is read.
+   */
+  held(): string[] {
+    return this.namesIn(this.holdMarkers);
+  }
+
+  /**
+   * True iff a hold stands for the named phase. Presence alone — a marker
+   * carries nothing, so there is nothing to parse and nothing a half-written
+   * one could say.
+   */
+  isHeld(name: string): boolean {
+    return this.standsIn(this.holdMarkers, name);
+  }
+
+  /**
+   * Idempotent: stand the hold marker up, whether or not one already stood.
+   *
+   * **The marker alone.** A hold outranks a handoff's wake, and the flag it
+   * displaces is a separate fact on disk: `flume hold <phase>` pairs this
+   * with {@link sleep} — marker first, so no window leaves the phase pickable
+   * with the operator's intent already recorded nowhere. Keeping them apart
+   * is what lets the pick and the wake filter decline a flag that re-stood
+   * under a hold (a handoff whose own check lost the race with the marker
+   * write), instead of trusting that the hold left no flag behind.
+   *
+   * The directory is made here, by the first hold and by no read, and both
+   * writes refuse loudly for the reasons {@link wake}'s do: a hold reported
+   * placed and not on disk is the loop running the phase the operator put
+   * down.
+   */
+  hold(name: string): void {
+    const markers = this.holdMarkers;
+    mkdirUnderStateRoot(this.stateRoot, markers.dirSubject, markers.dir);
+    writeFileUnderStateRoot(
+      this.stateRoot,
+      markers.entrySubject,
+      join(markers.dir, name),
+      "",
+    );
   }
 
   /** True iff no flags exist. The dispatcher exits when this returns true. */

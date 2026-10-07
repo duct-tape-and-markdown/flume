@@ -580,6 +580,157 @@ describe("superviseLoop — process-per-tick supervisor", () => {
 });
 
 /**
+ * spec/loop.md "Baton — presence wakes, absence hibernates": an operator
+ * hold outranks a handoff, and neither the supervisor nor a bare tick runs a
+ * held phase. A flag standing under a hold is therefore work the supervisor
+ * will not take — and must not spin on or throw over, which is what the
+ * "started no child" backstop below the ending chain would have done once a
+ * held flag made it reachable.
+ */
+describe("superviseLoop — an operator hold is work the supervisor will not take", () => {
+  it("the supervisor does not start a held phase", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+    baton.wake("build");
+    baton.hold("plan");
+
+    const started: string[] = [];
+    const runTick = async ({
+      phase,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+      started.push(phase);
+      baton.sleep(phase);
+      return { exitCode: 0 };
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: 10,
+      maxTicks: 2,
+      phaseOrder: ["plan", "build"],
+      runTick,
+      log: silent,
+    });
+
+    // Non-vacuity, and what makes the skip the hold's doing: `plan` is first
+    // in declared order and `build` really ran, so the supervisor was
+    // filling children and chose not to start the held one.
+    expect(started).toEqual(["build"]);
+    expect(res.ticks).toBe(1);
+    // The held flag stands — the run it owes is the operator's to release by
+    // lifting the hold, never the supervisor's to clear by declining it.
+    expect(baton.awake()).toEqual(["plan"]);
+    expect(baton.isHeld("plan")).toBe(true);
+  });
+
+  it("a run whose every standing flag is held ends cleanly naming them", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+    baton.hold("plan");
+
+    const lines: string[] = [];
+    const rec: Logger = {
+      info: (l) => lines.push(l),
+      warn: () => {},
+      error: () => {},
+    };
+
+    let calls = 0;
+    const runTick = async (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      return { exitCode: 0 };
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: 5,
+      phaseOrder: ["plan"],
+      runTick,
+      log: rec,
+    });
+
+    // No child at all, and the run ended rather than spinning its budget
+    // against a flag it will never take or throwing over an empty table.
+    expect(calls).toBe(0);
+    expect(res.ticks).toBe(0);
+    expect(res.heldPhases).toEqual(["plan"]);
+    // The two readings it is not: flags stand, so this is not hibernation,
+    // and a hold is the operator's own, not a chain to fix.
+    expect(res.hibernated).toBe(false);
+    expect(res.terminal).toBeUndefined();
+    expect(res.mountDead).toBeUndefined();
+    expect(lines.some((l) => /every awake phase is held/.test(l))).toBe(true);
+    expect(lines.some((l) => /plan/.test(l))).toBe(true);
+    // The record on disk says the same, by the key the end site named.
+    const read = readRunEnd(join(fx.repo, ".flume"));
+    expect(read.kind).toBe("read");
+    if (read.kind !== "read") throw new Error("unreachable: asserted above");
+    expect(read.record.reason).toBe("all-held");
+    // And nothing moved.
+    expect(baton.isAwake("plan")).toBe(true);
+    expect(baton.isHeld("plan")).toBe(true);
+  });
+
+  it("a held declared flag beside an undeclared one ends the run rather than throwing", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+    baton.hold("plan");
+    baton.wake("ghost");
+
+    let calls = 0;
+    const runTick = async (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      return { exitCode: 0 };
+    };
+
+    // Neither arm's own predicate covers this on its own: `plan` is declared
+    // so the orphan read "every flag is undeclared" is false, and `ghost` is
+    // unheld so "every flag is held" is false. Nothing is *startable*, which
+    // is the one reading both arms are decided by — and before they were,
+    // this state reached the started-no-child throw.
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: 5,
+      phaseOrder: ["plan"],
+      runTick,
+      log: silent,
+    });
+
+    expect(calls).toBe(0);
+    // The misconfiguration is the finding, naming the orphan alone.
+    expect(res.terminal).toEqual({ kind: "orphaned-awake", phases: ["ghost"] });
+    expect(res.heldPhases).toBeUndefined();
+    expect(baton.awake()).toEqual(["ghost", "plan"]);
+  });
+
+  it("a held orphan still ends the run as the terminal misconfiguration it is", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("ghost");
+    baton.hold("ghost");
+
+    let calls = 0;
+    const runTick = async (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      return { exitCode: 0 };
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: 5,
+      phaseOrder: ["plan"],
+      runTick,
+      log: silent,
+    });
+
+    expect(calls).toBe(0);
+    // A chain to fix outranks a hold to lift: holding a flag the chain never
+    // declared must not quiet the misconfiguration into a clean stop.
+    expect(res.terminal).toEqual({ kind: "orphaned-awake", phases: ["ghost"] });
+    expect(res.heldPhases).toBeUndefined();
+  });
+});
+
+/**
  * spec/loop.md "Exit codes — the run never lies to CI": fa03a39 generalized
  * the repeated-failure backstop to the merge stage (`mergeFailures` on the
  * verdict) but left this accounting provision-only — a wave that ships nothing

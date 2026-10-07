@@ -262,6 +262,13 @@ export {
   type UnclassedWall,
   // …and the closed set its `event` names the wall from.
   type WaveWallEvent,
+  // The row beside them that is nobody's failure: a successor a `handoff`
+  // asked for that the engine did not wake — the chain declared it
+  // `humanOnly`, or an operator holds it. A chain reading why the baton and
+  // its own handoff disagree names what it read.
+  type DeclinedWake,
+  // …and the closed set its `reason` names the decline from.
+  type WakeDeclineReason,
   type TickVerdict,
   type ReportedGateResult,
   type TickVerdictInvocation,

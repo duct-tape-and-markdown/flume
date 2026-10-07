@@ -744,6 +744,38 @@ export interface TickVerdictInvocation extends AgentUsage {
 }
 
 /**
+ * Why the engine declined to wake a name a `handoff` returned — one of two
+ * standing reasons, and no others: the chain declared the phase `humanOnly`,
+ * so only `flume wake` reaches it, or an operator's hold stands over it
+ * (spec/loop.md, *Baton — presence wakes, absence hibernates*).
+ *
+ * A key, not a sentence: it lands on disk, so it survives every rewording of
+ * the line that prints it.
+ */
+export type WakeDeclineReason = "human-only" | "held";
+
+/**
+ * One name a `handoff` asked for and the engine did not wake, as
+ * {@link TickVerdict.declinedWakes} carries it.
+ *
+ * Both halves are the counterparty's own statement — the name the handoff
+ * returned, verbatim, and the reason read off the chain's declaration or off
+ * a marker on disk. Neither is inferred from the baton's shape afterwards
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ */
+export interface DeclinedWake {
+  /** The phase name the handoff returned, exactly as it returned it. */
+  phase: string;
+  /**
+   * Which standing reason declined it. `"human-only"` is read first where
+   * both apply: the chain's declaration is the structural reason — no hold
+   * lifts it — while a hold is the operator's, and lifting it would still
+   * leave the phase unreachable from a handoff.
+   */
+  reason: WakeDeclineReason;
+}
+
+/**
  * The one facts artifact every tick that actually runs a phase writes —
  * phase, entry tag(s), committed/no-commit class, gate results, shipped
  * tags, and (fanout) each provisioned entry's cherry-pick/merge fate. The
@@ -911,6 +943,24 @@ export interface TickVerdict {
    * entries from the queue.
    */
   clearedPriorAttempts?: string[];
+  /**
+   * spec/loop.md "Baton — presence wakes, absence hibernates": every name
+   * this tick's `handoff` returned that the engine did not wake, each with
+   * the reason it was declined ({@link DeclinedWake}). Absent/empty when
+   * every name the handoff returned was woken, and on every tick that ran no
+   * handoff at all — a hibernated tick, a refusal before the phase's work, a
+   * wave that walled.
+   *
+   * A fact, never a verdict: what a chain does about a successor it asked
+   * for and did not get is the chain's (`.claude/rules/engine-boundary.md`,
+   * *Routing rule (plan, build, and interactive sessions)*). Reported
+   * because the alternative is a handoff whose return value and the baton
+   * silently disagree — `awakeAfter` names what stands, and nothing else
+   * said which of the names asked for is missing from it, or why
+   * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+   * never rediscovered*).
+   */
+  declinedWakes?: DeclinedWake[];
   /** This tick's one-line logger summary, verbatim — a rendering of the facts above, not a judgment of them. */
   summary: string;
   /**
@@ -971,6 +1021,7 @@ interface TickVerdictFacts {
   shipFailures?: readonly ShipFailure[] | undefined;
   unclassedWalls?: readonly UnclassedWall[] | undefined;
   clearedPriorAttempts?: readonly string[] | undefined;
+  declinedWakes?: readonly DeclinedWake[] | undefined;
   summary: string;
   /**
    * The trunk tip, read by the producer at the point its own stage says the
@@ -1042,6 +1093,9 @@ export function buildTickVerdict(facts: TickVerdictFacts): TickVerdict {
       : {}),
     ...(facts.clearedPriorAttempts?.length
       ? { clearedPriorAttempts: [...facts.clearedPriorAttempts] }
+      : {}),
+    ...(facts.declinedWakes?.length
+      ? { declinedWakes: [...facts.declinedWakes] }
       : {}),
     summary: facts.summary,
     headSha: facts.headSha,

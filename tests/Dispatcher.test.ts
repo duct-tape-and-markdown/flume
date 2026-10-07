@@ -2145,6 +2145,280 @@ describe("Dispatcher singleton — handoff wakes the successor", () => {
   });
 });
 
+// ---------- an operator hold outranks a handoff ----------
+
+describe("Dispatcher — an operator hold outranks a handoff", () => {
+  it("a held phase is not woken by a handoff that returns its name", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+    baton.hold("build");
+
+    // The handoff asks for both successors. One is held, the other is not,
+    // which is what makes the decline a discrimination rather than a filter
+    // that drops everything it is handed.
+    const plan = makePhase({
+      name: "plan",
+      handoff: () => ["build", "review"],
+    });
+    const chain: Chain = {
+      phases: [plan, makePhase({ name: "build" }), makePhase({ name: "review" })],
+      humanOnly: [],
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async () => {}),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(outcome.phaseName).toBe("plan");
+    // The claim: the held name did not reach the baton, and the sibling the
+    // same handoff returned did.
+    expect(baton.isAwake("build")).toBe(false);
+    expect(baton.isAwake("review")).toBe(true);
+    expect(outcome.awakeAfter).toEqual(["review"]);
+    // And the hold itself is untouched — a handoff never removes one.
+    expect(baton.isHeld("build")).toBe(true);
+  });
+
+  it("the tick verdict names each declined wake and the reason it was declined", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+    baton.hold("build");
+
+    const plan = makePhase({
+      name: "plan",
+      handoff: () => ["build", "review", "sweep"],
+    });
+    const chain: Chain = {
+      phases: [
+        plan,
+        makePhase({ name: "build" }),
+        makePhase({ name: "review" }),
+        makePhase({ name: "sweep" }),
+      ],
+      humanOnly: ["sweep"],
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async () => {}),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Non-vacuity, and what makes the rows a report rather than a constant:
+    // three names were handed over, one of them was woken, and the two that
+    // were not carry different reasons.
+    expect(outcome.awakeAfter).toEqual(["review"]);
+    expect(outcome.verdict?.declinedWakes).toEqual([
+      { phase: "build", reason: "held" },
+      { phase: "sweep", reason: "human-only" },
+    ]);
+    // The one-liner says it too: `→ review` alone would read as a handoff
+    // that asked for one successor.
+    expect(outcome.summary).toContain("build: held");
+    expect(outcome.summary).toContain("sweep: human-only");
+  });
+
+  it("a humanOnly phase a handoff returns is reported as a declined wake", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+
+    const plan = makePhase({ name: "plan", handoff: () => ["human"] });
+    const chain: Chain = {
+      phases: [plan, makePhase({ name: "human" })],
+      humanOnly: ["human"],
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async () => {}),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // No hold anywhere on this tree: the decline is the chain's own
+    // declaration, which used to drop the name without a word.
+    expect(baton.held()).toEqual([]);
+    expect(baton.isAwake("human")).toBe(false);
+    expect(outcome.verdict?.declinedWakes).toEqual([
+      { phase: "human", reason: "human-only" },
+    ]);
+  });
+
+  it("a hold placed while the phase's work ran declines that tick's own handoff wake", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+
+    const plan = makePhase({ name: "plan", handoff: () => ["build"] });
+    const chain: Chain = {
+      phases: [plan, makePhase({ name: "build" })],
+      humanOnly: [],
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      // The operator holds mid-tick — after the pick, before the handoff.
+      // The wake filter reads disk at its own decision point, so the hold
+      // this tick could not have seen at its start still outranks it.
+      agent: singleAgent(async () => {
+        baton.hold("build");
+      }),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(baton.isAwake("build")).toBe(false);
+    expect(outcome.verdict?.declinedWakes).toEqual([
+      { phase: "build", reason: "held" },
+    ]);
+  });
+
+  it("a bare tick picks the first awake phase no hold stands over", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+    baton.wake("build");
+    baton.hold("plan");
+
+    const chain: Chain = {
+      phases: [makePhase({ name: "plan" }), makePhase({ name: "build" })],
+      humanOnly: [],
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async () => {}),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Declaration order puts "plan" first and the hold is what skips it, so
+    // the pick is the hold's doing and not the order's.
+    expect(outcome.phaseName).toBe("build");
+    expect(outcome.heldPhases).toBeUndefined();
+  });
+
+  it("a bare tick over flags every one of which is held does no work and names them", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+    baton.hold("plan");
+
+    const chain: Chain = {
+      phases: [makePhase({ name: "plan" })],
+      humanOnly: [],
+    };
+
+    let invoked = false;
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async () => {
+        invoked = true;
+      }),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expect(invoked).toBe(false);
+    expect(outcome.heldPhases).toEqual(["plan"]);
+    // Neither of the two readings it is not: a flag stands, so this is not
+    // hibernation, and a declared phase an operator put down is not the
+    // orphaned-awake misconfiguration.
+    expect(outcome.hibernated).toBe(false);
+    expect(outcome.terminal).toBeUndefined();
+    expect(outcome.failed).toBeUndefined();
+    // A clean no-op exits 0, the way a hibernated tick does.
+    expect(tickExitCode(outcome)).toBe(0);
+    // Silent-ack guard: neither the flag nor the hold moved.
+    expect(baton.isAwake("plan")).toBe(true);
+    expect(baton.isHeld("plan")).toBe(true);
+    expect(outcome.awakeAfter).toEqual(["plan"]);
+  });
+
+  it("an orphaned awake flag still reports as terminal when a held flag stands beside it", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("plan");
+    baton.hold("plan");
+    baton.wake("ghost");
+
+    const chain: Chain = {
+      phases: [makePhase({ name: "plan" })],
+      humanOnly: [],
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async () => {}),
+      log: silent,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // The misconfiguration is the finding, not the hold: a chain to fix
+    // outranks a hold to lift, and the flag the chain *does* declare is not
+    // named as an orphan.
+    expect(outcome.terminal).toEqual({
+      kind: "orphaned-awake",
+      phases: ["ghost"],
+    });
+    expect(outcome.heldPhases).toBeUndefined();
+  });
+
+  it("a tick asked for a phase by name runs it with a hold standing", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.hold("plan");
+
+    const chain: Chain = {
+      phases: [makePhase({ name: "plan" })],
+      humanOnly: [],
+    };
+
+    let invoked = false;
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async () => {
+        invoked = true;
+      }),
+      log: silent,
+    });
+
+    // The named request is the operator's own explicit action: no flag
+    // stands at all here, so the run is the request's doing and the hold did
+    // not stop it.
+    const outcome = await dispatcher.tick({ phase: "plan" });
+
+    expect(outcome.phaseName).toBe("plan");
+    expect(invoked).toBe(true);
+    expect(outcome.heldPhases).toBeUndefined();
+    expect(outcome.hibernated).toBe(false);
+    // And running it did not lift the hold.
+    expect(baton.isHeld("plan")).toBe(true);
+  });
+});
+
 // ---------- Axis-C terminal misconfiguration ----------
 
 describe("Dispatcher — orphaned awake flags → Axis-C terminal", () => {
@@ -26398,7 +26672,12 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
     // and shipped it; `unclassedWalls` names the walls a wave held beside
     // the one it reports, and neither leg here holds a second — the
     // completing leg walls not at all, and the refused leg's two holders are
-    // one throw the merge stage recorded and re-threw. Such a fact is
+    // one throw the merge stage recorded and re-threw; `declinedWakes` names
+    // the successors a handoff asked for and the engine did not wake, and
+    // this chain declares no `humanOnly` phase and the fixture holds no
+    // phase, so every name its handoff returns is woken — which is also what
+    // keeps the two producers one fact set, since a walled wave never
+    // reaches a handoff at all. Such a fact is
     // asserted absent below, never left to read as covered.
     const conditionalFacts: {
       [K in ConditionalTickVerdictFact]: "populated" | "unreachable";
@@ -26416,6 +26695,7 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
       shipFailures: "populated",
       unclassedWalls: "unreachable",
       clearedPriorAttempts: "populated",
+      declinedWakes: "unreachable",
     };
     const reach = Object.entries(conditionalFacts);
     const populated = reach
@@ -26425,7 +26705,7 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
     // this wave really populates, and the unreachable half is a named few
     // rather than the roster quietly emptying itself.
     expect(populated.length).toBeGreaterThan(0);
-    expect(reach.length - populated.length).toBe(3);
+    expect(reach.length - populated.length).toBe(4);
 
     const legs: [string, WaveLeg][] = [
       ["completing", completing],
@@ -26440,8 +26720,9 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
           expect(keys, `${name} verdict names ${field}`).not.toContain(field);
         }
       }
-      // What puts two of the three unreachable facts out of reach: this wave
-      // shipped. The third is the wave holding one wall, not two.
+      // What puts two of the four unreachable facts out of reach: this wave
+      // shipped. The third is the wave holding one wall, not two; the fourth
+      // is a handoff whose every returned name was woken.
       expect(leg.verdict.committed).toBe(true);
     }
   });

@@ -283,6 +283,7 @@ const TICK_OUTCOME_SPACE: {
     ABSENT,
     { requested: "ghost", declared: ["plan", "build"] },
   ],
+  heldPhases: [ABSENT, ["plan"]],
   promptUnreadable: [
     ABSENT,
     { promptPath: "prompts/plan.md", resolvedPath: "/repo/.flume/prompts/plan.md" },
@@ -319,6 +320,7 @@ const SUPERVISE_RESULT_SPACE: {
   mountDead: [ABSENT, false, true],
   shippedTags: [[], ["SHIPPED-ONE"]],
   erroredTicks: [[], ["tick 1: gate-revert"]],
+  heldPhases: [ABSENT, ["plan"]],
   agentUsageByPhase: [
     [],
     [

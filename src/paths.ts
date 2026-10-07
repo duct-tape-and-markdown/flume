@@ -538,6 +538,7 @@ export function defaultStateRoot(repoRoot: string): string {
  */
 export const STATE_ROOT_NAMES = {
   awake: "awake",
+  held: "held",
   priorAttempts: "prior-attempts",
   renderedPrompts: "rendered-prompts",
   worktrees: "worktrees",
@@ -571,6 +572,18 @@ export function fsStamp(at: Date = new Date()): string {
 /** The baton's awake-flag dir — `<flumeDir>/awake` (`src/Baton.ts`). */
 export function awakeDir(flumeDir: string): string {
   return join(flumeDir, STATE_ROOT_NAMES.awake);
+}
+
+/**
+ * The baton's hold-marker dir — `<flumeDir>/held` (`src/Baton.ts`). A second
+ * directory beside {@link awakeDir} rather than a second thing an awake flag
+ * carries: a hold outranks a wake, so it has to survive the flag being
+ * removed and re-stood, and a marker whose whole content is its own presence
+ * cannot be half-written (spec/loop.md, *Baton — presence wakes, absence
+ * hibernates*).
+ */
+export function heldDir(flumeDir: string): string {
+  return join(flumeDir, STATE_ROOT_NAMES.held);
 }
 
 /**

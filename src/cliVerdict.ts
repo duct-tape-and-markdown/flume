@@ -260,8 +260,9 @@ export function describeRefFailure(
  * errors, an abort on the consecutive-failure backstop (named by the stage
  * `superviseLoop` reported it against — provision, render, merge, gate, ship
  * or platform — never fixed to any one of them), (spec/loop.md "Graceful stop — the stop flag")
- * a stop-flag-ended run, the run's yield, and what the run spent on agents,
- * by phase — undefined when the run had none of these. Printed even on a 0
+ * a stop-flag-ended run, a run every standing flag's hold ended (spec/loop.md,
+ * *Baton — presence wakes, absence hibernates*), the run's yield, and what the
+ * run spent on agents, by phase — undefined when the run had none of these. Printed even on a 0
  * exit (partial success, or a graceful stop): none of these facts may vanish
  * into a green exit silently, and what a run cost is read where its outcome
  * is rather than by re-reading the verdict log.
@@ -284,6 +285,13 @@ export function loopCompletionSummary(
   if (result.stoppedByFlag) {
     parts.push(
       `stop flag present: ended the run after ${result.ticks} tick(s)`,
+    );
+  }
+  if (result.heldPhases?.length) {
+    parts.push(
+      `every awake phase is held (${result.heldPhases.join(", ")}): ended ` +
+        `the run after ${result.ticks} tick(s) — \`flume wake <phase>\` ` +
+        `lifts a hold`,
     );
   }
   if (result.repeatedFailure) {

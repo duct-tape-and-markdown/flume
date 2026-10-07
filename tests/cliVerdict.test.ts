@@ -438,6 +438,26 @@ describe("loopExitCode / loopCompletionSummary — amended exit-code contract", 
     expect(summary).toContain("gate-revert");
   });
 
+  // spec/loop.md "Baton — presence wakes, absence hibernates": a run every
+  // standing flag's hold ended is a clean stop the operator chose, so the
+  // code stays the run totals' and the line names the phases and the verb
+  // that lifts a hold. An operator reading a 0 over a run that started no
+  // child otherwise has nothing saying why.
+  it("a run ended because every awake phase is held exits 0, summary names the held phases", () => {
+    const result: SuperviseResult = {
+      ticks: 0,
+      hibernated: false,
+      heldPhases: ["build", "plan"],
+      shippedTags: [],
+      erroredTicks: [],
+      agentUsageByPhase: [],
+    };
+    expect(loopExitCode(result)).toBe(0);
+    const summary = loopCompletionSummary(result);
+    expect(summary).toContain("every awake phase is held (build, plan)");
+    expect(summary).toContain("flume wake");
+  });
+
   it("a graceful stop with a shipped entry and no errors exits 0, summary still names the stop flag", () => {
     const result: SuperviseResult = {
       ticks: 1,
