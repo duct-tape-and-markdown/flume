@@ -28865,11 +28865,24 @@ it("gatedTip names the tip after the last ledger commit of a multi-ship tick", a
  * than about "the tip at the end": a singleton lands no ledger commit, so the
  * tip its ship leaves is the span's own merge, and the only proof that tip was
  * judged is the sha its judge saw.
+ *
+ * With `absorb`, the agent also lands its own content on trunk before the
+ * merge stage opens, so the pick empties whole and the span merges with no
+ * commit to add (spec/loop.md "Tip verify — one writer per branch, absorption
+ * at the merge"). `landedFirst` is the trunk sha that commit left — the tip
+ * the pick lands onto, and the only sha a gated read can name on that arm,
+ * since the span contributes none of its own.
  */
 async function gatedTipSingleton(opts: {
   file: string;
   red: boolean;
-}): Promise<{ outcome: TickOutcome; judged: string[] }> {
+  absorb?: boolean;
+}): Promise<{
+  outcome: TickOutcome;
+  judged: string[];
+  landedFirst?: string;
+}> {
+  let landedFirst = "";
   const judged: string[] = [];
   new Baton(join(fx.repo, ".flume")).wake("plan");
   const spanWall: Gate = {
@@ -28898,10 +28911,27 @@ async function gatedTipSingleton(opts: {
     configDir: fx.configDir,
     agent: singleAgent(async (cwd) => {
       await writeAndCommit(cwd, opts.file, `${opts.file}\n`, `plan: ${opts.file}`);
+      if (opts.absorb) {
+        // Byte-identical content, so the pick empties whole rather than
+        // conflicting: a sibling checkout that shipped it, or an operator
+        // applying it by hand, while this agent was still running.
+        await writeAndCommit(
+          fx.repo,
+          opts.file,
+          `${opts.file}\n`,
+          "operator: the same content, landed first",
+        );
+        landedFirst = await head(fx.repo);
+      }
     }),
     log: silent,
   });
-  return { outcome: await dispatcher.tick(), judged };
+  const outcome = await dispatcher.tick();
+  return {
+    outcome,
+    judged,
+    ...(landedFirst ? { landedFirst } : {}),
+  };
 }
 
 it("a singleton tick whose span merged reports the gated tip it left", async () => {
@@ -29020,6 +29050,180 @@ it("a fanout ship whose ledger rewrite a foreign tip claim stopped reports no ga
   // …and `tipMoved` above is what tells this absence from the quiet tick's:
   // the anchor still names a trunk the pick did move.
   expect(verdict?.headSha).toEqual(expect.stringMatching(/^[0-9a-f]{40}$/));
+});
+
+/*
+ * The present arm over a ship that landed no commit of its own. The two
+ * absence cases above are the field's declared absences — shipped nothing, and
+ * a rewrite a foreign claim stopped — and every present case above them ships a
+ * commit beside the tip it reports, so a read narrowed to "the tick committed"
+ * or moved inside a commit guard stays green across the whole block. The three
+ * cases below are the shapes that separate the two: a tip every gate judged,
+ * standing on trunk, with nothing of this tick's own added to it.
+ */
+
+it("a singleton whose span trunk already held reports its gated tip with no commitSha", async () => {
+  const { outcome, judged, landedFirst } = await gatedTipSingleton({
+    file: "src/plan-absorbed.ts",
+    red: false,
+    absorb: true,
+  });
+  const verdict = outcome.verdict;
+  expect(verdict).toBeDefined();
+
+  // Non-vacuity, and the shape the claim needs: the pick really emptied, so
+  // the merge row bounds nothing and this tick added no commit — while the
+  // span was still merged, judged on trunk by an `afterMerge` gate that ran
+  // over the absorbing tip.
+  expect(landedFirst).toEqual(expect.stringMatching(/^[0-9a-f]{40}$/));
+  expect(verdict?.mergeOutcomes).toEqual([
+    { outcome: "merged", baseSha: landedFirst, headSha: landedFirst },
+  ]);
+  expect(judged).toEqual([landedFirst]);
+  expect(verdict?.gateResults.every((g) => g.ok)).toBe(true);
+  expect(verdict?.gateResults.map((g) => g.gate)).toContain("span-wall");
+  expect(verdict?.noCommit).toBeUndefined();
+  expect(verdict?.tipMoved).toBeUndefined();
+
+  // The claim: `gatedTip` is reported here, over a ship with no commit of its
+  // own — so the read is not gated on this tick having committed. `committed`
+  // and `commitSha` are the fields that say what the tick contributed, and
+  // both decline; the gated tip says what the contribution left standing, and
+  // it is the tip the gate judged.
+  expect(verdict?.committed).toBe(false);
+  expect(Object.keys(outcome.result!)).not.toContain("commitSha");
+  expect(outcome.result?.commitSha).toBeUndefined();
+  expect(verdict?.gatedTip).toBe(landedFirst);
+  expect(verdict?.gatedTip).toBe(judged[0]);
+  expect(verdict?.gatedTip).toBe(await head(fx.repo));
+  expect(outcome.result?.gatedTip).toBe(verdict?.gatedTip);
+  expect(outcome.result?.committed).toBe(false);
+});
+
+it("a fanout ship whose ledger rewrite exits nothing-to-write still reports its gated tip", async () => {
+  await writePending(fx.repo, [
+    makeEntry("NOTHING-TIP", ["src/nothing-tip.ts"]),
+  ]);
+  new Baton(join(fx.repo, ".flume")).wake("build");
+
+  const entryFile = `.flume/plan/pending/${entryFileName("NOTHING-TIP")}`;
+  const info: string[] = [];
+  const dispatcher = new Dispatcher({
+    chainLoader: staticLoader({
+      // The fence is `**` (`makePhase`), so this phase is the queue's declared
+      // writer and the span may retire its own entry file. The rewrite's fresh
+      // re-read of the tip then finds the shipped tag already gone, derives no
+      // removal, and exits with nothing to write.
+      phases: [makePhase({ name: "build", concurrency: "fanout" })],
+      humanOnly: [],
+    }),
+    repoRoot: fx.repo,
+    configDir: fx.configDir,
+    agent: fanoutAgent({
+      "nothing-tip": async (cwd) => {
+        await mkdir(join(cwd, "src"), { recursive: true });
+        await writeFile(join(cwd, "src/nothing-tip.ts"), "tip\n");
+        await exec("git", ["rm", "-q", "--", entryFile], { cwd });
+        await exec("git", ["add", "--", "src/nothing-tip.ts"], { cwd });
+        await exec("git", ["commit", "-q", "-m", "build(NOTHING-TIP): ship"], {
+          cwd,
+        });
+      },
+    }),
+    log: { info: (l) => info.push(l), warn: () => {}, error: () => {} },
+  });
+
+  const outcome = await dispatcher.tick();
+  const verdict = outcome.verdict;
+  expect(verdict).toBeDefined();
+
+  // Non-vacuity, and the exit this case is about, read off the words the
+  // rewrite's own exit composed rather than inferred from the absent sha: the
+  // two no-commit exits answer alike otherwise (`noCommitLine`,
+  // `src/waveMerge.ts`).
+  expect(verdict?.shippedTags).toEqual(["NOTHING-TIP"]);
+  expect(info).toContain(
+    "[flume] shipped NOTHING-TIP; pending already up to date, no commit",
+  );
+  expect(outcome.result?.ledgerCommitShas).toBeUndefined();
+  expect(outcome.result?.commitSha).toBeUndefined();
+  // Absent, not `true`: this is not the claim-stopped absence case above.
+  expect(verdict?.tipMoved).toBeUndefined();
+
+  // The claim: the ship is reported with its gated tip all the same — the
+  // merged span standing on trunk, which every gate of this pick judged, and
+  // which no bookkeeping commit of this tick's sits on top of.
+  const merged = verdict?.mergeOutcomes[0]?.headSha;
+  expect(merged).toEqual(expect.stringMatching(/^[0-9a-f]{40}$/));
+  expect(verdict?.gatedTip).toBe(merged);
+  expect(verdict?.gatedTip).toBe(await head(fx.repo));
+  expect(outcome.result?.gatedTip).toBe(verdict?.gatedTip);
+});
+
+it("a fanout ship whose ledger rewrite exits dock-outside-repo still reports its gated tip", async () => {
+  const dock = await mkTempDir("flume-dock-gated-tip-");
+  try {
+    const pendingDir = join(dock, "plan", "pending");
+    await mkdir(pendingDir, { recursive: true });
+    await writeFile(
+      join(pendingDir, entryFileName("DOCK-TIP")),
+      JSON.stringify(makeEntry("DOCK-TIP", ["src/dock-tip.ts"]), null, 2) +
+        "\n",
+      "utf8",
+    );
+    new Baton(dock).wake("build");
+
+    const info: string[] = [];
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [makePhase({ name: "build", concurrency: "fanout" })],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      // The queue lives where git cannot see it, so the rewrite writes the
+      // relocated dock and has nothing to commit behind the ship.
+      flumeDir: dock,
+      agent: fanoutAgent({
+        "dock-tip": (cwd) =>
+          writeAndCommit(
+            cwd,
+            "src/dock-tip.ts",
+            "tip\n",
+            "build(DOCK-TIP): ship",
+          ),
+      }),
+      log: { info: (l) => info.push(l), warn: () => {}, error: () => {} },
+    });
+
+    const outcome = await dispatcher.tick();
+    const verdict = outcome.verdict;
+    expect(verdict).toBeDefined();
+
+    // Non-vacuity, and the exit, in the rewrite's own words again — plus the
+    // relocated queue really moved, which is what makes this the exit that
+    // wrote and could not commit rather than the one with nothing to write.
+    expect(verdict?.shippedTags).toEqual(["DOCK-TIP"]);
+    expect(info).toContain(
+      "[flume] shipped DOCK-TIP; pending updated on disk, " +
+        "no chore commit (dock outside repo)",
+    );
+    expect(existsSync(join(pendingDir, entryFileName("DOCK-TIP")))).toBe(false);
+    expect(outcome.result?.ledgerCommitShas).toBeUndefined();
+    expect(outcome.result?.commitSha).toBeUndefined();
+    // Absent, not `true`: this is not the claim-stopped absence case above.
+    expect(verdict?.tipMoved).toBeUndefined();
+
+    // The claim: same as the exit above — a judged tip on trunk is reported
+    // whether or not a ledger commit landed behind it.
+    const merged = verdict?.mergeOutcomes[0]?.headSha;
+    expect(merged).toEqual(expect.stringMatching(/^[0-9a-f]{40}$/));
+    expect(verdict?.gatedTip).toBe(merged);
+    expect(verdict?.gatedTip).toBe(await head(fx.repo));
+    expect(outcome.result?.gatedTip).toBe(verdict?.gatedTip);
+  } finally {
+    await rm(dock, { recursive: true, force: true });
+  }
 });
 
 /**
