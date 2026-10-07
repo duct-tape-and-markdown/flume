@@ -1,10 +1,7 @@
 {
   "tag": "THE-PACKAGE-COMPUTES-THE-QUEUES-ORDER",
   "gate": {
-    "kind": "blockedBy",
-    "tags": [
-      "CHAIN-ORDER-IS-THE-QUEUES-SEQUENCING-POLICY"
-    ]
+    "kind": "open"
   },
   "dependsOnForks": [],
   "priority": 10,
