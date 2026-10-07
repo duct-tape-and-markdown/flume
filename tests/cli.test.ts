@@ -4068,6 +4068,10 @@ function bareTickAgentChainSrc(
     `  binary: process.execPath,\n` +
     `  dangerouslySkipPermissions: false,\n` +
     `  inheritUserMcp: true,\n` +
+    // The binary here is node, not `claude`, and `-p` makes the next word the
+    // expression it evaluates: both inheritance knobs are on so the adapter
+    // adds no flag of its own between `-p` and the script below.
+    `  inheritUserSettings: true,\n` +
     `  extraArgs: [${JSON.stringify(script)}],\n` +
     `}) });\n`
   );

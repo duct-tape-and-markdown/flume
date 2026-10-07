@@ -64,6 +64,20 @@ export interface ClaudeCodeOptions {
    */
   inheritUserMcp?: boolean;
   /**
+   * Load the operator's own Claude Code settings too. Default is `false`:
+   * `--setting-sources project` rides the argv, so a tick loads only the
+   * settings, instructions, rules and hooks the repository carries. A
+   * headless `claude -p` otherwise reads the invoking user's own settings
+   * sources as well — by-user runtime state a stateless tick excludes, and
+   * the operator's instructions, rules and hooks are input the repository
+   * cannot see, so a tick that read them would behave differently on two
+   * hosts off the same commit. Set to `true` to inherit anyway; the flag is
+   * then omitted. A settings file the adapter passes itself — the one a
+   * declared `budget` composes — applies either way, because `--settings` is
+   * not one of the sources this flag selects among.
+   */
+  inheritUserSettings?: boolean;
+  /**
    * Pass `--model <value>`. No default: undeclared, the flag is omitted and
    * the binary's own default applies.
    */
@@ -107,6 +121,7 @@ export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
   const binary = opts.binary ?? "claude";
   const skipPerms = opts.dangerouslySkipPermissions ?? true;
   const inheritUserMcp = opts.inheritUserMcp ?? false;
+  const inheritUserSettings = opts.inheritUserSettings ?? false;
   const outputFormat = opts.outputFormat ?? "text";
   const formatArgs =
     outputFormat === "stream-json"
@@ -139,6 +154,7 @@ export function claudeCode(opts: ClaudeCodeOptions = {}): Agent {
           ...formatArgs,
           ...(skipPerms ? ["--dangerously-skip-permissions"] : []),
           ...(inheritUserMcp ? [] : ["--strict-mcp-config"]),
+          ...(inheritUserSettings ? [] : ["--setting-sources", "project"]),
           ...(opts.model !== undefined ? ["--model", opts.model] : []),
           ...budgetArgs,
           ...extra,

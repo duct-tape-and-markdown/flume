@@ -476,15 +476,17 @@ export const DeclarationSchema = strict({
   shell: z.string().min(1).default(DEFAULT_SHELL),
   /**
    * Model per phase, extra agent arguments, the model's context window, and
-   * whether the tick inherits the user's own MCP servers; absent means the
-   * package's default.
+   * whether the tick inherits the operator's own MCP servers or settings;
+   * absent means the package's default.
    *
-   * `inheritUserMcp` is the engine's own knob (`ClaudeCodeOptions`), spelled
-   * here because the schema is strict: without a field a consumer whose
-   * ticks need their own MCP servers has no spelling at all, and the
-   * declaration refuses the one they would reach for. Undeclared it stays
-   * off, which is the engine's default rather than the package's opinion —
-   * a tick loads only the MCP configuration the chain hands it.
+   * `inheritUserMcp` and `inheritUserSettings` are the engine's own knobs
+   * (`ClaudeCodeOptions`), spelled here because the schema is strict:
+   * without a field a consumer whose ticks need their own MCP servers — or
+   * the operator's own instructions, rules and hooks — has no spelling at
+   * all, and the declaration refuses the one they would reach for.
+   * Undeclared each stays off, which is the engine's default rather than
+   * the package's opinion — a tick loads only the configuration the chain
+   * hands it.
    *
    * `contextWindow` is the same shape for the same reason: how many tokens
    * the declared model holds is a provider fact neither the engine nor the
@@ -503,6 +505,7 @@ export const DeclarationSchema = strict({
       extraArgs: z.array(z.string().min(1)).optional(),
       contextWindow: z.number().int().positive().optional(),
       inheritUserMcp: z.boolean().optional(),
+      inheritUserSettings: z.boolean().optional(),
     }),
   ).optional(),
   /**

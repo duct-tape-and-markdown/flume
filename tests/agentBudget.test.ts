@@ -122,6 +122,8 @@ it("an undeclared budget registers no hook and leaves the adapter's argv unchang
     "--verbose",
     "--dangerously-skip-permissions",
     "--strict-mcp-config",
+    "--setting-sources",
+    "project",
   ]);
   expect(args).not.toContain("--settings");
 });

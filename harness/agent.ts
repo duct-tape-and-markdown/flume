@@ -30,8 +30,9 @@ import { SESSIONS_REL } from "./ignores.js";
  * per tick, because a loop nobody can read back is a loop nobody can cost.
  *
  * Every declared agent field is handed to the engine's own option of the
- * same name and nothing else: the MCP inheritance the declaration spells is
- * the engine's knob, defaulted by the engine when no consumer states one.
+ * same name and nothing else: the MCP and settings inheritance the
+ * declaration spells are the engine's knobs, defaulted by the engine when no
+ * consumer states one.
  *
  * The one field that is not spelled the same on both sides is the context
  * window, which the engine takes inside a budget declaration
@@ -63,6 +64,9 @@ export function agentFactory(
             : {}),
           ...(declared?.inheritUserMcp !== undefined
             ? { inheritUserMcp: declared.inheritUserMcp }
+            : {}),
+          ...(declared?.inheritUserSettings !== undefined
+            ? { inheritUserSettings: declared.inheritUserSettings }
             : {}),
         }),
         { dir },

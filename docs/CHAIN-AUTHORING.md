@@ -145,14 +145,16 @@ a `registry` gate the `name` of one the package's own registry ships, a
 commit), `shell` (the shell every command line the
 declaration carries runs under — a `shell` or `script` gate's, `setup`'s
 restore — `sh` where the declaration is silent), `agents` (per phase, and
-each of its four subfields optional: `model`, the model that phase's tick
+each of its five subfields optional: `model`, the model that phase's tick
 runs under, absent leaving the binary's own; `extraArgs`, arguments appended
 to that tick's argv; `contextWindow`, how many tokens that model holds — a
 provider fact nothing can look up, forwarded as the adapter's `budget` with
 no cadence and no thresholds, so the tick is handed its own room after every
-tool call, and absent registers no budget hook at all; and `inheritUserMcp`,
+tool call, and absent registers no budget hook at all; `inheritUserMcp`,
 whether the tick loads your own MCP configuration beside the one the chain
-hands it, off where the declaration is silent. Each is the `claudeCode`
+hands it; and `inheritUserSettings`, whether it loads your own Claude Code
+settings, instructions, rules and hooks beside the repository's — both off
+where the declaration is silent. Each is the `claudeCode`
 option of the same name, which §4 below spells in full; a phase naming none
 takes the package's default agent),
 `supervisor` (the engine's policy passed through whole), `setup` (the
@@ -1696,6 +1698,13 @@ Spawns `claude -p` with the rendered prompt on stdin. Options:
 - `inheritUserMcp` — load the user's own MCP configuration too. Default
   `false`: `--strict-mcp-config` rides the argv, so a tick loads only the MCP
   configuration the chain hands it. Set `true` to omit the flag and inherit.
+- `inheritUserSettings` — load the operator's own Claude Code settings too.
+  Default `false`: `--setting-sources project` rides the argv, so a tick
+  loads only the settings, instructions, rules and hooks the repository
+  carries, and never the ones on whichever host the loop happens to run on.
+  Set `true` to omit the flag and inherit. The `--settings` blob a declared
+  `budget` composes is not one of the sources this flag selects among, so it
+  applies either way.
 - `model` — passes `--model <value>`. No default: undeclared, the flag is
   omitted and the binary's own default applies.
 - `budget` — report the room the agent has left, mid-session. Declared, the
