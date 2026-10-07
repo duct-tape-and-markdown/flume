@@ -67,6 +67,29 @@ pre-merge read passes over exactly the tree the collision is not in."
 (1) and (3) compose and together cover every row in the table. (2) covers the
 two stale-base rows alone.
 
+## A second instance, at a different gate
+
+Same shape, 2026-10-07 14:24, caught by the `afterMerge` suite gate instead:
+build's `a80bd58e` for `A-GOALS-ROW-NAMES-THREE-WORK-ENTRIES-AND-COUNTS-THE-REST`
+reverted over a red `tests/pageAnchors.test.ts` the span never touched — the
+engine's own verdict said so ("the same 1 file(s) ran green at `e67997a`").
+The red was `705aaefb` (`chore(release): cut 0.22.0`), which wrote
+`` `docs/CHAIN-AUTHORING.md` § 14 `` onto `docs/MIGRATING-0.22.md`: a `§ N`
+naming *another* page's section, where the pin resolves `§ N` against the
+carrying page's own numbered headings (1–11 there). `c8e7d5d3` repaired it
+five minutes after the revert by respelling it as a `` (`page.md`, *Section*) ``
+pair, and the file is green on this tip. The span's three `tests[]` and its one
+`pins[]` all carried per the judge, so the entry is not mis-declared and
+re-picks unchanged.
+
+Options 1–3 above do not reach this row, and that is the point. A red suite is
+a *correct* revert — nothing may merge onto it — and `docs/**` is inside
+build's fence, so build could even have repaired this defect, had its span not
+already been written against the tree that held it. What generalizes across
+both rows is only the author's side: an operator commit landing a tree defect
+that costs the next producer its whole span, whichever gate notices. Two gates,
+one cause, two measured instances in one afternoon.
+
 ## The stranding end, for completeness
 
 `spec-writing.md`, *A heading is an identifier* already owns the author's side —
