@@ -657,6 +657,12 @@ Things to notice:
   every ledger commit the wave landed, in landing order — a wave writes one
   per pick, so a handoff asking what the whole wave retired reads this rather
   than `commitSha`, which is the last of them),
+  `gatedTip` (the trunk sha this tick's last ship left — read under the ship
+  lock, once that ship's `afterMerge` gates passed and its ledger commit
+  landed, so a handoff that delivers trunk anywhere pushes a tip every gate
+  has judged rather than one it inferred from commit subjects; absent on a
+  tick that shipped nothing, and on a singleton, which lands no ledger commit
+  of its own),
   `gateResults` (the same `ReportedGateResult` rows the verdict persists —
   `details`, `verdict` and `skipped` included, so a handoff keys on the field
   rather than re-reading `message`), `pendingAfter`, `priorAttempts` (the

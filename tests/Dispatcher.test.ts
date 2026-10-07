@@ -15789,6 +15789,7 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
       "mergeFailures",
       "gateFailures",
       "clearedPriorAttempts",
+      "gatedTip",
       "summary",
       "headSha",
       "at",
@@ -26697,6 +26698,12 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
       unclassedWalls: "unreachable",
       clearedPriorAttempts: "populated",
       declinedWakes: "unreachable",
+      // Populated on both legs, and at the same point: SHIP-ONE's pick is
+      // the only ship either leg makes, and the corruption the refused leg
+      // carries lands in the *last* entry's agent — so the tip that ship
+      // left was read under its own hold, well before the rewrite that
+      // refuses.
+      gatedTip: "populated",
     };
     const reach = Object.entries(conditionalFacts);
     const populated = reach
@@ -27289,4 +27296,222 @@ describe("Dispatcher fanout — a merge carries a batch of spans, gated once (sp
       merges.flatMap((t) => (t.entryTag === undefined ? [] : [t.entryTag])).sort(),
     ).toEqual(["CLASH-A", "CLASH-B"]);
   });
+});
+
+/**
+ * spec/loop.md, *The tick verdict — one facts artifact*: `gatedTip` — the
+ * trunk sha a tick's last ship left, read under the ship lock once that
+ * ship's `afterMerge` gates passed and its ledger commit landed.
+ *
+ * Every case here drives a real wave and reads the real artifact: the fact is
+ * one a sibling tick can move the moment the lock is released, so a fixture
+ * that handed `buildTickVerdict` a sha would be pinning the shaping and not
+ * the read point (`.claude/rules/engineering.md`, *A seam gate reads what the
+ * real writer wrote*).
+ */
+
+/** Every commit reachable from `ref` in the fixture repo. */
+async function reachableFrom(ref: string): Promise<string[]> {
+  const { stdout } = await exec("git", ["rev-list", ref], { cwd: fx.repo });
+  return stdout.trim().split("\n");
+}
+
+/**
+ * One `build` wave, one slot wide, over `entries` — so each span is offered,
+ * merged and ledger-committed alone, in queue order, and a sha the wave lands
+ * belongs to exactly one pick.
+ *
+ * The phase's one `afterMerge` gate reds for the tags in `redFor` and passes
+ * for every other. It declares no `batches`, which holds the whole phase to
+ * serial merging whatever `mergeBatch` says (`SingleSpanGate`,
+ * `src/Gate.ts`) — so "one ledger commit per pick" is the phase's declared
+ * shape here rather than a width the fixture is hoping for.
+ */
+async function gatedTipWave(opts: {
+  entries: PendingEntry[];
+  agent: Record<string, (cwd: string) => Promise<number | void>>;
+  redFor?: string[];
+}): Promise<TickOutcome> {
+  const red = opts.redFor ?? [];
+  await writePending(fx.repo, opts.entries);
+  new Baton(join(fx.repo, ".flume")).wake("build");
+  const entryWall: Gate = {
+    name: "entry-wall",
+    when: "afterMerge",
+    async run(ctx) {
+      const tag = ctx.entry?.tag;
+      return tag !== undefined && red.includes(tag)
+        ? { ok: false, message: `entry-wall refuses ${tag}`, details: tag }
+        : { ok: true, message: "entry-wall passes" };
+    },
+  };
+  const dispatcher = new Dispatcher({
+    chainLoader: staticLoader({
+      phases: [
+        makePhase({
+          name: "build",
+          concurrency: "fanout",
+          writablePaths: ["src/**"],
+          gates: [entryWall],
+        }),
+      ],
+      humanOnly: [],
+    }),
+    repoRoot: fx.repo,
+    configDir: fx.configDir,
+    agent: fanoutAgent(opts.agent),
+    log: silent,
+    maxParallel: 1,
+  });
+  return dispatcher.tick();
+}
+
+/**
+ * A wave that ships one entry and then carries a second whose `afterMerge`
+ * gate reds: the revert takes the pick back off trunk, and the rewrite
+ * recording its observed footprint lands a ledger commit on top of the one
+ * the ship left. So the gated tip and the tick's closing `headSha` are two
+ * different shas on this wave, which is what makes the first case's claim a
+ * claim about the read point and not about "the tip at the end".
+ */
+async function waveShippingThenWalling(): Promise<TickOutcome> {
+  return gatedTipWave({
+    entries: [
+      { ...makeEntry("SHIP-FIRST", ["src/ship-first.ts"]), priority: 2 },
+      { ...makeEntry("WALL-AFTER", ["src/wall-after.ts"]), priority: 1 },
+    ],
+    agent: {
+      "ship-first": (cwd) =>
+        writeAndCommit(cwd, "src/ship-first.ts", "ok\n", "build: SHIP-FIRST"),
+      "wall-after": (cwd) =>
+        writeAndCommit(cwd, "src/wall-after.ts", "no\n", "build: WALL-AFTER"),
+    },
+    redFor: ["WALL-AFTER"],
+  });
+}
+
+it("the tick verdict carries the gated trunk tip the tick's last ship left", async () => {
+  const outcome = await waveShippingThenWalling();
+  const verdict = outcome.verdict;
+  expect(verdict).toBeDefined();
+
+  // Non-vacuity, and the shape the claim needs: exactly one pick shipped, and
+  // a second pick really was carried and reverted *after* it — without the
+  // second the gated tip and the closing tip would be the same sha and every
+  // assertion below would hold over a read taken anywhere.
+  expect(verdict?.shippedTags).toEqual(["SHIP-FIRST"]);
+  expect(
+    verdict?.mergeOutcomes.map((m) => [m.entryTag, m.outcome]),
+  ).toEqual([
+    ["SHIP-FIRST", "merged"],
+    ["WALL-AFTER", "afterMerge-reverted"],
+  ]);
+  const ledger = outcome.result?.ledgerCommitShas ?? [];
+  expect(ledger).toHaveLength(2);
+
+  // The claim: the sha reported is the tip the ship left — the ledger commit
+  // that retired SHIP-FIRST, the last thing to land inside that pick's hold.
+  expect(verdict?.gatedTip).toBe(ledger[0]);
+  // …so it holds the shipped span, which is the whole point of calling it
+  // gated: every gate of this phase ran over that commit's content.
+  const merged = verdict?.mergeOutcomes[0]?.headSha;
+  expect(merged).toEqual(expect.stringMatching(/^[0-9a-f]{40}$/));
+  expect(await reachableFrom(verdict!.gatedTip!)).toContain(merged);
+  // …and it is NOT the tip the tick closed on: the walled pick's own rewrite
+  // landed after it, and `headSha` is the field that reports that one.
+  expect(verdict?.headSha).toBe(ledger[1]);
+  expect(verdict?.gatedTip).not.toBe(verdict?.headSha);
+  expect(await reachableFrom(verdict!.headSha)).toContain(verdict!.gatedTip);
+});
+
+it("TickResult carries the same gatedTip the verdict records", async () => {
+  const outcome = await waveShippingThenWalling();
+
+  // Same non-vacuity: the wave shipped, so there is a gated tip for the two
+  // surfaces to agree about rather than two absences reading as agreement.
+  expect(outcome.verdict?.shippedTags).toEqual(["SHIP-FIRST"]);
+  expect(outcome.verdict?.gatedTip).toEqual(
+    expect.stringMatching(/^[0-9a-f]{40}$/),
+  );
+
+  // The claim: the fact a `handoff` routes a delivery step on and the fact
+  // the next tick reads off disk are one read, not two.
+  expect(outcome.result?.gatedTip).toBe(outcome.verdict?.gatedTip);
+});
+
+it("gatedTip is absent on a tick that shipped nothing", async () => {
+  const quiet = await gatedTipWave({
+    entries: [makeEntry("CLEAN-EXIT", ["src/clean-exit.ts"])],
+    // Exits clean with no commit: the agent declining the work, which is the
+    // cheapest wave that ships nothing and still runs everything up to the
+    // merge stage.
+    agent: { "clean-exit": async () => {} },
+  });
+  // The positive control, through the same engine and the same repo: an
+  // absence claim over a field nothing ever writes is green by construction,
+  // so the case proves the engine *discriminates* rather than that it is
+  // silent (`.claude/rules/engineering.md`, *A green verdict is proven
+  // non-vacuous*).
+  const shipping = await gatedTipWave({
+    entries: [makeEntry("SHIP-ANY", ["src/ship-any.ts"])],
+    agent: {
+      "ship-any": (cwd) =>
+        writeAndCommit(cwd, "src/ship-any.ts", "ok\n", "build: SHIP-ANY"),
+    },
+  });
+  expect(shipping.verdict?.shippedTags).toEqual(["SHIP-ANY"]);
+  expect(Object.keys(shipping.verdict!)).toContain("gatedTip");
+
+  const verdict = quiet.verdict;
+  expect(verdict).toBeDefined();
+
+  // Non-vacuity for the quiet leg: the wave really provisioned the entry and
+  // paid for its agent, so this is a tick that ran and shipped nothing — not
+  // a hibernated tick whose verdict is empty for every reason at once.
+  expect(verdict?.tags).toEqual(["CLEAN-EXIT"]);
+  expect(verdict?.invocations.map((i) => i.entryTag)).toEqual(["CLEAN-EXIT"]);
+  expect(verdict?.shippedTags).toEqual([]);
+  expect(verdict?.committed).toBe(false);
+
+  // The claim: no gated tip at all — the key is omitted, not written null —
+  // on either surface.
+  expect(Object.keys(verdict!)).not.toContain("gatedTip");
+  expect(verdict?.gatedTip).toBeUndefined();
+  expect(quiet.result?.gatedTip).toBeUndefined();
+  // …and the anchor is still there, which is what keeps the two separate
+  // facts rather than one field doing both jobs.
+  expect(verdict?.headSha).toEqual(expect.stringMatching(/^[0-9a-f]{40}$/));
+});
+
+it("gatedTip names the tip after the last ledger commit of a multi-ship tick", async () => {
+  const outcome = await gatedTipWave({
+    entries: [
+      { ...makeEntry("SHIP-EARLY", ["src/ship-early.ts"]), priority: 2 },
+      { ...makeEntry("SHIP-LATE", ["src/ship-late.ts"]), priority: 1 },
+    ],
+    agent: {
+      "ship-early": (cwd) =>
+        writeAndCommit(cwd, "src/ship-early.ts", "ok\n", "build: SHIP-EARLY"),
+      "ship-late": (cwd) =>
+        writeAndCommit(cwd, "src/ship-late.ts", "ok\n", "build: SHIP-LATE"),
+    },
+  });
+  const verdict = outcome.verdict;
+
+  // Non-vacuity, and what makes "the last" a choice between two: both picks
+  // shipped, each under its own hold, so the wave landed two ledger commits
+  // and a read taken at the first one is observably wrong here.
+  expect(verdict?.shippedTags).toEqual(["SHIP-EARLY", "SHIP-LATE"]);
+  const ledger = outcome.result?.ledgerCommitShas ?? [];
+  expect(ledger).toHaveLength(2);
+  expect(ledger[0]).not.toBe(ledger[1]);
+
+  // The claim: the later ship's ledger commit, never the earlier one.
+  expect(verdict?.gatedTip).toBe(ledger[1]);
+  expect(verdict?.gatedTip).not.toBe(ledger[0]);
+  // And the span SHIP-LATE landed is reachable from it, so the tip reported
+  // carries every ship the wave made rather than just the first.
+  for (const m of verdict?.mergeOutcomes ?? []) {
+    expect(await reachableFrom(verdict!.gatedTip!)).toContain(m.headSha);
+  }
 });

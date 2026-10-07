@@ -379,6 +379,22 @@ export interface TickResult {
    */
   ledgerCommitShas?: readonly string[];
   /**
+   * The trunk sha this tick's **last ship** left — read under the ship lock,
+   * once that ship's `afterMerge` gates passed and its ledger commit landed
+   * (`gatedTip` (`src/tickVerdict.ts`), which carries the same value onto
+   * disk). A tip every gate has judged, so a `handoff` that delivers trunk anywhere
+   * — a release cut, a mirror push, a deploy — reads this rather than
+   * inferring a shipped tip from commit subjects.
+   *
+   * Absent on a tick that shipped nothing, and on a singleton tick, which
+   * lands no ledger commit of its own. Distinct from `commitSha` /
+   * {@link TickResult.ledgerCommitShas}: those name what this tick
+   * *contributed*, gated or not, where this names the tip those contributions
+   * left standing — a wave whose last pick failed after its last ship lands
+   * one more ledger commit, and `commitSha` moves past this field.
+   */
+  gatedTip?: string;
+  /**
    * All gates that ran, in order, with their results — the same
    * {@link ReportedGateResult} row the tick verdict persists, so a `handoff`
    * routing on *why* a gate ruled as it did, or on *what* it blamed, reads

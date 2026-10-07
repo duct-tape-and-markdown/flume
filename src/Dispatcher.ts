@@ -1435,6 +1435,14 @@ export class Dispatcher {
       shipFailures,
       clearedPriorAttempts,
       declinedWakes,
+      // spec/loop.md "The tick verdict — one facts artifact": off the leg's
+      // own `TickResult`, which is where the hold that read it put it — one
+      // home for the fact, so the handoff surface and the artifact beside it
+      // cannot disagree about which tip this tick's last ship left
+      // (`.claude/rules/engineering.md`, *Derived state is computed, never
+      // restated beside its source*). Absent on a singleton leg, which lands
+      // no ledger commit of its own, and on any tick that shipped nothing.
+      gatedTip: result.gatedTip,
       summary,
       headSha: await git.revParse(this.opts.repoRoot),
     });

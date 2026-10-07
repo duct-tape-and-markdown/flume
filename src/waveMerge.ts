@@ -414,6 +414,21 @@ interface WaveMerge {
    * chain, the set as `TickResult.ledgerCommitShas`.
    */
   ledgerShas: string[];
+  /**
+   * spec/loop.md "The tick verdict — one facts artifact": the trunk tip as
+   * this wave's **last ship** left it, re-read under the ship lock that
+   * carried it once that pick's `afterMerge` gates had passed and its ledger
+   * commit had landed ({@link drainWaiting}). Overwritten by each later pick
+   * that ships, so what survives the wave is the last one; `undefined` while
+   * nothing has shipped.
+   *
+   * A read rather than `ledgerShas`' last element: three of the rewrite's four
+   * exits write no commit, and the tip after one of those is the merged sha
+   * the pick landed — a fact only git holds at that moment
+   * (`.claude/rules/engineering.md`, *Derived state is computed, never
+   * restated beside its source*).
+   */
+  gatedTip: string | undefined;
   /** A tip claim or a per-entry ancestry refusal stopped at least one span. */
   tipMoved: boolean;
   /** `shouldRun` declined at least one entry. */
@@ -461,6 +476,8 @@ interface WaveMergeResult {
   readonly committedWave: boolean;
   /** See {@link WaveMerge.ledgerShas}. */
   readonly ledgerShas: readonly string[];
+  /** See {@link WaveMerge.gatedTip}; absent while this wave shipped nothing. */
+  readonly gatedTip?: string;
   readonly mergeOutcomes: TickVerdictMergeOutcome[];
   readonly mergeFailures: MergeFailure[];
   readonly gateFailures: GateFailure[];
@@ -492,6 +509,7 @@ export function openWaveMerge(setup: WaveMergeSetup): WaveMerge {
     gateFailures: [],
     shipFailures: [],
     ledgerShas: [],
+    gatedTip: undefined,
     tipMoved: false,
     declined: false,
     checkpoint: { attempted: false, sha: undefined },
@@ -637,6 +655,20 @@ export async function drainWaiting(w: WaveMerge): Promise<void> {
       const all = [...folded, ...rows];
       folded = [];
       await commitAttemptLedger(w, shipped, all);
+      // spec/loop.md "The tick verdict — one facts artifact": the gated tip
+      // this ship left. Read here and nowhere else — inside the hold, after
+      // the pick's `afterMerge` gates passed, its `shipped` consult said so
+      // and the rewrite retiring it committed — because that is the only
+      // instant at which trunk is a tip every gate has judged *and* no
+      // sibling can have moved it. A read taken after the lock is released,
+      // or at the wave's end, would be the tip some later pick or some
+      // sibling tick left, reported as this ship's.
+      //
+      // Only a land that shipped moves it: a pick whose rewrite recorded a
+      // failed merge's footprint alone lands a ledger commit over a tip
+      // nothing shipped onto, and `headSha` is the field that reports that
+      // one.
+      if (shipped.length > 0) w.gatedTip = await git.revParse(leg.repoRoot);
     };
     // The attempts of this drain that left a span, with each range read where
     // `committed` narrows it ({@link BatchCandidate}).
@@ -1290,6 +1322,7 @@ export function closeWaveMerge(w: WaveMerge): WaveMergeResult {
     timings: w.timings,
     committedWave: waveCommitted(w),
     ledgerShas: w.ledgerShas,
+    ...(w.gatedTip ? { gatedTip: w.gatedTip } : {}),
     mergeOutcomes: w.mergeOutcomes,
     mergeFailures: w.mergeFailures,
     gateFailures: w.gateFailures,
@@ -1694,6 +1727,11 @@ async function settledWaveVerdict(
     platformFailures,
     unclassedWalls,
     clearedPriorAttempts,
+    // The picks this wave landed before the wall are on trunk and gated, so
+    // the tip the last of them left is reported exactly as a completing
+    // wave's is — held on the stage from the hold that read it, never
+    // re-derived from the tip below, which the wall may have moved past.
+    gatedTip: w.gatedTip,
     summary:
       shippedTags.length > 0
         ? `${phase.name} shipped ${shippedTags.join(", ")} — ${event} (${why})`

@@ -828,6 +828,13 @@ export async function runFanout(
             ledgerCommitShas: mergeStage.ledgerShas,
           }
         : {}),
+      // The tip this wave's last ship left, gated, read under the hold that
+      // landed it (`gatedTip` (`src/waveMerge.ts`)). Beside the two fields
+      // above rather than folded into them: those name what this wave
+      // contributed to the tip, this names the tip the contributions left
+      // standing, and a wave whose last pick failed after its last ship
+      // reports two different shas.
+      ...(mergeStage.gatedTip ? { gatedTip: mergeStage.gatedTip } : {}),
       gateResults: mergeStage.allGateResults,
       pendingAfter: pendingAfterWave,
       pickableAfter: postSelection.pickable,

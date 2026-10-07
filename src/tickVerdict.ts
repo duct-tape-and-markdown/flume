@@ -964,6 +964,27 @@ export interface TickVerdict {
   /** This tick's one-line logger summary, verbatim — a rendering of the facts above, not a judgment of them. */
   summary: string;
   /**
+   * spec/loop.md "The tick verdict — one facts artifact": the trunk sha this
+   * tick's **last ship** left — read under the ship lock, once that ship's
+   * `afterMerge` gates passed and its ledger commit landed. A tip every gate
+   * has judged, so a step that delivers trunk anywhere (a release cut, a
+   * mirror push, a deploy) reads this rather than inferring a shipped tip
+   * from commit subjects.
+   *
+   * Absent on a tick that shipped nothing — a quiet tick, a wave whose every
+   * pick was reverted or parked, and a singleton, which lands no ledger
+   * commit of its own ({@link TickVerdict.headSha} is still there for the
+   * anchor). A pick that landed on trunk and then had its ledger rewrite
+   * refuse leaves none either: that tip is gated but unrecorded, and the
+   * {@link TickVerdictMergeOutcome} row is its recovery handle.
+   *
+   * A sibling fact to {@link TickVerdict.headSha}, never folded into it:
+   * `headSha` is read with no lock held and promises nothing about gating,
+   * and on a wave whose last pick failed after the last ship the two differ
+   * by the ledger commits that failure landed.
+   */
+  gatedTip?: string;
+  /**
    * spec/loop.md "The tick verdict — one facts artifact": the trunk repo's
    * HEAD at the moment this verdict was built — after this tick's own
    * commits, if any, already landed. "Has the world moved since this phase
@@ -1022,6 +1043,7 @@ interface TickVerdictFacts {
   unclassedWalls?: readonly UnclassedWall[] | undefined;
   clearedPriorAttempts?: readonly string[] | undefined;
   declinedWakes?: readonly DeclinedWake[] | undefined;
+  gatedTip?: string | undefined;
   summary: string;
   /**
    * The trunk tip, read by the producer at the point its own stage says the
@@ -1097,6 +1119,7 @@ export function buildTickVerdict(facts: TickVerdictFacts): TickVerdict {
     ...(facts.declinedWakes?.length
       ? { declinedWakes: [...facts.declinedWakes] }
       : {}),
+    ...(facts.gatedTip ? { gatedTip: facts.gatedTip } : {}),
     summary: facts.summary,
     headSha: facts.headSha,
     at: new Date().toISOString(),
