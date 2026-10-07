@@ -147,15 +147,23 @@ function resolveWorktreesBaseDeclaration(
 /**
  * Validate the declarations whose out-of-range value is a run that cannot
  * happen. Each counts a thing a tick must have at least one of, so each is a
- * positive integer: the value counts processes, commits, or generations of a
- * queue entry, and `1.5` of any of them is not a budget anyone declared on
- * purpose. Refused here, at the load, rather than at the boundary where the
+ * positive integer: the value counts processes, slots, commits, or generations
+ * of a queue entry, and `1.5` of any of them is not a budget anyone declared
+ * on purpose. Refused here, at the load, rather than at the boundary where the
  * symptom appears (`.claude/rules/engineering.md`, *Loud or nothing*).
  *
  * - `supervisorPolicy.maxTicks` is how many `flume tick` children the
  *   supervisor holds at once (`src/Phase.ts`), and a supervisor that may hold
  *   none can never start one — the run would report the flags still standing
  *   as an orphaned baton and stop having done nothing.
+ * - `supervisorPolicy.maxParallel` is how many entry worktrees one fanout
+ *   wave holds open at once (spec/worktrees.md, *Fanout and worktrees —
+ *   provisioning, isolation, teardown*), and a wave that may open no slot
+ *   picks nothing: the slot fill reads a pickable set that was ready, takes
+ *   none of it, and every tick of the run reports an untouched queue as a
+ *   quiet no-op until the budget is spent. A fraction is the same defect one
+ *   rung quieter — `1.5` opens one slot and the declared width is simply
+ *   gone.
  * - `supervisorPolicy.mergeBatch` is how many finished spans one merge
  *   carries (spec/worktrees.md, *Batched merges*), and a merge that may carry
  *   none ships nothing. Clamping it instead would be the silent degradation
@@ -170,12 +178,14 @@ function resolveWorktreesBaseDeclaration(
  * Undeclared is a strict no-op for each — `superviseLoop` falls back to
  * `DEFAULT_MAX_TICKS` (`src/loopSupervisor.ts`), the merge to
  * `DEFAULT_MERGE_BATCH` (`src/gateBatch.ts`), which together are the serial
- * loop, and every queue parse to `DEFAULT_MAX_ENTRY_DEPTH`
- * (`src/PendingSchema.ts`).
+ * loop, the wave to whatever the embedder passed as
+ * `DispatcherOptions.maxParallel` (`src/Dispatcher.ts`), and every queue parse
+ * to `DEFAULT_MAX_ENTRY_DEPTH` (`src/PendingSchema.ts`).
  *
  * The other knobs in the supervisor block are deliberately not checked beside
- * these: each of those degrades to something an operator can read off a run,
- * and the engine validates only what its mechanics consume
+ * these: each of those degrades to something an operator can read off a run —
+ * a `tickTimeoutMs` of zero aborts the invocation it bounds and the tick
+ * records the abort — and the engine validates only what its mechanics consume
  * (`.claude/rules/engine-boundary.md`, *Capability vs convention*).
  */
 function validateCountedDeclarations(chain: Chain): void {
@@ -192,6 +202,17 @@ function validateCountedDeclarations(chain: Chain): void {
         `it is how many flume tick children the loop supervisor holds at ` +
         `once, and a supervisor that may hold none can never run one`,
       omitted: "one (the serial loop)",
+    },
+    {
+      field: "supervisorPolicy.maxParallel",
+      value: chain.supervisorPolicy?.maxParallel,
+      why:
+        `it is how many entry worktrees one fanout wave holds open at once, ` +
+        `and a wave that may open no slot picks nothing from a queue that ` +
+        `was ready`,
+      omitted:
+        `the width the embedder passed the dispatcher, which is four under ` +
+        `the CLI`,
     },
     {
       field: "supervisorPolicy.mergeBatch",

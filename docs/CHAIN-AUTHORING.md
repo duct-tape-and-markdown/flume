@@ -2725,7 +2725,10 @@ const chain: Chain = {
   raise it when ticks are cheap and cherry-picks land clean. Cores are rarely
   the scarce resource, though: a wave's agents are a memory term the host holds
   all at once, and this number is what multiplies it ([*What a wave costs in memory*](#what-a-wave-costs-in-memory)). A singleton
-  chain never reads it. Read **per tick**.
+  chain never reads it. A positive integer; anything else refuses the chain at
+  load, because a wave that may open no slot picks nothing from a queue that
+  was ready and every tick of the run reports it as a quiet no-op. Read **per
+  tick**.
 - **`mergeBatch`** — how many of a wave's finished spans one merge carries.
   Default 1: a merge per span, which is the serial carry and every
   consumer's behavior until it declares otherwise. Above one, the spans

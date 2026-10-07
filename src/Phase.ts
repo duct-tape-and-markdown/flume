@@ -1314,6 +1314,10 @@ export interface Chain {
      * run-scoped: the dispatcher already reloads `chain.ts` fresh every
      * tick, so `runFanout` reads this straight off the tick's own resolved
      * chain rather than a value bound once per run.
+     *
+     * A positive integer; anything else refuses the chain at load, because a
+     * wave that may open no slot picks nothing and every tick of the run
+     * reports the ready queue as a quiet no-op.
      */
     maxParallel?: number;
     /**

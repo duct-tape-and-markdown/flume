@@ -814,6 +814,78 @@ describe("Chain load — maxEntryDepth (spec/pending.md 'The queue is a forest')
 });
 
 /**
+ * `supervisorPolicy.maxParallel` is the third counted declaration the load
+ * refuses out of range, beside `mergeBatch` and `maxEntryDepth` above: a wave
+ * that may open no slot picks nothing from a queue that was ready, so the run
+ * spins to its budget with nothing on any surface saying why
+ * (`.claude/rules/engineering.md`, *Loud or nothing*). Pinned here with the
+ * knob the same roster deliberately leaves admitted, so the roster's line is
+ * read from both sides and a later widening of it reds something.
+ */
+describe("Chain load — supervisorPolicy.maxParallel (spec/worktrees.md 'Fanout and worktrees — provisioning, isolation, teardown')", () => {
+  /** A one-phase chain declaring `supervisorPolicy: { <declared> }`. */
+  async function loadWithPolicy(
+    prefix: string,
+    declared: string,
+  ): Promise<Chain> {
+    const cfg = await mkTempDir(`flume-cfg-wave-width-${prefix}-`);
+    await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
+    await writeFile(
+      join(cfg, "chain.ts"),
+      `export default () => ({ chain: { phases: [{ name: "build", ` +
+        `description: "", promptPath: "prompt.md", concurrency: "fanout", ` +
+        `writablePaths: ["src/**"], gates: [], handoff: () => [] }], ` +
+        `humanOnly: [], supervisorPolicy: { ${declared} } } });\n`,
+      "utf8",
+    );
+    try {
+      return (
+        await loadChainModule({ repoRoot: cfg, configDir: cfg, flumeDir: cfg })
+      ).chain;
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  }
+
+  it("a maxParallel below one refuses the chain load rather than leaving every wave with no slot", async () => {
+    // Non-vacuity, and the fixture's own control: the same chain text with a
+    // width in range loads and carries the declaration, so the refusals below
+    // are the value answering rather than a fixture the loader never read.
+    const loaded = await loadWithPolicy("declared", "maxParallel: 2");
+    expect(loaded.supervisorPolicy?.maxParallel).toBe(2);
+
+    // Zero opens no slot at all: the wave's fill reads a pickable set it is
+    // never allowed to take from, and every tick of the run reports an
+    // untouched queue as a quiet no-op.
+    await expect(loadWithPolicy("zero", "maxParallel: 0")).rejects.toThrow(
+      /supervisorPolicy\.maxParallel: 0[\s\S]*must be a positive integer/,
+    );
+    await expect(
+      loadWithPolicy("negative", "maxParallel: -1"),
+    ).rejects.toThrow(
+      /supervisorPolicy\.maxParallel: -1[\s\S]*must be a positive integer/,
+    );
+    // A fraction is the same defect one rung quieter — it opens one slot and
+    // the declared width is simply gone — so it is refused on the same line.
+    await expect(
+      loadWithPolicy("fractional", "maxParallel: 1.5"),
+    ).rejects.toThrow(
+      /supervisorPolicy\.maxParallel: 1\.5[\s\S]*must be a positive integer/,
+    );
+  });
+
+  it("a declared tickTimeoutMs of zero loads unrefused", async () => {
+    // The other side of the roster's line: a knob whose out-of-range value
+    // degrades to something an operator reads off the run — a zero cap aborts
+    // the invocation it bounds and the tick records the abort — is not the
+    // load's business, so the counted check does not reach it.
+    const chain = await loadWithPolicy("timeout-zero", "tickTimeoutMs: 0");
+    expect(chain.supervisorPolicy?.tickTimeoutMs).toBe(0);
+    expect(chain.supervisorPolicy?.maxParallel).toBeUndefined();
+  });
+});
+
+/**
  * `Chain.order` is the chain's half of the queue's sequencing (`spec/chain.md`,
  * "`Chain.order` — the queue's sequencing policy"): the engine ships the
  * default order and the chain replaces it. Driven through the real loader over
