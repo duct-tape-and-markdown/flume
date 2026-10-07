@@ -44,8 +44,8 @@ If you write your own plan prompts, remove any instruction to file a
 `priority`, or every new entry will be refused. A prompt built on
 `renderSchemaForPrompt` already states the new shape. To keep ordering by a
 number of your own, declare it as a field in your chain's `entryExtension`
-and sort by it in `Chain.order` — `docs/CHAIN-AUTHORING.md` § 14 has the
-example — and you can keep the key instead of stripping it. Harness consumers
+and sort by it in `Chain.order` — `docs/CHAIN-AUTHORING.md`, *Ordering the queue
+(`Chain.order`)*, has the example — and you can keep the key instead of stripping it. Harness consumers
 should strip it: the package orders by goals (section 10) and reads no
 per-entry number.
 
