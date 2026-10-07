@@ -1092,6 +1092,12 @@ const plan: Phase = {
 every entry) — supply it to exempt park-exempt `gate.kind` values (e.g.
 `"parked"`, `"deferred"`) the same way the build fence itself does.
 
+`maxEntryDepth` is the forest's depth cap the parse inside this gate reads
+(§10) — pass the same value your chain declares as `Chain.maxEntryDepth`,
+for the same reason you pass `extension`: a gate factory holds no chain, and
+a gate judging the queue by a cap the dispatcher doesn't use would refuse a
+commit the next tick reads happily. Omitted, the gate judges by the default.
+
 `entryRecords` widens the claim check's subject from the entry's ledger file
 to **that entry's records** — whatever other per-entry files your chain
 keeps, a note, a park, a sidecar. It is a resolver, `(tag, stateRootRel) =>
@@ -2800,6 +2806,20 @@ everything the engine mechanically consumes; it validates nothing else and
 it renders nothing else. Whatever additional fields your workflow wants on
 an entry — a summary, a spec citation, acceptance criteria — are yours to
 declare.
+
+`kind` and `parent` are the two the engine reads across entries rather than
+within one, so they are judged by the whole listing: every `parent` names an
+entry in the same queue, a `group` sits under a `group`, a `work` entry under
+a `group`, a `step` under its `work` entry or another of that entry's steps,
+and a `step`'s `blockedBy` names only steps of the same `work` entry — a
+dependency reaching further out is declared on the `work` entry itself. No
+chain of parents may run deeper than `Chain.maxEntryDepth`, a positive
+integer defaulting to `4` (goal, epic, work, step); declare a different one
+and every queue read this chain makes uses it. A queue breaking any of these
+is refused exactly like a malformed entry, naming the file the offending
+entry lives in — and your `pendingGate` takes the same cap as
+`maxEntryDepth` so the gate and the dispatcher cannot disagree about which
+queues are readable.
 
 Each field's declared type is a [Standard Schema](https://standardschema.dev)
 validator (`~standard`) — zod ≥3.24, valibot, and arktype all publish one, and

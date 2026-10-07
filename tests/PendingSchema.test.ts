@@ -10,6 +10,7 @@ import {
   CORE_ENTRY_FIELDS,
   composePendingEntry,
   declaredPaths,
+  DEFAULT_MAX_ENTRY_DEPTH,
   entryFileName,
   isPickableNow,
   parsePendingQueue,
@@ -18,6 +19,7 @@ import {
   TAG_MAX_LENGTH,
   touchedPaths,
   type EntryExtension,
+  type ParseError,
   type ParseResult,
   type PendingEntry,
   type QueueFile,
@@ -1004,13 +1006,27 @@ describe("kind and parent — the queue's forest (spec/pending.md § The entry c
   });
 
   it("round-trips each kind the core names, and a parent beside it", () => {
+    // Each kind under an owner the forest admits above it (`spec/pending.md`,
+    // *The queue is a forest*): a step's is its work entry, and the other
+    // two are a group's.
+    const owners = { work: "group", step: "work", group: "group" } as const;
     for (const kind of ["work", "step", "group"] as const) {
-      const parsed = roundTrip({
-        ...baseEntry,
-        gate: { kind: "open" },
-        kind,
-        parent: "OWNING-TAG",
-      });
+      const result = parseQueue([
+        {
+          ...baseEntry,
+          gate: { kind: "open" },
+          kind,
+          parent: "OWNING-TAG",
+        },
+        {
+          ...baseEntry,
+          tag: "OWNING-TAG",
+          gate: { kind: "open" },
+          kind: owners[kind],
+        },
+      ]);
+      expect(result.ok, JSON.stringify(result.errors)).toBe(true);
+      const parsed = result.entries.find((e) => e.tag === baseEntry.tag)!;
       expect(parsed.kind).toBe(kind);
       expect(parsed.parent).toBe("OWNING-TAG");
     }
@@ -1062,6 +1078,239 @@ describe("kind and parent — the queue's forest (spec/pending.md § The entry c
     expect(result.errors.map((e) => e.message).join("\n")).toContain(
       "priority",
     );
+  });
+});
+
+/**
+ * The queue-wide half of the forest (`spec/pending.md`, *The queue is a
+ * forest*). Every rule here reads a second entry or a chain of them, so none
+ * of them can live on the per-entry schema above — and each refusal is driven
+ * through the real queue parse rather than the check, so what is pinned is
+ * what a tick's own read does with a queue on disk.
+ */
+describe("the queue's forest — the rules a whole listing keeps (spec/pending.md § The queue is a forest)", () => {
+  /** One entry of `kind`, optionally under `parent`, with a gate beside it. */
+  function forestEntry(
+    tag: string,
+    kind: "work" | "step" | "group",
+    parent?: string,
+    gate: unknown = { kind: "open" },
+  ): Record<string, unknown> {
+    return {
+      tag,
+      gate,
+      kind,
+      ...(parent === undefined ? {} : { parent }),
+      files: { new: [], edit: [], retire: [] },
+    };
+  }
+
+  /**
+   * The one refusal a queue carrying one forest defect produces, read off the
+   * real strict parse. Asserting the count is the vacuity pin for every case
+   * below: a queue refused for some *other* reason — a malformed entry, a
+   * second defect the fixture did not mean — would never reach the field
+   * assertions as the sole error.
+   */
+  function soleForestError(
+    queue: readonly unknown[],
+    maxEntryDepth?: number,
+  ): ParseError {
+    const result = parsePendingQueue(queueOf(queue), undefined, maxEntryDepth);
+    expect(result.ok, "the queue parsed").toBe(false);
+    // All-or-nothing over the directory: a refused queue hands back nothing.
+    expect(result.entries).toEqual([]);
+    expect(
+      result.errors.map((e) => `[${e.file}] ${e.path}: ${e.message}`),
+    ).toHaveLength(1);
+    return result.errors[0]!;
+  }
+
+  it("a forest keeping every rule the section states parses", () => {
+    // Every rule at once, in the shape the section names: a goal parenting an
+    // epic, the epic a work entry, that entry's two steps with the second
+    // blocked on the first — and a root work entry beside the whole tree,
+    // which is what a producer writes before it groups anything.
+    const queue = [
+      forestEntry("GOAL", "group"),
+      forestEntry("EPIC", "group", "GOAL"),
+      forestEntry("WORK", "work", "EPIC"),
+      forestEntry("STEP-FIRST", "step", "WORK"),
+      forestEntry("STEP-SECOND", "step", "WORK", {
+        kind: "blockedBy",
+        tags: ["STEP-FIRST"],
+      }),
+      forestEntry("ROOT-WORK", "work"),
+    ];
+    const result = parseQueue(queue);
+    expect(result.ok, JSON.stringify(result.errors)).toBe(true);
+    // Non-vacuity: the whole listing came back, so the verdict is over this
+    // forest and not over a queue the parse read as shorter.
+    expect(result.entries.map((e) => e.tag)).toEqual(
+      queue.map((e) => e.tag as string),
+    );
+    // And it sits exactly at the default cap — goal, epic, work, step — so
+    // the case is a forest the default admits rather than one it never
+    // measured.
+    expect(DEFAULT_MAX_ENTRY_DEPTH).toBe(4);
+    // The chain-less read judges the same rules: the forest is core shape, so
+    // nothing about it waits on a declared extension.
+    expect(parseQueueLoose(queue).ok).toBe(true);
+  });
+
+  it("a parent naming no entry in the queue is refused", () => {
+    const error = soleForestError([forestEntry("ORPHAN", "work", "NO-SUCH-GOAL")]);
+    expect(error.file).toBe(entryFileName("ORPHAN"));
+    expect(error.path).toBe("parent");
+    expect(error.message).toContain("NO-SUCH-GOAL");
+
+    // The same queue with the entry it names present parses, so what was
+    // refused is the dangling pointer and not the field.
+    expect(
+      parseQueue([
+        forestEntry("ORPHAN", "work", "NO-SUCH-GOAL"),
+        forestEntry("NO-SUCH-GOAL", "group"),
+      ]).ok,
+    ).toBe(true);
+    // And the chain-less read refuses it too — core shape, one verdict.
+    expect(parseQueueLoose([forestEntry("ORPHAN", "work", "NO-SUCH-GOAL")]).ok).toBe(
+      false,
+    );
+  });
+
+  it("a work entry whose parent is a work entry is refused", () => {
+    // Everything above a work entry organizes: a work entry under another is
+    // a session inside a session, which is the one thing finer structure must
+    // never mean.
+    const error = soleForestError([
+      forestEntry("OUTER-WORK", "work"),
+      forestEntry("INNER-WORK", "work", "OUTER-WORK"),
+    ]);
+    expect(error.file).toBe(entryFileName("INNER-WORK"));
+    expect(error.path).toBe("parent");
+    expect(error.message).toContain("work");
+
+    // Non-vacuity: the same two entries with the owner declared a group
+    // parse, so the refusal is the owner's kind and not the pair.
+    expect(
+      parseQueue([
+        forestEntry("OUTER-WORK", "group"),
+        forestEntry("INNER-WORK", "work", "OUTER-WORK"),
+      ]).ok,
+    ).toBe(true);
+  });
+
+  it("a group whose parent is a work entry is refused", () => {
+    const error = soleForestError([
+      forestEntry("THE-WORK", "work"),
+      forestEntry("THE-GROUP", "group", "THE-WORK"),
+    ]);
+    expect(error.file).toBe(entryFileName("THE-GROUP"));
+    expect(error.path).toBe("parent");
+
+    expect(
+      parseQueue([
+        forestEntry("THE-WORK", "group"),
+        forestEntry("THE-GROUP", "group", "THE-WORK"),
+      ]).ok,
+    ).toBe(true);
+  });
+
+  it("a step whose parent is a group is refused", () => {
+    // A step is part of a work entry's own session, so a step hanging off a
+    // group is a step no session would ever take.
+    const error = soleForestError([
+      forestEntry("THE-GROUP", "group"),
+      forestEntry("THE-STEP", "step", "THE-GROUP"),
+    ]);
+    expect(error.file).toBe(entryFileName("THE-STEP"));
+    expect(error.path).toBe("parent");
+
+    // A step's parent is its work entry or another of its steps: both parse.
+    expect(
+      parseQueue([
+        forestEntry("THE-WORK", "work"),
+        forestEntry("THE-STEP", "step", "THE-WORK"),
+        forestEntry("THE-SUBSTEP", "step", "THE-STEP"),
+      ]).ok,
+    ).toBe(true);
+  });
+
+  it("a step blockedBy a step of another work entry is refused", () => {
+    const error = soleForestError([
+      forestEntry("WORK-A", "work"),
+      forestEntry("STEP-A", "step", "WORK-A"),
+      forestEntry("WORK-B", "work"),
+      forestEntry("STEP-B", "step", "WORK-B", {
+        kind: "blockedBy",
+        tags: ["STEP-A"],
+      }),
+    ]);
+    expect(error.file).toBe(entryFileName("STEP-B"));
+    expect(error.path).toBe("gate.tags.0");
+    expect(error.message).toContain("WORK-A");
+
+    // Non-vacuity: the same blocker named from inside its own work entry
+    // parses, so what was refused is the reach across entries — a dependency
+    // that far out is declared on the work entry.
+    expect(
+      parseQueue([
+        forestEntry("WORK-A", "work"),
+        forestEntry("STEP-A", "step", "WORK-A"),
+        forestEntry("STEP-B", "step", "WORK-A", {
+          kind: "blockedBy",
+          tags: ["STEP-A"],
+        }),
+      ]).ok,
+    ).toBe(true);
+  });
+
+  it("a step blockedBy its own work entry is refused", () => {
+    // "Only steps" is the rule, and the work entry above the step is the
+    // nearest thing that is not one.
+    const error = soleForestError([
+      forestEntry("OWNING-WORK", "work"),
+      forestEntry("THE-STEP", "step", "OWNING-WORK", {
+        kind: "blockedBy",
+        tags: ["OWNING-WORK"],
+      }),
+    ]);
+    expect(error.file).toBe(entryFileName("THE-STEP"));
+    expect(error.path).toBe("gate.tags.0");
+  });
+
+  it("a parent chain deeper than maxEntryDepth is refused", () => {
+    const fiveDeep = [
+      forestEntry("GEN-1", "group"),
+      forestEntry("GEN-2", "group", "GEN-1"),
+      forestEntry("GEN-3", "group", "GEN-2"),
+      forestEntry("GEN-4", "work", "GEN-3"),
+      forestEntry("GEN-5", "step", "GEN-4"),
+    ];
+    const error = soleForestError(fiveDeep);
+    expect(error.file).toBe(entryFileName("GEN-5"));
+    expect(error.path).toBe("parent");
+    expect(error.message).toContain(String(DEFAULT_MAX_ENTRY_DEPTH));
+
+    // Non-vacuity: the four-deep prefix of the same chain parses, so what the
+    // default refused is the fifth generation and not the shape of a chain.
+    expect(parseQueue(fiveDeep.slice(0, 4)).ok).toBe(true);
+  });
+
+  it("a parent chain that closes on itself is refused", () => {
+    // A cycle has no root, so it is a chain of parents no cap can bound —
+    // and a walk up it is the one shape that would not terminate.
+    const result = parseQueue([
+      forestEntry("CYCLE-A", "group", "CYCLE-B"),
+      forestEntry("CYCLE-B", "group", "CYCLE-A"),
+    ]);
+    expect(result.ok).toBe(false);
+    // Both members are refused, each in its own file: a reader opening either
+    // one is told the chain above it closes.
+    expect(result.errors.map((e) => e.file).sort()).toEqual([
+      entryFileName("CYCLE-A"),
+      entryFileName("CYCLE-B"),
+    ]);
   });
 });
 
@@ -1398,7 +1647,18 @@ describe("renderSchemaForPrompt", () => {
         `rendered field "${name}" carries no value in the entry this gate parses`,
       ).toContain(name);
     }
-    const result = parseQueue([fullEntry]);
+    const result = parseQueue([
+      fullEntry,
+      // The entry the rendered `parent` names: a parent names an entry in the
+      // queue and a step's parent is its work entry (`spec/pending.md`, *The
+      // queue is a forest*), so the rendered field's value is only a value
+      // beside the entry it points at.
+      {
+        tag: "EVERY-RENDERED-PARENT",
+        gate: { kind: "open" },
+        files: { new: [], edit: [], retire: [] },
+      },
+    ]);
     expect(result.ok, JSON.stringify(result.errors)).toBe(true);
   });
 

@@ -33,6 +33,7 @@ import {
 } from "./flumeApi.js";
 import { validateFrictionDeclaration } from "./friction.js";
 import { existsLoud } from "./fsProbe.js";
+import { DEFAULT_MAX_ENTRY_DEPTH } from "./PendingSchema.js";
 import type { Chain } from "./Phase.js";
 import {
   assertStateRootRelative,
@@ -144,12 +145,12 @@ function resolveWorktreesBaseDeclaration(
 }
 
 /**
- * Validate the supervisor knobs whose out-of-range value is a run that cannot
- * happen. Both count a thing a tick must have at least one of, so both are
- * positive integers: the value counts processes or commits, and `1.5` of
- * either is not a budget anyone declared on purpose. Refused here, at the
- * load, rather than at the boundary where the symptom appears
- * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ * Validate the declarations whose out-of-range value is a run that cannot
+ * happen. Each counts a thing a tick must have at least one of, so each is a
+ * positive integer: the value counts processes, commits, or generations of a
+ * queue entry, and `1.5` of any of them is not a budget anyone declared on
+ * purpose. Refused here, at the load, rather than at the boundary where the
+ * symptom appears (`.claude/rules/engineering.md`, *Loud or nothing*).
  *
  * - `supervisorPolicy.maxTicks` is how many `flume tick` children the
  *   supervisor holds at once (`src/Phase.ts`), and a supervisor that may hold
@@ -161,40 +162,61 @@ function resolveWorktreesBaseDeclaration(
  *   the same posture refuses: a chain that asked for a batch and got the
  *   serial carry reads as a correct loop.
  *
- * Undeclared is a strict no-op for either — `superviseLoop` falls back to
- * `DEFAULT_MAX_TICKS` (`src/loopSupervisor.ts`) and the merge to
- * `DEFAULT_MERGE_BATCH` (`src/gateBatch.ts`), which together are the serial
- * loop.
+ * - `maxEntryDepth` is how deep a chain of `parent` links the pending queue
+ *   may carry (spec/pending.md, *The queue is a forest*), and a cap below one
+ *   admits no entry at all: every entry is at least a root, so the next queue
+ *   read would refuse the whole directory.
  *
- * The other knobs in the block are deliberately not checked beside them: each
- * of those degrades to something an operator can read off a run, and the
- * engine validates only what its mechanics consume
+ * Undeclared is a strict no-op for each — `superviseLoop` falls back to
+ * `DEFAULT_MAX_TICKS` (`src/loopSupervisor.ts`), the merge to
+ * `DEFAULT_MERGE_BATCH` (`src/gateBatch.ts`), which together are the serial
+ * loop, and every queue parse to `DEFAULT_MAX_ENTRY_DEPTH`
+ * (`src/PendingSchema.ts`).
+ *
+ * The other knobs in the supervisor block are deliberately not checked beside
+ * these: each of those degrades to something an operator can read off a run,
+ * and the engine validates only what its mechanics consume
  * (`.claude/rules/engine-boundary.md`, *Capability vs convention*).
  */
-function validateSupervisorPolicyDeclaration(chain: Chain): void {
-  const counted: { field: string; value: number | undefined; why: string }[] = [
+function validateCountedDeclarations(chain: Chain): void {
+  const counted: {
+    field: string;
+    value: number | undefined;
+    why: string;
+    omitted: string;
+  }[] = [
     {
-      field: "maxTicks",
+      field: "supervisorPolicy.maxTicks",
       value: chain.supervisorPolicy?.maxTicks,
       why:
         `it is how many flume tick children the loop supervisor holds at ` +
         `once, and a supervisor that may hold none can never run one`,
+      omitted: "one (the serial loop)",
     },
     {
-      field: "mergeBatch",
+      field: "supervisorPolicy.mergeBatch",
       value: chain.supervisorPolicy?.mergeBatch,
       why:
         `it is how many finished spans one merge carries, and a merge that ` +
         `may carry none can never ship one`,
+      omitted: "one (the serial loop)",
+    },
+    {
+      field: "maxEntryDepth",
+      value: chain.maxEntryDepth,
+      why:
+        `it is how deep a chain of entry parents the queue may carry, and a ` +
+        `cap below one admits no entry at all`,
+      omitted: `${DEFAULT_MAX_ENTRY_DEPTH} (goal, epic, work, step)`,
     },
   ];
-  for (const { field, value, why } of counted) {
+  for (const { field, value, why, omitted } of counted) {
     if (value === undefined) continue;
     if (!Number.isInteger(value) || value < 1) {
       throw new Error(
-        `chain declares supervisorPolicy.${field}: ${JSON.stringify(value)}; ` +
+        `chain declares ${field}: ${JSON.stringify(value)}; ` +
           `it must be a positive integer — ${why}. Omit it for the default ` +
-          `of one (the serial loop).`,
+          `of ${omitted}.`,
       );
     }
   }
@@ -465,7 +487,7 @@ export async function loadChainModule(
   }
   validateFrictionDeclaration(chain);
   validatePendingDirDeclaration(chain);
-  validateSupervisorPolicyDeclaration(chain);
+  validateCountedDeclarations(chain);
   validateNoDeadDeclarations(chain);
   validateGlobDialect(chain);
   // The last declaration this load decides, and the only one whose check is

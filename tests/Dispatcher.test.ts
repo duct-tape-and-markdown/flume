@@ -25726,6 +25726,95 @@ describe("Dispatcher — the queue's order is computed, and `work` is the one ki
 });
 
 /**
+ * A-QUEUE-THAT-BREAKS-THE-FORESTS-RULES-IS-REFUSED (`spec/pending.md`, *The
+ * queue is a forest*): the forest's depth cap is the chain's
+ * (`Chain.maxEntryDepth`), and this is the passthrough — the parse a tick's
+ * own ledger read runs is composed from the chain it just loaded, so a cap
+ * the declaration states replaces the engine's default for every read the
+ * tick makes.
+ *
+ * Driven both ways over one real queue through a real tick, rather than by
+ * handing the cap to the parse here: a passthrough asserted at the parse
+ * would stay green over a dispatcher that never read the declaration
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ */
+describe("Dispatcher — the forest's depth cap comes from the chain", () => {
+  /**
+   * A fanout `build` phase that does NOT declare the queue writable, so a
+   * refused queue refuses the tick outright instead of being handed to the
+   * phase as a fact (`readPendingForDecision`, `src/pendingLedger.ts`).
+   */
+  const wakeBuild = (): Chain => {
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    return {
+      phases: [
+        makePhase({
+          name: "build",
+          concurrency: "fanout",
+          writablePaths: ["src/**"],
+          gates: [],
+        }),
+      ],
+      humanOnly: [],
+    };
+  };
+
+  /** Goal, epic, work, step, substep: five generations, one work entry. */
+  const fiveDeep = (): PendingEntry[] => [
+    { ...makeEntry("DEPTH-GOAL", []), kind: "group" },
+    { ...makeEntry("DEPTH-EPIC", []), kind: "group", parent: "DEPTH-GOAL" },
+    { ...makeEntry("DEPTH-WORK", ["src/depth-work.ts"]), parent: "DEPTH-EPIC" },
+    { ...makeEntry("DEPTH-STEP", []), kind: "step", parent: "DEPTH-WORK" },
+    {
+      ...makeEntry("DEPTH-SUBSTEP", []),
+      kind: "step",
+      parent: "DEPTH-STEP",
+    },
+  ];
+
+  it("a declared maxEntryDepth replaces the default of 4", async () => {
+    await writePending(fx.repo, fiveDeep());
+
+    // Under the engine's own default the fifth generation is past the cap, so
+    // the whole queue is refused and the tick dispatches nothing at all.
+    const refused = await new Dispatcher({
+      chainLoader: staticLoader(wakeBuild()),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({ "depth-work": async () => {} }),
+      log: silent,
+    }).tick();
+    expect(refused.failed).toBe(true);
+    expect(refused.result).toBeUndefined();
+    // Non-vacuity: refused by *this* rule — the summary names the cap and the
+    // entry whose chain of parents ran past it — and not by some other defect
+    // the fixture happened to carry.
+    expect(refused.summary).toContain("maxEntryDepth (4)");
+    expect(refused.summary).toContain(entryFileName("DEPTH-SUBSTEP"));
+
+    // The same queue, same tree, under a chain declaring the depth it has:
+    // the work entry is dispatched, which is the declared cap arriving at the
+    // read.
+    const deep = await new Dispatcher({
+      chainLoader: staticLoader({ ...wakeBuild(), maxEntryDepth: 5 }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({ "depth-work": async () => {} }),
+      log: silent,
+    }).tick();
+    expect(deep.failed).toBeFalsy();
+    expect(deep.result?.entries?.map((e) => e.tag)).toEqual(["DEPTH-WORK"]);
+    // And the queue really is the five-generation one both ticks read.
+    expect(deep.result?.pendingAfter.map((e) => e.tag).sort()).toEqual(
+      fiveDeep()
+        .map((e) => e.tag)
+        .sort(),
+    );
+  });
+});
+
+/**
  * The per-entry claim (`spec/pending.md`, *Claims — an entry in flight is
  * left alone*): the file a build tick stakes before it provisions an entry's
  * worktree, the set every selection reads it as, and the drop that ends it.

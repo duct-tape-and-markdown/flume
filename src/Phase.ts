@@ -1003,6 +1003,16 @@ export interface Chain {
    */
   pendingDir?: string;
   /**
+   * How deep a chain of `parent` links the queue may carry (`spec/pending.md`,
+   * *The queue is a forest*), counted from a root — so the default, `4`, is
+   * goal, epic, work, step, and a queue carrying a deeper chain is refused
+   * like any other malformed queue. Read by every queue parse;
+   * `DEFAULT_MAX_ENTRY_DEPTH` (`src/PendingSchema.ts`) is the value a parse
+   * applies where no chain declared one. A positive integer — anything else
+   * refuses the chain at load, since a cap below one admits no entry at all.
+   */
+  maxEntryDepth?: number;
+  /**
    * How this chain computes the directory its worktrees are placed under
    * (spec/worktrees.md, *Placement — the worktree base*) — a function of
    * the roots the runtime resolved, evaluated

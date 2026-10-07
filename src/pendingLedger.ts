@@ -59,7 +59,7 @@ import { thrownMessage } from "./thrown.js";
  * logger a degraded read announces through, and the two knobs the rewrite's
  * commit takes.
  *
- * Both callers already hold all seven, so nothing here is re-derived from disk
+ * Both callers already hold every one of them, so nothing here is re-derived from disk
  * and no read can run against a path resolved before this tick's chain load
  * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
  * beside its source*).
@@ -80,6 +80,14 @@ export interface PendingLedgerContext {
    * `undefined` where the chain declares none, which is core shape alone.
    */
   readonly entryExtension: EntryExtension | undefined;
+  /**
+   * The forest's depth cap as this tick's chain declared it
+   * (`Chain.maxEntryDepth`, `src/Phase.ts`), read by every parse below.
+   * Absent is the declaration's own absence, which is the parse's default
+   * (`DEFAULT_MAX_ENTRY_DEPTH`, `src/PendingSchema.ts`) — not a value this
+   * module chooses.
+   */
+  readonly maxEntryDepth?: number;
   readonly log: Logger;
   /** This run's own tip claim pid, so its own claim never reads as foreign (`src/tipVerify.ts`). */
   readonly ownTipClaimPid?: number;
@@ -433,7 +441,7 @@ async function readPending(
 ): Promise<PendingEntry[]> {
   const files = await readQueueFiles(ctx);
   if (files === null) return [];
-  const r = parsePendingQueue(files, ctx.entryExtension);
+  const r = parsePendingQueue(files, ctx.entryExtension, ctx.maxEntryDepth);
   if (!r.ok) throw new PendingParseFailure(reportedPendingDir(ctx), r.errors);
   return r.entries;
 }
@@ -481,7 +489,7 @@ export async function readPendingTolerant(
     return [];
   }
   if (files === null) return [];
-  const r = parsePendingQueue(files, ctx.entryExtension);
+  const r = parsePendingQueue(files, ctx.entryExtension, ctx.maxEntryDepth);
   if (!r.ok) {
     ctx.log.warn(
       `[flume] ${reportedPendingDir(ctx)} failed to parse ` +
@@ -642,7 +650,11 @@ export async function commitPendingUpdate(
   // removes the tags it shipped and touches observedFiles/blockedBy for tags
   // it knows about.
   const files = (await readQueueFiles(ctx)) ?? [];
-  const parsed = parsePendingQueue(files, ctx.entryExtension);
+  const parsed = parsePendingQueue(
+    files,
+    ctx.entryExtension,
+    ctx.maxEntryDepth,
+  );
   if (!parsed.ok) {
     throw new PendingParseFailure(reportedPendingDir(ctx), parsed.errors);
   }
@@ -903,13 +915,16 @@ export async function readPendingForDecision(
  * {@link PendingLedgerContext}: it runs where no chain resolved, which is the
  * whole reason it exists beside the reads that compose a declared extension.
  * `stateRoot` is the root the listing's absence is proven from
- * ({@link readQueueOnDisk}), which this caller holds either way.
+ * ({@link readQueueOnDisk}), which this caller holds either way, and
+ * `maxEntryDepth` is whatever cap a caller holding a loaded chain can pass —
+ * absent where none loaded, which the parse reads as its own default.
  */
 export function readPendingLoose(
   stateRoot: string,
   pendingDir: string,
+  maxEntryDepth?: number,
 ): ParseResult {
   const files = readQueueOnDisk(stateRoot, pendingDir);
   if (files === null) return { ok: true, entries: [], errors: [] };
-  return parsePendingQueueLoose(files);
+  return parsePendingQueueLoose(files, maxEntryDepth);
 }

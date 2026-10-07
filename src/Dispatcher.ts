@@ -720,6 +720,13 @@ export class Dispatcher {
   /** Set when tick() loads the chain; composes pending parses. */
   private entryExtension: EntryExtension | undefined;
   /**
+   * Set when tick() loads the chain, beside {@link entryExtension}: the depth
+   * cap every pending parse this tick makes reads (`Chain.maxEntryDepth`,
+   * `src/Phase.ts`). `undefined` until a chain is loaded, and whenever the
+   * chain declares none — which the parse reads as its own default.
+   */
+  private maxEntryDepth: number | undefined;
+  /**
    * What the chain this dispatcher last loaded declared about its agent
    * invocations, reported through {@link agentKillGraceMs}. Initialized to
    * the constructor's own fallbacks, which is what a dispatcher that has
@@ -832,6 +839,9 @@ export class Dispatcher {
       pendingDir: this.pendingDir,
       entryExtension: this.entryExtension,
       log: this.log,
+      ...(this.maxEntryDepth !== undefined
+        ? { maxEntryDepth: this.maxEntryDepth }
+        : {}),
       ...(this.opts.ownTipClaimPid !== undefined
         ? { ownTipClaimPid: this.opts.ownTipClaimPid }
         : {}),
@@ -1004,6 +1014,10 @@ export class Dispatcher {
     // downstream of the one place the chain is loaded, and reads it off the
     // context this class composes.
     this.entryExtension = chain.entryExtension;
+    // spec/pending.md "The queue is a forest": the same per-tick read for the
+    // cap the forest check reads, which is the other half of what a queue
+    // parse is composed from.
+    this.maxEntryDepth = chain.maxEntryDepth;
     // spec/pending.md "The pending queue": Chain.pendingDir replaces the
     // constructor-fixed default — resolved once per tick, after chain load,
     // same idiom as entryExtension above.
@@ -1499,9 +1513,10 @@ export class Dispatcher {
   async render(opts: RenderRequest): Promise<RenderResolution> {
     const chainModule = await this.chainLoader();
     const chain = chainModule.chain;
-    // The same two per-tick rebinds `tick()` takes off a freshly-loaded
-    // chain, for the same two readers: the ledger read's parse and its path.
+    // The same per-tick rebinds `tick()` takes off a freshly-loaded chain,
+    // for the same readers: the ledger read's parse and its path.
     this.entryExtension = chain.entryExtension;
+    this.maxEntryDepth = chain.maxEntryDepth;
     this.pendingDir = resolvePendingDir(this.flumeDir, chain.pendingDir);
 
     const phase = chain.phases.find((p) => p.name === opts.phase);

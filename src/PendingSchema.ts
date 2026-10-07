@@ -158,9 +158,10 @@ const PendingEntryCore = z.strictObject({
      *
      * Containment only: precedence is `gate`, and the forest rules a queue
      * must satisfy (which kind may parent which, the depth bound, a step's
-     * blockers) are the queue-wide read's, not this field's — all this field
-     * holds is that the value is a tag the grammar admits, since a parent
-     * that could not be a tag names no entry any queue could hold.
+     * blockers) are the queue-wide read's ({@link queueForestErrors}), not
+     * this field's — all this field holds is that the value is a tag the
+     * grammar admits, since a parent that could not be a tag names no entry
+     * any queue could hold.
      */
     parent: z
       .string()
@@ -728,22 +729,41 @@ function withFileNameAgreement(
  * a producer handed one repair per tick pays a tick per broken file — but a
  * single failure fails the read, because the queue a decision or a rewrite
  * acts on is all of it (`spec/pending.md`, *Queue reads are strict*).
+ *
+ * The listing is also where the queue's `parent` links are a graph, so the
+ * forest's own rules are read here ({@link queueForestErrors}) and not on the
+ * per-entry schema. `maxEntryDepth` is the cap as this tick's chain declared
+ * it (`Chain.maxEntryDepth`, `src/Phase.ts`), or
+ * {@link DEFAULT_MAX_ENTRY_DEPTH} where it declares none.
  */
 export function parsePendingQueue(
   files: readonly QueueFile[],
   extension?: EntryExtension,
+  maxEntryDepth: number = DEFAULT_MAX_ENTRY_DEPTH,
 ): ParseResult {
-  return collectQueue(files.map((f) => parsePendingEntry(f.file, f.raw, extension)));
+  return collectQueue(
+    files.map((f) => parsePendingEntry(f.file, f.raw, extension)),
+    maxEntryDepth,
+  );
 }
 
 /**
  * {@link parsePendingQueue}'s chain-less twin, over
- * {@link parsePendingEntryLoose}.
+ * {@link parsePendingEntryLoose}. The forest is core shape, so this read
+ * judges it too — `maxEntryDepth` rides in from whatever declaration the
+ * caller holds (`flume status` has the chain even where it loads no
+ * extension), and falls to {@link DEFAULT_MAX_ENTRY_DEPTH} where there is
+ * none to read, so a chain that could not be loaded is still told about a
+ * queue no cap could admit.
  */
 export function parsePendingQueueLoose(
   files: readonly QueueFile[],
+  maxEntryDepth: number = DEFAULT_MAX_ENTRY_DEPTH,
 ): ParseResult {
-  return collectQueue(files.map((f) => parsePendingEntryLoose(f.file, f.raw)));
+  return collectQueue(
+    files.map((f) => parsePendingEntryLoose(f.file, f.raw)),
+    maxEntryDepth,
+  );
 }
 
 /**
@@ -753,10 +773,197 @@ export function parsePendingQueueLoose(
  * nothing: the order a selection picks in is computed at the one home that
  * owns it (`byQueueOrder`, `src/selection.ts`).
  */
-function collectQueue(results: readonly EntryParseResult[]): ParseResult {
+function collectQueue(
+  results: readonly EntryParseResult[],
+  maxEntryDepth: number,
+): ParseResult {
   const errors = results.flatMap((r) => r.errors);
   if (errors.length > 0) return { ok: false, entries: [], errors };
-  return { ok: true, entries: results.map((r) => r.entry!), errors: [] };
+  const entries = results.map((r) => r.entry!);
+  // The parent graph is a graph only once every file resolved: run over a
+  // listing one of whose files failed, a parent naming that file would report
+  // as a parent naming nothing — a second, invented failure beside the real
+  // one. So the forest is read after the per-file verdict and never beside it.
+  const forest = queueForestErrors(entries, maxEntryDepth);
+  if (forest.length > 0) return { ok: false, entries: [], errors: forest };
+  return { ok: true, entries, errors: [] };
+}
+
+// ---------- the queue's forest ----------
+
+/**
+ * How deep a chain of `parent` links a queue may carry where no chain
+ * declared a cap: goal, epic, work, step (`spec/pending.md`, *The queue is a
+ * forest*). Counted from a root, so a root alone is depth 1.
+ *
+ * Here rather than at `Chain.maxEntryDepth` (`src/Phase.ts`) because the
+ * check that counts a chain of parents is here, and the chain-less parse
+ * ({@link parsePendingQueueLoose}) has no declaration to read: a default
+ * living at the declaration would leave this parse with none.
+ */
+export const DEFAULT_MAX_ENTRY_DEPTH = 4;
+
+/** What an entry is in the forest, as the core field's own enum spells it. */
+type EntryKind = z.infer<typeof PendingEntryCore>["kind"];
+
+/**
+ * Which kinds may parent each kind, and how a refusal names the rule it
+ * broke: everything above a `work` entry organizes and everything below it
+ * is a step of that entry's session (`spec/pending.md`, *The queue is a
+ * forest*). A `work` ancestor above a `work` entry is this table's
+ * consequence and not a second check — `work` admits only a `group` parent
+ * and `group` only a `group`, so no walk up from a `work` entry can reach
+ * one.
+ */
+const PARENT_KINDS: Record<
+  EntryKind,
+  { readonly kinds: readonly EntryKind[]; readonly phrase: string }
+> = {
+  group: { kinds: ["group"], phrase: "a group" },
+  work: { kinds: ["group"], phrase: "a group" },
+  step: {
+    kinds: ["work", "step"],
+    phrase: "its work entry or another of its steps",
+  },
+};
+
+/**
+ * The rules a whole queue must keep for its `parent` links to be the forest
+ * `spec/pending.md`, *The queue is a forest* describes, refused like any
+ * other malformed queue (*Queue reads are strict*).
+ *
+ * Checked here and not on `PendingEntryCore.parent`, because every one of
+ * them reads a second entry or a chain of them: a parent is a tag until the
+ * listing is in hand, and only the queue-wide read can say which entry it
+ * names. The per-entry field holds the one thing it can hold on its own —
+ * that the value is a tag the grammar admits.
+ *
+ * **An absent parent is a root**, for every kind: the pairings bound a
+ * *declared* parent, and a kind has no claim on the entry above it when there
+ * is none. A queue of nothing but root `work` entries — what a producer
+ * writes before it groups anything — is a forest of one-entry trees.
+ *
+ * Each refusal names the file the offending entry lives in, recomposed
+ * through {@link entryFileName}: the agreement check every parse ends on
+ * ({@link withFileNameAgreement}) has already proved that is the name it was
+ * read under, so the name is derived rather than carried a second time
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
+ * beside its source*).
+ */
+function queueForestErrors(
+  entries: readonly PendingEntry[],
+  maxEntryDepth: number,
+): ParseError[] {
+  const byTag = new Map(entries.map((entry) => [entry.tag, entry]));
+  const errors: ParseError[] = [];
+  const refuse = (entry: PendingEntry, path: string, message: string): void => {
+    errors.push({ file: entryFileName(entry.tag), path, message });
+  };
+  const parentOf = (entry: PendingEntry): PendingEntry | undefined =>
+    entry.parent === undefined ? undefined : byTag.get(entry.parent);
+  /**
+   * The nearest `work` entry at or above `entry` — whose steps a step's
+   * `blockedBy` may name. Bounded by the cap rather than by a visited set:
+   * a chain long enough to exhaust it is one the depth rule below has
+   * already refused, so the walk only has to terminate, never to diagnose.
+   */
+  const workEntryOf = (entry: PendingEntry): PendingEntry | undefined => {
+    let cursor: PendingEntry | undefined = entry;
+    for (let step = 0; cursor !== undefined && step <= maxEntryDepth; step++) {
+      if (cursor.kind === "work") return cursor;
+      cursor = parentOf(cursor);
+    }
+    return undefined;
+  };
+
+  for (const entry of entries) {
+    if (entry.parent === undefined) continue;
+    const parent = parentOf(entry);
+    if (parent === undefined) {
+      refuse(
+        entry,
+        "parent",
+        `parent "${entry.parent}" names no entry in the queue`,
+      );
+      continue;
+    }
+    const { kinds, phrase } = PARENT_KINDS[entry.kind];
+    if (!kinds.includes(parent.kind)) {
+      refuse(
+        entry,
+        "parent",
+        `a ${entry.kind} entry's parent is ${phrase}, and "${parent.tag}" ` +
+          `is a ${parent.kind} entry`,
+      );
+    }
+  }
+
+  for (const entry of entries) {
+    const chain = [entry.tag];
+    let cursor = entry;
+    while (cursor.parent !== undefined) {
+      const parent = parentOf(cursor);
+      // Unresolved above here, and already refused as such: an open chain
+      // bounds nothing, so there is no depth left to judge.
+      if (parent === undefined) break;
+      if (chain.includes(parent.tag)) {
+        refuse(
+          entry,
+          "parent",
+          `the chain of parents above "${entry.tag}" closes on ` +
+            `"${parent.tag}" (${chain.join(" under ")}): an entry above ` +
+            `itself is no chain of parents at all`,
+        );
+        break;
+      }
+      chain.push(parent.tag);
+      cursor = parent;
+      if (chain.length > maxEntryDepth) {
+        refuse(
+          entry,
+          "parent",
+          `the chain of parents from "${entry.tag}" up ` +
+            `(${chain.join(" under ")}) is deeper than maxEntryDepth ` +
+            `(${maxEntryDepth})`,
+        );
+        break;
+      }
+    }
+  }
+
+  for (const entry of entries) {
+    if (entry.kind !== "step" || entry.gate.kind !== "blockedBy") continue;
+    const own = workEntryOf(entry);
+    entry.gate.tags.forEach((tag, index) => {
+      const outside = (what: string): void =>
+        refuse(
+          entry,
+          `gate.tags.${index}`,
+          `a step's blockedBy names only steps of the same work entry, and ` +
+            `"${tag}" ${what}; a dependency reaching outside it is declared ` +
+            `on the work entry`,
+        );
+      const blocker = byTag.get(tag);
+      if (blocker === undefined) {
+        outside("names no entry in the queue");
+        return;
+      }
+      if (blocker.kind !== "step") {
+        outside(`is a ${blocker.kind} entry`);
+        return;
+      }
+      const theirs = workEntryOf(blocker);
+      if (theirs?.tag !== own?.tag) {
+        outside(
+          theirs === undefined
+            ? "is a step of no work entry"
+            : `is a step of "${theirs.tag}"`,
+        );
+      }
+    });
+  }
+
+  return errors;
 }
 
 // ---------- prompt rendering ----------

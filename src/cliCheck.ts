@@ -63,7 +63,11 @@ export async function checkVerb(
     return 0;
   }
 
-  const parsed = parsePendingQueue(files, chain.entryExtension);
+  const parsed = parsePendingQueue(
+    files,
+    chain.entryExtension,
+    chain.maxEntryDepth,
+  );
   if (!parsed.ok) {
     operatorLog.error(
       `[flume] check: ${pendingRel} has ${parsed.errors.length} schema violation(s)`,

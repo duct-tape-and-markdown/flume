@@ -565,6 +565,93 @@ describe("readPending — what a strict refusal names", () => {
 });
 
 /**
+ * And the refusal a queue earns as a *whole* listing rather than file by file
+ * (`spec/pending.md`, *The queue is a forest*): every entry here parses on its
+ * own, so the only thing that can refuse the read is the forest the files add
+ * up to — and the ledger's own promise is that a producer is told which file
+ * to open (*The ledger is a directory — one entry per file*).
+ *
+ * Driven through the strict read over a real committed queue, because that is
+ * the read whose refusal a tick acts on.
+ */
+describe("the strict read refuses a broken forest, by file", () => {
+  it("a forest refusal names the file the offending entry lives in", async () => {
+    const repo = await makeScratchRepo("flume-forest-refusal-", "main");
+    try {
+      const pendingDir = join(repo.dir, "queue", "ledger");
+      await mkdir(pendingDir, { recursive: true });
+      const entry = (
+        tag: string,
+        extra: Record<string, unknown>,
+      ): Record<string, unknown> => ({
+        tag,
+        gate: { kind: "open" },
+        files: { new: [], edit: [], retire: [] },
+        ...extra,
+      });
+      // Two entries, each valid on its own, and only the second breaks a rule
+      // the whole queue keeps: its parent names no entry in the listing.
+      for (const one of [
+        entry("SOUND-WORK", {}),
+        entry("ADRIFT-STEP", { kind: "step", parent: "NO-SUCH-WORK" }),
+      ]) {
+        await writeFile(
+          join(pendingDir, entryFileName(one.tag as string)),
+          JSON.stringify(one, null, 2) + "\n",
+          "utf8",
+        );
+      }
+      await exec("git", ["add", "."], { cwd: repo.dir });
+      await exec("git", ["commit", "-q", "-m", "a queue with a broken forest"], {
+        cwd: repo.dir,
+      });
+
+      const ctx: PendingLedgerContext = {
+        repoRoot: repo.dir,
+        flumeDir: repo.dir,
+        pendingDir,
+        entryExtension: undefined,
+        log: silent,
+      };
+
+      let caught: unknown;
+      try {
+        await commitPendingUpdate(ctx, [], [], []);
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(PendingParseFailure);
+      const errors = (caught as PendingParseFailure).errors;
+      // The file the repair opens — the offending entry's own, and not the
+      // sound one beside it, which is the whole point of a per-file queue.
+      expect(errors.map((e) => e.file)).toEqual([
+        entryFileName("ADRIFT-STEP"),
+      ]);
+      expect(errors[0]?.path).toBe("parent");
+      expect(errors[0]?.message).toContain("NO-SUCH-WORK");
+
+      // Non-vacuity: with the entry its parent names present, the same two
+      // files plus one read clean — so what refused above was the forest and
+      // not the fixture's shape.
+      await writeFile(
+        join(pendingDir, entryFileName("NO-SUCH-WORK")),
+        JSON.stringify(entry("NO-SUCH-WORK", {}), null, 2) + "\n",
+        "utf8",
+      );
+      await exec("git", ["add", "."], { cwd: repo.dir });
+      await exec("git", ["commit", "-q", "-m", "the parent it names"], {
+        cwd: repo.dir,
+      });
+      await expect(commitPendingUpdate(ctx, [], [], [])).resolves.toMatchObject(
+        { exit: "nothing-to-write" },
+      );
+    } finally {
+      await repo.cleanup();
+    }
+  });
+});
+
+/**
  * And beside the refusals, what the rewrite reports about its **own** call.
  *
  * Three of `commitPendingUpdate`'s four exits write no commit, so "did this

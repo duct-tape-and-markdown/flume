@@ -258,7 +258,11 @@ export async function statusVerb(paths: FlumePaths): Promise<number> {
   const statusPendingDir = resolvePendingDir(flumeDir, chain?.pendingDir);
   let pending: ParseResult;
   try {
-    pending = readPendingLoose(flumeDir, statusPendingDir);
+    pending = readPendingLoose(
+      flumeDir,
+      statusPendingDir,
+      chain?.maxEntryDepth,
+    );
   } catch (err) {
     operatorLog.error(
       `[flume] status: pending queue at ${statusPendingDir} failed to read: ${thrownMessage(err)}`,

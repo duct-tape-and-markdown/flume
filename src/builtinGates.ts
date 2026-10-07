@@ -293,6 +293,14 @@ export interface PendingGateOptions {
    */
   extension?: EntryExtension;
   /**
+   * The forest's depth cap the chain declared (`Chain.maxEntryDepth`,
+   * `src/Phase.ts`), passed for the same reason {@link extension} is: a gate
+   * factory holds no chain, and a gate judging the queue by a cap the
+   * dispatcher does not use would refuse a commit the next tick accepts.
+   * Omitted judges by the parse's own default.
+   */
+  maxEntryDepth?: number;
+  /**
    * The fence every entry's declared `files` must survive: the downstream
    * phase that will build this queue, typically passed as the phase value
    * itself (`{ writablePaths, entryChannelPaths }` is all this gate reads).
@@ -406,7 +414,11 @@ export function pendingGate(opts: PendingGateOptions): SingleSpanGate {
       if (files === null) {
         return { ok: false, message: `${displayPath} missing after commit` };
       }
-      const parsed = parsePendingQueue(files, opts.extension);
+      const parsed = parsePendingQueue(
+        files,
+        opts.extension,
+        opts.maxEntryDepth,
+      );
       if (!parsed.ok) {
         return {
           ok: false,

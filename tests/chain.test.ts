@@ -20,6 +20,11 @@ import { mergeBatchWidth } from "../src/gateBatch.ts";
 import type { Chain, Phase } from "../src/Phase.ts";
 import { slugify } from "../src/paths.ts";
 import {
+  entryFileName,
+  parsePendingQueue,
+  type QueueFile,
+} from "../src/PendingSchema.ts";
+import {
   entryAttemptKey,
   phaseAttemptKey,
   priorAttemptPath,
@@ -724,6 +729,86 @@ describe("Chain load — supervisorPolicy.mergeBatch reaches the merge width (sp
     } finally {
       await rm(cfg, { recursive: true, force: true });
     }
+  });
+});
+
+/**
+ * `Chain.maxEntryDepth` is the chain's half of the queue's forest
+ * (`spec/pending.md`, *The queue is a forest*): the engine ships the default
+ * and the chain replaces it. The load's two verdicts are pinned here — the
+ * refusal of a cap no queue could satisfy, and what an undeclared one leaves
+ * a queue parse reading — over a real `chain.ts` through the real loader,
+ * like the blocks above. That a *declared* cap reaches a tick's own ledger
+ * read is pinned where the tick runs (`tests/Dispatcher.test.ts`).
+ */
+describe("Chain load — maxEntryDepth (spec/pending.md 'The queue is a forest')", () => {
+  /** A one-phase chain declaring `maxEntryDepth: <declared>`, or none at all. */
+  async function loadWithDepth(
+    prefix: string,
+    declared: string | undefined,
+  ): Promise<Chain> {
+    const cfg = await mkTempDir(`flume-cfg-entry-depth-${prefix}-`);
+    await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
+    await writeFile(
+      join(cfg, "chain.ts"),
+      `export default () => ({ chain: { phases: [{ name: "build", ` +
+        `description: "", promptPath: "prompt.md", concurrency: "fanout", ` +
+        `writablePaths: ["src/**"], gates: [], handoff: () => [] }], ` +
+        `humanOnly: []` +
+        (declared === undefined ? `` : `, maxEntryDepth: ${declared}`) +
+        ` } });\n`,
+      "utf8",
+    );
+    try {
+      return (
+        await loadChainModule({ repoRoot: cfg, configDir: cfg, flumeDir: cfg })
+      ).chain;
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  }
+
+  /** `generations` entries, each the parent of the next; groups above a work leaf. */
+  function chainOfParents(generations: number): QueueFile[] {
+    const entries = Array.from({ length: generations }, (_, i) => ({
+      tag: `GEN-${i + 1}`,
+      gate: { kind: "open" },
+      kind: i === generations - 1 ? "work" : "group",
+      ...(i === 0 ? {} : { parent: `GEN-${i}` }),
+      files: { new: [], edit: [], retire: [] },
+    }));
+    return entries.map((entry) => ({
+      file: entryFileName(entry.tag),
+      raw: JSON.stringify(entry),
+    }));
+  }
+
+  it("a maxEntryDepth below one refuses the chain load rather than clamping", async () => {
+    // Clamping would be the silent degradation: a cap of zero admits no entry
+    // at all, so every later queue read would refuse the whole directory with
+    // nothing naming the declaration that did it.
+    await expect(loadWithDepth("zero", "0")).rejects.toThrow(
+      /maxEntryDepth: 0[\s\S]*must be a positive integer/,
+    );
+    await expect(loadWithDepth("fractional", "2.5")).rejects.toThrow(
+      /maxEntryDepth: 2\.5[\s\S]*must be a positive integer/,
+    );
+  });
+
+  it("an undeclared maxEntryDepth loads unrefused and caps a chain of parents at four", async () => {
+    const chain = await loadWithDepth("absent", undefined);
+    expect(chain.maxEntryDepth).toBeUndefined();
+
+    // What the absent declaration leaves a queue parse reading — goal, epic,
+    // work, step — asserted through the real parse the ledger reads with.
+    const atCap = parsePendingQueue(chainOfParents(4), undefined, chain.maxEntryDepth);
+    expect(atCap.ok, JSON.stringify(atCap.errors)).toBe(true);
+    // Non-vacuity: the parse really judged four generations of parents.
+    expect(atCap.entries).toHaveLength(4);
+
+    const past = parsePendingQueue(chainOfParents(5), undefined, chain.maxEntryDepth);
+    expect(past.ok).toBe(false);
+    expect(past.errors.map((e) => e.file)).toEqual([entryFileName("GEN-5")]);
   });
 });
 
