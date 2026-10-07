@@ -1437,7 +1437,9 @@ it("the package's judge runs after a consumer's declared gates at the same when"
   // produces, then the one member built from the phase's own identity — a
   // rank moves only where an entry file can be written, so the goal-rank
   // gate is a producer's and build's lead carries no row for it — then the
-  // cursor gate that trails on its spawn (`harness/gates.ts`).
+  // `slice-state` gate that trails on its spawn, which reads a touched
+  // slice's whole state file at two refs against that slice's own rules
+  // rather than every cursor the queue holds (`harness/gates.ts`).
   const SHARED = ["records", "clean-tree", "pending-gate", "per cites resolve"];
   const disciplineOf = (name: string): string[] => [
     ...SHARED,

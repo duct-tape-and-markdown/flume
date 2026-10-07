@@ -401,14 +401,15 @@ function orderedForSelection(
 }
 
 /**
- * The pickable set and the two holds that shrank it — what `isPickable`
- * cleared, minus this run's live quarantine, minus what the chain's own
- * refusal declined, with each hold named by the entries it took.
+ * The pickable set and the three holds that shrank it — what `isPickable`
+ * cleared, minus this run's live quarantine, minus the entries a sibling
+ * tick holds a claim on, minus what the chain's own refusal declined, with
+ * each hold named by the entries it took.
  *
  * `pickable` is in the order the chain declared ({@link orderedForSelection}),
  * which undeclared is the queue's own ({@link byFilingThenTag},
- * `src/filingOrder.ts`). Both hold lists are in the queue's own order and
- * stay there: the sequencing policy is handed the ready set alone, so an
+ * `src/filingOrder.ts`). All three hold lists are in the queue's own order
+ * and stay there: the sequencing policy is handed the ready set alone, so an
  * entry a hold took was never offered to it.
  *
  * The one derivation `runSingleton`'s pre-tick selection, {@link selectBatch}
@@ -417,7 +418,7 @@ function orderedForSelection(
  * on which hold to blame for an entry missing from it.
  */
 interface PickableSelection {
-  /** Every entry the gate switch cleared that neither hold below took. */
+  /** Every entry the gate switch cleared that none of the three holds below took. */
   pickable: PendingEntry[];
   /**
    * Entries the gate switch would pick, but this run's live quarantine
@@ -515,7 +516,7 @@ export function pickableSelection(opts: {
   inFlight: readonly PendingEntry[];
 }): PickableSelection {
   // The queue's one ordering, taken once over the eligible set: the pickable
-  // set below and both hold lists are read off it in this order, so no
+  // set below and all three hold lists are read off it in this order, so no
   // surface that reports one of them can order it differently. The order is
   // the queue's own default — this tick's filing times, and the tag beneath
   // them (`byFilingThenTag`, `src/filingOrder.ts`).

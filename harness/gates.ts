@@ -2,9 +2,11 @@
  * The gates the package's discipline needs (`spec/harness.md`, *The gates the
  * discipline needs*) — the `per` gate, the records gate, the clean-tree gate,
  * the engine's pending gate wired to the consumer's fence, the goal-rank gate
- * over the ranks a plan commit places and moves, and the cursor gate over
- * every cursor a plan commit moves — as one ordered set per phase, always
- * ahead of whatever gates the consumer declared.
+ * over the ranks a plan commit places and moves, and the `slice-state` gate,
+ * which reads a touched slice's whole state file at two refs and judges the
+ * move against that slice's own rules rather than every cursor the queue
+ * holds — as one ordered set per phase, always ahead of whatever gates the
+ * consumer declared.
  *
  * **Always first is mechanism here, not a promise.** {@link harnessGates}
  * returns the package's own and then the consumer's, so a declaration

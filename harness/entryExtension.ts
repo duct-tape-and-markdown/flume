@@ -254,11 +254,16 @@ function laneClause(lanes: readonly Lane[]): string {
 }
 
 /**
- * The package's fields, in the order `spec/harness.md` lists them — which is
- * the order they render in, since `renderSchemaForPrompt` follows
- * declaration order — with {@link CONTRACT_TOUCHING_FIELD}, the intended
- * interface and {@link GOAL_RANK_FIELD} last, after the six that section
- * names.
+ * The package's fields, in the order a plan prompt reads them in — this
+ * declaration's order, since `renderSchemaForPrompt` renders them in it —
+ * with {@link CONTRACT_TOUCHING_FIELD}, the intended interface and
+ * {@link GOAL_RANK_FIELD} last.
+ *
+ * The order is this function's to pick and nothing elsewhere to keep step
+ * with: the fields the discipline reads, with their caps and hints, are held
+ * by this schema and by no roster in the spec (`spec/harness.md`, *The entry
+ * extension*), so there is no second listing for a reordering here to
+ * contradict.
  *
  * Built per composition rather than held as a constant, because three of the
  * hints carry {@link laneClause} and one field's schema is held to the

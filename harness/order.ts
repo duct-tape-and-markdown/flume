@@ -60,10 +60,15 @@ function goalPlaces(ctx: OrderContext): ReadonlyMap<string, number> {
   standingGoals(ctx.queue).forEach(({ goal, remaining }, place) => {
     // Seeded with the goal's own subtree, then widened through the edges the
     // engine resolved. A growing frontier with its own seen set rather than a
-    // recursive walk: `blockedBy` carries no cycle check at parse
-    // (`src/PendingSchema.ts`), and a queue whose blockers close on
-    // themselves must still terminate here — nothing in such a cycle is
-    // pickable, so what it costs is a claim the order never serves on.
+    // recursive walk: `blockedBy` is a DAG's parent list, so one blocker is
+    // reachable along many paths and the seen set is what keeps the widening
+    // linear instead of exponential. Its cycle arm rides along for free, and
+    // is what keeps this walk total on its own terms: a queue whose blockers
+    // close on themselves is refused at the parse every order hook's graph
+    // is composed from (`blockerCycleFrom`, `src/PendingSchema.ts`), so
+    // acyclicity is that module's invariant rather than this walk's input
+    // shape, and a loop that did reach here stops at the claims already
+    // placed rather than hanging.
     const frontier = [goal.tag, ...remaining.map(({ entry }) => entry.tag)];
     const seen = new Set(frontier);
     for (let at = 0; at < frontier.length; at += 1) {
@@ -92,10 +97,14 @@ function goalPlaces(ctx: OrderContext): ReadonlyMap<string, number> {
  * — a `group` or `step` on the path is walked through and contributes no
  * length (`spec/pending.md`, *The queue is a forest*).
  *
- * The walk is memoized and guarded against a `blockedBy` cycle the way
- * {@link goalPlaces} is, for the same reason and with the same bargain: a
- * cycle terminates at the length measured so far rather than hanging, and
- * none of its members is pickable for the order to have served.
+ * The memo is what the graph's shape asks for, as {@link goalPlaces}'s seen
+ * set is: a blocker many entries wait on is measured once rather than once
+ * per path into it. The open-frontier set beside it is the cycle arm alone,
+ * and stands for the reason that walk's does — the parse refuses a
+ * `blockedBy` cycle before any order hook is handed the graph
+ * (`blockerCycleFrom`, `src/PendingSchema.ts`), so this is a walk kept total
+ * against an invariant another module owns, and a loop that did reach it
+ * terminates at the length measured so far rather than recurring.
  */
 function dependentWork(ctx: OrderContext): ReadonlyMap<string, number> {
   const byTag = new Map(ctx.queue.map((entry) => [entry.tag, entry] as const));
