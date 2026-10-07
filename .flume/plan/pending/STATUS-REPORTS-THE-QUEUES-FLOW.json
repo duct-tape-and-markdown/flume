@@ -1,0 +1,24 @@
+{
+  "tag": "STATUS-REPORTS-THE-QUEUES-FLOW",
+  "gate": { "kind": "blockedBy", "tags": ["THE-DEFAULT-QUEUE-ORDER-IS-OLDEST-FILING-THEN-TAG"] },
+  "priority": 10,
+  "files": {
+    "edit": [
+      { "path": "src/cliStatus.ts", "description": "the Flow line, last in the printed order" },
+      { "path": "src/filingOrder.ts", "description": "the filing times the two age figures read" },
+      { "path": "src/tickVerdict.ts", "description": "the verdict history the ship and failed-merge counts read" },
+      { "path": "docs/CLI.md", "description": "the status verb's section" },
+      { "path": "tests/cli.test.ts", "description": "the three figures and the no-history case" }
+    ]
+  },
+  "summary": "status prints a Flow line — median filing-to-ship, the longest a ready work entry is waiting now, failed merges per shipped entry — computed from git and the verdicts at the moment of asking",
+  "per": { "path": "spec/cli.md", "section": "`flume status` owes exactly this" },
+  "acceptance": "flume status prints the three flow figures, each derived at the moment of asking from the verdict history and the filing times, and stores none of them",
+  "tests": [
+    "flume status prints the median time from filing to shipping over the verdict history",
+    "flume status prints the longest a ready work entry has been waiting",
+    "flume status prints failed merges per shipped entry",
+    "flume status prints the flow line with no figures when the verdict history is empty"
+  ],
+  "notes": "The Goals line beside it is not here: a goal's rank is a package field the engine may not read, which is an open question in the questions directory. Flow is engine facts throughout — filing times, verdicts, the pickable set."
+}

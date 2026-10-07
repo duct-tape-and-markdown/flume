@@ -1,0 +1,29 @@
+{
+  "tag": "THE-DEFAULT-QUEUE-ORDER-IS-OLDEST-FILING-THEN-TAG",
+  "gate": { "kind": "blockedBy", "tags": ["THE-ENTRY-CORE-CARRIES-KIND-AND-PARENT-AND-NO-RANK"] },
+  "priority": 10,
+  "files": {
+    "new": [
+      { "path": "src/filingOrder.ts", "description": "the filing-time read off git and the default comparator over it" }
+    ],
+    "edit": [
+      { "path": "src/selection.ts", "description": "the default order taken from the filing times instead of the comparator it holds" },
+      { "path": "src/git.ts", "description": "the add-commit read the filing time needs" },
+      { "path": "src/pendingLedger.ts", "description": "the read that carries filing times beside the parsed queue" },
+      { "path": "src/Dispatcher.ts", "description": "the filing times reaching every selection this tick takes" },
+      { "path": "tests/Dispatcher.test.ts", "description": "the ordering cases over a fixture repo with real add commits" },
+      { "path": "tests/git.test.ts", "description": "the add-commit read" }
+    ]
+  },
+  "summary": "the engine reads each entry's filing time — the oldest commit that added a file under its tag — and the default order is that ascending, then tag",
+  "per": { "path": "spec/pending.md", "section": "The entry core" },
+  "acceptance": "a selection with no declared order serves the oldest-filed pickable work entry first, an entry no commit has added last, and breaks what remains on the tag",
+  "tests": [
+    "the default order serves the oldest-filed entry first",
+    "an entry no commit has added yet is served last",
+    "re-filing an entry does not move it in the default order",
+    "two entries added by one commit break on the tag ascending",
+    "the filing time is the oldest commit that added a file under the tag, not the newest"
+  ],
+  "notes": "The read is git's, so it is per-selection state the engine holds and reports (`Chain.order`'s context carries it). One home, because the status flow figures read the same times."
+}

@@ -1,0 +1,27 @@
+{
+  "tag": "THE-PACKAGE-RANKS-NO-ENTRY-BY-ITS-PROVENANCE",
+  "gate": { "kind": "open" },
+  "priority": 10,
+  "files": {
+    "retire": ["harness/filingBands.ts"],
+    "edit": [
+      { "path": "harness/gates.ts", "description": "the slice gate set loses the filing-band row" },
+      { "path": "harness/prompts.ts", "description": "the FILING_BAND placeholder and the statement behind it" },
+      { "path": "harness/prompts/plan-derive.md", "description": "the placeholder line" },
+      { "path": "harness/prompts/plan-inbox.md", "description": "the placeholder line" },
+      { "path": "harness/prompts/plan-sweep.md", "description": "the placeholder line" },
+      { "path": "harness/prompts/plan-discipline.md", "description": "the *A rank is provenance* section" },
+      { "path": "docs/CHAIN-AUTHORING.md", "description": "the declared-gate roster" },
+      { "path": "tests/harnessGates.test.ts", "description": "the gate set and the no-longer-refused commit" },
+      { "path": "tests/harnessPrompts.test.ts", "description": "the rendered slice prompts" }
+    ]
+  },
+  "summary": "the provenance bands, the filing-band gate and the slice prompts' band clause leave the package — nothing a producer files carries a rank",
+  "per": { "path": "spec/harness.md", "section": "The phases" },
+  "acceptance": "no package surface reads or states a filing band — the slice gate sets, the rendered slice prompts and the discipline page carry none — and a plan slice's commit adding an entry at any rank passes its own gates",
+  "tests": [
+    "a plan slice's commit adding an entry at a rank its old band excluded passes its gates",
+    "the gates a plan slice declares carry no filing-band row"
+  ],
+  "notes": "Unblocks the core change: `inFilingBand` reads `entry.priority`, so the core cannot drop the field while this gate stands. `priority` itself stays in the core here, so the queue on disk keeps parsing and the transient order is the schema default."
+}

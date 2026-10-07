@@ -1,0 +1,33 @@
+{
+  "tag": "A-QUEUE-THAT-BREAKS-THE-FORESTS-RULES-IS-REFUSED",
+  "gate": { "kind": "blockedBy", "tags": ["THE-ENTRY-CORE-CARRIES-KIND-AND-PARENT-AND-NO-RANK"] },
+  "priority": 10,
+  "files": {
+    "edit": [
+      { "path": "src/PendingSchema.ts", "description": "the queue-level forest check, beside the per-entry parse" },
+      { "path": "src/pendingLedger.ts", "description": "the parse site that hands the cap in" },
+      { "path": "src/Phase.ts", "description": "Chain.maxEntryDepth" },
+      { "path": "src/chainLoad.ts", "description": "the cap's passthrough and default" },
+      { "path": "tests/PendingSchema.test.ts", "description": "each refusal and the forest that keeps every rule" },
+      { "path": "tests/chain.test.ts", "description": "the cap's default and passthrough" },
+      { "path": "tests/pendingLedger.test.ts", "description": "the refusal naming the file" }
+    ]
+  },
+  "summary": "the queue read refuses a parent no entry answers, a kind pairing the forest forbids, a step blocked outside its own work entry, and a chain deeper than Chain.maxEntryDepth",
+  "per": { "path": "spec/pending.md", "section": "The queue is a forest" },
+  "acceptance": "every rule the section states refuses at the queue read, naming the file, and the depth cap reads from the chain with a default of 4",
+  "tests": [
+    "a parent naming no entry in the queue is refused",
+    "a work entry whose parent is a work entry is refused",
+    "a group whose parent is a work entry is refused",
+    "a step whose parent is a group is refused",
+    "a step blockedBy a step of another work entry is refused",
+    "a parent chain deeper than maxEntryDepth is refused",
+    "a declared maxEntryDepth replaces the default of 4",
+    "a forest refusal names the file the offending entry lives in"
+  ],
+  "pins": [
+    "a forest keeping every rule the section states parses"
+  ],
+  "notes": "Cross-entry, so the check cannot live in the per-entry schema: the parent graph is only a graph at the queue read. `Chain.maxEntryDepth` is declared with `Chain.order` (`spec/chain.md`) and consumed only here."
+}
