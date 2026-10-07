@@ -30,6 +30,11 @@ export {
 // its consumer*).
 export { Baton, type BatonToken } from "./Baton.js";
 
+// `OrderContext.filedAt` is a `FilingTimes` map, so a chain whose sequencing
+// policy hands the times to a helper of its own needs the name here
+// (`.claude/rules/engineering.md`, *An export earns its consumer*).
+export type { FilingTimes } from "./filingOrder.js";
+
 export type {
   Chain,
   Concurrency,
@@ -39,6 +44,9 @@ export type {
   // `TickResult.entries` carries one per fanout entry; a chain reading the
   // wave's per-entry outcomes into a helper needs the name.
   FanoutEntryOutcome,
+  // What `Chain.order` is handed beside the ready set; a chain declaring the
+  // policy as a named function needs the name.
+  OrderContext,
   Phase,
   QuarantinedTag,
   TickContext,

@@ -17,6 +17,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { loadChainModule } from "../src/chainLoad.ts";
 import { mergeBatchWidth } from "../src/gateBatch.ts";
+import { selectBatch } from "../src/selection.ts";
 import type { Chain, Phase } from "../src/Phase.ts";
 import { slugify } from "../src/paths.ts";
 import {
@@ -809,6 +810,108 @@ describe("Chain load — maxEntryDepth (spec/pending.md 'The queue is a forest')
     const past = parsePendingQueue(chainOfParents(5), undefined, chain.maxEntryDepth);
     expect(past.ok).toBe(false);
     expect(past.errors.map((e) => e.file)).toEqual([entryFileName("GEN-5")]);
+  });
+});
+
+/**
+ * `Chain.order` is the chain's half of the queue's sequencing (`spec/chain.md`,
+ * "`Chain.order` — the queue's sequencing policy"): the engine ships the
+ * default order and the chain replaces it. Driven through the real loader over
+ * a real `chain.ts` and read back through the real consumer — `selectBatch`
+ * (`src/selection.ts`), which is the one derivation every tick's pickable set
+ * comes from — rather than off the resolved object alone. A passthrough
+ * asserted on the object only would stay green over an engine that forgot to
+ * call it (`.claude/rules/engineering.md`, *A seam gate reads what the real
+ * writer wrote*). That a declared order decides which entry a *tick* picks is
+ * pinned where the tick runs (`tests/Dispatcher.test.ts`).
+ */
+describe("Chain load — a declared order reaches the selection (spec/chain.md '`Chain.order` — the queue's sequencing policy')", () => {
+  /** A one-phase chain declaring `order: <declared>`, or none at all. */
+  async function loadWithOrder(
+    prefix: string,
+    declared: string | undefined,
+  ): Promise<Chain> {
+    const cfg = await mkTempDir(`flume-cfg-order-${prefix}-`);
+    await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
+    await writeFile(
+      join(cfg, "chain.ts"),
+      `export default () => ({ chain: { phases: [{ name: "build", ` +
+        `description: "", promptPath: "prompt.md", concurrency: "fanout", ` +
+        `writablePaths: ["src/**"], gates: [], handoff: () => [] }], ` +
+        `humanOnly: []` +
+        (declared === undefined ? `` : `, order: ${declared}`) +
+        ` } });\n`,
+      "utf8",
+    );
+    try {
+      return (
+        await loadChainModule({ repoRoot: cfg, configDir: cfg, flumeDir: cfg })
+      ).chain;
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  }
+
+  /** Two open `work` entries, through the real parse the ledger reads with. */
+  function twoOpen(): QueueFile[] {
+    return ["ORD-ALPHA", "ORD-ZULU"].map((tag) => ({
+      file: entryFileName(tag),
+      raw: JSON.stringify({
+        tag,
+        gate: { kind: "open" },
+        files: { new: [], edit: [], retire: [] },
+      }),
+    }));
+  }
+
+  /** `selectBatch` over those entries under `chain`, ALPHA filed first. */
+  function pickedUnder(chain: Chain): string[] {
+    const parsed = parsePendingQueue(twoOpen(), undefined, chain.maxEntryDepth);
+    expect(parsed.ok, JSON.stringify(parsed.errors)).toBe(true);
+    // Non-vacuity: the selection below is taken over two entries, so an order
+    // reported from it is a verdict over a populated set.
+    expect(parsed.entries).toHaveLength(2);
+    return selectBatch({
+      chain,
+      pending: parsed.entries,
+      // ALPHA filed a second before ZULU, so the engine's own default order
+      // leads with it and the declared order below is the only thing that can
+      // invert the two.
+      filingTimes: new Map([
+        ["ORD-ALPHA", 1_700_000_000],
+        ["ORD-ZULU", 1_700_000_001],
+      ]),
+      isForkResolved: () => true,
+      refusalFacts: { priorAttempts: new Map(), headSha: "0".repeat(40) },
+      maxParallel: 2,
+      inFlight: [],
+    }).pickable.map((e) => e.tag);
+  }
+
+  it("a declared order reaches the selection the tick takes", async () => {
+    const declared = await loadWithOrder("declared", "(ready) => [...ready].reverse()");
+    expect(typeof declared.order).toBe("function");
+
+    // The control first, over the same two entries: undeclared, the engine's
+    // own order leads with the older filing, so the inversion below is the
+    // loaded declaration answering and not the fixture's listing.
+    const bare = await loadWithOrder("absent", undefined);
+    expect(bare.order).toBeUndefined();
+    expect(pickedUnder(bare)).toEqual(["ORD-ALPHA", "ORD-ZULU"]);
+
+    expect(pickedUnder(declared)).toEqual(["ORD-ZULU", "ORD-ALPHA"]);
+  });
+
+  it("an order that is not a permutation refuses the selection, naming the hook", async () => {
+    const chain = await loadWithOrder("dropping", "(ready) => ready.slice(1)");
+
+    // The refusal is the engine's, over a chain that loaded cleanly: a
+    // declaration the loader cannot judge — the hook's return is a runtime
+    // value — is bounded at the selection instead.
+    expect(typeof chain.order).toBe("function");
+    expect(() => pickedUnder(chain)).toThrow(
+      /Chain\.order\) returned 1 entry over the 2 it was handed: dropped ORD-ALPHA/,
+    );
   });
 });
 

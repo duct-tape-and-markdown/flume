@@ -22,14 +22,10 @@
 import type { EntryClaimStore } from "./entryClaims.js";
 import type { GateRunScope } from "./gateRun.js";
 import type { PendingLedgerContext } from "./pendingLedger.js";
-import type { Chain, TickResult } from "./Phase.js";
+import type { TickResult } from "./Phase.js";
 import type { NoCommitMode } from "./Prompt.js";
 import type { PriorAttemptStore } from "./priorAttempts.js";
-import type {
-  BatchSelection,
-  EntryRefusalFacts,
-  SelectableQueue,
-} from "./selection.js";
+import type { BatchSelection, SelectionRequest } from "./selection.js";
 import type { AttemptContext } from "./tickAttempt.js";
 import type {
   GateFailure,
@@ -124,17 +120,14 @@ export interface TickLegContext extends PendingLedgerContext {
    * {@link BatchSelection} under this dispatcher's own quarantine and
    * parallelism ceiling.
    *
-   * `queue`, `refusalFacts` and `claimedSlugs` are the leg's, not the
-   * dispatcher's: the entries and their filing times, the records, the tip a
-   * chain's declared refusal is judged against, and the claims standing on
-   * disk are all read *at* the selection, and a pre-wave batch and a
-   * post-wave `pickableAfter` are two selections over two worlds.
+   * Everything but the chain is the leg's, not the dispatcher's: the entries
+   * and their filing times, the records, the tip a chain's declared refusal is
+   * judged against, the claims standing on disk and the entries this tick has
+   * in flight are all read *at* the selection, and a pre-wave batch and a
+   * post-wave `pickableAfter` are two selections over two worlds. One request
+   * shape rather than a positional list, and the shape is the selection's own
+   * ({@link SelectionRequest}), so the dispatcher's bound callable and this
+   * declaration of it cannot drift apart.
    */
-  selection(
-    chain: Chain,
-    queue: SelectableQueue,
-    isForkResolved: (slug: string) => boolean,
-    refusalFacts: EntryRefusalFacts,
-    claimedSlugs: ReadonlySet<string>,
-  ): BatchSelection;
+  selection(request: SelectionRequest): BatchSelection;
 }

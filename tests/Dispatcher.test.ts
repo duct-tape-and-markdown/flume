@@ -198,6 +198,14 @@ import type { PidClaim, StakeLoss } from "../src/index.ts";
 import type { EntryRefusalContext } from "../src/index.ts";
 
 // Barrel-export pin (.claude/rules/engineering.md "An export earns its
+// consumer"): OrderContext is what `Chain.order` is handed beside the ready
+// set and FilingTimes is the type of its `filedAt`, so a chain author
+// declaring that policy as a named function, or handing the times to a helper
+// of its own, needs to name both from the package entry point. These imports
+// fail tsc if either drops from src/index.ts.
+import type { FilingTimes, OrderContext } from "../src/index.ts";
+
+// Barrel-export pin (.claude/rules/engineering.md "An export earns its
 // consumer"): slugify/priorAttemptPath are the chain-facing exported rule
 // (spec/loop.md "Prior-outcome feedback to the retrying tick"), so a chain
 // author needs to reach them from the package entry point, not just the module
@@ -4141,6 +4149,397 @@ describe("Dispatcher — the default queue order is oldest filing, then tag", ()
       "UF-ZULU",
       "UF-ALPHA",
     ]);
+  });
+});
+
+/**
+ * CHAIN-ORDER-IS-THE-QUEUES-SEQUENCING-POLICY — `spec/chain.md`,
+ * "`Chain.order` — the queue's sequencing policy": the engine holds the facts
+ * and calls the chain's hook at every selection; the chain supplies the order
+ * ready `work` entries are served in. It orders and never admits, so a return
+ * that is not a permutation of the set it was handed refuses the tick before
+ * any agent runs.
+ *
+ * Every case drives a whole `Dispatcher.tick()`, so the hook runs where the
+ * engine actually calls it and the order under assertion is one the engine
+ * served — never a comparator exercised beside the selection that would have
+ * to agree with it (`.claude/rules/engineering.md`, *A seam gate reads what
+ * the real writer wrote*). The filing commits are dated for the reason the
+ * default-order block above dates its own: git stamps a commit time in whole
+ * seconds, and a case about the order the hook was *handed* its set in cannot
+ * turn on the fixture's own speed.
+ */
+describe("Dispatcher — Chain.order is the queue's sequencing policy", () => {
+  /** Where a tag's span writes, so no two entries in a wave collide. */
+  const editPath = (tag: string): string => `src/${tag.toLowerCase()}.ts`;
+
+  /** `tags` filed as one commit dated `at`, each with an edit path of its own. */
+  const fileAt = (tags: readonly string[], at: string): Promise<void> =>
+    commitEntryFiles(
+      fx.repo,
+      Object.fromEntries(
+        tags.map((tag) => [
+          entryFileName(tag),
+          JSON.stringify(makeEntry(tag, [editPath(tag)]), null, 2) + "\n",
+        ]),
+      ),
+      at,
+    );
+
+  /** A build chain `slots` wide, declaring `order` where one is given. */
+  const buildChain = (slots: number, order?: Chain["order"]): Chain => ({
+    phases: [makePhase({ name: "build", concurrency: "fanout", gates: [] })],
+    humanOnly: [],
+    supervisorPolicy: { maxParallel: slots },
+    ...(order ? { order } : {}),
+  });
+
+  /** An agent that ships whichever of `tags` the slot it is given carries. */
+  const shipsEach = (tags: readonly string[]): Agent =>
+    fanoutAgent(
+      Object.fromEntries(
+        tags.map((tag) => [
+          tag.toLowerCase(),
+          (cwd: string) =>
+            writeAndCommit(cwd, editPath(tag), `${tag}\n`, `build(${tag}): ship`),
+        ]),
+      ),
+    );
+
+  const tickWith = (chain: Chain, agent: Agent): Promise<TickOutcome> => {
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    return new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    }).tick();
+  };
+
+  it("a declared order decides which pickable entry a tick picks", async () => {
+    // The default order is CO-ALPHA first — filed a month earlier, and the tag
+    // agrees — so a tick that ignored the declaration ships it first.
+    await fileAt(["CO-ALPHA"], "2024-01-01T00:00:00Z");
+    await fileAt(["CO-ZULU"], "2024-02-01T00:00:00Z");
+
+    const handed: string[][] = [];
+    const chain = buildChain(1, (ready) => {
+      handed.push(ready.map((e) => e.tag));
+      return [...ready].reverse();
+    });
+
+    const outcome = await tickWith(chain, shipsEach(["CO-ALPHA", "CO-ZULU"]));
+
+    // Non-vacuity: the hook really was handed both entries, in the engine's
+    // own default order, so the ship order below is the policy's answer over a
+    // populated set rather than an empty one agreeing with anything.
+    expect(handed[0]).toEqual(["CO-ALPHA", "CO-ZULU"]);
+    // One slot, so CO-ALPHA could only have reached an agent as the refill of
+    // the slot CO-ZULU's merge freed: the declared order decided both picks.
+    expect(outcome.result?.shippedTags).toEqual(["CO-ZULU", "CO-ALPHA"]);
+  });
+
+  it("an undeclared order leaves the default filing order standing", async () => {
+    await fileAt(["UO-ZULU"], "2024-01-01T00:00:00Z");
+    await fileAt(["UO-ALPHA"], "2024-02-01T00:00:00Z");
+
+    // The same two entries and the same wave, declaring no order at all: the
+    // oldest filing leads and the tag, which would put UO-ALPHA first, decides
+    // nothing.
+    const outcome = await tickWith(
+      buildChain(1),
+      shipsEach(["UO-ZULU", "UO-ALPHA"]),
+    );
+
+    expect(outcome.result?.shippedTags).toEqual(["UO-ZULU", "UO-ALPHA"]);
+  });
+
+  // ---------- what the hook is handed ----------
+
+  /**
+   * A queue holding one of everything a selection must not offer: a group, a
+   * step under its work entry, a parked entry, and an entry blocked by a tag
+   * the queue still holds. Written as one commit, so every filing ties and the
+   * tag orders the two entries that *are* pickable — OC-READY, then OC-WORK.
+   */
+  const mixedQueue = (): PendingEntry[] => [
+    { ...makeEntry("OC-GOAL", []), kind: "group" },
+    { ...makeEntry("OC-WORK", [editPath("OC-WORK")]), parent: "OC-GOAL" },
+    {
+      ...makeEntry("OC-STEP", [editPath("OC-STEP")]),
+      kind: "step",
+      parent: "OC-WORK",
+    },
+    makeEntry("OC-READY", [editPath("OC-READY")]),
+    {
+      ...makeEntry("OC-PARKED", [editPath("OC-PARKED")]),
+      gate: { kind: "parked", reason: "waiting on a human" },
+    },
+    {
+      ...makeEntry("OC-BLOCKED", [editPath("OC-BLOCKED")]),
+      // OC-WORK is still queued, so this gate is unsettled; OC-GONE is in no
+      // queue, which is the settled verdict on a blocker.
+      gate: { kind: "blockedBy", tags: ["OC-WORK", "OC-GONE"] },
+    },
+  ];
+
+  /**
+   * One singleton tick over {@link mixedQueue} whose `shouldRun` declines, and
+   * every context its chain's `order` was handed. A declining consult is the
+   * cheapest real selection there is: the engine takes it before it asks, so
+   * the hook runs over the whole queue with no agent, no worktree and no wave.
+   */
+  const contextsOverMixedQueue = async (): Promise<
+    { ready: readonly PendingEntry[]; ctx: OrderContext }[]
+  > => {
+    await writePending(fx.repo, mixedQueue());
+    const calls: { ready: readonly PendingEntry[]; ctx: OrderContext }[] = [];
+    const chain: Chain = {
+      phases: [
+        makePhase({
+          name: "plan",
+          concurrency: "singleton",
+          shouldRun: () => false,
+        }),
+      ],
+      humanOnly: [],
+      order: (ready, ctx) => {
+        calls.push({ ready, ctx });
+        return ready;
+      },
+    };
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async () => {}),
+      log: silent,
+    }).tick();
+    // The hook ran at all, which is what every assertion below is read off.
+    expect(calls.length).toBeGreaterThan(0);
+    return calls;
+  };
+
+  it("the order hook is handed only pickable work entries", async () => {
+    const calls = await contextsOverMixedQueue();
+
+    // Non-vacuity: the queue the selection was taken over is six entries wide,
+    // so the two below are a filtered set and not the whole listing.
+    expect(calls[0]!.ctx.queue).toHaveLength(6);
+    // The group organizes, the step is done in its work entry's own session,
+    // the parked entry's gate is shut and OC-BLOCKED's blocker is still
+    // queued: none of the four is a tick's job, and the order hook is never
+    // asked about one.
+    expect(calls[0]!.ready.map((e) => e.tag)).toEqual(["OC-READY", "OC-WORK"]);
+  });
+
+  it("OrderContext carries the whole queue, including groups and steps", async () => {
+    const { ctx } = (await contextsOverMixedQueue())[0]!;
+
+    expect([...ctx.queue].map((e) => e.tag).sort()).toEqual([
+      "OC-BLOCKED",
+      "OC-GOAL",
+      "OC-PARKED",
+      "OC-READY",
+      "OC-STEP",
+      "OC-WORK",
+    ]);
+    // Named by kind too, because the two kinds selection never offers are the
+    // whole reason the context carries more than the ready set: a policy
+    // reading a goal and its descendants reads them here.
+    expect(ctx.queue.filter((e) => e.kind === "group").map((e) => e.tag)).toEqual(
+      ["OC-GOAL"],
+    );
+    expect(ctx.queue.filter((e) => e.kind === "step").map((e) => e.tag)).toEqual([
+      "OC-STEP",
+    ]);
+  });
+
+  it("OrderContext carries the blockedBy graph resolved over the queue, each entry's filing time and the entries in flight", async () => {
+    // Three open entries, two of them disjoint and filed first so they fill
+    // the wave's two slots, and one blocked by a tag the queue holds beside a
+    // tag it does not.
+    await fileAt(["IF-ALPHA"], "2024-01-01T00:00:00Z");
+    await fileAt(["IF-BRAVO"], "2024-02-01T00:00:00Z");
+    await commitEntryFiles(
+      fx.repo,
+      {
+        [entryFileName("IF-BLOCKED")]: JSON.stringify(
+          {
+            ...makeEntry("IF-BLOCKED", [editPath("IF-BLOCKED")]),
+            gate: { kind: "blockedBy", tags: ["IF-ALPHA", "IF-GONE"] },
+          },
+          null,
+          2,
+        ) + "\n",
+      },
+      "2024-03-01T00:00:00Z",
+    );
+
+    // IF-BRAVO's agent holds its slot open until a selection reports it in
+    // flight, which is the only moment the context carries one: the wave's
+    // refill, taken in the continuation of the slot IF-ALPHA just freed. The
+    // barrier is released from the hook rather than after a wall-clock window,
+    // so the moment is the engine's and not the host's; the fallback below
+    // bounds a tree where the hook never runs at all, which fails on the
+    // assertion rather than on the case's clock.
+    let release: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fallback = setTimeout(() => release(), 30_000);
+    onTestFinished(() => clearTimeout(fallback));
+
+    const calls: OrderContext[] = [];
+    const chain = buildChain(2, (ready, ctx) => {
+      calls.push(ctx);
+      if (ctx.inFlight.length > 0) release();
+      return ready;
+    });
+
+    const outcome = await tickWith(
+      chain,
+      fanoutAgent({
+        // Commits nothing, so this slot settles first and its refill is the
+        // selection under assertion.
+        "if-alpha": async () => {},
+        "if-bravo": async () => {
+          await barrier;
+        },
+      }),
+    );
+    expect(blownWaitsInAgentBodies()).toEqual([]);
+
+    // Non-vacuity: the wave opened on both slots, and the opening selection
+    // carried nothing in flight — the fill is what puts the first entries
+    // there.
+    expect(outcome.result?.entries?.map((e) => e.tag).sort()).toEqual([
+      "IF-ALPHA",
+      "IF-BRAVO",
+    ]);
+    expect(calls[0]!.inFlight).toEqual([]);
+
+    // Exactly one selection was taken with an entry in flight — the refill of
+    // the slot IF-ALPHA freed, with its sibling still building.
+    const refill = calls.filter((ctx) => ctx.inFlight.length > 0);
+    expect(refill).toHaveLength(1);
+    expect(refill[0]!.inFlight.map((e) => e.tag)).toEqual(["IF-BRAVO"]);
+
+    // The dependency edges the gate switch resolved over that same queue: only
+    // the entry declaring blockers is keyed, and only the blocker the queue
+    // still holds is an edge — IF-GONE is in no queue, which is the settled
+    // verdict on a blocker.
+    expect([...refill[0]!.blockedBy]).toEqual([["IF-BLOCKED", ["IF-ALPHA"]]]);
+
+    // And the history the default order reads, in the engine's own alphabet:
+    // the unix second of the commit that first added each entry's file. Held
+    // as the engine's own type on the way, which is the barrel pin above.
+    const filedAt: FilingTimes = refill[0]!.filedAt;
+    expect(filedAt.get("IF-ALPHA")).toBe(
+      Date.parse("2024-01-01T00:00:00Z") / 1000,
+    );
+    expect(filedAt.get("IF-BRAVO")).toBe(
+      Date.parse("2024-02-01T00:00:00Z") / 1000,
+    );
+    expect(filedAt.get("IF-BLOCKED")).toBe(
+      Date.parse("2024-03-01T00:00:00Z") / 1000,
+    );
+  });
+
+  // ---------- it orders, never admits ----------
+
+  /**
+   * One wave over two pickable entries under `order`, and every slug the agent
+   * was asked for. Each refusal case reads both: the tick must reject naming
+   * the hook, and the list must be empty — the refusal lands at the selection,
+   * which is before any worktree exists.
+   */
+  const refusedTick = async (
+    prefix: string,
+    order: NonNullable<Chain["order"]>,
+  ): Promise<{ tick: Promise<TickOutcome>; invoked: string[] }> => {
+    const tags = [`${prefix}-ALPHA`, `${prefix}-ZULU`];
+    await fileAt([tags[0]!], "2024-01-01T00:00:00Z");
+    await fileAt([tags[1]!], "2024-02-01T00:00:00Z");
+    const invoked: string[] = [];
+    const agent: Agent = {
+      name: "order-refusal-probe",
+      async invoke(inv) {
+        invoked.push(basename(inv.cwd));
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    };
+    return { tick: tickWith(buildChain(2, order), agent), invoked };
+  };
+
+  it("an order that drops a pickable entry refuses the tick naming the hook", async () => {
+    const { tick, invoked } = await refusedTick("DROP", (ready) =>
+      ready.slice(1),
+    );
+
+    await expect(tick).rejects.toThrow(
+      /Chain\.order\) returned 1 entry over the 2 it was handed: dropped DROP-ALPHA/,
+    );
+    // The hook was handed two entries and the queue holds both still: the
+    // refusal is the return's, not an empty selection's.
+    expect(invoked).toEqual([]);
+  });
+
+  it("an order that returns an entry it was not handed refuses the tick naming the hook", async () => {
+    const foreign = makeEntry("FOREIGN-ENTRY", ["src/foreign.ts"]);
+    const { tick, invoked } = await refusedTick("ADMIT", (ready) => [
+      foreign,
+      ...ready.slice(1),
+    ]);
+
+    await expect(tick).rejects.toThrow(
+      /Chain\.order\) returned 2 entries over the 2 it was handed: dropped ADMIT-ALPHA; named FOREIGN-ENTRY, which it was not handed/,
+    );
+    expect(invoked).toEqual([]);
+  });
+
+  it("an order that repeats an entry refuses the tick naming the hook", async () => {
+    const { tick, invoked } = await refusedTick("TWICE", (ready) => [
+      ready[0]!,
+      ...ready,
+    ]);
+
+    await expect(tick).rejects.toThrow(
+      /Chain\.order\) returned 3 entries over the 2 it was handed: repeated TWICE-ALPHA/,
+    );
+    expect(invoked).toEqual([]);
+  });
+
+  it("a non-permutation refuses before any agent runs", async () => {
+    // The same drop, read for the other half of the claim: nothing the wave
+    // would have provisioned exists when the refusal lands — no agent was
+    // invoked, no worktree base was ever created, and the queue stands as the
+    // fixture filed it.
+    await fileAt(["PRE-ALPHA"], "2024-01-01T00:00:00Z");
+    await fileAt(["PRE-ZULU"], "2024-02-01T00:00:00Z");
+    const invoked: string[] = [];
+    const chain = buildChain(2, () => []);
+
+    await expect(
+      tickWith(chain, {
+        name: "order-preempt-probe",
+        async invoke(inv) {
+          invoked.push(basename(inv.cwd));
+          return { exitCode: 0, stdout: "", stderr: "" };
+        },
+      }),
+    ).rejects.toThrow(/Chain\.order/);
+
+    expect(invoked).toEqual([]);
+    // Non-vacuity on the fixture itself: both entries really were pickable, so
+    // a wave would have provisioned two worktrees had the order been admitted.
+    expect(readPendingFromDisk(fx.repo).map((e) => e.tag).sort()).toEqual([
+      "PRE-ALPHA",
+      "PRE-ZULU",
+    ]);
+    expect(existsSync(worktreesBase(join(fx.repo, ".flume")))).toBe(false);
   });
 });
 

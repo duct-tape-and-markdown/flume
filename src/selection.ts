@@ -12,11 +12,15 @@
  * "pickable" means at the moment each is taken
  * (`.claude/rules/engineering.md`, *A module is one job*).
  *
- * The queue's order is not among them: it is a read of git before it is a
- * comparison, and the status flow figures want the same times, so it lives at
- * its own door (`byFilingThenTag`, `src/filingOrder.ts`) and every selection
- * here is taken over the queue *and* the times it was read with
- * ({@link SelectableQueue}).
+ * The queue's default order is not among them: it is a read of git before it
+ * is a comparison, and the status flow figures want the same times, so it
+ * lives at its own door (`byFilingThenTag`, `src/filingOrder.ts`) and every
+ * selection here is taken over the queue *and* the times it was read with
+ * ({@link SelectableQueue}). What *is* spelled here is the chain's own
+ * sequencing policy over that default — one call site for `Chain.order`
+ * (`src/Phase.ts`) and one home for the refusal that bounds it
+ * ({@link orderedForSelection}), so no two reported sets can be in two
+ * orders.
  *
  * The gate switch is not among them either: it lives at the exported read every
  * consumer already takes it from (`isPickableNow`, `src/PendingSchema.ts`),
@@ -32,7 +36,7 @@ import { entryDeclaredKey } from "./entryKey.js";
 import { byFilingThenTag, type FilingTimes } from "./filingOrder.js";
 import { isDisjointFrom, partitionByFileOverlap } from "./partition.js";
 import { isPickableNow, type PendingEntry } from "./PendingSchema.js";
-import type { Chain, QuarantinedTag } from "./Phase.js";
+import type { Chain, OrderContext, QuarantinedTag } from "./Phase.js";
 import { entryAttemptKey } from "./priorAttempts.js";
 import type { PriorAttempt } from "./Prompt.js";
 
@@ -54,20 +58,45 @@ export function blamedOn(entry: PendingEntry): {
 /**
  * The blocker tags this entry names that the queue no longer holds — the
  * `shippedTags` set {@link isPickableNow} reads, composed for the caller
- * whose fact is the pending list rather than a set of tags it watched ship.
- * An entry leaves the queue when it ships, so absence from `pending` *is*
- * the settled verdict.
+ * whose fact is the queue rather than a set of tags it watched ship. An
+ * entry leaves the queue when it ships, so absence from `queued` — every tag
+ * the queue this selection is taken over holds — *is* the settled verdict.
  *
  * Only this entry's own blockers are answered, because they are every tag
  * the `blockedBy` arm asks about; an entry naming none contributes none.
  */
 function settledBlockers(
   entry: PendingEntry,
-  pending: readonly PendingEntry[],
+  queued: ReadonlySet<string>,
 ): ReadonlySet<string> {
   if (entry.gate.kind !== "blockedBy") return new Set();
-  const queued = new Set(pending.map((e) => e.tag));
   return new Set(entry.gate.tags.filter((tag) => !queued.has(tag)));
+}
+
+/**
+ * {@link OrderContext.blockedBy} — the dependency edges still standing over
+ * this queue, keyed by the entry that declares them.
+ *
+ * The complement of {@link settledBlockers} over the same membership read,
+ * computed here rather than by the policy that reads it: the queue is what
+ * settles a blocker, and a chain re-walking it for the fact the gate switch
+ * just resolved is the restatement the posture names
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*).
+ */
+function blockedByGraph(
+  pending: readonly PendingEntry[],
+  queued: ReadonlySet<string>,
+): ReadonlyMap<string, readonly string[]> {
+  const graph = new Map<string, readonly string[]>();
+  for (const entry of pending) {
+    if (entry.gate.kind !== "blockedBy") continue;
+    graph.set(
+      entry.tag,
+      entry.gate.tags.filter((tag) => queued.has(tag)),
+    );
+  }
+  return graph;
 }
 
 /**
@@ -85,13 +114,13 @@ function settledBlockers(
  */
 function isPickable(
   entry: PendingEntry,
-  pending: readonly PendingEntry[],
+  queued: ReadonlySet<string>,
   isForkResolved: (slug: string) => boolean = () => true,
   capabilities: ReadonlySet<string> = new Set(),
 ): boolean {
   return isPickableNow(
     entry,
-    settledBlockers(entry, pending),
+    settledBlockers(entry, queued),
     isForkResolved,
     capabilities,
   );
@@ -107,7 +136,7 @@ function isPickable(
  * be ordering a queue by a history it does not have
  * (`readPendingForDecision`, `src/pendingLedger.ts`).
  */
-export interface SelectableQueue {
+interface SelectableQueue {
   readonly pending: readonly PendingEntry[];
   /** `readFilingTimes`'s map (`src/filingOrder.ts`), for this queue's own tip. */
   readonly filingTimes: FilingTimes;
@@ -131,12 +160,13 @@ function isDispatchUnit(entry: PendingEntry): boolean {
 /** The entries `isPickable` clears, before this run's live quarantine is applied. */
 function gateEligible(
   pending: readonly PendingEntry[],
+  queued: ReadonlySet<string>,
   isForkResolved: (slug: string) => boolean,
   capabilities: ReadonlySet<string>,
 ): PendingEntry[] {
   return pending.filter(
     (e) =>
-      isDispatchUnit(e) && isPickable(e, pending, isForkResolved, capabilities),
+      isDispatchUnit(e) && isPickable(e, queued, isForkResolved, capabilities),
   );
 }
 
@@ -174,7 +204,7 @@ function heldByClaim(
  * same two values a post-tick re-derivation takes afresh, which is what makes
  * `pickableAfter` a verdict about the world the handoff is about to route in.
  */
-export interface EntryRefusalFacts {
+interface EntryRefusalFacts {
   /** `PriorAttemptStore.readAll`'s map, keyed as `TickContext.priorAttempts` is. */
   priorAttempts: ReadonlyMap<string, PriorAttempt>;
   /** The trunk tip this selection is taken at. */
@@ -218,11 +248,90 @@ export function bindEntryRefusal(
 }
 
 /**
+ * The chain's declared sequencing policy applied to one selection's ready
+ * set, or that set in the queue's own default order where the chain declared
+ * none (`spec/chain.md`, "`Chain.order` — the queue's sequencing policy").
+ *
+ * The hook's one call site, and the one home of the refusal that bounds it.
+ * Every surface that reports a pickable set reaches the declaration through
+ * here, so none of them can serve an order another would not — and none can
+ * serve a set the hook rewrote while looking like the queue.
+ *
+ * **The return is read as a sequence, never as a queue.** The permutation
+ * check below is by tag, and the entries served are the engine's own reads in
+ * the order those tags came back: a hook that copies or rewrites an entry on
+ * the way through orders the queue, which is what it was asked for, and
+ * cannot replace the declaration a tick is then dispatched against
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ *
+ * A return that is not a permutation of `ready` throws, naming the hook and
+ * the entries that differ. Selection runs before any worktree is created, so
+ * the refusal reaches the tick ahead of every agent invocation it would have
+ * opened — an order that silently drops work is starvation nobody sees, and
+ * proceeding over it is the degradation `.claude/rules/engineering.md`,
+ * *Loud or nothing* refuses.
+ *
+ * The context is composed here, past the undeclared arm: a chain that declared
+ * no policy pays for no graph walk, and the facts the hook reads have one
+ * assembly point rather than one per caller.
+ */
+function orderedForSelection(
+  order: Chain["order"],
+  ready: readonly PendingEntry[],
+  over: {
+    pending: readonly PendingEntry[];
+    queued: ReadonlySet<string>;
+    filingTimes: FilingTimes;
+    inFlight: readonly PendingEntry[];
+  },
+): PendingEntry[] {
+  if (!order) return [...ready];
+  const ctx: OrderContext = {
+    queue: over.pending,
+    blockedBy: blockedByGraph(over.pending, over.queued),
+    filedAt: over.filingTimes,
+    inFlight: over.inFlight,
+  };
+  const handed = new Map(ready.map((e) => [e.tag, e] as const));
+  const returned = order(ready, ctx);
+  const seen = new Set<string>();
+  const unknown: string[] = [];
+  const repeated: string[] = [];
+  for (const entry of returned) {
+    if (!handed.has(entry.tag)) unknown.push(entry.tag);
+    else if (seen.has(entry.tag)) repeated.push(entry.tag);
+    seen.add(entry.tag);
+  }
+  const dropped = [...handed.keys()].filter((tag) => !seen.has(tag));
+  if (unknown.length > 0 || repeated.length > 0 || dropped.length > 0) {
+    const named = [
+      ...(dropped.length > 0 ? [`dropped ${dropped.join(", ")}`] : []),
+      ...(unknown.length > 0
+        ? [`named ${unknown.join(", ")}, which it was not handed`]
+        : []),
+      ...(repeated.length > 0 ? [`repeated ${repeated.join(", ")}`] : []),
+    ].join("; ");
+    throw new Error(
+      `chain's order hook (Chain.order) returned ${returned.length} ` +
+        `entr${returned.length === 1 ? "y" : "ies"} over the ` +
+        `${ready.length} it was handed: ${named}. Chain.order orders the ` +
+        `ready set and never admits to it — return exactly the entries it ` +
+        `was given, reordered.`,
+    );
+  }
+  return returned.map((e) => handed.get(e.tag)!);
+}
+
+/**
  * The pickable set and the two holds that shrank it — what `isPickable`
  * cleared, minus this run's live quarantine, minus what the chain's own
- * refusal declined, with each hold named by the entries it took. Every one of
- * the three is in the queue's own order ({@link byFilingThenTag},
- * `src/filingOrder.ts`).
+ * refusal declined, with each hold named by the entries it took.
+ *
+ * `pickable` is in the order the chain declared ({@link orderedForSelection}),
+ * which undeclared is the queue's own ({@link byFilingThenTag},
+ * `src/filingOrder.ts`). Both hold lists are in the queue's own order and
+ * stay there: the sequencing policy is handed the ready set alone, so an
+ * entry a hold took was never offered to it.
  *
  * The one derivation `runSingleton`'s pre-tick selection, {@link selectBatch}
  * and `TickResult.pickableAfter`'s post-tick re-derivation all take, so no
@@ -265,6 +374,32 @@ interface PickableSelection {
 }
 
 /**
+ * One selection's whole request: the chain whose declarations govern it, and
+ * the five facts about the moment it is taken at.
+ *
+ * Named here, beside the selection it describes, because two siblings hold the
+ * same shape — the dispatcher's own bound selection and the callable a leg
+ * reads off it (`TickLegContext.selection`, `src/tickLeg.ts`) — and a request
+ * spelled twice is a vocabulary waiting to diverge
+ * (`.claude/rules/engineering.md`, *A module is one job*). What the dispatcher
+ * adds to it is its own two knobs: this run's quarantine and the parallelism
+ * ceiling ({@link selectBatch}).
+ */
+export interface SelectionRequest {
+  readonly chain: Chain;
+  /** The entries and the filing times they were read with. */
+  readonly queue: SelectableQueue;
+  /** The foundations governor, resolved for this tick. */
+  readonly isForkResolved: (slug: string) => boolean;
+  /** What the chain's own per-entry refusal is judged against. */
+  readonly refusalFacts: EntryRefusalFacts;
+  /** The entry slugs a live claim stands on — see {@link pickableSelection}. */
+  readonly claimedSlugs: ReadonlySet<string>;
+  /** What this tick is carrying right now — `OrderContext.inFlight` (`src/Phase.ts`). */
+  readonly inFlight: readonly PendingEntry[];
+}
+
+/**
  * {@link PickableSelection} over one queue. `refuses` is the chain's
  * predicate already bound to this tick's facts ({@link bindEntryRefusal}) —
  * required rather than optional, so a caller reaches the chain's declaration
@@ -286,14 +421,34 @@ export function pickableSelection(opts: {
    */
   claimedSlugs?: ReadonlySet<string>;
   refuses: (entry: PendingEntry) => boolean;
+  /**
+   * The chain's declared sequencing policy, `undefined` where it declared
+   * none — `Chain.order` (`src/Phase.ts`) passed through as read, not an
+   * optional field, so a caller selects *with* the declaration or names its
+   * absence rather than quietly serving a default the chain replaced.
+   */
+  order: Chain["order"];
+  /**
+   * The entries this tick is carrying at the moment of this selection —
+   * `OrderContext.inFlight` (`src/Phase.ts`). Required for the reason
+   * `order` is: every selection but a wave's own refill carries nothing, and
+   * that is a fact its caller states rather than one an omission implies.
+   */
+  inFlight: readonly PendingEntry[];
 }): PickableSelection {
   // The queue's one ordering, taken once over the eligible set: the pickable
   // set below and both hold lists are read off it in this order, so no
   // surface that reports one of them can order it differently. The order is
   // the queue's own default — this tick's filing times, and the tag beneath
   // them (`byFilingThenTag`, `src/filingOrder.ts`).
+  // Every tag this queue holds — the membership both blocker reads take
+  // ({@link settledBlockers}, {@link blockedByGraph}), taken once so the
+  // gate switch's verdict and the graph the order hook is handed cannot
+  // disagree about what the queue still carries.
+  const queued = new Set(opts.pending.map((e) => e.tag));
   const eligible = gateEligible(
     opts.pending,
+    queued,
     opts.isForkResolved,
     opts.capabilities,
   ).sort(byFilingThenTag(opts.filingTimes));
@@ -316,7 +471,15 @@ export function pickableSelection(opts: {
     (opts.refuses(e) ? refused : pickable).push(e);
   }
   return {
-    pickable,
+    // The chain's policy over the set its own holds left standing, and the
+    // default where it declared none: the hook sees the ready set alone, in
+    // the queue's own order, with every engine hold already settled.
+    pickable: orderedForSelection(opts.order, pickable, {
+      pending: opts.pending,
+      queued,
+      filingTimes: opts.filingTimes,
+      inFlight: opts.inFlight,
+    }),
     quarantinedTags: eligible
       .filter((e) => heldByQuarantine(e, opts.quarantinedSlugs))
       .map((e) => ({ tag: e.tag, key: entryDeclaredKey(e) })),
@@ -364,8 +527,8 @@ export interface BatchSelection extends PickableSelection {
  * finished in (`spec/worktrees.md`, *Fanout and worktrees — provisioning,
  * isolation, teardown*).
  *
- * `candidates` is the pickable remainder in the queue's own order
- * ({@link byFilingThenTag}, `src/filingOrder.ts`); `undefined`
+ * `candidates` is the pickable remainder in the order this selection serves
+ * ({@link orderedForSelection}); `undefined`
  * is "nothing left that this moment's in-flight set leaves room for", which a
  * wave reads as a slot it does not refill rather than as a drained queue.
  */
@@ -405,6 +568,8 @@ export function selectBatch(opts: {
   refusalFacts: EntryRefusalFacts;
   /** The dispatcher's own parallelism ceiling, below whatever the chain declares. */
   maxParallel: number;
+  /** The entries this tick is carrying — see {@link pickableSelection}. */
+  inFlight: readonly PendingEntry[];
 }): BatchSelection {
   const { chain, pending, filingTimes, isForkResolved } = opts;
   // The environment facts this chain asserts, matched against each entry's
@@ -428,6 +593,13 @@ export function selectBatch(opts: {
       ? { claimedSlugs: opts.claimedSlugs }
       : {}),
     refuses: bindEntryRefusal(chain, opts.refusalFacts),
+    // The chain's sequencing policy as declared, and the set this selection
+    // is taken beside: the batch below partitions the order the hook
+    // returned, so the entry a wave carries first is the one the policy put
+    // first (`spec/chain.md`, "`Chain.order` — the queue's sequencing
+    // policy").
+    order: chain.order,
+    inFlight: opts.inFlight,
   });
   const { pickable } = selected;
   // spec/pending.md "Fanout partition — disjoint touched paths":

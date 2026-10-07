@@ -3091,6 +3091,82 @@ second. The refusal is `TipClaimHeldError`, naming the holder's pid — the
 operational-refusal class on the api so a consumer branches with `instanceof`
 rather than on the wording of a message.
 
+## 14. Ordering the queue (`Chain.order`)
+
+The gate kinds say *whether* an entry may be picked; `Chain.order` says in
+what order the ones that may be picked are served. The engine holds the facts
+and calls the hook at every selection — a wave's opening fill, each freed
+slot's refill, a singleton tick's own read, and the post-tick set a `handoff`
+routes on. Undeclared, the order is the queue's own: oldest filing first, then
+tag.
+
+```ts
+// `priority` is a field this chain declares in its own entryExtension (§10),
+// so it arrives as `unknown` on the entry and the policy narrows it here.
+const rank = (entry: PendingEntry): number =>
+  typeof entry.priority === "number" ? entry.priority : 0;
+
+const chain: Chain = {
+  phases: [plan, build],
+  humanOnly: [],
+  // Highest declared priority first. `sort` is stable and `ready` arrives in
+  // the engine's default order, so a tie keeps oldest-filing-then-tag.
+  order: (ready) => [...ready].sort((a, b) => rank(b) - rank(a)),
+};
+```
+
+A policy that wants the queue's shape rather than one entry's field reads the
+second argument. `OrderContext` is every fact the engine already holds at that
+moment, so your hook reaches for none of it — no second `git log`, no
+re-walking the forest, no reading the claims directory:
+
+| Field | What it carries |
+| ----- | --------------- |
+| `queue` | The whole queue as this tick read it, every kind — so a policy can reach a ready `work` entry's `group` ancestry and its `step` descendants and sequence by the goal an entry serves. |
+| `blockedBy` | The `blockedBy` graph resolved over `queue`: for each entry declaring blocker tags, the ones the queue **still holds**. A ready entry's own list is empty by definition; the rest of the graph is what tells you what shipping a ready entry unblocks. |
+| `filedAt` | Tag → the unix second the ledger first carried it, the engine's own read off git and the default order's whole input. A tag absent from the map is one no commit has filed yet, which makes it the newest thing in the queue. |
+| `inFlight` | The entries *this* tick is carrying at the moment of this selection — populated when a fanout wave refills a freed slot, empty at every other selection. Not the claimed set: an entry a sibling tick holds is already gone from `ready`. |
+
+```ts
+// Unblock the most work first: a ready entry that more queued entries are
+// waiting on goes ahead of one nothing is waiting on.
+order: (ready, { blockedBy }) => {
+  const waitingOn = new Map<string, number>();
+  for (const standing of blockedBy.values())
+    for (const tag of standing)
+      waitingOn.set(tag, (waitingOn.get(tag) ?? 0) + 1);
+  return [...ready].sort(
+    (a, b) => (waitingOn.get(b.tag) ?? 0) - (waitingOn.get(a.tag) ?? 0),
+  );
+},
+```
+
+Three properties worth knowing before you declare one:
+
+- **It orders, never admits.** `ready` is every pickable `work` entry and
+  nothing else — the gate switch, this run's quarantine, a sibling's claim and
+  your own `refusesEntry` are all settled before the hook sees the set — and
+  the return is exactly those entries, reordered. One added, dropped or
+  repeated **refuses the tick**, naming the hook, before any agent runs: an
+  order that silently drops work is starvation nobody sees. To hold an entry
+  back, declare `refusesEntry` (§12); that is the hook with the vocabulary for
+  it.
+- **The return is read as a sequence.** Each entry a tick is then handed is
+  the engine's own read of the queue, so a hook that copies or rewrites an
+  entry on the way through still only orders it — it cannot swap the
+  declaration the tick is dispatched against.
+- **Pure and synchronous**, like `shipped`: a function of `ready` and
+  `OrderContext`, so the order is reproducible from disk and a test drives it
+  without a tick. It runs more than once per tick; keep it cheap, and note that
+  a hook that throws fails the tick rather than being read as an order.
+
+What the order decides, concretely: which entry a singleton producer sees first
+in `TickContext.pickable`, which entries a fanout wave's batch is partitioned
+out of (§3) and in what order a freed slot pulls, and the order
+`TickResult.pickableAfter` reports to your `handoff`. What it does not decide
+is parallelism — two entries that declare an overlapping file never run
+together whatever order they are served in.
+
 ## Putting it together
 
 ```ts

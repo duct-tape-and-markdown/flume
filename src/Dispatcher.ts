@@ -70,8 +70,7 @@ import {
 import type { NoCommitMode } from "./Prompt.js";
 import {
   type BatchSelection,
-  type EntryRefusalFacts,
-  type SelectableQueue,
+  type SelectionRequest,
   selectBatch,
 } from "./selection.js";
 import { runSingleton } from "./singletonTick.js";
@@ -881,8 +880,7 @@ export class Dispatcher {
         ? { quarantinedSlugs: this.opts.quarantinedSlugs }
         : {}),
       supervisedRun: this.opts.supervisedRun === true,
-      selection: (chain, queue, isForkResolved, refusalFacts, claimed) =>
-        this.selection(chain, queue, isForkResolved, refusalFacts, claimed),
+      selection: (opts) => this.selection(opts),
     };
   }
 
@@ -894,24 +892,19 @@ export class Dispatcher {
    * (`.claude/rules/engineering.md`, *Derived state is computed, never
    * restated beside its source*).
    */
-  private selection(
-    chain: Chain,
-    queue: SelectableQueue,
-    isForkResolved: (slug: string) => boolean,
-    refusalFacts: EntryRefusalFacts,
-    claimedSlugs: ReadonlySet<string>,
-  ): BatchSelection {
+  private selection(opts: SelectionRequest): BatchSelection {
     return selectBatch({
-      chain,
-      pending: queue.pending,
-      filingTimes: queue.filingTimes,
-      isForkResolved,
-      claimedSlugs,
+      chain: opts.chain,
+      pending: opts.queue.pending,
+      filingTimes: opts.queue.filingTimes,
+      isForkResolved: opts.isForkResolved,
+      claimedSlugs: opts.claimedSlugs,
       ...(this.opts.quarantinedSlugs !== undefined
         ? { quarantinedSlugs: this.opts.quarantinedSlugs }
         : {}),
-      refusalFacts,
+      refusalFacts: opts.refusalFacts,
       maxParallel: this.maxParallel,
+      inFlight: opts.inFlight,
     });
   }
 
@@ -1561,13 +1554,21 @@ export class Dispatcher {
     // chain's declared knobs — taken from the one derivation `runFanout`
     // runs, never re-spelled here (.claude/rules/engineering.md, "A module
     // is one job").
-    const { pickable, batches, claimedTags } = this.selection(
+    const { pickable, batches, claimedTags } = this.selection({
       chain,
-      { pending, filingTimes },
+      queue: { pending, filingTimes },
       isForkResolved,
-      { priorAttempts, headSha: await git.revParse(this.opts.repoRoot) },
+      refusalFacts: {
+        priorAttempts,
+        headSha: await git.revParse(this.opts.repoRoot),
+      },
       claimedSlugs,
-    );
+      // A preview runs no wave, so this chain's own sequencing policy is
+      // handed the empty in-flight set a tick's opening selection is handed
+      // (`OrderContext.inFlight`, `src/Phase.ts`) — which is what makes the
+      // entry below the one that wave would carry first.
+      inFlight: [],
+    });
 
     let entry: PendingEntry | undefined;
     if (phase.concurrency === "fanout") {

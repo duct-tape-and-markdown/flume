@@ -18,6 +18,7 @@ import type {
   ReportedGateResult,
   StakeLoss,
 } from "./tickVerdict.js";
+import type { FilingTimes } from "./filingOrder.js";
 import type { FlumePaths } from "./flumeApi.js";
 import type { Gate } from "./Gate.js";
 import type {
@@ -148,6 +149,69 @@ export interface EntryRefusalContext {
    * entry; no record, it dropped and rewrote or nothing has attempted it.
    */
   declaredAs: string;
+}
+
+/**
+ * The queue one selection is taken over, handed to {@link Chain.order}
+ * beside the ready set it is sequencing.
+ *
+ * Every field is something the engine already holds at the moment it takes
+ * the set, so a policy reaches for none of it — not the queue behind the
+ * ready set, not the dependency edges the gate switch just resolved, not the
+ * history the default order reads, not the entries a sibling slot of this
+ * same tick is carrying (`.claude/rules/engineering.md`, *A fact the engine
+ * holds is reported, never rediscovered*).
+ */
+export interface OrderContext {
+  /**
+   * The whole queue as this tick read it — every kind, so a policy can read
+   * a `work` entry's `group` ancestry and its `step` descendants
+   * (`spec/pending.md`, *The queue is a forest*) and sequence by the goal an
+   * entry serves rather than by the entry alone.
+   *
+   * Wider than the ready set by construction: selection offers `work` alone,
+   * and the holds that shrank it are settled before this hook sees it.
+   */
+  queue: readonly PendingEntry[];
+  /**
+   * The `blockedBy` graph resolved over {@link queue}: for each entry that
+   * declares blocker tags, the ones the queue **still holds** — an entry
+   * leaving the queue is the settled verdict, so a blocker absent from the
+   * queue is absent from its edge list here (`isPickableNow`,
+   * `src/PendingSchema.ts`).
+   *
+   * Keyed by tag, and only for entries that declare the gate: an entry
+   * naming no blocker has no key, and an entry whose every blocker has
+   * shipped has an empty one — which is how a policy tells "names none" from
+   * "named some, all settled" without re-walking the queue. A ready entry's
+   * own edges are therefore empty by definition; what the graph is *for* is
+   * the rest of it, which is what a policy reads to ask what shipping a
+   * ready entry unblocks.
+   */
+  blockedBy: ReadonlyMap<string, readonly string[]>;
+  /**
+   * When each tag the ledger has filed was filed, in unix seconds — the
+   * engine's own read, and the default order's whole input
+   * ({@link FilingTimes}, `src/filingOrder.ts`). A tag with no entry here is
+   * one no commit has filed: a producer wrote it after the tip this
+   * selection was taken against, which makes it the newest thing in the
+   * queue, and the default order sorts it last for that reason.
+   */
+  filedAt: FilingTimes;
+  /**
+   * The entries this tick is carrying at the moment of this selection. A
+   * fanout wave refilling a freed slot re-selects against the entries still
+   * in flight beside it, so a policy can sequence what a slot pulls next
+   * against what its siblings are already building; every other selection —
+   * the wave's opening fill, a singleton tick's read, the post-tick
+   * re-derivation a handoff routes on — carries nothing in flight and is
+   * handed the empty list.
+   *
+   * Not the claimed set: an entry a *sibling tick* holds is dropped before
+   * this hook sees the queue ({@link TickResult.claimedTags}), while these
+   * are this tick's own.
+   */
+  inFlight: readonly PendingEntry[];
 }
 
 /**
@@ -1113,6 +1177,41 @@ export interface Chain {
    * (`.claude/rules/engineering.md`, *Loud or nothing*).
    */
   refusesEntry?: (ctx: EntryRefusalContext) => boolean;
+  /**
+   * The order selection serves ready `work` entries in (`spec/chain.md`,
+   * "`Chain.order` — the queue's sequencing policy"). The engine holds the
+   * facts and calls the hook at **every** selection — the wave's opening
+   * fill, each freed slot's refill, a singleton tick's read, and the
+   * post-tick set a handoff routes on; the chain supplies the policy.
+   *
+   * Undeclared or omitted leaves the queue's own default standing: oldest
+   * filing first, then tag (`spec/pending.md`, *The entry core*). The engine
+   * supplies no second policy and takes no opinion from the order a listing
+   * came back in.
+   *
+   * **It orders, never admits.** `ready` is every pickable `work` entry and
+   * nothing else — the gate switch, this run's quarantine, a sibling's claim
+   * and the chain's own {@link Chain.refusesEntry} are all settled before the
+   * hook sees the set — and the return is exactly those entries, reordered.
+   * One added, dropped or repeated refuses the tick before any agent runs,
+   * naming this hook: an order that silently drops work is starvation nobody
+   * sees (`.claude/rules/engineering.md`, *Loud or nothing*).
+   *
+   * What the engine reads off the return is the **sequence**: each entry a
+   * tick is then handed is the engine's own read of the queue, so a hook that
+   * copies or rewrites an entry on the way through cannot replace the
+   * declaration a tick is dispatched against.
+   *
+   * Pure and synchronous, like {@link Phase.shipped}: a function of
+   * `ready` and {@link OrderContext}, so the order is reproducible from disk
+   * and a test drives it without a tick. A hook that throws propagates and
+   * fails the tick rather than being folded into an order the chain never
+   * reached.
+   */
+  order?: (
+    ready: readonly PendingEntry[],
+    ctx: OrderContext,
+  ) => readonly PendingEntry[];
   /**
    * Override for the `flume loop` supervisor's repeated-failure policy —
    * the run-scoped quarantine and the consecutive-identical-failure abort

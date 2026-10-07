@@ -147,13 +147,17 @@ export async function runFanout(
     claimedTags,
     partitionIgnore,
     maxParallel,
-  } = leg.selection(
+  } = leg.selection({
     chain,
-    { pending, filingTimes },
+    queue: { pending, filingTimes },
     isForkResolved,
-    { priorAttempts, headSha: preHead },
+    refusalFacts: { priorAttempts, headSha: preHead },
     claimedSlugs,
-  );
+    // Nothing of this tick's is in flight yet: the opening fill is what puts
+    // the first entries there, so the chain's own sequencing policy is handed
+    // the empty set (`OrderContext.inFlight`, `src/Phase.ts`).
+    inFlight: [],
+  });
 
   if (pickable.length === 0) {
     // No agent ran — not a no-commit *agent* tick, so nothing to classify.
@@ -648,13 +652,22 @@ export async function runFanout(
     // sibling's ledger commit may have filed an entry since this wave opened,
     // and the order a freed slot pulls in is the live queue's own.
     liveFilingTimes = await readLedgerFilingTimes(leg);
-    const selection = leg.selection(
+    const selection = leg.selection({
       chain,
-      { pending: live, filingTimes: liveFilingTimes },
+      queue: { pending: live, filingTimes: liveFilingTimes },
       isForkResolved,
-      { priorAttempts: records, headSha: await git.revParse(repoRoot) },
-      await leg.claims.readLive(),
-    );
+      refusalFacts: {
+        priorAttempts: records,
+        headSha: await git.revParse(repoRoot),
+      },
+      claimedSlugs: await leg.claims.readLive(),
+      // The one selection taken with entries in flight: this wave's siblings
+      // are still carrying them, and the order a freed slot pulls in is the
+      // chain's policy over exactly that moment (`OrderContext.inFlight`,
+      // `src/Phase.ts`). Read here, in the settling slot's own continuation,
+      // off the same map `fillSlots` partitions against.
+      inFlight: [...inFlight.values()],
+    });
     candidates = selection.pickable.filter((e) => !attempted.has(e.tag));
     livePickable = selection.pickable;
     liveQueue = live;
@@ -831,18 +844,28 @@ export async function runFanout(
   // opening facts — a refusal judged against the tip this wave started from
   // would hold an entry back over a world that no longer exists.
   const priorAttemptsAfter = await leg.attempts.readAll();
-  const postSelection = leg.selection(
+  const postSelection = leg.selection({
     chain,
     // The second world's times too: this wave's own ledger commits retire
     // entries rather than file them, but a sibling's may have filed one while
     // it ran.
-    { pending: pendingAfterWave, filingTimes: await readLedgerFilingTimes(leg) },
+    queue: {
+      pending: pendingAfterWave,
+      filingTimes: await readLedgerFilingTimes(leg),
+    },
     isForkResolved,
-    { priorAttempts: priorAttemptsAfter, headSha: await git.revParse(repoRoot) },
+    refusalFacts: {
+      priorAttempts: priorAttemptsAfter,
+      headSha: await git.revParse(repoRoot),
+    },
     // Re-read like the rest of the second world: this wave dropped its own
     // claims above, and a sibling's may have landed or lifted while it ran.
-    await leg.claims.readLive(),
-  );
+    claimedSlugs: await leg.claims.readLive(),
+    // Every slot settled before this line, so the wave carries nothing: the
+    // set a handoff routes on is sequenced as the next tick's opening
+    // selection will sequence it.
+    inFlight: [],
+  });
   return {
     result: {
       phaseName: phase.name,

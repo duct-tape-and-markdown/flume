@@ -92,6 +92,13 @@ export async function runSingleton(
     ...(quarantinedSlugs !== undefined ? { quarantinedSlugs } : {}),
     claimedSlugs,
     refuses: bindEntryRefusal(chain, { priorAttempts, headSha: preHead }),
+    // The chain's own sequencing policy over the set this hook is handed, so
+    // a producer reading `TickContext.pickable` sees the queue in the order
+    // the next fanout wave will carry it (`spec/chain.md`, "`Chain.order` —
+    // the queue's sequencing policy"). A singleton tick carries no entry, so
+    // nothing of its own is in flight.
+    order: chain.order,
+    inFlight: [],
   });
   const pickable = selected.pickable;
 
@@ -518,6 +525,11 @@ export async function runSingleton(
       priorAttempts: priorAttemptsAfter,
       headSha: await git.revParse(repoRoot),
     }),
+    // Sequenced like the opening read: the set a handoff routes on is the
+    // one the next tick's selection will take, so it is served in the order
+    // that selection will serve it.
+    order: chain.order,
+    inFlight: [],
   });
   return {
     result: {

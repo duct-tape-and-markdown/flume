@@ -26,6 +26,14 @@ import { entryTagFromFileName, type PendingEntry } from "./PendingSchema.js";
  * tag rather than by filename, because that is what a queue's entries carry
  * and what every consumer looks one up by.
  *
+ * The map a chain's own sequencing policy is handed, too
+ * (`OrderContext.filedAt`, `src/Phase.ts`): the comparator below is one
+ * policy over these times, and a chain declaring another reads the same
+ * engine-held read rather than shelling out to git for a second one
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*). A tag absent from it is one no commit has filed, and
+ * {@link byFilingThenTag} is where that absence has its consequence.
+ *
  * Every tag the ledger directory has *ever* held, not only the queue's own: a
  * tag that shipped and was filed again is the same filing, and narrowing the
  * map to the entries standing right now would make that fact unreadable.
