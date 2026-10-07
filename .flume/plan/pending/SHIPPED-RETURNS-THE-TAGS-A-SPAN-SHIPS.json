@@ -1,22 +1,57 @@
 {
   "tag": "SHIPPED-RETURNS-THE-TAGS-A-SPAN-SHIPS",
-  "gate": { "kind": "blockedBy", "tags": ["THE-ENTRY-CORE-CARRIES-KIND-AND-PARENT-AND-NO-RANK"] },
+  "gate": {
+    "kind": "open"
+  },
+  "dependsOnForks": [],
   "priority": 10,
   "files": {
+    "new": [],
     "edit": [
-      { "path": "src/Phase.ts", "description": "shipped's return type and ShipContext.steps" },
-      { "path": "src/waveMerge.ts", "description": "the classify leg reading the returned list" },
-      { "path": "src/pendingLedger.ts", "description": "the rewrite over a partial list" },
-      { "path": "src/Dispatcher.ts", "description": "the per-entry verdict over a partial ship" },
-      { "path": "harness/chain.ts", "description": "the package's shipped, returning the span's tags or none" },
-      { "path": "docs/CHAIN-AUTHORING.md", "description": "the hook's signature and the partial-list arm" },
-      { "path": "tests/Dispatcher.test.ts", "description": "the undeclared, empty and partial arms" },
-      { "path": "tests/pendingLedger.test.ts", "description": "the rewrite over the named steps alone" },
-      { "path": "tests/harnessChain.test.ts", "description": "the package's shipped" }
-    ]
+      {
+        "path": "src/Phase.ts",
+        "description": "shipped's return type and ShipContext.steps"
+      },
+      {
+        "path": "src/waveMerge.ts",
+        "description": "the classify leg reading the returned list"
+      },
+      {
+        "path": "src/pendingLedger.ts",
+        "description": "the rewrite over a partial list"
+      },
+      {
+        "path": "src/Dispatcher.ts",
+        "description": "the per-entry verdict over a partial ship"
+      },
+      {
+        "path": "harness/chain.ts",
+        "description": "the package's shipped, returning the span's tags or none"
+      },
+      {
+        "path": "docs/CHAIN-AUTHORING.md",
+        "description": "the hook's signature and the partial-list arm"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the undeclared, empty and partial arms"
+      },
+      {
+        "path": "tests/pendingLedger.test.ts",
+        "description": "the rewrite over the named steps alone"
+      },
+      {
+        "path": "tests/harnessChain.test.ts",
+        "description": "the package's shipped"
+      }
+    ],
+    "retire": []
   },
   "summary": "Phase.shipped returns the tags its span ships out of the work entry and its steps; an empty list is not-shipped and a partial list leaves the work entry queued with the steps that remain",
-  "per": { "path": "spec/pending.md", "section": "Ship detection trusts the agent's own account" },
+  "per": {
+    "path": "spec/pending.md",
+    "section": "Ship detection trusts the agent's own account"
+  },
   "acceptance": "an undeclared shipped ships the work entry and every step; an empty return records not-shipped exactly as the boolean false did; a partial return removes the named steps' files and leaves the work entry queued",
   "tests": [
     "an undeclared shipped ships the work entry and every one of its steps",
@@ -25,5 +60,7 @@
     "ShipContext carries the entry's steps",
     "the package's shipped returns no tag for a commit that put its work down"
   ],
+  "pins": [],
+  "laneTests": [],
   "notes": "Pre-1.0: the boolean is edited out, not kept beside the list. How a build session says which steps it finished is not stated for the package — see the questions directory; the package's own `shipped` stays all-or-nothing here."
 }

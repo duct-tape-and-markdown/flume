@@ -1,18 +1,41 @@
 {
   "tag": "THE-GOAL-RANK-IS-THE-ONLY-RANK-AND-ONLY-INBOX-SETS-IT",
-  "gate": { "kind": "blockedBy", "tags": ["THE-ENTRY-CORE-CARRIES-KIND-AND-PARENT-AND-NO-RANK"] },
+  "gate": {
+    "kind": "open"
+  },
+  "dependsOnForks": [],
   "priority": 10,
   "files": {
+    "new": [],
     "edit": [
-      { "path": "harness/entryExtension.ts", "description": "the goal's rank as a declared field, with its hint" },
-      { "path": "harness/gates.ts", "description": "the goal-rank gate in the slice gate set, where the filing-band gate stood" },
-      { "path": "docs/CHAIN-AUTHORING.md", "description": "the entry-extension roster and the declared-gate roster" },
-      { "path": "tests/harnessEntryExtension.test.ts", "description": "the field's parse and its hint" },
-      { "path": "tests/harnessGates.test.ts", "description": "each refusal and the inbox commit that passes" }
-    ]
+      {
+        "path": "harness/entryExtension.ts",
+        "description": "the goal's rank as a declared field, with its hint"
+      },
+      {
+        "path": "harness/gates.ts",
+        "description": "the goal-rank gate in the slice gate set, where the filing-band gate stood"
+      },
+      {
+        "path": "docs/CHAIN-AUTHORING.md",
+        "description": "the entry-extension roster and the declared-gate roster"
+      },
+      {
+        "path": "tests/harnessEntryExtension.test.ts",
+        "description": "the field's parse and its hint"
+      },
+      {
+        "path": "tests/harnessGates.test.ts",
+        "description": "each refusal and the inbox commit that passes"
+      }
+    ],
+    "retire": []
   },
   "summary": "the package's entry extension carries a goal's rank, and the goal-rank gate refuses a rank on anything but a root group and a rank added or changed outside an inbox commit",
-  "per": { "path": "spec/harness.md", "section": "The gates the discipline needs" },
+  "per": {
+    "path": "spec/harness.md",
+    "section": "The gates the discipline needs"
+  },
   "acceptance": "the rank parses only on an entry the queue holds as a root group, and a derive or sweep commit that adds or changes one is refused naming the tag, while an inbox commit's passes",
   "tests": [
     "a rank on an entry that is not a group is refused",
@@ -25,5 +48,6 @@
     "a rank an inbox commit adds to a root group passes the gate",
     "a rank an inbox commit changes on a standing goal passes the gate"
   ],
+  "laneTests": [],
   "notes": "The rank cannot be core: `priority` left it, and a rank the engine does not consume is convention (`.claude/rules/engine-boundary.md`). The field's spelling is build's; the contract is that only a root group carries one and only the inbox slice writes one."
 }
