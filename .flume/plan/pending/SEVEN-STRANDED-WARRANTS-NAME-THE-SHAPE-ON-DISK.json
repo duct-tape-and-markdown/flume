@@ -1,0 +1,40 @@
+{
+  "tag": "SEVEN-STRANDED-WARRANTS-NAME-THE-SHAPE-ON-DISK",
+  "gate": { "kind": "open" },
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "harness/gates.ts",
+        "description": ":5 rosters \"the cursor gate\"; the member is `slice-state`, already named at :37"
+      },
+      {
+        "path": "tests/harnessChain.test.ts",
+        "description": ":1439 names the same gate the same way, three lines above the `\"slice-state\"` it asserts"
+      },
+      {
+        "path": "harness/entryExtension.ts",
+        "description": ":257-:261 warrants the field order on a `spec/harness.md` roster that section now says is not there"
+      },
+      {
+        "path": "harness/order.ts",
+        "description": ":63 and :95 warrant two cycle guards on a parse premise `src/PendingSchema.ts` refuted"
+      },
+      {
+        "path": "src/selection.ts",
+        "description": ":404 and :518 count two holds over a `PickableSelection` carrying three"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "seven comments warrant a gate name, a spec roster, a parse premise and a hold count the tree outgrew; third body since the family last filed, so it files",
+  "per": {
+    "path": ".claude/rules/posture-sweep.md",
+    "section": "Routing"
+  },
+  "acceptance": "`grep -rn 'cursor gate' src/ harness/ tests/`, `grep -rn 'after the six that section' harness/`, `grep -rn 'cycle check at parse' harness/` and `grep -rn 'the two holds' src/ harness/` plus `grep -rn 'both hold lists' src/ harness/` all come back empty, and each site states the shape on disk instead: `harness/gates.ts:5` and `tests/harnessChain.test.ts:1439` name `slice-state` and what it judges — a whole slice state read at two refs against that slice's own rules, not every cursor; `harness/entryExtension.ts:257`-`:261` warrants the field order on something `spec/harness.md`, *The entry extension* still states, which is that the fields are held by the package's schema and by no roster there; `harness/order.ts:63` and `:95` warrant their two guards on what `src/PendingSchema.ts`'s blocker-cycle refusal leaves them for; `src/selection.ts:404` and `:518` count the three holds `PickableSelection` carries. Comment-only: `pnpm tsc --noEmit` and `pnpm test` green with no executable line changed.",
+  "tests": [],
+  "pins": [],
+  "laneTests": [],
+  "notes": "Family *narration a reshape stranded*, third body since it last filed (20fcb14f → THE-STRANDED-TEARDOWN-NARRATION-NAMES-THE-SHAPE-ON-DISK; d8761a65, 20cdea62, this one). All seven lines verified on this tip. `src/selection.ts` is the pair no prior body found: 57337336 added `claimedTags` as a third hold and updated only :181. The entryExtension warrant is now contradicted rather than merely stale — that spec section states there is no roster."
+}
