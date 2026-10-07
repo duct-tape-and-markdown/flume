@@ -1,6 +1,10 @@
 {
   "tag": "THE-PHASE-DECLARATION-TABLES-NAME-EVERY-FIELD-THEY-CLAIM",
-  "gate": { "kind": "open" },
+  "gate": {
+    "kind": "open"
+  },
+  "dependsOnForks": [],
+  "kind": "work",
   "files": {
     "new": [],
     "edit": [
@@ -27,5 +31,11 @@
   ],
   "pins": [],
   "laneTests": [],
-  "notes": "Measured on disk: both tables claim \"every field it declares is below, in declaration order\" and four declared fields have no row; `promptDataKeys` appears nowhere on the page, so an author cannot find it at all and rebuilds what it would have given. `docWalk` (`tests/helpers/docWalk.ts`) arms the sibling walks; both tables sit under one `##`, so each cut needs its own anchor."
+  "notes": "Measured on disk: both tables claim \"every field it declares is below, in declaration order\" and four declared fields have no row; `promptDataKeys` appears nowhere on the page, so an author cannot find it at all and rebuilds what it would have given. `docWalk` (`tests/helpers/docWalk.ts`) arms the sibling walks; both tables sit under one `##`, so each cut needs its own anchor.",
+  "observedFiles": [
+    ".flume/plan/notes/THE-PHASE-DECLARATION-TABLES-NAME-EVERY-FIELD-THEY-CLAIM.md",
+    "docs/CHAIN-AUTHORING.md",
+    "tests/examples.test.ts",
+    "tests/helpers/docSections.ts"
+  ]
 }
