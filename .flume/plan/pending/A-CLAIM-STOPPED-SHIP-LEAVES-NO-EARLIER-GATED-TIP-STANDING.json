@@ -1,0 +1,36 @@
+{
+  "tag": "A-CLAIM-STOPPED-SHIP-LEAVES-NO-EARLIER-GATED-TIP-STANDING",
+  "gate": {
+    "kind": "open"
+  },
+  "dependsOnForks": [],
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/waveMerge.ts",
+        "description": "the drain's gated-tip read, which skips the claim-stopped exit without clearing what an earlier pick left on the stage"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the gatedTip block, and the tip-claim arm beside its one-pick cases"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "a wave whose last ship's ledger rewrite a foreign tip claim stopped reports no gated tip, rather than the tip an earlier pick left standing",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Loud or nothing"
+  },
+  "acceptance": "a wave that ships two picks, the second's rewrite stopped by a live foreign tip claim, reports `gatedTip` absent on both the result and the verdict — which is what three shipped doc sites already promise — while a wave whose every rewrite committed still reports the tip its last ledger commit left",
+  "tests": [
+    "a wave whose last ship's ledger rewrite a foreign tip claim stopped reports no gated tip"
+  ],
+  "pins": [
+    "a wave whose every ship's rewrite committed reports the tip its last ledger commit left"
+  ],
+  "laneTests": [],
+  "notes": "On this tip `land` sets `w.gatedTip` only when `exit !== \"tip-claimed\"` (`src/waveMerge.ts:693`) and never clears it, so a second shipping pick taking that exit leaves the first pick's tip reported as the last ship's. All three doc sites state it absent there: `src/Phase.ts:498`, `src/tickVerdict.ts:980`, `src/Dispatcher.ts:1454`. `tipMoved` is already true. Sibling on tests/Dispatcher.test.ts with the standing gatedTip pins entry."
+}
