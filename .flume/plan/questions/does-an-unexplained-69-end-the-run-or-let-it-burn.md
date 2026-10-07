@@ -57,6 +57,22 @@ Two measured facts make that one instance of a shape rather than one omission:
    unconditionally, so the re-read that rescues an operator's mid-run fix would
    no longer reach it.
 
-Meanwhile `THE-MOUNT-DEAD-NARRATION-STATES-THE-RETIRED-ABORT` states the tree's
-three legs on the help page and in `docs/CLI.md`, so the shipped narration is
-true under option 1 or 2 and is re-derived under 3.
+## A fourth arm, named and costed
+
+`THE-MOUNT-DEAD-NARRATION-STATES-THE-RETIRED-ABORT` has landed: the three leg
+phrases have one home in `src/loopSupervisor.ts`, the refusals an operator
+reads and `flume loop --help`'s 69 row render from it, and `docs/CLI.md` is
+pinned against it. So the tree, the help page and the CLI page agree with each
+other and lead `spec/loop.md`'s *Exit codes — the run never lies to CI* bullet
+by one leg: the shipped narration is true under option 1 or 2 and is
+re-derived under 3.
+
+That entry's note put the choice the other way round — if the roster should
+stay at two, the prompt leg is the thing to re-decide, not the narration. A
+fourth arm, costed here so the answering session need not re-derive it:
+retiring the leg un-ships a halt this suite pins end to end ("flume loop halts
+on a phase whose declared prompt file is absent rather than spending its
+remaining ticks", `tests/cli.test.ts`), and by the *69 is the fallback class,
+not a roster* reading above it buys nothing structural either — the next
+fallback-69 cause burns the same run whether the roster names two legs or
+three. Named, not recommended.
