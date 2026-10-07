@@ -793,6 +793,150 @@ describe("pendingGate — claim check over the merged tree (spec/pending.md 'Cla
     );
     expect(merged().when).toBe("afterMerge");
   });
+
+  /**
+   * The same placement over a **batched** merge (spec/worktrees.md, *Batched
+   * merges*): the gate declares it reads one, so a phase hanging it at
+   * `afterMerge` keeps its chain's `mergeBatch` width, and both of its reads
+   * have to be right over N picks rather than one.
+   *
+   * Driven through `runGate` (`src/gateRun.ts`) rather than by calling `run`
+   * directly, because that is the one door the declaration is kept at: a gate
+   * that withheld it is refused there, so these cases cannot pass over a
+   * verdict a single-span gate took on the last pick's facts.
+   */
+
+  /** An entry whose declared file sits outside `merged()`'s target fence. */
+  const offFence = (tag: string) => ({
+    ...validEntry,
+    tag,
+    files: {
+      new: [],
+      edit: [{ path: "docs/elsewhere.md", description: "off-fence" }],
+      retire: [],
+    },
+  });
+
+  /**
+   * The placement half alone, spelled as a `GateSite`: handing
+   * `batchGateContext` a single-span context would spread that context's own
+   * `baseSha` and `commitSha` through, and the batch's withholding would read
+   * the fixture's values rather than the picks'.
+   */
+  const site = (): GateSite => {
+    const flumeDir = join(dir, ".flume");
+    return {
+      cwd: dir,
+      repoRoot: dir,
+      flumeDir,
+      stateRootRel: computeStateRootRel(dir, flumeDir),
+      pendingDir: join(flumeDir, "plan", "pending"),
+      configDir: flumeDir,
+      phaseName: "test-phase",
+      log: () => {},
+    };
+  };
+
+  const scope = (): GateRunScope => {
+    const flumeDir = join(dir, ".flume");
+    return {
+      worktreeCtx: {
+        repoRoot: dir,
+        flumeDir,
+        stateRootRel: computeStateRootRel(dir, flumeDir),
+        log: silent,
+      },
+      log: silent,
+    };
+  };
+
+  /** One pick, as the batch carries it — its own two shas and its own diff. */
+  const pick = (
+    span: Pick<GateContext, "baseSha" | "commitSha" | "touchedPaths">,
+  ): GateBatchSpan => ({
+    commitSha: span.commitSha,
+    baseSha: span.baseSha,
+    // Each pick lands on the one before it, which in this linear fixture is
+    // the span's own base.
+    landedOnSha: span.baseSha,
+    touchedPaths: span.touchedPaths,
+  });
+
+  it("the queue gate validates the queue at a batch's last pick", async () => {
+    await commitFiles(dir, queueFiles([entry("FIRST")]));
+    // Two picks in the order a batch carries them: the first files an entry
+    // declaring a path the consumer's fence refuses, the second takes that
+    // declaration back. The queue the gates judge is the tree the last pick
+    // left.
+    const widened = await commitSpan({
+      [entryPath("WIDE")]: JSON.stringify(offFence("WIDE")),
+    });
+    const narrowed = await commitSpan({
+      [entryPath("WIDE")]: JSON.stringify(entry("WIDE")),
+    });
+
+    // Armed, and over the same door: a batch whose last pick still holds the
+    // off-fence declaration is refused and names it, so the green below is a
+    // read that happened at the right tip rather than a check that never
+    // looked (`.claude/rules/engineering.md`, *A green verdict is proven
+    // non-vacuous*).
+    const armed = await runGate(
+      merged(),
+      batchGateContext(site(), [pick(widened)]),
+      scope(),
+    );
+    expect(armed.result.ok).toBe(false);
+    expect(armed.result.details).toContain("[WIDE] docs/elsewhere.md");
+
+    const batch = batchGateContext(site(), [pick(widened), pick(narrowed)]);
+    // Non-vacuity: two picks, and the tip the gate will read is the second's
+    // — the first pick's tree is the one the armed leg just refused.
+    expect(batch.batch).toHaveLength(2);
+    expect(batch.commitSha).toBe(narrowed.commitSha);
+
+    const { result } = await runGate(merged(), batch, scope());
+    expect(result.ok, result.details).toBe(true);
+    expect(result.message).toBe(
+      `${QUEUE_REL} valid (2 entries), fence pre-check passed`,
+    );
+  });
+
+  it("the queue gate refuses a batch whose spans touched an entry another tick holds a claim on", async () => {
+    await commitFiles(dir, queueFiles([entry("HELD"), entry("FREE")]));
+    await claim("HELD");
+    // Two picks, each re-scoping one entry: only the union of their diffs
+    // names both files, so a gate reading a single span's would ship the
+    // collision the second pick carries.
+    const free = await commitSpan({
+      [entryPath("FREE")]: JSON.stringify(entry("FREE", "re-scoped freely")),
+    });
+    const heldSpan = await commitSpan({
+      [entryPath("HELD")]: JSON.stringify(entry("HELD", "re-scoped mid-flight")),
+    });
+    const batch = batchGateContext(site(), [pick(free), pick(heldSpan)]);
+    // Non-vacuity: the union really is both picks' entry files, so the
+    // refusal below is the claim check reading the batch whole.
+    expect([...batch.touchedPaths].sort()).toEqual([
+      entryPath("FREE"),
+      entryPath("HELD"),
+    ]);
+
+    const { result } = await runGate(merged(), batch, scope());
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/1 entry another tick holds a claim on/);
+    expect(result.details).toContain(
+      `  [HELD] ${entryPath("HELD")} is claimed by pid ${process.pid}`,
+    );
+    // The unclaimed sibling's file rode the same batch and is no part of the
+    // refusal — the check names the entry in flight, not the merge.
+    expect(result.details).not.toContain(entryPath("FREE"));
+
+    // The control, over the identical batch: with the claim lifted it passes,
+    // so the refusal is the claim's and not the batch shape's.
+    await rm(await claimPath("HELD"), { force: true });
+    const lifted = await runGate(merged(), batch, scope());
+    expect(lifted.result.ok, lifted.result.details).toBe(true);
+  });
 });
 
 describe("pendingGate — real afterCommit shape (GATE-CONTEXT-STATE-ROOT-REL, .claude/rules/engineering.md 'A seam gate reads what the real writer wrote')", () => {

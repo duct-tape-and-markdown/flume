@@ -1039,9 +1039,16 @@ const cumulative: Gate = {
   is one command's exit code, and the only thing it takes off `ctx` is `cwd`,
   the tree the merge left behind. So a phase whose `afterMerge` gates are
   those builtins reaches the width you declared with nothing further to say.
-  `chainLoadGate` and `pendingGate` do not declare it — each judges the gated
-  commit as one span's — so hanging either at `afterMerge` narrows the phase
-  back to a span per merge.
+- **`pendingGate` declares it too**, for a different reason: both facts it
+  reads are ones a batch states outright. The queue comes off `ctx.commitSha`,
+  which under a batch is the last pick — the tip the gates run over, and so
+  the listing every span's edit is already in; the claim check's subject is
+  `ctx.touchedPaths`, which under a batch is the union of the spans' own, so
+  an entry *any* span touched is refused and named. The `afterMerge` copy the
+  claim check wants therefore costs a batching phase nothing.
+  `chainLoadGate` withholds the declaration — it judges the gated commit as
+  one span's — so it is the one built-in a chain can hang at `afterMerge` that
+  narrows the phase back to a span per merge.
 - **A batch withholds rather than approximates.** `entry`, `baseSha` and
   `landedOnSha` are absent under a batch — the type says so — because no
   single value of any of them is true of the merge. `commitSha` is the
@@ -1082,7 +1089,9 @@ const factory: ChainFactory = (flume) => {
 - `pendingGate` — `pendingGate({ targetFence, extension?, fenceWhen?,
   entryRecords?, hint?, when? })`: composed queue validation, a plan-time
   fence pre-check against the target phase, and a claim check over the
-  entries another tick holds. See below.
+  entries another tick holds. Declares `batches: true`
+  ([*Reading a batched merge*](#reading-a-batched-merge)), so the merged-tree
+  placement holds no batching phase to a span per merge. See below.
 - `shellGate` — `shellGate({ name, when, cmd, args, failHint? })`, the escape
   hatch for "run a command, fail on non-zero". `tscGate`, `vitestGate` and
   `eslintGate` are `shellGate` instances, built through one shared

@@ -9,6 +9,7 @@
 import { relative } from "node:path";
 
 import type {
+  BatchGateContext,
   BatchingGate,
   GateContext,
   GateResult,
@@ -413,15 +414,32 @@ export interface PendingGateOptions {
  * cannot fold a note into an entry a build tick is mid-flight on any more
  * than it can re-scope the entry itself. `opts.when` is what a chain places
  * that check where it bites — see the option.
+ *
+ * **It declares `batches: true`** (spec/worktrees.md, *Batched merges*), so a
+ * phase whose only `afterMerge` gate this is keeps the `mergeBatch` width its
+ * chain declared. The declaration is withheld from a gate that would read a
+ * batch's facts as one entry's, and neither read here is one. The queue comes
+ * off `ctx.commitSha`, which under a batch is the last pick — the tip the
+ * gates run over, and so the listing every span's edit is already in. The
+ * claim check's subject is `ctx.touchedPaths`, which under a batch is the
+ * union of the spans' own, so an entry *any* span touched is judged and the
+ * refusal names it. Both facts a batch states outright, which is why `run`'s
+ * parameter is the two context shapes' union rather than {@link GateContext}
+ * alone — the per-span facts a batch withholds ({@link BatchGateContext}) are
+ * ones this gate never reads. Without the declaration a chain attaching the
+ * merged-tree copy — the placement the claim check wants — would silently
+ * stay at a span per merge whatever it asked for (`mergeBatchWidth`,
+ * `src/gateBatch.ts`).
  */
-export function pendingGate(opts: PendingGateOptions): SingleSpanGate {
+export function pendingGate(opts: PendingGateOptions): BatchingGate {
   const fenceWhen = opts.fenceWhen ?? (() => true);
   const withHint = (message: string): string =>
     opts.hint ? `${message} — ${opts.hint}` : message;
   return {
     name: "pending-gate",
     when: opts.when ?? "afterCommit",
-    async run(ctx: GateContext): Promise<GateResult> {
+    batches: true,
+    async run(ctx: GateContext | BatchGateContext): Promise<GateResult> {
       // spec/pending.md "The pending queue": which queue the commit under
       // inspection holds is the engine's own read (`readGatedQueue`,
       // `src/pendingLedger.ts`) — the ref it resolves against, the state
@@ -559,7 +577,7 @@ export function pendingGate(opts: PendingGateOptions): SingleSpanGate {
  * left to parse.
  */
 function touchedEntryFiles(
-  ctx: GateContext,
+  ctx: GateContext | BatchGateContext,
   queueDirRel: string | undefined,
 ): { readonly path: string; readonly tag: string }[] {
   if (queueDirRel === undefined) return [];
@@ -592,7 +610,7 @@ function touchedEntryFiles(
  * tree left to parse, and the note it also deleted still belongs to it.
  */
 function touchedEntryRecords(
-  ctx: GateContext,
+  ctx: GateContext | BatchGateContext,
   queued: readonly PendingEntry[],
   touchedEntries: readonly { readonly tag: string }[],
   opts: PendingGateOptions,
