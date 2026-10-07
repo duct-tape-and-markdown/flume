@@ -402,6 +402,26 @@ This is the policy-constant rule made concrete: retry counts, quarantine
 scope, abort thresholds, batch width, and timeouts enter the engine only as
 chain-overridable defaults. The mechanism they tune is `spec/loop.md`.
 
+## `Chain.order` — the queue's sequencing policy
+
+`Chain.order?: (ready: readonly PendingEntry[], ctx: OrderContext) => readonly
+PendingEntry[]` returns the order selection serves ready `work` entries in. The engine
+holds the facts and calls the hook at every selection; the chain supplies the policy.
+`OrderContext` carries what the engine already holds: the whole queue — groups and steps
+included, so a chain can read goals and their descendants — the `blockedBy` graph
+resolved over it, each entry's filing time, and the entries in flight. Undeclared, the
+order is oldest filing, then tag (`spec/pending.md`, *The entry core*).
+
+- **It orders, never admits.** The hook receives only pickable `work` entries and
+  returns exactly those, reordered. One added, dropped, or repeated refuses the tick
+  before any agent runs, naming the hook: an order that silently drops work is
+  starvation nobody sees.
+- **Pure and synchronous**, like `shipped`: a function of its inputs, so the order is
+  reproducible from disk and a test can drive it without a tick.
+
+`Chain.maxEntryDepth?: number` caps the forest's depth (`spec/pending.md`, *The queue
+is a forest*), default `4`, read by every queue parse.
+
 ## Gate placement is the chain's decision
 
 Gates declare `when: "afterCommit" | "afterMerge"` (`GatePhase`).

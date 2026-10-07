@@ -47,7 +47,9 @@ Plan states the architecture; where the edits fall is build's call.
 
 No schema holds these; they are the plan tick's actual work.
 
-1. **One tick's work.** If it cannot land as one commit with green gates it is two
+1. **One session's work.** A `work` entry is one build session's job; finer
+   structure is its `step`s, never more sessions (`spec/pending.md`, *The queue is
+   a forest*). If it cannot land in one session with green gates it is two `work`
    entries, a spec section, or a decision nobody has made.
 2. **Independently shippable.** Its gates pass on its own; dependence on a sibling
    is `blockedBy`, declared, never assumed by queue order.

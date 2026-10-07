@@ -5,8 +5,8 @@ entry's commits back onto the trunk **as its agent finishes**, under the ship lo
 tip as it then stands; a slot freed that way pulls the next entry disjoint from everything
 still in flight (`spec/loop.md`, *The ship lock and the worktree lock — sibling ticks take
 turns at git*). A freed slot reads the queue as it
-stands, in priority order, so an entry filed or re-ranked mid-wave is pulled ahead of
-lower-ranked work the wave has not reached; it skips every entry this wave has already
+stands, in queue order (`spec/pending.md`, *The entry core*), so work filed mid-wave
+that the order puts first is pulled ahead of work the wave has not reached; it skips every entry this wave has already
 attempted, so a wave never re-picks one, and it ends when nothing it has not attempted is
 pickable or the run is torn down. Each entry's ledger commit lands with its own merge, under the
 same hold of the ship lock, never at the wave's end: a wave can now outlast many merges, and

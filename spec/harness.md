@@ -58,18 +58,14 @@ observation and routes as it always has. Without the bar every
 shipped entry spawned the next through its own note, and the queue filled
 with work nothing asked for.
 
-**Every entry a package producer files carries a `priority`, set by where
-the work came from**, because the engine's tie-break is the tag and a queue
-with no priorities is served in filing order, whatever the work is.
-An entry answering a downstream report, an operator's ruling, a declared
-friction note, or a failing title a CI lane reports files at `30`; one
-routed from a build note at `20`; one derived from a spec commit at `10`;
-one the sweep files at `0`. Within a band the earliest filing goes first, and an entry
-`blockedBy` another inherits no rank from it. The drain re-ranks an
-entry already queued when a ruling says its source was misread, and never
-otherwise, so a rank is a fact about provenance rather than a lever a tick
-pulls. The product is served before the insurance, which is the order the
-declared phases already keep (above).
+**The package orders the queue** (`Chain.order`, `spec/chain.md`): work under
+an operator's goal first, in the goals' order, together with everything that
+work is `blockedBy`; then work behind which the longest chain of other work
+waits; then oldest filing; then tag. Nothing a producer files carries a rank,
+and where an entry came from never orders it — a downstream report is urgent
+because the operator names it in a goal. Product outranks insurance through
+the declared phase order above, which spends a short budget on build before
+the sweep, never through the queue.
 
 Two orderings the serial baton used to carry are mechanism now. A refused
 entry is not re-picked before the drain reconciles it: the refusal keys on the
@@ -78,6 +74,21 @@ default `handoff`*). And a finding two producers file at once is folded, not
 refused: the drain amends the entry that covers it rather than filing a
 sibling, and one that reaches build first costs a clean-exit record the next
 drain drops (*The gates the discipline needs*).
+
+
+### Goals and decomposition
+
+An operator states a goal as an inbox record: what something outside the loop
+waits on — spec sections, entries, or a description — and where it ranks among
+the goals standing. plan-inbox files it as a root `group` carrying that rank,
+and re-ranks standing goals when a record says so; a goal's rank is the only
+rank in the queue. A goal leaves the queue when its last descendant ships.
+
+Plan decomposes. Derive files the work a goal needs beneath it as `work`
+entries, with `step`s where one session should carry several tracked parts,
+and declares complete `blockedBy` across them: the order is computed from that
+structure, so a missing dependency is a wrong order no gate sees. A `work`
+entry is one session's job; finer structure is steps, never more sessions.
 
 
 ### The sweep procedure
@@ -102,8 +113,7 @@ the package's.
   and line, and never against a divergence the site declares and cites as
   deliberate.
 - **Routing.** A defect that can change behavior, hide a failure, or leave a
-  vacuous verdict over load-bearing machinery files as an entry at the sweep's
-  band. Any other shape is an accepted-debt line in the plan commit body, and a
+  vacuous verdict over load-bearing machinery files as an entry. Any other shape is an accepted-debt line in the plan commit body, and a
   family noted in three plan commit bodies files once, counted over every plan
   commit body. A fix that needs a design decision is an open question, and so
   is a defect no posture-page section covers, proposing the section that would
@@ -185,11 +195,9 @@ a commit that edits or removes an entry a build tick holds
 collision is not in. There is no duplicate gate: two producers filing one
 finding is a shape every legitimate decomposition shares, so the drain folds
 a duplicate rather than a gate refusing it (*The phases*).
-And the **filing band** gate: every entry a package producer adds carries the
-priority its slice's band states (*The phases*), refused otherwise, because a
-rank is a fact about provenance and one a producer chose would be a lever. A
-commit that changes the `priority` of an entry already queued is refused unless
-it is the inbox slice's, which carries the rulings a re-rank answers.
+And the **goal rank** gate: only a root `group` carries a goal rank, and only an
+inbox commit adds or changes one, because the rank is the operator's statement
+and a tick that set it would be pulling a lever.
 The record byte cap is not the gate's: a note over the cap ships with its entry,
 and the drain that reads it says so in the plan commit body — a shape rule on
 a prose channel refuses the prose, never the code it rode in with.

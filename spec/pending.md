@@ -33,12 +33,15 @@ rewrites an entry's file on ship, so a stripped field would be destroyed on disk
   unblocked entry.
 - **`dependsOnForks`** — array of opaque fork slugs, defaulting to `[]`. A cross-cutting
   pickability predicate, not a gate kind (below).
-- **`priority`** — optional integer, defaulting to `0`. Higher is picked first; among equal
-  priorities the entry whose tag was filed earliest is picked first — the oldest commit that
-  added a file under that tag, read from git, so re-filing never moves an entry and one no
-  commit has added yet is the newest — and tag ascending breaks what remains. The one
-  ordering the engine consumes (*The ledger is a directory — one entry
-  per file*, below).
+- **`kind`** — `work`, `step`, or `group`, defaulting to `work`. A `work` entry is the
+  dispatch unit — one build session's job, and the only kind selection picks. A `step` is
+  part of a `work` entry, with its own acceptance and tests, done in that entry's session
+  and shipped by it. A `group` organizes — a goal, an epic — carries no `files`, is never
+  picked, and ships when its last descendant ships. The kind is declared, never read off
+  whether an entry has children: a group not yet decomposed has none and is still not work.
+- **`parent`** — optional tag of the entry this one is part of. One parent per entry, so the
+  queue is a forest. `parent` is containment only; precedence is `gate`, and a `blockedBy`
+  on a `group` or `work` entry holds every descendant.
 - **`files`** — `{ new: FileChange[], edit: FileChange[], retire: string[] }`, each `FileChange`
   a `{ path, description }`. The fence declaration and the partition input.
 - **`observedFiles`** — optional `string[]`, dispatcher-maintained. Not authored by the producer
@@ -48,8 +51,29 @@ The parsed type is `PendingEntry = z.infer<typeof PendingEntryCore> & Record<str
 extension fields are typed `unknown`, because the chain that declared them is the side that
 knows their shape and narrows locally.
 
-The queue's order is the one the `priority` bullet states — a listing, never an array
-position. An empty directory, or an absent one, is valid and means nothing pending.
+The queue's order is computed at every selection, never stored: the chain's `order` when it
+declares one (`spec/chain.md`), and otherwise oldest filing first — the oldest commit that
+added a file under the tag, read from git, so re-filing never moves an entry and one no
+commit has added yet is the newest — then tag ascending. An empty directory, or an absent
+one, is valid and means nothing pending.
+
+## The queue is a forest
+
+Plan decides how finely work is described and, separately, how much of it one session
+takes: everything above a `work` entry organizes, everything below it is a step of that
+session, so finer structure never means more sessions.
+
+- A `group`'s parent is a `group`. A `work` entry's parent is a `group`, and it has no
+  `work` ancestor. A `step`'s parent is its `work` entry or another of its steps.
+- `parent` names an entry in the queue, and no chain of parents is deeper than
+  `Chain.maxEntryDepth` (default `4`: goal, epic, work, step).
+- A step's `blockedBy` names only steps of the same `work` entry; a dependency reaching
+  outside it is declared on the `work` entry. The session does its steps in that order.
+- A `work` entry's footprint is its own `files` and its steps' together, for the partition
+  and the fence alike.
+- A queue breaking any of these is refused like any malformed queue (*Queue reads are
+  strict*).
+- A `group` leaves the queue in the ledger commit that ships its last descendant.
 
 ## Tag grammar is mechanical safety, nothing more
 
@@ -89,9 +113,9 @@ tick ends `tip-moved`, and the loser re-runs against the tip that won.
 - **The listing is the queue.** Every `*.json` directly under `Chain.pendingDir` is an entry;
   nothing else is. Subdirectories are not walked, so a chain may keep sidecars beside the
   entries without the engine reading them as work.
-- **Order is a field, never a position.** `priority`, then filing order (*The entry
-  core*). A producer that wants an entry next raises its priority; the engine consumes
-  the number and nothing about what it means.
+- **Order is computed, never a position or a field** (*The entry core*). A producer that
+  wants work sooner declares the structure the order reads — a goal, a dependency — never
+  a number.
 - **A ship removes exactly the shipped entries' files** — `git rm` in the ledger commit,
   alongside the records it moves — and edits no other file in the directory.
 - **A parse failure names a file.** An entry that does not parse refuses the reads that act
@@ -291,7 +315,7 @@ whose members have **disjoint `touchedPaths()` sets**, so a batch can run in par
 It is greedy: walk pending in order, place each entry in the first batch that has room
 (`< maxParallel` members) and whose paths it doesn't collide with, otherwise open a new batch — so
 a batch closes on capacity as well as on overlap. Not optimal by count, but stable and respectful
-of pending order (priority). The dispatcher runs `batch[0]`, then re-derives pending and partitions again.
+of pending order (*The entry core*). The dispatcher runs `batch[0]`, then re-derives pending and partitions again.
 
 `maxParallel` comes from `DispatcherOptions.maxParallel` and **defaults to 4**. The CLI forwards
 no override, so a CLI-driven wave runs at most four agents concurrently; only a programmatic
@@ -407,16 +431,20 @@ would remove a never-built entry from the queue.
 Whether a landed commit is finished work or a park note is a question the engine cannot answer
 and does not try to. It reports facts; the chain interprets them.
 
-`Phase.shipped?: (ctx: ShipContext) => boolean` is the injection point — a sibling of
-`shouldRun` and `handoff`, synchronous like both. `ShipContext` carries what the engine already
-holds at that moment: the entry, the merged sha, the span's base sha, the commit's touched
+`Phase.shipped?: (ctx: ShipContext) => readonly string[]` is the injection point — a sibling
+of `shouldRun` and `handoff`, synchronous like both — and returns the tags the span ships, out
+of the `work` entry and its steps. `ShipContext` carries what the engine already holds at that
+moment: the entry, its steps, the merged sha, the span's base sha, the commit's touched
 paths, the gate results, and the entry's worktree path *before teardown* — so a chain that
 wants to read something its own agent wrote can, without the engine knowing such a thing
 exists.
 
-- **Undeclared means shipped.** A commit that landed and passed its gates ships. This is the
-  whole behavior for a chain with no park concept, and it needs no ceremony to get it.
-- **Declared means the chain decides.** Returning `false` records the entry as `not-shipped`:
+- **Undeclared means shipped.** A commit that landed and passed its gates ships the entry and
+  every step. This is the whole behavior for a chain with no park concept, and it needs no
+  ceremony to get it.
+- **A partial list ships part of the work.** The steps it names leave the queue; the `work`
+  entry stays queued, and the next session on it starts from the steps that remain.
+- **Declared means the chain decides.** Returning an empty list records the entry as `not-shipped`:
   it stays in `pending.json`, the commit stays on trunk, and a `not-shipped` `PriorAttempt`
   record is written under the entry's key (`spec/loop.md`, *Prior-outcome feedback*) — the
   same channel a revert or a bail uses, cleared the same way by a later clean ship.
