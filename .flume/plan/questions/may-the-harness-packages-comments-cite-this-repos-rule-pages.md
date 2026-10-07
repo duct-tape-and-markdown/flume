@@ -29,3 +29,33 @@ line is defensible and it is also one tick's judgment, unratified.
 A ratified answer also decides a smaller thing already standing: whether
 `.claude/rules/posture-sweep.md`'s trim to *Standing lenses* is the end of that
 class or the first of several.
+
+## What the trim leaves, measured 2026-10-07
+
+The procedure cites have landed on the package: 13 moved across 5 test files,
+and what still names `.claude/rules/posture-sweep.md` from `tests/` is
+*Standing lenses* and its lens bullets alone — plus the fencing pin's own
+string literals. Three facts the trim's author needs:
+
+- **One section of the page has no package counterpart.** *The sweep runs
+  beside build, never ahead of it* finds no bullet under `spec/harness.md`,
+  *The sweep procedure*; its claim is stated one section up, at *The phases*
+  ("Product outranks insurance through the declared phase order above …
+  never through the queue"), which is where `tests/harnessWindows.test.ts`
+  now cites. So the trim either leaves that section with its claim homed
+  elsewhere in the corpus, or the procedure section absorbs the bullet —
+  a spec edit nobody has made.
+- **Two cites now land on a section that names no tree.** The domain cites
+  (`tests/commentCitations.test.ts`, `tests/pageAnchors.test.ts`) name *The
+  sweep procedure*, whose lead says the **consumer** declares the domain;
+  the values are at `.flume/declaration.ts:135`. If the trim keeps a heading
+  over this repo's own domain list, those two could point back at the page —
+  today they point at the package's ruling, not at this repo's list.
+- **The fencing pin's vacuity half reads this page.** `no module under
+  harness/ cites .claude/rules/posture-sweep.md`
+  (`tests/commentCitations.test.ts:2459`) asserts the page heads at least one
+  *section* cite somewhere in the scan before reading the harness-side
+  emptiness. After the trim that rests on *Standing lenses* alone. It reds
+  loud rather than hollowing out, so nothing is broken — but a pass that
+  moves the lens cites too makes the guard unsatisfiable, and its subject
+  should then become the **declared posture pages**, not this one page.
