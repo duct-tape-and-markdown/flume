@@ -15,6 +15,10 @@
       {
         "path": "tests/examples.test.ts",
         "description": "a walk over each interface, beside the three doc walks already armed there"
+      },
+      {
+        "path": "tests/helpers/docSections.ts",
+        "description": "the table cut the walk needs, beside setNamingsOf's block read — the reverted attempt's measured third file"
       }
     ],
     "retire": []
