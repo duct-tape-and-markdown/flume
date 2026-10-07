@@ -1,9 +1,10 @@
 {
   "tag": "A-BLOCKEDBY-ACROSS-ITS-OWN-CONTAINMENT-IS-REFUSED",
   "gate": {
-    "kind": "blockedBy",
-    "tags": ["THE-RENDERED-SCHEMA-STATES-THE-FOREST-RULES-THE-PARSE-ENFORCES"]
+    "kind": "open"
   },
+  "dependsOnForks": [],
+  "kind": "work",
   "files": {
     "new": [],
     "edit": [
