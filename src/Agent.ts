@@ -150,12 +150,21 @@ export function agentEnding(result: AgentEnding): AgentEnding {
  * arrives as `unknown`. Guarded on both arms rather than cast: a shape that
  * is not an ending yields `undefined`, which is the record's "no ending was
  * reported", never an ending assembled out of whatever was there.
+ *
+ * Each arm admits only an ending that *states* one. A code is an integer,
+ * because `NaN` and `1.5` are numbers no exit produced; a signal has a name,
+ * because the empty string renders as `was killed by signal .` into a retry's
+ * prior-attempt block — a blank standing in for content that never resolved
+ * (`.claude/rules/engineering.md`, *Loud or nothing*). Both read as no ending
+ * reported, which is a statement the retry can act on.
  */
 export function readAgentEnding(value: unknown): AgentEnding | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   const { exitCode, signal } = value as { exitCode?: unknown; signal?: unknown };
-  if (typeof exitCode === "number" && signal === undefined) return { exitCode };
-  if (exitCode === null && typeof signal === "string") {
+  if (Number.isInteger(exitCode) && signal === undefined) {
+    return { exitCode: exitCode as number };
+  }
+  if (exitCode === null && typeof signal === "string" && signal !== "") {
     return { exitCode: null, signal };
   }
   return undefined;

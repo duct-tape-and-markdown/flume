@@ -14688,6 +14688,80 @@ describe("Dispatcher — no-commit outcome taxonomy", () => {
     expect(preSpawn.platformFailures[0]!.ending).toBeUndefined();
   });
 
+  /**
+   * One tick whose abort carries `ending` as its foreign key, read off both
+   * surfaces the ending is owed to: `platformFailures` this tick, and the
+   * prior-attempt record the retry's own prompt reads next tick. A leg that
+   * refused on one and filled the other would still hand a retry the blank.
+   *
+   * Through the real mint, so the key's spelling stays `abortError`'s
+   * (`src/claudeCode.ts`) rather than re-spelled beside the reader — and the
+   * value is asserted on the rejection before the tick runs, so a case whose
+   * subject never reached `readAgentEnding` (`src/Agent.ts`) cannot read as a
+   * refusal it earned.
+   */
+  async function preemptEndingFrom(ending: AgentEnding): Promise<{
+    reported: AgentEnding | undefined;
+    persisted: PlatformPreemptAttempt["ending"];
+  }> {
+    const rejection = abortError(AbortSignal.abort().reason, ending) as Error & {
+      ending?: unknown;
+    };
+    expect(
+      rejection.ending,
+      "the mint carried this ending to the reader, so the refusal under test is the reader's",
+    ).toEqual(ending);
+
+    const { noCommit, platformFailures } = await preemptFrom(rejection);
+    expect(noCommit).toBe("platform-preempt");
+    expect(
+      platformFailures,
+      "the tick reported one preempt for the ending to be read off",
+    ).toHaveLength(1);
+
+    const record = JSON.parse(
+      await readFile(
+        priorAttemptPath(join(fx.repo, ".flume"), phaseRef("plan")),
+        "utf8",
+      ),
+    ) as PriorAttempt;
+    expect(record.mode).toBe("platform-preempt");
+    return {
+      reported: platformFailures[0]!.ending,
+      persisted: (record as PlatformPreemptAttempt).ending,
+    };
+  }
+
+  /** Both surfaces state no ending, for an `ending` key that states none. */
+  async function endingRefused(ending: AgentEnding): Promise<void> {
+    const { reported, persisted } = await preemptEndingFrom(ending);
+    expect(reported, "the key states no ending, so this tick reports none").toBeUndefined();
+    expect(persisted, "…and the retry's own record states none either").toBeUndefined();
+  }
+
+  it("an abort whose ending names no signal records no ending rather than a blank one", async () => {
+    // `{ exitCode: null, signal: "" }` satisfies the signal arm's `string`
+    // and states nothing: admitted, it renders as `was killed by signal .`
+    // into the retry's prior-attempt block, a blank standing in for the one
+    // fact that block exists to carry.
+    await endingRefused({ exitCode: null, signal: "" });
+  });
+
+  it("an abort whose ending carries a code that is not an integer records no ending", async () => {
+    // `NaN` is a `number`, and no exit ever produced it — nor does it survive
+    // the record's own JSON, which writes it as the `null` the other arm
+    // means. `1.5` is the same arm, renderable as a code a reader would go
+    // looking for.
+    await endingRefused({ exitCode: NaN });
+    await endingRefused({ exitCode: 1.5 });
+
+    // Not a refusal of the whole arm: an integer code still states an ending,
+    // on both surfaces.
+    const stated = await preemptEndingFrom({ exitCode: 0 });
+    expect(stated.reported).toEqual({ exitCode: 0 });
+    expect(stated.persisted).toEqual({ exitCode: 0 });
+  });
+
   it("the abort class holds when the mint's product reaches the classifier carrying only its name key", async () => {
     const rejection = mintedAbortWithout("code") as Error & { code?: string };
     expect(
