@@ -261,6 +261,16 @@ tick on that entry is handed the note beside the prior-attempt record, and
 the note leaves with the tick that completes the entry: its ship commit
 removes the note with the entry's file.
 
+A `work` entry with steps (`spec/pending.md`, *The queue is a forest*) is
+told finished, never assumed finished. Every session on it names the steps it
+finished in the record it writes — its continuing note when steps remain, its
+note to plan when none do — and the `shipped` predicate ships exactly those;
+the `work` entry ships with its last step. A commit on such an entry that
+names no steps ships nothing, because shipping by default would delete steps
+nobody did, and the records gate refuses a commit that names a tag the entry
+does not carry, so a misspelled step fails loudly instead of shipping nothing
+in silence.
+
 Continuing is the agent's declaration, never an inference. A tick that runs
 out of context, turns, or wall clock without writing one is a preempt, and
 its uncommitted work dies with the worktree as it always has. What makes the

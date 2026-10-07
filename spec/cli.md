@@ -166,8 +166,10 @@ In printed order:
    claim that those agents are live; absent a
    live supervisor, nothing extra. The number that decides whether a loop
    keeps running is read where the operator looks first.
-9. **Goals** — one line per goal, in rank order: its remaining `work` entries
-   and how long it has stood. Absent when no goal stands.
+9. **Goals** — one line per goal, in the order the queue serves them: each by
+   the position of its earliest ready work under the chain's `order`, goals
+   with nothing ready last and marked so. Each line gives the goal's remaining
+   `work` entries and how long it has stood. Absent when no goal stands.
 10. **Flow** — over the verdict history: the median time from filing to
    shipping, the longest any ready `work` entry is waiting right now, and
    failed merges per shipped entry. Each is computed from git and the
