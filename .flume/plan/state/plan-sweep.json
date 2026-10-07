@@ -1,5 +1,25 @@
 {
   "sweptThrough": "d76281b4c45b605d754e7d643880ef3c2ccf60f6",
-  "rotation": { "kind": "closed" },
-  "retiredThrough": "d76281b4c45b605d754e7d643880ef3c2ccf60f6"
+  "rotation": {
+    "kind": "open",
+    "covered": [
+      "examples/backlog-groomer-chain.ts",
+      "harness/entryExtension.ts",
+      "harness/gitRange.ts",
+      "harness/goals.ts",
+      "harness/judge.ts",
+      "harness/order.ts",
+      "harness/putDown.ts",
+      "harness/sweepWindow.ts",
+      "src/filingOrder.ts",
+      "src/gateBatch.ts",
+      "src/partition.ts",
+      "src/queueFlow.ts",
+      "src/queueGoals.ts",
+      "src/queueSpan.ts",
+      "src/runEnd.ts",
+      "src/runtimeIgnores.ts"
+    ]
+  },
+  "retiredThrough": "11563410f2341edb43553423e7b718cfa1cb7128"
 }
