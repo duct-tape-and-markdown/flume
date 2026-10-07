@@ -861,6 +861,28 @@ const STEP_BLOCKED_BY_ESCAPE =
   "a dependency reaching outside it is declared on the work entry";
 
 /**
+ * The scope a work entry's `blockedBy` keeps, and why the queue read refuses
+ * a tag outside it — the same two halves the refusal below states with the
+ * offending tag between them, and the rendered schema states beside the step
+ * scope above ({@link renderSchemaForPrompt}), for the reason {@link
+ * parentRule} is one function.
+ *
+ * Containment is the one direction a blocker can never run, because neither
+ * end of it can ship first: a group leaves the queue with its last descendant
+ * (`spec/pending.md`, *The queue is a forest*), so an ancestor is still queued
+ * while the waiter is, and a step ships in its work entry's own session, so it
+ * is still queued until the waiter runs. Both parse, both report queued, and
+ * neither can ever be picked — the shape the read refuses at the point of
+ * detection rather than handing downstream a marker to inspect
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
+const WORK_BLOCKED_BY_SCOPE =
+  "a work entry's blockedBy names no ancestor or step of its own";
+const WORK_BLOCKED_BY_WHY =
+  "a group leaves the queue with its last descendant and a step ships in " +
+  "its work entry's session, so each would wait on the other";
+
+/**
  * The rules a whole queue must keep for its `parent` links to be the forest
  * `spec/pending.md`, *The queue is a forest* describes, refused like any
  * other malformed queue (*Queue reads are strict*).
@@ -996,6 +1018,36 @@ function queueForestErrors(
   }
 
   for (const entry of entries) {
+    if (entry.kind !== "work" || entry.gate.kind !== "blockedBy") continue;
+    /**
+     * Every tag in this entry's own containment, against how the refusal
+     * names it. The subtree comes from {@link descendantsOf} rather than a
+     * second descent beside it, and the walk up is bounded by the cap the
+     * way {@link workEntryOf} is: a chain long enough to exhaust it is one
+     * the depth rule above has already refused.
+     */
+    const containment = new Map<string, string>();
+    for (const below of descendantsOf(entries, entry.tag)) {
+      containment.set(below.tag, "is one of its own steps");
+    }
+    let above = parentOf(entry);
+    for (let step = 0; above !== undefined && step <= maxEntryDepth; step++) {
+      containment.set(above.tag, `is a ${above.kind} entry that contains it`);
+      above = parentOf(above);
+    }
+    entry.gate.tags.forEach((tag, index) => {
+      const relation = containment.get(tag);
+      if (relation === undefined) return;
+      refuse(
+        entry,
+        `gate.tags.${index}`,
+        `${WORK_BLOCKED_BY_SCOPE}, and "${tag}" ${relation}; ` +
+          `${WORK_BLOCKED_BY_WHY}`,
+      );
+    });
+  }
+
+  for (const entry of entries) {
     if (entry.gate.kind !== "blockedBy") continue;
     const cycle = blockerCycleFrom(entry, byTag);
     if (cycle === undefined) continue;
@@ -1019,12 +1071,17 @@ function queueForestErrors(
  * lead, or `undefined` where no edge leads back.
  *
  * `blockedBy.tags` is a DAG's parent list (`spec/pending.md`, *The entry
- * core*), and a cycle in it is the one shape no gate downstream can see: the
+ * core*), and a cycle in it is a shape no gate downstream can see: the
  * entries parse, `flume status` reports them queued, both order walks are
  * guarded against the loop — and the only symptom is that none of them ever
  * ships. So the queue-wide read refuses it where it refuses a `parent` cycle,
  * rather than leaving a marker every consumer must remember to inspect
  * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * An edge closing through *containment* rather than through a second
+ * `blockedBy` is invisible here — the blocker's own gate is open and leads
+ * nowhere back — and is refused on its own terms ({@link
+ * WORK_BLOCKED_BY_SCOPE}).
  *
  * A tag naming no entry in the queue is **not** an edge here and not a
  * finding: a blocker outside the queue has already shipped by the membership
@@ -1140,10 +1197,12 @@ function withListSeparator(block: string): string {
  * schema".
  *
  * The `parent` hint carries the rules the *queue-wide* read enforces
- * ({@link queueForestErrors}) — the kind pairings, the depth cap, a step's
- * blocker scope — in that read's own words. They sit on no per-entry
- * validator, so nothing else in this block could state them, and a producer
- * judged by a rule it was never shown is judged by a schema it never read.
+ * ({@link queueForestErrors}) — the kind pairings and the depth cap — in that
+ * read's own words, and the `blockedBy` arm carries the two that bound a
+ * gate: the scope a step's blockers keep and the containment a work entry's
+ * may not reach into. They sit on no per-entry validator, so nothing else in
+ * this block could state them, and a producer judged by a rule it was never
+ * shown is judged by a schema it never read.
  *
  * `maxEntryDepth` is the cap those rules state: the chain's declared
  * `Chain.maxEntryDepth` (`src/Phase.ts`) where it declared one, and
@@ -1168,9 +1227,10 @@ export function renderSchemaForPrompt(
   /**
    * The rules the queue-wide read refuses a whole listing over
    * ({@link queueForestErrors}), in that read's own words and with the cap
-   * this render was handed: a pairing, a depth, and a step's blocker scope
-   * are each a rule nothing on the per-entry shape states, so a block
-   * without them hands a producer a `parent` it can only guess at.
+   * this render was handed: a pairing and a depth are each a rule nothing on
+   * the per-entry shape states, so a block without them hands a producer a
+   * `parent` it can only guess at. The two blocker scopes ride the gate arm
+   * they bound rather than this line.
    */
   const forestRules = [
     ...ENTRY_KINDS.map(parentRule),
@@ -1189,7 +1249,7 @@ export function renderSchemaForPrompt(
 
   const coreLines = `  "tag": ${tagHint},   // unique; appears in commit msg; mechanical safety is the floor, a chain-declared refinement (if any) narrows further
   "gate": { "kind": "open" }                                  // ready to ship
-        | { "kind": "blockedBy", "tags": ["OTHER-TAG", ...] }   // upstream blocks; non-empty, name every parent. Over the queue: ${STEP_BLOCKED_BY_SCOPE}; ${STEP_BLOCKED_BY_ESCAPE}.
+        | { "kind": "blockedBy", "tags": ["OTHER-TAG", ...] }   // upstream blocks; non-empty, name every parent. Over its own containment: ${WORK_BLOCKED_BY_SCOPE}, since ${WORK_BLOCKED_BY_WHY}. Over the queue: ${STEP_BLOCKED_BY_SCOPE}; ${STEP_BLOCKED_BY_ESCAPE}.
         | { "kind": "parked",    "reason": "decision on ..." }  // human action needed
         | { "kind": "deferred",  "reason": "no consumer yet" }  // carried indefinitely
         | { "kind": "requiresCapability", "capability": "some-env-fact" },  // env gate; pickable iff the chain asserts this capability

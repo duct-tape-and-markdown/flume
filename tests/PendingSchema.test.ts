@@ -1286,6 +1286,125 @@ describe("the queue's forest — the rules a whole listing keeps (spec/pending.m
     expect(error.path).toBe("gate.tags.0");
   });
 
+  it("a work entry whose blockedBy names its own parent group is refused at the queue read", () => {
+    // The group leaves the queue with its last descendant, and the waiter is
+    // one: each end waits on the other, and nothing downstream can see it —
+    // the blocker's own gate is open, so the cycle search leads nowhere back.
+    const error = soleForestError([
+      forestEntry("THE-GROUP", "group"),
+      forestEntry("THE-WORK", "work", "THE-GROUP", {
+        kind: "blockedBy",
+        tags: ["THE-GROUP"],
+      }),
+    ]);
+    expect(error.file).toBe(entryFileName("THE-WORK"));
+    expect(error.path).toBe("gate.tags.0");
+    expect(error.message).toContain("THE-GROUP");
+
+    // Non-vacuity: the same entry under one group and waiting on another
+    // parses, so what was refused is the containment and not a work entry
+    // waiting on a group.
+    expect(
+      parseQueue([
+        forestEntry("THE-GROUP", "group"),
+        forestEntry("OTHER-GROUP", "group"),
+        forestEntry("THE-WORK", "work", "THE-GROUP", {
+          kind: "blockedBy",
+          tags: ["OTHER-GROUP"],
+        }),
+      ]).ok,
+    ).toBe(true);
+  });
+
+  it("a work entry whose blockedBy names a group two levels above it is refused at the queue read", () => {
+    // Containment is the whole chain above, not the declared parent: a goal
+    // two levels up leaves the queue with its last descendant just the same.
+    const twoAbove = (...tags: string[]): Record<string, unknown>[] => [
+      forestEntry("THE-GOAL", "group"),
+      forestEntry("THE-EPIC", "group", "THE-GOAL"),
+      forestEntry("ELSEWHERE", "work"),
+      forestEntry("THE-WORK", "work", "THE-EPIC", {
+        kind: "blockedBy",
+        tags,
+      }),
+    ];
+    const error = soleForestError(twoAbove("ELSEWHERE", "THE-GOAL"));
+    expect(error.file).toBe(entryFileName("THE-WORK"));
+    // The index the author wrote, so the refusal names the edge it declared
+    // rather than the gate that carries it.
+    expect(error.path).toBe("gate.tags.1");
+    expect(error.message).toContain("THE-GOAL");
+
+    // Non-vacuity: the same four entries with the ancestor edge dropped
+    // parse, so what was refused is that one edge and not the chain.
+    expect(parseQueue(twoAbove("ELSEWHERE")).ok).toBe(true);
+  });
+
+  it("a work entry whose blockedBy names one of its own steps is refused at the queue read", () => {
+    // A step ships in its work entry's own session, so the entry would be
+    // waiting on something only its own run can land.
+    const error = soleForestError([
+      forestEntry("OWNING-WORK", "work", undefined, {
+        kind: "blockedBy",
+        tags: ["THE-STEP"],
+      }),
+      forestEntry("THE-STEP", "step", "OWNING-WORK"),
+    ]);
+    expect(error.file).toBe(entryFileName("OWNING-WORK"));
+    expect(error.path).toBe("gate.tags.0");
+    expect(error.message).toContain("THE-STEP");
+
+    // The read is of the subtree, not of the children: a step below a step is
+    // still one of the entry's own steps.
+    const deeper = soleForestError([
+      forestEntry("OWNING-WORK", "work", undefined, {
+        kind: "blockedBy",
+        tags: ["THE-SUBSTEP"],
+      }),
+      forestEntry("THE-STEP", "step", "OWNING-WORK"),
+      forestEntry("THE-SUBSTEP", "step", "THE-STEP"),
+    ]);
+    expect(deeper.file).toBe(entryFileName("OWNING-WORK"));
+    expect(deeper.path).toBe("gate.tags.0");
+
+    // Non-vacuity: the same entry waiting on a step of a *different* work
+    // entry parses — a step out there ships in a session of its own.
+    expect(
+      parseQueue([
+        forestEntry("OWNING-WORK", "work", undefined, {
+          kind: "blockedBy",
+          tags: ["OTHER-STEP"],
+        }),
+        forestEntry("THE-STEP", "step", "OWNING-WORK"),
+        forestEntry("OTHER-WORK", "work"),
+        forestEntry("OTHER-STEP", "step", "OTHER-WORK"),
+      ]).ok,
+    ).toBe(true);
+  });
+
+  it("a work entry blockedBy a group that is no ancestor of it is admitted", () => {
+    // Containment is the rule, not kind: a group elsewhere in the forest
+    // leaves the queue with *its* last descendant, which this entry is not,
+    // so the edge really can resolve.
+    const result = parseQueue([
+      forestEntry("MY-GROUP", "group"),
+      forestEntry("OTHER-GROUP", "group"),
+      forestEntry("UNDER-OTHER", "work", "OTHER-GROUP"),
+      forestEntry("THE-WORK", "work", "MY-GROUP", {
+        kind: "blockedBy",
+        tags: ["OTHER-GROUP"],
+      }),
+    ]);
+    expect(result.ok, JSON.stringify(result.errors)).toBe(true);
+    expect(result.entries).toHaveLength(4);
+    // Non-vacuity on the gate itself: what parsed is the blockedBy naming the
+    // group, not a gate the read rewrote.
+    expect(result.entries.find((e) => e.tag === "THE-WORK")!.gate).toEqual({
+      kind: "blockedBy",
+      tags: ["OTHER-GROUP"],
+    });
+  });
+
   it("a parent chain deeper than maxEntryDepth is refused", () => {
     const fiveDeep = [
       forestEntry("GEN-1", "group"),
@@ -1483,7 +1602,7 @@ describe("renderSchemaForPrompt", () => {
       {
         "tag": "<letters/digits/._()- only, no whitespace, ≤216 chars>",   // unique; appears in commit msg; mechanical safety is the floor, a chain-declared refinement (if any) narrows further
         "gate": { "kind": "open" }                                  // ready to ship
-              | { "kind": "blockedBy", "tags": ["OTHER-TAG", ...] }   // upstream blocks; non-empty, name every parent. Over the queue: a step's blockedBy names only steps of the same work entry; a dependency reaching outside it is declared on the work entry.
+              | { "kind": "blockedBy", "tags": ["OTHER-TAG", ...] }   // upstream blocks; non-empty, name every parent. Over its own containment: a work entry's blockedBy names no ancestor or step of its own, since a group leaves the queue with its last descendant and a step ships in its work entry's session, so each would wait on the other. Over the queue: a step's blockedBy names only steps of the same work entry; a dependency reaching outside it is declared on the work entry.
               | { "kind": "parked",    "reason": "decision on ..." }  // human action needed
               | { "kind": "deferred",  "reason": "no consumer yet" }  // carried indefinitely
               | { "kind": "requiresCapability", "capability": "some-env-fact" },  // env gate; pickable iff the chain asserts this capability
@@ -2288,6 +2407,55 @@ describe("the rendered schema states the forest the queue read enforces", () => 
     expect(error.path).toBe("gate.tags.0");
     for (const half of halves) {
       expect(error.message).toContain(half);
+    }
+  });
+
+  it("the rendered schema states that a work entry's blockedBy names no ancestor or step of its own", () => {
+    const arm = renderedLine(
+      renderSchemaForPrompt(),
+      '        | { "kind": "blockedBy"',
+    );
+    const stated = /Over its own containment: (.*?)\. Over the queue:/.exec(arm);
+    expect(
+      stated,
+      "the rendered blockedBy arm states no containment scope for a work entry",
+    ).not.toBeNull();
+    const halves = (stated as RegExpExecArray)[1]!.split(", since ");
+    // Both halves: the scope, and why no entry can wait across it. A producer
+    // told only the first reads a rule whose two ends it cannot tell apart —
+    // an ancestor above and a step below are one rule for one reason.
+    expect(halves).toHaveLength(2);
+
+    // Each end of the containment, refused by the real read at the same cap
+    // and in the words the block showed the producer.
+    const violations = [
+      // An ancestor: the group the waiter sits under.
+      [
+        forestEntry("THE-GROUP", "group"),
+        forestEntry("THE-WORK", "work", "THE-GROUP", {
+          kind: "blockedBy",
+          tags: ["THE-GROUP"],
+        }),
+      ],
+      // A step: the entry's own, shipped by its own session.
+      [
+        forestEntry("THE-WORK", "work", undefined, {
+          kind: "blockedBy",
+          tags: ["THE-STEP"],
+        }),
+        forestEntry("THE-STEP", "step", "THE-WORK"),
+      ],
+    ];
+    // Non-vacuity: both ends of the stated rule are driven, so a render that
+    // states the pair cannot be pinned by a read that refuses one.
+    expect(violations).toHaveLength(2);
+
+    for (const violation of violations) {
+      const error = soleForestError(violation, DECLARED_CAP);
+      expect(error.path).toBe("gate.tags.0");
+      for (const half of halves) {
+        expect(error.message).toContain(half);
+      }
     }
   });
 
