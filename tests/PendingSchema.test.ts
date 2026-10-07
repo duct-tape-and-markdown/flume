@@ -11,11 +11,14 @@ import {
   composePendingEntry,
   declaredPaths,
   DEFAULT_MAX_ENTRY_DEPTH,
+  descendantsOf,
   entryFileName,
+  isGoal,
   isPickableNow,
   parsePendingQueue,
   parsePendingQueueLoose,
   renderSchemaForPrompt,
+  subtreeOf,
   TAG_MAX_LENGTH,
   touchedPaths,
   type EntryExtension,
@@ -1541,6 +1544,136 @@ describe("the queue's forest — the rules a whole listing keeps (spec/pending.m
       kind: "blockedBy",
       tags: ["LEFT-THE-QUEUE"],
     });
+  });
+});
+
+/**
+ * The forest's one descent and the predicate that picks its roots out
+ * (`subtreeOf` and `isGoal`, `src/PendingSchema.ts`) — the facts a consumer
+ * would otherwise rebuild to render the queue
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*).
+ *
+ * Every fixture here goes through the real queue parse, so what the walk
+ * reads is a forest a producer could have filed: a `parent` the grammar
+ * refuses or a chain deeper than the cap never reaches a live caller's
+ * listing at all.
+ */
+const parsedForest = (entries: readonly Record<string, unknown>[]): PendingEntry[] => {
+  const result = parseQueue(entries);
+  expect(result.ok, JSON.stringify(result.errors)).toBe(true);
+  expect(result.entries).toHaveLength(entries.length);
+  return result.entries;
+};
+
+it("the engine's subtree walk answers each entry below a tag with its depth", () => {
+  const forest = parsedForest([
+    forestEntry("THE-GOAL", "group"),
+    forestEntry("THE-EPIC", "group", "THE-GOAL"),
+    forestEntry("THE-WORK", "work", "THE-EPIC"),
+    forestEntry("THE-STEP", "step", "THE-WORK"),
+    forestEntry("OUTSIDE-THE-GOAL", "work"),
+  ]);
+
+  const below = subtreeOf(forest, "THE-GOAL");
+
+  // Non-vacuity: three levels stand under the goal and a fourth entry stands
+  // outside it, so the depths below are each over a populated subtree and the
+  // omission is a real sibling's.
+  expect(below).toHaveLength(3);
+  expect(below.map(({ entry, depth }) => `${entry.tag}@${depth}`)).toEqual([
+    "THE-EPIC@1",
+    "THE-WORK@2",
+    "THE-STEP@3",
+  ]);
+  // And the flattening keeps the same subtree, since it is one call of the
+  // same walk rather than a second descent.
+  expect(descendantsOf(forest, "THE-GOAL").map((entry) => entry.tag)).toEqual(
+    below.map(({ entry }) => entry.tag),
+  );
+});
+
+it("the engine's subtree walk orders siblings by the comparator its caller supplied", () => {
+  // Three sibling subtrees, filed in an order that is neither of the two the
+  // comparators below ask for — so each answer is the comparator's doing and
+  // not the order the entry files happened to arrive in.
+  const forest = parsedForest([
+    forestEntry("THE-GOAL", "group"),
+    forestEntry("B-EPIC", "group", "THE-GOAL"),
+    forestEntry("B-WORK", "work", "B-EPIC"),
+    forestEntry("C-EPIC", "group", "THE-GOAL"),
+    forestEntry("C-WORK", "work", "C-EPIC"),
+    forestEntry("A-EPIC", "group", "THE-GOAL"),
+    forestEntry("A-WORK", "work", "A-EPIC"),
+  ]);
+
+  const tags = (
+    order?: (a: PendingEntry, b: PendingEntry) => number,
+  ): string[] => subtreeOf(forest, "THE-GOAL", order).map(({ entry }) => entry.tag);
+
+  const ascending = (a: PendingEntry, b: PendingEntry): number =>
+    a.tag < b.tag ? -1 : a.tag > b.tag ? 1 : 0;
+
+  // Non-vacuity: six entries stand under the goal, so each sequence below is
+  // a reordering of a populated subtree.
+  expect(tags()).toHaveLength(6);
+  expect(tags()).toEqual([
+    "B-EPIC",
+    "B-WORK",
+    "C-EPIC",
+    "C-WORK",
+    "A-EPIC",
+    "A-WORK",
+  ]);
+  expect(tags(ascending)).toEqual([
+    "A-EPIC",
+    "A-WORK",
+    "B-EPIC",
+    "B-WORK",
+    "C-EPIC",
+    "C-WORK",
+  ]);
+  expect(tags((a, b) => ascending(b, a))).toEqual([
+    "C-EPIC",
+    "C-WORK",
+    "B-EPIC",
+    "B-WORK",
+    "A-EPIC",
+    "A-WORK",
+  ]);
+});
+
+it("the engine's subtree walk comes back empty for a tag no entry carries", () => {
+  const forest = parsedForest([
+    forestEntry("THE-GOAL", "group"),
+    forestEntry("THE-WORK", "work", "THE-GOAL"),
+  ]);
+
+  // Non-vacuity: the same listing answers a tag it does hold, so the empty
+  // answers below are the unheld tag's and not an empty listing's.
+  expect(subtreeOf(forest, "THE-GOAL")).toHaveLength(1);
+  expect(subtreeOf(forest, "NO-SUCH-TAG")).toEqual([]);
+  expect(descendantsOf(forest, "NO-SUCH-TAG")).toEqual([]);
+});
+
+it("the engine answers whether an entry is a goal off its kind and parent", () => {
+  // Both fields varied independently: a `group` at the root and under one, a
+  // root that is not a `group`, and the two kinds below. So the single `true`
+  // is the conjunction and not the kind alone or the root alone.
+  const forest = parsedForest([
+    forestEntry("ROOT-GROUP", "group"),
+    forestEntry("GROUP-UNDER-IT", "group", "ROOT-GROUP"),
+    forestEntry("ROOT-WORK", "work"),
+    forestEntry("WORK-UNDER-IT", "work", "GROUP-UNDER-IT"),
+    forestEntry("A-STEP-OF-IT", "step", "WORK-UNDER-IT"),
+  ]);
+
+  expect(Object.fromEntries(forest.map((e) => [e.tag, isGoal(e)]))).toEqual({
+    "ROOT-GROUP": true,
+    "GROUP-UNDER-IT": false,
+    "ROOT-WORK": false,
+    "WORK-UNDER-IT": false,
+    "A-STEP-OF-IT": false,
   });
 });
 

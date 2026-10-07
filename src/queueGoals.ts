@@ -22,28 +22,11 @@
  */
 
 import { byFilingThenTag, type FilingTimes } from "./filingOrder.js";
-import { descendantsOf, type PendingEntry } from "./PendingSchema.js";
+import { descendantsOf, isGoal, type PendingEntry } from "./PendingSchema.js";
 import { formatSpan, spanFrom } from "./queueSpan.js";
 
 /** What a row says in place of a position, for a goal with no ready work. */
 const NOTHING_READY = "nothing ready";
-
-/**
- * Whether this entry is a goal: a **root `group`** — the one shape a goal is
- * filed as (`spec/pending.md`, *The queue is a forest*), read off the two
- * core fields the engine already parses. A `group` organizes rather than
- * dispatches, and a root one has no group above it to organize *it*.
- *
- * Never off a rank or a label. Where a goal ranks among the goals standing is
- * a consumer's own declared field, and an engine row keyed on it would be
- * reading a convention the engine never agreed to
- * (`.claude/rules/engine-boundary.md`, *Capability vs convention*); the order
- * these rows take is the one the dispatcher takes, which is the chain's
- * `order` over the structure the queue states.
- */
-function isGoal(entry: PendingEntry): boolean {
-  return entry.kind === "group" && entry.parent === undefined;
-}
 
 /** What one row is rendered from — one goal, read against one ready set. */
 interface GoalRead {
@@ -165,7 +148,8 @@ function goalRow(
  * carrying none, which is the whole of this listing's silence about goals.
  *
  * `listing` is the queue as the verb read it, every kind: the goals are its
- * root groups and their remaining work is found by descending it.
+ * root groups ({@link isGoal}, the engine's own reading of the two fields
+ * that decide one) and their remaining work is found by descending it.
  *
  * `ready` is the ready set in the order one selection serves it
  * (`servedReadyEntries`, `src/selection.ts`), and `orderWithheld` is the

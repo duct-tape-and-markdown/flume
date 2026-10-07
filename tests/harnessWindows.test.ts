@@ -892,6 +892,56 @@ it("the inbox window renders each standing goal with its rank and its remaining 
 });
 
 /**
+ * The nesting is the depth the engine's descent answered each entry with
+ * (`subtreeOf`, `src/PendingSchema.ts`), one indent per level: a reader
+ * scanning the block for where a finding belongs reads the shape of the goal
+ * off the indents, so a level that renders flat is a decomposition the drain
+ * cannot see.
+ *
+ * Driven to the full depth the queue admits (`DEFAULT_MAX_ENTRY_DEPTH`,
+ * `src/PendingSchema.ts`) and with two sibling subtrees under one goal, so
+ * every indent the block can print is exercised and a sibling's depth does
+ * not carry over from the subtree beside it.
+ */
+it("the goals block nests a goal's remaining entries by their depth below it", () => {
+  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writeState();
+
+  const pending = [
+    queued({ tag: "DEEP-GOAL", kind: "group", rank: 1 }),
+    queued({ tag: "AN-EPIC", kind: "group", parent: "DEEP-GOAL" }),
+    queued({ tag: "WORK-IN-THE-EPIC", parent: "AN-EPIC" }),
+    queued({ tag: "A-STEP-OF-THAT-WORK", kind: "step", parent: "WORK-IN-THE-EPIC" }),
+    queued({ tag: "WORK-ON-THE-GOAL", parent: "DEEP-GOAL" }),
+  ];
+
+  // Non-vacuity: four entries stand beneath the one goal across three levels,
+  // so the indents below are read off a populated subtree.
+  expect({
+    goals: pending.filter((e) => e.kind === "group" && e.parent === undefined)
+      .length,
+    beneath: pending.filter((e) => e.parent !== undefined).length,
+  }).toEqual({ goals: 1, beneath: 4 });
+
+  const rendered = windows()[INBOX_PHASE].args({
+    cwd: repo,
+    flumeDir: stateRoot(),
+    pending,
+  }).GOALS;
+
+  expect(rendered).toBe(
+    [
+      "=== 1 standing goal(s), in rank order ===",
+      "--- DEEP-GOAL (rank 1) — 2 work entries remaining ---",
+      "  AN-EPIC (group)",
+      "    WORK-IN-THE-EPIC (work)",
+      "      A-STEP-OF-THAT-WORK (step)",
+      "  WORK-ON-THE-GOAL (work)",
+    ].join("\n"),
+  );
+});
+
+/**
  * A goal with nothing beneath it is the state the drain must not read a
  * verdict off: a goal whose last descendant has shipped and one nobody has
  * decomposed yet are the same queue, so the block states the absence and stops

@@ -1117,30 +1117,67 @@ function blockerCycleFrom(
 }
 
 /**
- * Every entry below `tag` in the queue's forest — the whole subtree, not the
- * direct children: a goal's epics, their work entries, and those entries'
- * steps all come back from one call.
+ * Whether this entry is a **root `group`** — the one shape the forest files a
+ * goal as (`spec/pending.md`, *The queue is a forest*), read off the two core
+ * fields the engine already parses: a `group` organizes rather than
+ * dispatches, and a root one has no group above it to organize *it*.
  *
- * The depth is the point. A group leaves the queue with its *last descendant*
- * and a work entry's footprint is its steps' too (`spec/pending.md`, *The
- * queue is a forest*), and both read a subtree a child lookup cannot see: a
- * group whose only child shipped while that child's own step did not is a
- * group with a descendant still queued, and a child lookup calls it empty.
- * So the walk is one function with two callers rather than two spellings of
- * the same descent (`.claude/rules/engineering.md`, *A module is one job*).
- *
- * The order the subtree comes back in carries nothing — both callers read it
- * as a set. What the walk does owe is termination, and the visited set is
- * what makes that a guarantee rather than an assumption about the caller's
- * listing: a chain of parents that closes on itself is refused by the
- * queue-wide read ({@link queueForestErrors}), but this function is handed a
- * list, not that verdict. A tag naming no entry has no subtree and comes back
- * empty.
+ * Declared, never inferred from what the entry has beneath it: a goal filed
+ * this tick and not yet decomposed has no descendants and is still one. And
+ * never off a rank or a label — where a goal ranks among those standing is a
+ * consumer's own declared field, and an engine predicate keyed on it would be
+ * reading a convention the engine never agreed to
+ * (`.claude/rules/engine-boundary.md`, *Capability vs convention*).
  */
-export function descendantsOf(
+export function isGoal(entry: PendingEntry): boolean {
+  return entry.kind === "group" && entry.parent === undefined;
+}
+
+/** One entry of a subtree, with the depth {@link subtreeOf} answered it at. */
+export interface SubtreeEntry {
+  readonly entry: PendingEntry;
+  /** `1` for a direct child of the walked tag, one more per level below. */
+  readonly depth: number;
+}
+
+/**
+ * The subtree below `tag` in the queue's forest — every entry under it, not
+ * the direct children, walked depth-first and each answered with its depth: a
+ * goal's epics, their work entries, and those entries' steps all come back
+ * from one call, in the shape a reader can nest.
+ *
+ * The subtree is the point. A group leaves the queue with its *last
+ * descendant* and a work entry's footprint is its steps' too
+ * (`spec/pending.md`, *The queue is a forest*), and both read a subtree a
+ * child lookup cannot see: a group whose only child shipped while that
+ * child's own step did not is a group with a descendant still queued, and a
+ * child lookup calls it empty. The depth is the second half of that fact —
+ * the level each entry sits at is what this walk already knows on its way
+ * down, so a consumer rendering the forest reads it here rather than
+ * rebuilding the descent to recover it
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*).
+ *
+ * **The order is the caller's.** `siblingOrder` sequences each parent's
+ * children before the descent into them, so the whole subtree comes back in
+ * the order the caller asked for; with none supplied the siblings keep the
+ * listing's own, which is all a caller reading the subtree as a set wants.
+ * The engine picks no comparator of its own here — which order a forest reads
+ * in is the consumer's statement, and one chosen here would ship as every
+ * consumer's (`.claude/rules/engine-boundary.md`, *Surface, not
+ * prescription*).
+ *
+ * What the walk does owe is termination, and the visited set is what makes
+ * that a guarantee rather than an assumption about the caller's listing: a
+ * chain of parents that closes on itself is refused by the queue-wide read
+ * ({@link queueForestErrors}), but this function is handed a list, not that
+ * verdict. A tag naming no entry has no subtree and comes back empty.
+ */
+export function subtreeOf(
   entries: readonly PendingEntry[],
   tag: string,
-): PendingEntry[] {
+  siblingOrder?: (a: PendingEntry, b: PendingEntry) => number,
+): SubtreeEntry[] {
   const children = new Map<string, PendingEntry[]>();
   for (const entry of entries) {
     if (entry.parent === undefined) continue;
@@ -1148,18 +1185,34 @@ export function descendantsOf(
     if (siblings === undefined) children.set(entry.parent, [entry]);
     else siblings.push(entry);
   }
-  const below: PendingEntry[] = [];
+  if (siblingOrder !== undefined)
+    for (const siblings of children.values()) siblings.sort(siblingOrder);
+
+  const below: SubtreeEntry[] = [];
   const seen = new Set<string>([tag]);
-  const frontier = [tag];
-  while (frontier.length > 0) {
-    for (const child of children.get(frontier.pop()!) ?? []) {
+  const walk = (parent: string, depth: number): void => {
+    for (const child of children.get(parent) ?? []) {
       if (seen.has(child.tag)) continue;
       seen.add(child.tag);
-      below.push(child);
-      frontier.push(child.tag);
+      below.push({ entry: child, depth });
+      walk(child.tag, depth + 1);
     }
-  }
+  };
+  walk(tag, 1);
   return below;
+}
+
+/**
+ * Every entry below `tag`, flattened — {@link subtreeOf} for the callers that
+ * read the subtree as a set and need no depth. One call of that walk rather
+ * than a second descent beside it (`.claude/rules/engineering.md`, *A module
+ * is one job*).
+ */
+export function descendantsOf(
+  entries: readonly PendingEntry[],
+  tag: string,
+): PendingEntry[] {
+  return subtreeOf(entries, tag).map(({ entry }) => entry);
 }
 
 /**

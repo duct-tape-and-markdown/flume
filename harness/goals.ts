@@ -6,9 +6,18 @@
  * One reading of the forest, with two readers. The drain that files and
  * re-ranks a goal is shown it as the block below; the order the package
  * serves the queue in sequences by it (`harness/order.ts`), because the
- * operator's rank is the queue's first key. A second walk spelled beside
+ * operator's rank is the queue's first key. A second reading spelled beside
  * this one would be the same steps answering differently
  * (`.claude/rules/engineering.md`, *A module is one job*).
+ *
+ * **No descent of its own.** Picking the goals out and walking what stands
+ * beneath each are the engine's own readings of the forest it parsed
+ * (`isGoal` and `subtreeOf`, `src/PendingSchema.ts`); what this module adds
+ * is the rank — the operator's key, which the engine neither holds nor
+ * orders by. A walk respelled here would answer differently from the
+ * engine's the first time either grew a leg
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*).
  *
  * **A derivation over the queue, not a second copy of it.** The tick already
  * carries every entry file's bytes in its queue listing, and this block adds
@@ -32,7 +41,12 @@
  * (`GOAL_RANK_FIELD`, `harness/entryExtension.ts`).
  */
 
-import type { PendingEntry } from "../src/PendingSchema.js";
+import {
+  isGoal,
+  subtreeOf,
+  type PendingEntry,
+  type SubtreeEntry,
+} from "../src/PendingSchema.js";
 
 import { GOAL_RANK_FIELD } from "./entryExtension.js";
 
@@ -49,7 +63,7 @@ interface StandingGoal {
   readonly goal: PendingEntry;
   readonly rank: number | undefined;
   /** Every descendant still in the queue, depth-first, with its depth. */
-  readonly remaining: readonly { entry: PendingEntry; depth: number }[];
+  readonly remaining: readonly SubtreeEntry[];
 }
 
 /** The rank an entry carries, narrowed off the field the package declares. */
@@ -59,14 +73,11 @@ const rankOf = (entry: PendingEntry): number | undefined => {
 };
 
 /**
- * Whether an entry is a goal: a `group` with no parent.
- *
- * Declared, never inferred from what the entry has beneath it — a goal filed
- * this tick and not yet decomposed has no descendants and is still a goal
- * (`spec/pending.md`, *The queue is a forest*).
+ * Sibling order within a goal's subtree, and the tiebreak between two goals
+ * at one rank: the tag, which is the one total key every entry carries.
  */
-const isGoal = (entry: PendingEntry): boolean =>
-  entry.kind === "group" && entry.parent === undefined;
+const byTag = (a: PendingEntry, b: PendingEntry): number =>
+  a.tag < b.tag ? -1 : a.tag > b.tag ? 1 : 0;
 
 /**
  * Every goal the queue carries, in the order the operator put them in: rank
@@ -80,49 +91,24 @@ const isGoal = (entry: PendingEntry): boolean =>
  * directory listing came back differently (`harness/order.ts`).
  */
 export function standingGoals(pending: readonly PendingEntry[]): StandingGoal[] {
-  const children = new Map<string, PendingEntry[]>();
-  for (const entry of pending) {
-    if (entry.parent === undefined) continue;
-    const siblings = children.get(entry.parent);
-    if (siblings === undefined) children.set(entry.parent, [entry]);
-    else siblings.push(entry);
-  }
-  for (const siblings of children.values()) {
-    siblings.sort((a, b) => (a.tag < b.tag ? -1 : a.tag > b.tag ? 1 : 0));
-  }
-
-  // Bounded by what the walk has already seen rather than by the queue's
-  // declared depth: a queue whose parent links close on themselves does not
-  // parse, so no live tick reaches here with one (`queueForestErrors`,
-  // `src/PendingSchema.ts`) — and a hand-built queue that does gets a
-  // terminating walk instead of a hang.
-  const descend = (
-    goal: PendingEntry,
-  ): { entry: PendingEntry; depth: number }[] => {
-    const seen = new Set<string>([goal.tag]);
-    const out: { entry: PendingEntry; depth: number }[] = [];
-    const walk = (tag: string, depth: number): void => {
-      for (const child of children.get(tag) ?? []) {
-        if (seen.has(child.tag)) continue;
-        seen.add(child.tag);
-        out.push({ entry: child, depth });
-        walk(child.tag, depth + 1);
-      }
-    };
-    walk(goal.tag, 1);
-    return out;
-  };
-
   return pending
     .filter(isGoal)
-    .map((goal) => ({ goal, rank: rankOf(goal), remaining: descend(goal) }))
+    .map((goal) => ({
+      goal,
+      rank: rankOf(goal),
+      // The descent is the engine's, ordered by the key this module chose
+      // (`subtreeOf`, `src/PendingSchema.ts`): the depth each entry comes
+      // back with is what the block nests by, and its termination over a
+      // hand-built queue is that walk's guarantee rather than this one's.
+      remaining: subtreeOf(pending, goal.tag, byTag),
+    }))
     .sort((a, b) => {
       if (a.rank !== b.rank) {
         if (a.rank === undefined) return 1;
         if (b.rank === undefined) return -1;
         return a.rank - b.rank;
       }
-      return a.goal.tag < b.goal.tag ? -1 : a.goal.tag > b.goal.tag ? 1 : 0;
+      return byTag(a.goal, b.goal);
     });
 }
 

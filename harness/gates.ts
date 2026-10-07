@@ -65,7 +65,7 @@ import type { Gate, GateContext, GateResult } from "../src/Gate.js";
 import type { GitStatusRecord } from "../src/git.js";
 import { matchesAny } from "../src/paths.js";
 import type { GatedQueue, GatedQueueContext } from "../src/pendingLedger.js";
-import { descendantsOf } from "../src/PendingSchema.js";
+import { descendantsOf, isGoal } from "../src/PendingSchema.js";
 import type {
   EntryExtension,
   ParseResult,
@@ -424,7 +424,10 @@ function goalRankGate(
 
       const misplaced = parsed.entries.flatMap((entry: PendingEntry) => {
         const rank = rankOf(entry);
-        const goal = entry.kind === "group" && entry.parent === undefined;
+        // The engine's own reading of the two fields that decide a goal
+        // (`isGoal`, `src/PendingSchema.ts`), not a third spelling of it
+        // beside the queue's rows and the goals block.
+        const goal = isGoal(entry);
         if (goal === (rank !== undefined)) return [];
         return [
           goal
