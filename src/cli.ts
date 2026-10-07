@@ -9,7 +9,8 @@
  * `src/cliCheck.ts`, `src/cliFriction.ts`, `src/cliExclusive.ts`,
  * `src/cliRender.ts`,
  * `src/cliTick.ts` and `src/cliLoop.ts` — and what this file owes each of
- * them is the words behind the verb, the roots it runs under, and, for the
+ * them is the words behind the verb, the roots it runs under, a stdout a
+ * departed reader cannot crash them on (`src/cliOutput.ts`), and, for the
  * three that hold a dispatcher, the run context `src/cliRunContext.ts`
  * resolves. The stamped log each of them writes its own refusals through is
  * `src/cliLog.ts`'s `operatorLog`, reached there rather than handed down from
@@ -40,6 +41,7 @@ import { HELP_TOP, helpPageFor, wantsHelp } from "./cliHelp.js";
 import { logVerb } from "./cliHistory.js";
 import { operatorLog } from "./cliLog.js";
 import { loopVerb } from "./cliLoop.js";
+import { quietOnClosedOutput } from "./cliOutput.js";
 import { renderVerb } from "./cliRender.js";
 import { resolveRunContext } from "./cliRunContext.js";
 import {
@@ -359,6 +361,16 @@ export function isInvokedDirectly(argv1: string | undefined): boolean {
 const invokedDirectly = isInvokedDirectly(process.argv[1]);
 
 if (invokedDirectly) {
+  // Armed before the first byte any verb writes, because a reader is free to
+  // go away during `--help`'s page as readily as during `status`'s listing,
+  // and both are written below this line (`quietOnClosedOutput`,
+  // `src/cliOutput.ts`).
+  //
+  // Inside this branch rather than at module scope: these are the process's
+  // streams, and an embedder importing `src/` owns its own — a library that
+  // registers a handler on them has taken a decision that was never its to
+  // take (`.claude/rules/engine-boundary.md`, *Surface, not prescription*).
+  quietOnClosedOutput();
   main()
     .then((code) => process.exit(code))
     .catch((err) => {

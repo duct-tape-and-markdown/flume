@@ -7,8 +7,10 @@
  * driving real git repositories each hand-rolled again, the two numbers every
  * one of those spawns runs under — the output cap (`SPAWN_OUTPUT_CAP_BYTES`)
  * and the wall-clock budget the spawning file declares (`SPAWN_BUDGET_MS`) —
- * and the liveness probe (`processAlive`) that reads a child back
- * afterwards.
+ * the liveness probe (`processAlive`) that reads a child back afterwards, and
+ * the one spawn that hands the caller a stream instead of capturing it
+ * (`runCliClosedStdout`), because taking a pipe away needs a seam a capturing
+ * call does not have.
  *
  * What a child is *told* is `tests/helpers/gitEnv.ts`, and where it runs is
  * `tests/helpers/fixtureRoot.ts`; this module starts it.
@@ -20,6 +22,7 @@
 import {
   execFile,
   execFileSync,
+  spawn,
   spawnSync,
   type PromiseWithChild,
   type SpawnSyncReturns,
@@ -273,6 +276,63 @@ export async function runCli(
 ): Promise<{ out: string; code: number }> {
   const { stdout, stderr, code } = await runCliStreams(cwd, args, env);
   return { out: stdout + stderr, code };
+}
+
+/**
+ * Spawn one real `flume <args>` whose **stdout reader is already gone**, and
+ * report what it wrote to stderr and the status it chose.
+ *
+ * The pipe's read end is closed in this process the moment the child exists,
+ * before it has written a byte, so the child's first write to stdout fails
+ * and every later one fails too. That is `flume status | head -1` with the
+ * race taken out: a reader that has had enough closes at some point inside
+ * the listing, and which line it got is not the subject — that any write past
+ * the close is answered is.
+ *
+ * Async `spawn` rather than {@link exec}, because an `execFile` owns both
+ * pipes and there is no seam at which a caller can close one; the streams
+ * come to the caller instead, which is why no `maxBuffer` is named here and
+ * stderr is accumulated as it arrives.
+ *
+ * Returns stderr alone. A case over a closed stdout asserting on stdout would
+ * be reading the stream it just took away.
+ */
+export async function runCliClosedStdout(
+  cwd: string,
+  args: string[],
+  env: NodeJS.ProcessEnv = hermeticEnv(),
+): Promise<{ stderr: string; code: number }> {
+  const child = spawn(process.execPath, [TSX_CLI, CLI, ...args], {
+    cwd,
+    env,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  child.stdout.destroy();
+  let stderr = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk: string) => {
+    stderr += chunk;
+  });
+  const code = await new Promise<number>((resolve, reject) => {
+    child.once("error", reject);
+    // `close`, not `exit`: the stderr pipe must have ended, or a case reading
+    // it for a stack trace reads a prefix of one and reports its absence.
+    child.once("close", (status, signal) => {
+      if (status === null) {
+        reject(
+          new Error(
+            `flume test harness: the CLI subprocess produced no exit status ` +
+              `(signal=${String(signal)}) — a closed stdout must leave the ` +
+              `verb's own code, and this child never chose one. stderr: ` +
+              stderr,
+          ),
+        );
+        return;
+      }
+      resolve(status);
+    });
+  });
+  return { stderr, code };
 }
 
 /** Run a git subprocess in `cwd`; return its trimmed stdout. */

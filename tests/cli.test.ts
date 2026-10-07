@@ -116,6 +116,7 @@ import {
   exec,
   processAlive,
   runCli,
+  runCliClosedStdout,
   runCliStreams,
   runNodeStreams,
 } from "./helpers/subprocess.ts";
@@ -1752,6 +1753,127 @@ describe("flume status — pending entry count", () => {
       );
       expect(pendingRows(unreadableEntry.out)).toEqual([]);
       expect(unreadableEntry.out).not.toContain("    at ");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, SPAWN_BUDGET_MS);
+});
+
+/**
+ * A reader that goes away mid-listing — `flume status | head -1`, and every
+ * other verb that writes one.
+ *
+ * Node reports the first write past the close as an asynchronous `'error'`
+ * event on the stream, so nothing the writing verb does can see it: measured
+ * on node 24.21, `flume status | head -2` exited 1 with `write EPIPE` out of
+ * `console.log`, which prints an observation as its opposite
+ * (`spec/cli.md`, *Subcommand surface*: `status` exits non-zero only on a
+ * file it must read and cannot). The answer is at the CLI's own output point
+ * (`quietOnClosedOutput`, `src/cliOutput.ts`), one arming for every verb, so
+ * these cases drive it through the verb the crash was seen at and assert the
+ * exit code each run would have had with its reader still there.
+ *
+ * Armed by closing the read end before the child writes a byte
+ * (`runCliClosedStdout`, `tests/helpers/subprocess.ts`), not by racing a real
+ * reader: a listing this size fits the pipe buffer whole, so a race would
+ * have the child finish writing before any reader could close and the case
+ * would pass over a close that cost nothing.
+ */
+describe("flume status — a reader that closes the pipe", () => {
+  /**
+   * The queue the listing is read over, seeded so the verb has more than one
+   * line to write. Every case below arms itself the same way, and each reads
+   * its own listing back with the reader still attached before taking it
+   * away — the writes are what a closed pipe has to answer, so a case that
+   * never proved they happen would pass over a verb that printed nothing
+   * (`.claude/rules/engineering.md`, *A green verdict is proven
+   * non-vacuous*).
+   */
+  const seedOneEntry = (root: string): Promise<void> =>
+    seedQueue(resolvePendingDir(join(root, ".flume")), [
+      {
+        tag: "A",
+        gate: { kind: "open" },
+        dependsOnForks: [],
+        files: {
+          new: [],
+          edit: [{ path: "src/a.ts", description: "a" }],
+          retire: [],
+        },
+      },
+    ]);
+
+  /** Stack frames on a stream, read as their own lines. */
+  const stackFrames = (text: string): string[] =>
+    text.split("\n").filter((line) => /^\s+at /.test(line));
+
+  it("status exits 0 when its reader closes the pipe before the listing ends", async () => {
+    const dir = await mkFixtureRoot("flume-status-closed-pipe-");
+    try {
+      await seedOneEntry(dir);
+      // Arming: the listing this run writes is what the closed run below has
+      // to fail every write of.
+      const attached = await runCliStreams(dir, ["status"]);
+      expect(attached.code).toBe(0);
+      expect(attached.stdout.trimEnd().split("\n").length).toBeGreaterThan(1);
+
+      const detached = await runCliClosedStdout(dir, ["status"]);
+      expect(detached.code).toBe(0);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, SPAWN_BUDGET_MS);
+
+  it("a verb whose reader closed the pipe prints no unhandled-error trace", async () => {
+    const dir = await mkFixtureRoot("flume-status-closed-pipe-quiet-");
+    try {
+      await seedOneEntry(dir);
+      const attached = await runCliStreams(dir, ["status"]);
+      expect(attached.stdout.trimEnd().split("\n").length).toBeGreaterThan(1);
+
+      const detached = await runCliClosedStdout(dir, ["status"]);
+      // The two spellings node gives the crash, each read for itself rather
+      // than by a `not.toContain` over the whole stream, which would turn on
+      // whatever else the run happened to narrate
+      // (`.claude/rules/posture-sweep.md`, *Standing lenses*).
+      expect(detached.stderr).not.toContain("write EPIPE");
+      expect(detached.stderr).not.toContain("Unhandled 'error' event");
+      const frames = stackFrames(detached.stderr);
+      expect(
+        frames,
+        `stack frames on stderr:\n${frames.join("\n")}`,
+      ).toEqual([]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, SPAWN_BUDGET_MS);
+
+  it("a closed stdout leaves a refusing verb's own exit code intact", async () => {
+    const dir = await mkFixtureRoot("flume-status-closed-pipe-refusal-");
+    try {
+      // `status` is the verb that both writes a listing and refuses inside
+      // one: the baton rows print, and then the queue it must read is
+      // present and unreadable. So this run's own code is a number a closed
+      // stdout could plausibly take away, which is what the case is about —
+      // quiet is not the same as zero.
+      const queueDir = resolvePendingDir(join(dir, ".flume"));
+      await seedOneEntry(dir);
+      const attached = await runCliStreams(dir, ["status"]);
+      expect(attached.code).toBe(0);
+
+      denyDirectory(queueDir);
+
+      // Arming, in two halves: the refusal is reached, and the verb has
+      // already written to the stream the subject run takes away.
+      const refusing = await runCliStreams(dir, ["status"]);
+      expect(refusing.code).toBe(EX_IOERR);
+      expect(refusing.stdout).toContain("hibernating");
+
+      const detached = await runCliClosedStdout(dir, ["status"]);
+      expect(detached.code).toBe(EX_IOERR);
+      expect(detached.stderr).toContain(
+        `[flume] status: pending queue at ${queueDir} failed to read`,
+      );
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
