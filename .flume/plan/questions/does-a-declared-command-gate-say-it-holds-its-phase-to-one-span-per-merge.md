@@ -51,3 +51,12 @@ need to connect the two. `spec/harness.md`, *What a consumer declares* is silent
 (1) and (3) compose; (2) is the only one that changes what a consumer can do. No entry is
 filed for any of them: the spec sentence is the human's, and (3) is a reported-fact entry
 nobody has asked for yet.
+
+## One narrowing surface, not two
+
+The queue carries `THE-CHAIN-LOAD-GATE-DECLARES-IT-READS-A-BATCH`: `chainLoadGate` reads
+four facts a batch states in full, so its withholding has no cause and goes. Whoever
+answers this question reads the queue first — once that entry has shipped, a declared
+`shell`/`script` gate is the **only** thing a consumer can hang at `afterMerge` that
+narrows the phase, so (1)'s sentence carries the whole rule rather than one instance of
+it, and a sentence naming `chainLoadGate` as a narrowing builtin would be false.
