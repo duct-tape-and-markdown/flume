@@ -78,6 +78,7 @@ export const SLICE_DATA_KEYS = {
     "RECORDS",
     "BUILD_RECORDS",
     "CI_LANES",
+    "GOALS",
   ],
   "plan-derive": ["SPEC_WINDOW"],
   "plan-sweep": ["SWEEP_WINDOW"],

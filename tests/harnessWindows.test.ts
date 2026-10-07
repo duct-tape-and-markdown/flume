@@ -53,13 +53,15 @@ import {
   PLAN_SLICES,
   type PlanSlice,
 } from "../harness/declaration.ts";
+import { entryExtension } from "../harness/entryExtension.ts";
 import { readPlanState } from "../harness/planState.ts";
 import { checkoutRecords, listRecords } from "../harness/records.ts";
 import { entryDeclaredKey } from "../src/entryKey.ts";
 import type { EntryRefusalContext, TickResult } from "../src/Phase.ts";
-import type {
-  PendingEntry,
-  QueueParseFailure,
+import {
+  composePendingEntry,
+  type PendingEntry,
+  type QueueParseFailure,
 } from "../src/PendingSchema.ts";
 import {
   PRIOR_ATTEMPT_MODES,
@@ -205,6 +207,30 @@ const entry = (tag: string): PendingEntry => ({
   kind: "work",
   files: { new: [], edit: [], retire: [] },
 });
+
+/**
+ * One queue entry as a producer could actually have filed it: through the real
+ * composed validator, with the package's own entry extension.
+ *
+ * The goals block is a derivation over the queue the engine parsed, so the
+ * fixture is the parser's output rather than an object shaped by hand here —
+ * a `rank` the extension never declared, or a `kind` the core would refuse,
+ * would not reach the block at all (`.claude/rules/engineering.md`, *A seam
+ * gate reads what the real writer wrote*). The three fields every entry
+ * carries are filled with the least an entry may carry, since the block reads
+ * none of them.
+ */
+const validator = composePendingEntry(entryExtension());
+
+const queued = (fields: Record<string, unknown>): PendingEntry =>
+  validator.parse({
+    gate: { kind: "open" },
+    files: { new: [], edit: [], retire: [] },
+    summary: "one line",
+    per: { path: "spec/harness.md", section: "Goals and decomposition" },
+    acceptance: "it turns green",
+    ...fields,
+  });
 
 /**
  * One standing prior-attempt record, keyed as the engine keys one: an entry's
@@ -813,6 +839,95 @@ it("the inbox window's build-records block leaves a claimed entry's standing rec
     counted: claimed.includes("=== 1 standing prior-attempt record(s) ==="),
     body: claimed.includes(`"mode": "clean-exit"`),
   }).toEqual({ header: `${head} ---`, counted: true, body: true });
+});
+
+/**
+ * The goals leg: the queue's goals, in the operator's order, with what still
+ * stands beneath each (`spec/harness.md`, *Goals and decomposition*).
+ *
+ * Asserted as the whole block rather than by what it contains, because half of
+ * what the block says is what it leaves out — an entry under no goal, and the
+ * order two goals are rendered in — and neither is a claim a containment
+ * assertion makes (`.claude/rules/posture-sweep.md`, *A negative assertion
+ * over a whole rendered artifact*).
+ */
+it("the inbox window renders each standing goal with its rank and its remaining work entries", () => {
+  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writeState();
+
+  // Filed out of rank order, so the block's order is the ranks' and not the
+  // queue listing's.
+  const pending = [
+    queued({ tag: "SECOND-GOAL", kind: "group", rank: 4 }),
+    queued({ tag: "WORK-UNDER-SECOND", parent: "SECOND-GOAL" }),
+    queued({ tag: "FIRST-GOAL", kind: "group", rank: 1 }),
+    queued({ tag: "A-STEP-OF-THE-WORK", kind: "step", parent: "WORK-UNDER-FIRST" }),
+    queued({ tag: "WORK-UNDER-FIRST", parent: "FIRST-GOAL" }),
+    queued({ tag: "WORK-UNDER-NO-GOAL" }),
+  ];
+
+  // Non-vacuity: two goals stand over three descendants, with one work entry
+  // under neither — so the ordering, the nesting and the omission below are
+  // each over a populated queue.
+  expect({
+    goals: pending.filter((e) => e.kind === "group").length,
+    rooted: pending.filter((e) => e.parent === undefined).length,
+  }).toEqual({ goals: 2, rooted: 3 });
+
+  const rendered = windows()[INBOX_PHASE].args({
+    cwd: repo,
+    flumeDir: stateRoot(),
+    pending,
+  }).GOALS;
+
+  expect(rendered).toBe(
+    [
+      "=== 2 standing goal(s), in rank order ===",
+      "--- FIRST-GOAL (rank 1) — 1 work entry remaining ---",
+      "  WORK-UNDER-FIRST (work)",
+      "    A-STEP-OF-THE-WORK (step)",
+      "--- SECOND-GOAL (rank 4) — 1 work entry remaining ---",
+      "  WORK-UNDER-SECOND (work)",
+    ].join("\n"),
+  );
+});
+
+/**
+ * A goal with nothing beneath it is the state the drain must not read a
+ * verdict off: a goal whose last descendant has shipped and one nobody has
+ * decomposed yet are the same queue, so the block states the absence and stops
+ * (`goals.ts`). Asserted beside a goal whose work still stands, so the empty
+ * arm is that goal's own state rather than a queue with no work in it.
+ */
+it("the inbox window renders a goal whose work has all shipped as standing with none remaining", () => {
+  commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
+  writeState();
+
+  const pending = [
+    queued({ tag: "DRAINED-GOAL", kind: "group", rank: 2 }),
+    queued({ tag: "LIVE-GOAL", kind: "group", rank: 3 }),
+    queued({ tag: "WORK-UNDER-LIVE", parent: "LIVE-GOAL" }),
+  ];
+
+  // Non-vacuity: the queue carries work, under the other goal — so "none
+  // remaining" is read off the parent links and not off an empty queue.
+  expect(pending.filter((e) => e.kind === "work")).toHaveLength(1);
+
+  const rendered = windows()[INBOX_PHASE].args({
+    cwd: repo,
+    flumeDir: stateRoot(),
+    pending,
+  }).GOALS;
+
+  expect(rendered).toBe(
+    [
+      "=== 2 standing goal(s), in rank order ===",
+      "--- DRAINED-GOAL (rank 2) — 0 work entries remaining ---",
+      "(nothing stands beneath it in the queue)",
+      "--- LIVE-GOAL (rank 3) — 1 work entry remaining ---",
+      "  WORK-UNDER-LIVE (work)",
+    ].join("\n"),
+  );
 });
 
 /**

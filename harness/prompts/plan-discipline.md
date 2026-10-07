@@ -18,6 +18,16 @@ Where build may write is its phase fence, and that is the whole fence: build is 
 
 **Tests ride the entry, and the judge reads them.** One `tests[]` line per behavior the work must pin, written as the title of the test that will pin it: present tense, one decidable behavior, no trailing period — build titles a passing test with the line verbatim and the judge proves each line has one. A line no test could be titled with ("error handling is better") is not a behavior. A `tests[]` line names a behavior the entry **introduces or changes**: the judge also runs each named test against the pre-fix tree and refuses one that already passes there. That base run lays the merged bytes of the files holding the named tests over the pre-fix tree, so a line is judgeable only when the entry **also changes a file that is not one of those** — an entry whose whole diff is the files carrying its own tests rebuilds the change at the base and passes there by construction, whatever it pins. Such an entry declares its behavior somewhere else or carries no `tests[]` line at all. A property that **already holds** and gains its check in this entry — an agreement pin, a doc-to-source scan — goes in `pins[]` instead: same title discipline, judged green only. A `tests[]` line the judge reports as already green on the base is yours to move to `pins[]` or drop; build cannot. The file a test lands in is build's call; predict it in `files` when you can name it. Never a follow-up `-TESTS` entry.
 
+## A parent is containment; `blockedBy` is order
+
+The schema block states what `kind` and `parent` hold. This is how to use them, and it is the half the queue's order reads.
+
+`parent` says what an entry is **part of**, and nothing about when it runs. A goal is a root `group` carrying the operator's rank; everything above a `work` entry organizes; a `work` entry is the dispatch unit, one session's job. Decide how finely the work is described and, separately, how much of it one session takes — they are two decisions, and finer structure never means more sessions.
+
+**`blockedBy` is complete across what you file.** The queue's order is computed from the structure you declare — a goal's work first, in the goals' order, together with everything that work is `blockedBy` — so a dependency you leave undeclared is not a gate the scheduler forgives, it is a **wrong order no gate can see**, and build picks the second half of a cut section before the first. Name every blocker on the entry that waits, siblings cut from one section included; a `blockedBy` on a `group` or a `work` entry holds every descendant, so a dependency the whole goal waits on is declared once, at the goal.
+
+**A rank is the operator's, and only the drain writes one.** Only a root `group` carries a rank, only the inbox slice's commit may add or move one, and the goal-rank gate reverts the commit that breaks either rule. No other slice files a root `group` at all: work that serves a standing goal is filed beneath it.
+
 ## Artifacts are the present; git is the log
 
 Every artifact here is re-injected into future ticks, so size is a per-tick tax paid until the content leaves. A done item leaves the file; its narrative lives in the `plan:` commit body.

@@ -18,6 +18,10 @@
 
 {{PENDING_NOW}}
 
+<goals>
+{{GOALS}}
+</goals>
+
 {{CLAIMED_ENTRIES}}
 
 {{QUESTIONS_INDEX}}
@@ -41,6 +45,10 @@ Each record routes to exactly one of:
 - a **pending entry**, with a `per` cite inside the spec locus ({{SPEC_LOCUS}}). Read `<pending-now>` first, as you read the question index: a standing entry that already covers this finding takes an amendment to that entry — a widened `files`, a sharpened `acceptance`, one more `tests[]` line — not a sibling filed beside it. Two producers filing one finding is a shape every honest decomposition reaches, so nothing refuses it for you; folding it is this route's job. A duplicate left standing is picked as a second entry over work its sibling already shipped, and comes back a `clean-exit` record a later drain spends a tick dropping;
 - an **open question**, when human input is needed before code can land or no clean cite exists. Read the index above first: it names one file per question already open, and one that covers this finding takes an amendment to that file, not a sibling beside it;
 - **accepted debt**: one line in the commit body with the reason, naming the shape family so a later drain counting it reads one name.
+
+**A goal is the operator's statement, and this slice is the only one that writes one.** `<goals>` names every goal the queue carries, in the operator's order, with every entry still standing beneath each. A record that states a goal — what something outside the loop waits on, and where it ranks among the goals standing — files as a root `group` carrying that rank: no `parent`, `summary` and `acceptance` stating what the operator gets when it ships, and the `per` cite every entry carries — into the section the goal's work serves, and a goal with no section to cite is a question like any other entry that cannot carry one. A record that re-ranks is an edit to the goals already standing, and a goal whose rank it does not name keeps the one it has. The rank is the queue's only rank and the operator's lever, so you place or move one **only** from a record that stated it — never from a reading of your own, which the goal-rank gate reverts the commit for. Two goals at one rank is a collision the block shows you: resolve it from what the records say. An entry you file for a finding that serves a standing goal names that goal as its `parent`, so the order reads it as that goal's work; one that serves no goal is filed as a root, parentless.
+
+**A goal with nothing beneath it is not a finished goal.** A goal whose last descendant has shipped and a goal nobody has decomposed yet are the same queue, so the block says only that nothing stands there. Derive is what files the work a goal needs; a goal is *done* when a record says it is, and retiring a goal the queue has finished is the ledger's own work, never an entry file you delete to tidy the block.
 
 **An observation clears a bar before it is an entry.** A record the paths above make an observation — a note from a tick that shipped, a finding someone left in the inbox — becomes a pending entry only when the defect it names can **change behavior, hide a failure, or leave a vacuous verdict over load-bearing machinery**. Under that bar it is an accepted-debt line, however sharply the note put it, and the body's line is the whole of its route. A park, a blocker it names, and a red lane's failing title are not observations and route exactly as they route above — the bar decides between an entry and a debt line, and nothing else. Without it every shipped entry spawns the next through its own note, and the queue fills with work nothing asked for.
 

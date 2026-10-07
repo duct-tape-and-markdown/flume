@@ -1,8 +1,8 @@
 /**
  * The inbox slice's window (`spec/harness.md`, *The phases*): the queue's own
  * parse failure, the record queues, the declared friction channel, the build
- * refusals still standing against entries the queue carries, and the declared
- * CI lanes.
+ * refusals still standing against entries the queue carries, the declared
+ * CI lanes, and the goals the queue carries.
  *
  * **The parse failure comes first, and it is the one leg that is not a
  * findings source.** A queue that did not resolve leaves the whole loop with
@@ -67,6 +67,17 @@
  * **The friction channel and the lane store stay on the shared root either
  * way**, both legs alike: they are gitignored, so no commit carries them and
  * no worktree checkout holds them.
+ *
+ * **The goals leg is the one that is not a findings source either** — it is
+ * the standing state a record is routed *against* (`spec/harness.md`, *Goals
+ * and decomposition*). A goal is filed from a record and re-ranked from one,
+ * and the rank it carries is the only rank the queue has, so the slice that
+ * drains the records is the one commit a rank may move on; what it cannot
+ * decide without the block is where a record's rank falls among the goals
+ * already standing, and what work each goal still has under it when a record
+ * asks where a finding belongs ({@link goalsBlock}, `goals.ts`). It reads the
+ * queue the engine already parsed and no disk at all, which is why it is not
+ * among the legs ordered below.
  */
 
 import { readFileSync } from "node:fs";
@@ -80,6 +91,7 @@ import { laneLeg } from "./ciLane.js";
 import { INBOX_PHASE } from "./declaration.js";
 import { detailOf } from "./exec.js";
 import { frictionFiles, frictionPending } from "./friction.js";
+import { goalsBlock } from "./goals.js";
 import {
   RECORD_MAX_BYTES,
   checkoutRecords,
@@ -162,6 +174,12 @@ export function inboxWindow(options: PlanSliceWindowsOptions): PlanSliceWindow {
       RECORDS: renderRecordQueues(tip, options.stateRootRel, friction, ctx),
       BUILD_RECORDS: renderBuildRecords(options.stateRootRel, ctx),
       CI_LANES: lanes.render(ctx.flumeDir),
+      // The queue as the engine parsed it, handed to the derivation whole: a
+      // goal and its descendants are entries like any other, and the only
+      // reading of them this slice does not already have is which of them the
+      // operator ranked (`goals.ts`). Absent only on a hand-built context,
+      // where an empty queue reads as no goal standing.
+      GOALS: goalsBlock(ctx.pending ?? []),
     }),
     dataKeys: SLICE_DATA_KEYS[INBOX_PHASE],
   };

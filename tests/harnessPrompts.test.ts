@@ -55,7 +55,8 @@ import {
   type PromptName,
   type SharedPromptArg,
 } from "../harness/prompts.ts";
-import { entryFileName } from "../src/PendingSchema.ts";
+import { planSliceWindows } from "../harness/windows.ts";
+import { composePendingEntry, entryFileName } from "../src/PendingSchema.ts";
 import { resolvePendingDir } from "../src/paths.ts";
 import type { Phase } from "../src/Phase.ts";
 import {
@@ -181,10 +182,11 @@ async function render(
   name: HarnessPhase,
   root: string = stateRoot,
   claimed: readonly string[] = [],
+  perTickArgs: Record<string, string> = {},
 ): Promise<string> {
   const promptFile = promptPath(name);
   const raw = await readFile(promptFile, "utf8");
-  const shared = args(name, root, claimed);
+  const shared = { ...args(name, root, claimed), ...perTickArgs };
   const perTick = Object.fromEntries(
     [...raw.matchAll(PLACEHOLDER)]
       .map((match) => match[1]!)
@@ -1455,6 +1457,62 @@ it("the sweep slice's prompt shows a closed rotation as an object, never a bare 
  * on whatever those happen to quote (`.claude/rules/posture-sweep.md`,
  * *Standing lenses*).
  */
+/**
+ * The one inbox argument composed from the queue the engine parsed rather than
+ * from a state root, so the seam it rides is this file's subject: the real
+ * window writes the block, the shipped markdown names the placeholder, and the
+ * engine's renderer substitutes it. A fixture block spelled here would prove
+ * the renderer substitutes a string, which nothing doubts
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ *
+ * The window is built over the scratch root, not the repository: the goals leg
+ * reads the queue it is handed and no disk at all, so the only thing a real
+ * repo would add here is the record leg's output, which this case does not
+ * substitute.
+ */
+it("the goals block reaches the rendered plan-inbox prompt", async () => {
+  const inbox = planSliceWindows({
+    declaration: parseDeclaration({
+      specLocus: ["spec/**"],
+      fence: { build: ["src/**"] },
+      runner: () => ({ run: async () => [], runAtBase: async () => [], lanes: [] }),
+      slices: { enabled: [INBOX_PHASE] },
+    }),
+    repoRoot: stateRoot,
+    stateRootRel: ".flume",
+  }).find((window) => window.name === INBOX_PHASE);
+  expect(inbox?.name).toBe(INBOX_PHASE);
+
+  const validator = composePendingEntry(entryExtension());
+  const queued = (fields: Record<string, unknown>) =>
+    validator.parse({
+      gate: { kind: "open" },
+      files: { new: [], edit: [], retire: [] },
+      summary: "one line",
+      per: { path: "spec/harness.md", section: "Goals and decomposition" },
+      acceptance: "it turns green",
+      ...fields,
+    });
+
+  const goals = inbox!.args({
+    cwd: stateRoot,
+    flumeDir: stateRoot,
+    pending: [
+      queued({ tag: "A-GOAL-THE-PROMPT-CARRIES", kind: "group", rank: 1 }),
+      queued({ tag: "WORK-THE-GOAL-WAITS-ON", parent: "A-GOAL-THE-PROMPT-CARRIES" }),
+    ],
+  }).GOALS;
+
+  // Non-vacuity: the window wrote a block naming both the goal and the work
+  // standing under it, so the substitution asserted below carries material.
+  expect(goals).toContain("A-GOAL-THE-PROMPT-CARRIES (rank 1)");
+  expect(goals).toContain("WORK-THE-GOAL-WAITS-ON (work)");
+
+  const rendered = await render(INBOX_PHASE, stateRoot, [], { GOALS: goals! });
+  expect(rendered).toContain(`<goals>\n${goals}\n</goals>`);
+});
+
 it("the plan prompt renders the interface field's hint", async () => {
   const field = entryExtension()["interface"];
   if (field === undefined) {
