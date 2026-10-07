@@ -80,8 +80,8 @@ export function cursorWindow(
  *
  * **The tip is named here, not rediscovered by the tick.** A window that
  * said "stamp HEAD" would have the stamping tick resolve its own sha, so a
- * commit landing mid-tick would be stamped over unread
- * (`.claude/rules/posture-sweep.md`, *The stamp*). The tip is resolved
+ * commit landing mid-tick would be stamped over unread (`spec/harness.md`,
+ * *The rotation closes when the frontier empties*). The tip is resolved
  * before the listing rather than after, so anything that lands while this
  * reads is at worst listed and not yet stamped — re-opened next tick, never
  * skipped.

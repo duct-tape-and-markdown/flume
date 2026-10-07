@@ -66,10 +66,9 @@ import {
  * supervisor's budget has room, so scheduling it is the budget's decision
  * and the declared order's — the package declares the sweep last of the
  * slices for exactly that, which is what keeps insurance behind product
- * without any window standing aside (`.claude/rules/posture-sweep.md`, *The
- * sweep runs beside build, never ahead of it*; `chain.ts`). An open rotation
- * is open exactly while a frontier it already drew has neighborhoods left in
- * it, and closing one is the slice's own job.
+ * without any window standing aside (`spec/harness.md`, *The phases*;
+ * `chain.ts`). An open rotation is open exactly while a frontier it already
+ * drew has neighborhoods left in it, and closing one is the slice's own job.
  *
  * **A state file this slice cannot read leaves it live.** The rotation read is
  * bounded ({@link readPlanStateBounded}, `planState.ts`), because a throw here
@@ -137,8 +136,8 @@ function sweepInputs(declaration: Declaration): {
  * a fact this render already holds — the last commit of the range it just
  * scanned, or the cursor itself when the range is empty. Naming it here is
  * what lets the closing tick stamp exactly the tip its frontier covered
- * rather than resolving a HEAD that moved while it read
- * (`.claude/rules/posture-sweep.md`, *The stamp*). It is the sibling of the
+ * rather than resolving a HEAD that moved while it read (`spec/harness.md`,
+ * *The rotation closes when the frontier empties*). It is the sibling of the
  * `may advance to` line the derive window ends on, and costs no second git
  * call.
  *
@@ -204,7 +203,7 @@ function renderSweepWindow(
 /**
  * The sha the retired-claim delta is drawn from: what this slice has already
  * searched the tree for, or the stamp where it has searched nothing past it
- * (`.claude/rules/posture-sweep.md`, *The stamp*).
+ * (`spec/harness.md`, *The frontier is read off git*).
  *
  * **The delta shrinks as the frontier does.** Drawn from the stamp alone, a
  * rotation re-renders every line the locus deleted since it opened on every
@@ -260,10 +259,10 @@ const pathsIn = (commit: RangeCommit, globs: string[]): readonly string[] =>
  *
  * The union, not the walk: a path is in the frontier or it is not, and how
  * many commits of the range happened to touch it changes nothing a sweep tick
- * decides (`.claude/rules/posture-sweep.md`, *The frontier is decidable; the
- * neighborhood is judged*). Sorted rather than left in git's commit order, so
- * a reader scanning the listing gets a module beside its siblings and the same
- * range renders the same listing whatever order the commits landed in.
+ * decides (`spec/harness.md`, *The frontier is read off git*). Sorted rather
+ * than left in git's commit order, so a reader scanning the listing gets a
+ * module beside its siblings and the same range renders the same listing
+ * whatever order the commits landed in.
  */
 const unionOf = (
   commits: readonly RangeCommit[],
@@ -342,8 +341,7 @@ function armedDomain(cwd: string, domain: string[]): string[] {
 /**
  * The spec-locus lines deleted since the retired-claim cursor — the sentences
  * a doc comment, a docs page or a README section may still assert
- * (`.claude/rules/posture-sweep.md`, *The frontier is decidable; the
- * neighborhood is judged*).
+ * (`spec/harness.md`, *The frontier is read off git*).
  *
  * The diff is narrowed to the locus paths the range touched rather than run
  * over the whole locus, and **the range those paths are read off is this
@@ -381,8 +379,7 @@ function retiredLines(
  * claim at all, rather than a heading the same commit reworded a few lines
  * down, is decidable only against the page it left. Rendered flat, that
  * costs the tick a second diff over the locus to recover a fact this window
- * already read (`.claude/rules/posture-sweep.md`, *The frontier is
- * decidable; the neighborhood is judged*).
+ * already read (`spec/harness.md`, *The frontier is read off git*).
  *
  * The budget is spent on deleted lines, never on the page leads that carry
  * them: a page whose lines do not all fit renders the prefix that does, and

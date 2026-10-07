@@ -117,8 +117,7 @@ import { standingRefusals } from "./standingRefusal.js";
  * carry decides none of them. The slice is a worker like every other: it
  * runs when the supervisor's budget has room, behind build in the declared
  * order, which is the same economics read at the sweep's queue
- * (`.claude/rules/posture-sweep.md`, *The sweep runs beside build, never
- * ahead of it*; `sweepWindow.ts`). A standing refusal makes that plainest —
+ * (`sweepWindow.ts`). A standing refusal makes that plainest —
  * the wave it walled is precisely what cannot pick that entry up again until
  * this slice reconciles it (`defaultRefusesEntry`, `handoff.ts`), so standing
  * aside for the queue is standing aside for a queue that cannot answer it.
@@ -214,8 +213,7 @@ function renderQueueParseFailure(ctx: WindowContext): string {
  * here, at the one join that means to read disk, exactly as the queue
  * listings fold theirs (`fileUnderStateRoot`, `dirListing.ts`) — never by
  * handing the slashed value to a `node:path` call that is right on posix by
- * accident (`.claude/rules/posture-sweep.md`, *A repo-relative path composed
- * with `node:path`*).
+ * accident (`spec/chain.md`, *`stateRootRel`*).
  */
 const treeStateRoot = (cwd: string, stateRootRel: string): string =>
   join(cwd, ...stateRootRel.split("/"));

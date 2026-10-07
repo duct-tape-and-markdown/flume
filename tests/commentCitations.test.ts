@@ -2439,6 +2439,60 @@ it("no comment in harness/ cites a page under a consumer's state root", () => {
   ]);
 });
 
+/**
+ * The sibling verdict, one directory over: the procedure page.
+ *
+ * `.claude/rules/posture-sweep.md` is this repository's own, and what it used
+ * to carry was how `plan-sweep` runs — the frontier, the neighborhood, the
+ * rotation's close, the verified-on-disk bar, the routing bar. That is the
+ * package's to ship (`spec/harness.md`, *The sweep procedure*), so a module
+ * under `harness/` warranting one of those mechanics with that page names a
+ * file no other consumer's tree holds, and the next consumer reads a mechanic
+ * of the package's own as a convention it was supposed to have authored.
+ *
+ * The declared posture pages are not this verdict's subject, and neither are
+ * the toolchain pages: a comment citing one of those is explaining the shape
+ * of the code it sits above to this repository's authors, which is what a
+ * rule page is for. This page is cited for *behavior*, and behavior the
+ * package implements is warranted by the package's own spec.
+ */
+it("no module under harness/ cites .claude/rules/posture-sweep.md", () => {
+  const procedurePage = ".claude/rules/posture-sweep.md";
+  const inHarness = (site: CitationSite): boolean =>
+    site.module.startsWith("harness/");
+  const pages = repoScan.scanned.filter(inHarness);
+  const sections = repoScan.sections.scanned.filter(inHarness);
+
+  // Vacuity guard, four halves. The package's tree was read and its comments
+  // cite pages and sections in quantity — both arms the verdict filters —
+  // before any emptiness is read off either. And the name itself is live in
+  // this scan's vocabulary: the suite's own comments cite that page and its
+  // sections, so the absence below is one these modules hold rather than a
+  // filter matching nothing anywhere in the three trees.
+  expect(
+    repoScan.modules.filter((module) => module.startsWith("harness/")).length,
+  ).toBeGreaterThan(20);
+  expect(pages.filter((site) => site.text.endsWith(".md")).length)
+    .toBeGreaterThan(20);
+  expect(sections.length).toBeGreaterThan(20);
+  expect(
+    repoScan.sections.scanned.filter((site) => site.page === procedurePage)
+      .length,
+  ).toBeGreaterThan(0);
+
+  // The verdict: neither arm names that page from inside the package. Cite
+  // the spec section that states the procedure instead — the prompt the
+  // package renders is where a consumer's sweep tick reads it.
+  expectNoFindings([
+    ...pages
+      .filter((site) => site.text === procedurePage)
+      .map(formatCitation),
+    ...sections
+      .filter((site) => site.page === procedurePage)
+      .map((site) => `${formatCitation(site)} -> ${site.page}`),
+  ]);
+});
+
 it("no surface the package ships names a section of a page the consumer owns", () => {
   const consumerTree = `${DEFAULT_STATE_ROOT}/`;
 

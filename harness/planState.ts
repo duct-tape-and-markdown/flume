@@ -165,8 +165,8 @@ const SweepStateSchema = strict({
   rotation: Rotation,
   /**
    * The retired-claim cursor: the sha whose deleted spec lines this slice has
-   * already searched the tree for (`.claude/rules/posture-sweep.md`, *The
-   * frontier is decidable; the neighborhood is judged*). Absent is the stamp.
+   * already searched the tree for (`spec/harness.md`, *The frontier is read
+   * off git*). Absent is the stamp.
    */
   retiredThrough: objectName.optional(),
 });
@@ -499,7 +499,8 @@ type SliceStateRule<S extends PlanSlice> = (
  * The sweep stamps on the tick that closes its rotation and on no other: a
  * rotation stands open *over* the frontier the old stamp drew, so a stamp
  * moved while it is open leaves a covered set describing a frontier nobody
- * will draw again (`.claude/rules/posture-sweep.md`, *The stamp*).
+ * will draw again (`spec/harness.md`, *The rotation closes when the frontier
+ * empties*).
  */
 const stampsOnlyOnTheTickThatCloses: SliceStateRule<"plan-sweep"> = (
   at,
@@ -514,8 +515,8 @@ const stampsOnlyOnTheTickThatCloses: SliceStateRule<"plan-sweep"> = (
 /**
  * Coverage is settled for the window: while one rotation stands open across a
  * commit, every module it had already swept is still swept
- * (`.claude/rules/posture-sweep.md`, *The frontier is decidable; the
- * neighborhood is judged*).
+ * (`spec/harness.md`, *A neighborhood is a frontier module read with its
+ * immediate imports*).
  *
  * Read only where the rotation is open at **both** ends. A tick that closes
  * the rotation drops the covered set by construction — `covered` rides the
@@ -540,7 +541,7 @@ const coveredOnlyGrowsWhileOpen: SliceStateRule<"plan-sweep"> = (at, base) => {
  * clearing a note: it re-opens every line the spec locus deleted since
  * `sweptThrough`, which is the whole delta this cursor exists to shrink — and
  * a claim searched once per rotation becomes one searched once per tick
- * again (`.claude/rules/posture-sweep.md`, *The stamp*).
+ * again (`spec/harness.md`, *The frontier is read off git*).
  *
  * Read only while the stamp stands where it stood, for the reason
  * {@link coveredOnlyGrowsWhileOpen} is read only across an open pair: a tick
@@ -734,7 +735,7 @@ type AnyCursorField = { [S in PlanSlice]: CursorFieldsOf<S> }[PlanSlice];
  * file: a stamp with no rotation beside it is half a statement. Closed, so an
  * adoption opens no rotation over a domain whose whole history predates it —
  * the frontier re-arms from the first commit that touches the domain past
- * this stamp (`.claude/rules/posture-sweep.md`, *The stamp*).
+ * this stamp (`spec/harness.md`, *The frontier is read off git*).
  */
 const PLAN_STATE_SEEDS: {
   readonly [S in PlanSlice]: [CursorFieldsOf<S>] extends [never]
@@ -757,9 +758,9 @@ const PLAN_STATE_SEEDS: {
  *
  * `tip` is the caller's, never resolved here: the adoption reads the tip it
  * ran against in its own preflight, and a second resolution inside the write
- * would stamp a sha nobody read (`.claude/rules/posture-sweep.md`, *The
- * stamp*). Written through {@link writePlanState}, so what lands is what this
- * package's own reader would accept.
+ * would stamp a sha nobody read (`spec/harness.md`, *The rotation closes when
+ * the frontier empties*). Written through {@link writePlanState}, so what
+ * lands is what this package's own reader would accept.
  */
 export function seedPlanState(
   stateRoot: string,

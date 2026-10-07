@@ -150,9 +150,9 @@ export function filesCarrying(
  *
  * The composer, so a caller that means to ask "is *this* file in that
  * listing" composes the same string the listing produced rather than a
- * second one that agrees on posix and differs on win32 by a separator
- * (`.claude/rules/posture-sweep.md`, *A repo-relative path composed with
- * `node:path`*). The walk above goes through it too — one join, one answer.
+ * second one that agrees on posix and differs on win32 by a separator. The
+ * walk above goes through it too — one join, one answer
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
  */
 export function fileUnderStateRoot(
   stateRoot: string,

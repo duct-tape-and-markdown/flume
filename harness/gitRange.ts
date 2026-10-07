@@ -192,9 +192,8 @@ export const filesMatching = (cwd: string, globs: string[]): string[] =>
  * **A merge is listed by what its own tree resolved.** git's default merge
  * listing is empty, so a path a merge changed in neither parent — a conflict
  * resolution, or any edit made in the merge itself — would be in no
- * frontier, arm no rotation and appear in no window
- * (`.claude/rules/posture-sweep.md`, *The frontier is decidable; the
- * neighborhood is judged*). `--cc` is git stating which paths a merge's tree
+ * frontier, arm no rotation and appear in no window (`spec/harness.md`, *The
+ * frontier is read off git*). `--cc` is git stating which paths a merge's tree
  * differs from *every* parent on, so the merge's own contribution is read
  * rather than reconstructed from a walk of its parents
  * (`.claude/rules/engine-boundary.md`, *Told, not inferred*); a merge that

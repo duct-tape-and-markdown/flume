@@ -343,8 +343,8 @@ const renderStanding = (at: CiRunEvidence): string =>
  * The stamp that closes a lane, named rather than left for the agent to
  * compose out of the run line beside it — a lane the slice woke on and did
  * not stamp is a lane this render re-opens on next tick over the same run
- * (`.claude/rules/posture-sweep.md`, *The stamp*, for the cursor this is the
- * sibling of).
+ * (`spec/harness.md`, *The rotation closes when the frontier empties*, for the
+ * sweep cursor this one is the sibling of).
  *
  * One sentence for both arms that own a run, because both close the same way:
  * the slice stamps the run it woke on, drained or unread (`spec/harness.md`,

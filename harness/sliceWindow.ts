@@ -128,8 +128,7 @@ export interface PlanSliceWindowsOptions {
    * A window that reads a landed commit's footprint needs it: what a build
    * tick declared by writing under one note directory rather than another is
    * a path comparison, and the two sides have to be in one dialect
-   * (`.claude/rules/posture-sweep.md`, *A repo-relative path composed with
-   * `node:path`*).
+   * (`spec/chain.md`, *`stateRootRel`*).
    */
   readonly stateRootRel: string;
   /**
