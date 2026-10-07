@@ -1312,6 +1312,106 @@ describe("the queue's forest — the rules a whole listing keeps (spec/pending.m
       entryFileName("CYCLE-B"),
     ]);
   });
+
+  /** One root work entry waiting on `tags`. */
+  function waitingOn(tag: string, ...tags: string[]): Record<string, unknown> {
+    return forestEntry(tag, "work", undefined, { kind: "blockedBy", tags });
+  }
+
+  it("a queue whose blockedBy edges form a cycle is refused naming the entries in it", () => {
+    // Nothing downstream can see this: both entries parse, both are reported
+    // queued, and the only symptom is that neither ever ships.
+    const cycle = [waitingOn("WAITS-ON-B", "WAITS-ON-A"), waitingOn("WAITS-ON-A", "WAITS-ON-B")];
+    const result = parseQueue(cycle);
+    expect(result.ok).toBe(false);
+    // All-or-nothing over the directory, as for every other forest defect.
+    expect(result.entries).toEqual([]);
+    // Each member refused in its own file, at the tag it declared: a reader
+    // opening either one is told the blockers above it close.
+    expect(result.errors.map((e) => e.file).sort()).toEqual([
+      entryFileName("WAITS-ON-A"),
+      entryFileName("WAITS-ON-B"),
+    ]);
+    for (const error of result.errors) {
+      expect(error.path).toBe("gate.tags.0");
+      expect(error.message).toContain("WAITS-ON-A");
+      expect(error.message).toContain("WAITS-ON-B");
+    }
+
+    // Non-vacuity: the same pair with one edge dropped parses, so what was
+    // refused is the closed loop and not a queue of two blocked entries.
+    const open = parseQueue([forestEntry("WAITS-ON-B", "work"), cycle[1]!]);
+    expect(open.ok, JSON.stringify(open.errors)).toBe(true);
+    expect(open.entries).toHaveLength(2);
+    // And the chain-less read refuses it too — core shape, one verdict.
+    expect(parseQueueLoose(cycle).ok).toBe(false);
+  });
+
+  it("a queue whose blockedBy cycle runs through three entries names all three", () => {
+    // A cycle is a reachability question, not a chain's last link: the hop
+    // back can be any distance out, and the refusal names the whole path so a
+    // reader can cut it without re-walking the queue.
+    const result = parseQueue([
+      waitingOn("RING-A", "RING-B"),
+      waitingOn("RING-B", "RING-C"),
+      waitingOn("RING-C", "RING-A"),
+    ]);
+    expect(result.ok).toBe(false);
+    expect(result.errors.map((e) => e.file).sort()).toEqual([
+      entryFileName("RING-A"),
+      entryFileName("RING-B"),
+      entryFileName("RING-C"),
+    ]);
+    for (const error of result.errors) {
+      for (const tag of ["RING-A", "RING-B", "RING-C"]) {
+        expect(error.message, error.message).toContain(tag);
+      }
+    }
+    // The path reads in the order the edges lead, from the refused entry out
+    // and back to it.
+    const fromA = result.errors.find((e) => e.file === entryFileName("RING-A"))!;
+    expect(fromA.message).toContain(
+      "RING-A blocked by RING-B blocked by RING-C blocked by RING-A",
+    );
+
+    // Non-vacuity: the same three entries with the closing edge dropped are a
+    // spine the read admits.
+    const spine = parseQueue([
+      forestEntry("RING-A", "work"),
+      waitingOn("RING-B", "RING-A"),
+      waitingOn("RING-C", "RING-B"),
+    ]);
+    expect(spine.ok, JSON.stringify(spine.errors)).toBe(true);
+    expect(spine.entries).toHaveLength(3);
+  });
+
+  it("a blockedBy naming a tag no entry in the queue carries is admitted", () => {
+    // A blocker the queue does not hold has already shipped by the membership
+    // read selection takes, so it closes no cycle and gates nothing: the
+    // cycle search skips it rather than reading it as a dangling pointer the
+    // way `parent` is read.
+    const result = parseQueue([
+      waitingOn("WAITS-ON-SHIPPED", "LEFT-THE-QUEUE"),
+      // Beside it, an entry whose two blockers are one present and one gone:
+      // the resolved half is a real edge and still closes nothing.
+      forestEntry("WAITS-ON-BOTH", "work", undefined, {
+        kind: "blockedBy",
+        tags: ["WAITS-ON-SHIPPED", "ALSO-GONE"],
+      }),
+    ]);
+    expect(result.ok, JSON.stringify(result.errors)).toBe(true);
+    expect(result.entries.map((e) => e.tag)).toEqual([
+      "WAITS-ON-SHIPPED",
+      "WAITS-ON-BOTH",
+    ]);
+    // Non-vacuity on the gate itself: what parsed is a blockedBy gate naming
+    // the absent tag, not a gate the read rewrote.
+    const [first] = result.entries;
+    expect(first!.gate).toEqual({
+      kind: "blockedBy",
+      tags: ["LEFT-THE-QUEUE"],
+    });
+  });
 });
 
 describe("gate=blockedBy — pickability against a tag list (spec/pending.md § The entry core)", () => {

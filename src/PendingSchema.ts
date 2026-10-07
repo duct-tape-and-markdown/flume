@@ -963,7 +963,66 @@ function queueForestErrors(
     });
   }
 
+  for (const entry of entries) {
+    if (entry.gate.kind !== "blockedBy") continue;
+    const cycle = blockerCycleFrom(entry, byTag);
+    if (cycle === undefined) continue;
+    // The hop out of this entry is one of its own declared tags, so the
+    // refusal names the field the author wrote rather than the gate.
+    refuse(
+      entry,
+      `gate.tags.${entry.gate.tags.indexOf(cycle[1]!)}`,
+      `the blockers above "${entry.tag}" close on it ` +
+        `(${cycle.join(" blocked by ")}): an entry waiting on itself is ` +
+        `reported queued and can never be picked`,
+    );
+  }
+
   return errors;
+}
+
+/**
+ * A path of `blockedBy` edges from `entry` back to `entry` — the cycle it
+ * sits on, naming every entry the cycle runs through in the order the edges
+ * lead, or `undefined` where no edge leads back.
+ *
+ * `blockedBy.tags` is a DAG's parent list (`spec/pending.md`, *The entry
+ * core*), and a cycle in it is the one shape no gate downstream can see: the
+ * entries parse, `flume status` reports them queued, both order walks are
+ * guarded against the loop — and the only symptom is that none of them ever
+ * ships. So the queue-wide read refuses it where it refuses a `parent` cycle,
+ * rather than leaving a marker every consumer must remember to inspect
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * A tag naming no entry in the queue is **not** an edge here and not a
+ * finding: a blocker outside the queue has already shipped by the membership
+ * read selection takes (`settledBlockers`, `src/selection.ts`), so it closes
+ * nothing and is admitted. The search is over reachability of `entry.tag`, so
+ * one visited set spans every branch — a blocker that led nowhere back on one
+ * path leads nowhere back on the next.
+ */
+function blockerCycleFrom(
+  entry: PendingEntry,
+  byTag: ReadonlyMap<string, PendingEntry>,
+): readonly string[] | undefined {
+  const blockersOf = (of: PendingEntry): readonly string[] =>
+    of.gate.kind === "blockedBy" ? of.gate.tags : [];
+  const visited = new Set<string>();
+  const walk = (
+    cursor: PendingEntry,
+    path: readonly string[],
+  ): readonly string[] | undefined => {
+    for (const tag of blockersOf(cursor)) {
+      if (tag === entry.tag) return [...path, tag];
+      const blocker = byTag.get(tag);
+      if (blocker === undefined || visited.has(tag)) continue;
+      visited.add(tag);
+      const closed = walk(blocker, [...path, tag]);
+      if (closed !== undefined) return closed;
+    }
+    return undefined;
+  };
+  return walk(entry, [entry.tag]);
 }
 
 /**
