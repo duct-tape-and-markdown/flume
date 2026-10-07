@@ -623,7 +623,13 @@ supervisor is live, what that run has spent on agents so far ("agent usage
 this run: <phase> ×N (...)", one entry per phase whose ticks invoked an
 agent at or after the instant loop.pid states the run took the lock; no live
 supervisor — a live run that has invoked none yet, or one whose lock states
-no instant (written by flume before 0.17) — prints nothing extra).
+no instant (written by flume before 0.17) — prints nothing extra), then,
+last, the queue's flow figures ("flow: median filing→ship <span>; longest
+ready wait <span>; failed merges per ship <rate>", each derived at the
+moment of asking from the verdict history and the filing times git holds,
+and none of them stored; a figure with no population to fold reads "not yet
+measurable" rather than zero, and a filing read git cannot answer withholds
+the two it feeds and says so).
 Observational
 — no side effects, no agent invocation.
 
@@ -631,17 +637,18 @@ Exit codes:
   0   Every observation above succeeded — including "nothing to report" for
       each optional line.
 ${rootResolutionUsageRow(6)}
-  74  I/O error (EX_IOERR): loop.pid, the stop flag, or the tip claim file
-      exists but could not be read (permission denied, a symlink loop, a
-      directory standing at the path, a path too long for the platform, ...)
-      — the presence probe and, for the two claim files, the read of the
-      pid they state. Refused rather than printed as
-      absent — that reading would tell the operator there is no live
-      supervisor, no pending stop, or no claim holder when there may be one.
-      Naming the file and the underlying error. Also, under a live
-      supervisor, tick-verdicts.jsonl exists but could not be read: the
-      spend line is refused rather than withheld, since withholding it
-      states a run that has spent nothing.
+  74  I/O error (EX_IOERR): loop.pid, the stop flag, the tip claim file, or
+      the verdict history the flow figures fold exists but could not be
+      read (permission denied, a symlink loop, a directory standing at the
+      path, a path too long for the platform, ...) — the presence probe
+      and, for the two claim files, the read of the pid they state. Refused
+      rather than printed as absent — that reading would tell the operator
+      there is no live supervisor, no pending stop, no claim holder, or a
+      queue nothing has ever shipped out of, when there may be one.
+      Naming the file and the underlying error. The history is read on
+      every status for those figures, and again under a live supervisor for
+      the spend line, which is refused rather than withheld too: a withheld
+      line states a run that has spent nothing.
       ${sharedRootRefusal(6)}
 `,
   tick: `Usage: flume tick [--phase <name>]

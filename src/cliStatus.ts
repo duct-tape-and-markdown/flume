@@ -4,7 +4,10 @@
  * exactly this").
  *
  * One job: every row is a fact read off disk and printed, in the order that
- * page states. The verb interprets none of them — a claim's state root, a
+ * page states — the flow figures included, folded from the two histories
+ * this verb reads at the door that owns the fold (`flowLine`,
+ * `src/queueFlow.ts`) rather than arithmetic spelled here. The verb
+ * interprets none of them — a claim's state root, a
  * capability skip, a chain that would not load are each said and left to the
  * reader, the engine reporting facts and its reader owning what they mean
  * (`.claude/rules/engine-boundary.md`).
@@ -15,14 +18,16 @@ import { agentUsageLine } from "./cliVerdict.js";
 import { loadChainForObservation } from "./cliChainLoad.js";
 import { operatorLog } from "./cliLog.js";
 import { EX_IOERR } from "./exitCodes.js";
+import type { FilingTimes } from "./filingOrder.js";
 import type { FlumePaths } from "./flumeApi.js";
 import { frictionCountLine } from "./friction.js";
 import { existsLoudUnder } from "./fsProbe.js";
 import { currentRefPath, gitCommonDir, liveTipClaim, tipClaimPath } from "./git.js";
 import { loopLockPath, resolvePendingDir, stopFlagPath } from "./paths.js";
-import { readPendingLoose } from "./pendingLedger.js";
+import { readLooseFilingTimes, readPendingLoose } from "./pendingLedger.js";
 import type { ParseResult } from "./PendingSchema.js";
 import { liveLoopClaim, statedStateRoot, type PidClaim } from "./pidClaim.js";
+import { flowLine } from "./queueFlow.js";
 import {
   readRunEnd,
   runEndLine,
@@ -31,6 +36,8 @@ import {
   type RunEndRead,
 } from "./runEnd.js";
 import { readRunSpend, type RunSpend } from "./runSpend.js";
+import { gateReadyEntries } from "./selection.js";
+import { readTickVerdicts, type TickVerdict } from "./tickVerdict.js";
 import { thrownMessage } from "./thrown.js";
 
 export async function statusVerb(paths: FlumePaths): Promise<number> {
@@ -353,5 +360,63 @@ export async function statusVerb(paths: FlumePaths): Promise<number> {
       );
     }
   }
+  // spec/cli.md "`flume status` owes exactly this", line 10: the queue's flow
+  // figures, last in the listing. Both histories are read here and folded at
+  // one door (`flowLine`, `src/queueFlow.ts`) — nothing about the figures is
+  // stored, and the row is a derivation over the two artifacts that own the
+  // facts (`.claude/rules/engineering.md`, *Derived state is computed, never
+  // restated beside its source*).
+  //
+  // This row reads the verdict history whatever the baton says, where the
+  // spend read above reads it only under a live supervisor — so the same
+  // `EX_IOERR` that read takes is taken here, on every status. A history
+  // present and unreadable answering "no ship" is indistinguishable from a
+  // repo that has never ticked, which is the one reading its reader refuses
+  // rather than returns (`readTickVerdicts`, `src/tickVerdict.ts`).
+  let verdicts: TickVerdict[];
+  try {
+    verdicts = await readTickVerdicts(flumeDir);
+  } catch (err) {
+    operatorLog.error(
+      `[flume] status: the tick verdict history failed to read: ${thrownMessage(err)}`,
+    );
+    return EX_IOERR;
+  }
+  // The filing read is git's, and git answers nothing in a cwd no repository
+  // holds or a repository with no commit yet — both of which `status` is
+  // specced to report on rather than fail over (spec/cli.md, "`flume status`
+  // owes exactly this"). So the failure withholds the two figures it feeds
+  // and the row says which, with the reason on stderr: a filing read that
+  // failed and a queue nothing was ever filed into are the same number and
+  // opposite facts (`.claude/rules/engineering.md`, *Loud or nothing*).
+  let filingTimes: FilingTimes | undefined;
+  try {
+    filingTimes = await readLooseFilingTimes(repoRoot, statusPendingDir);
+  } catch (err) {
+    operatorLog.error(
+      `[flume] status: the filing times at ${statusPendingDir} failed to ` +
+        `read: ${thrownMessage(err)} — withholding the two flow figures ` +
+        "they feed rather than printing them over a history nothing read",
+    );
+  }
+  // The ready set is the gate switch's, taken over the queue this verb
+  // already read and the capabilities this chain asserts
+  // (`gateReadyEntries`, `src/selection.ts`) — the engine's own derivation
+  // rather than a second reading of what "ready" means on a reporting
+  // surface (`.claude/rules/engineering.md`, *A fact the engine holds is
+  // reported, never rediscovered*). A queue that did not parse offers the
+  // entries it could read, which is what every other row of this listing
+  // already says about it.
+  console.log(
+    flowLine({
+      verdicts,
+      ready: gateReadyEntries(
+        pending.entries,
+        new Set(chain?.capabilities ?? []),
+      ),
+      filingTimes,
+      now: Date.now(),
+    }),
+  );
   return 0;
 }

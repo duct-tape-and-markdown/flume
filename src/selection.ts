@@ -170,6 +170,42 @@ function gateEligible(
   );
 }
 
+/**
+ * The ready set over a queue read with no tick around it: the gate switch's
+ * own verdict over the `work` entries of `pending`, with nothing about a run
+ * applied — no quarantine, no sibling's claim, no chain refusal.
+ *
+ * `flume status`'s flow figures are the consumer (`flowLine`,
+ * `src/queueFlow.ts`): how long the oldest ready entry has been waiting is a
+ * question about the queue at the moment of asking, and an observational verb
+ * holds none of the three holds a wave's selection subtracts — this run's
+ * quarantine is a supervisor's own memory, which no disk read reaches at all.
+ * Shared from here rather than spelled a second time there, so "ready" is one
+ * derivation on both surfaces (`.claude/rules/engineering.md`, *The fix lands
+ * at the mechanism*).
+ *
+ * `isForkResolved` defaults to always-resolved, as it does at the exported
+ * gate read every other consumer takes this from (`isPickableNow`,
+ * `src/PendingSchema.ts`): the foundations governor is a chain module's own
+ * export, which the best-effort load an observational verb takes does not
+ * carry (`loadChainForObservation`, `src/cliChainLoad.ts`). So a caller
+ * passing none reads an entry gated on an unresolved fork as ready, which is
+ * the declared cost of asking without a governor rather than a verdict about
+ * the fork.
+ */
+export function gateReadyEntries(
+  pending: readonly PendingEntry[],
+  capabilities: ReadonlySet<string>,
+  isForkResolved: (slug: string) => boolean = () => true,
+): PendingEntry[] {
+  return gateEligible(
+    pending,
+    new Set(pending.map((e) => e.tag)),
+    isForkResolved,
+    capabilities,
+  );
+}
+
 /** Whether this run's live quarantine holds the entry **as read** ({@link entryDeclaredKey}). */
 function heldByQuarantine(
   entry: PendingEntry,

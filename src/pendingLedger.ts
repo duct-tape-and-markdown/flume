@@ -134,8 +134,26 @@ export function isPendingRelocated(ctx: PendingLedgerContext): boolean {
 function pendingDirRel(
   ctx: PendingLedgerContext,
 ): string | undefined {
-  if (isPendingRelocated(ctx)) return undefined;
-  return gitPath(relative(ctx.repoRoot, ctx.pendingDir));
+  return pendingDirRelAt(ctx.repoRoot, ctx.pendingDir);
+}
+
+/**
+ * {@link pendingDirRel} for the two reads on this page that run where no
+ * chain resolved and so hold the two paths rather than a context
+ * ({@link readPendingLoose}, {@link readLooseFilingTimes}).
+ *
+ * The fold itself, which is why the context form delegates here rather than
+ * the other way round: one spelling of "the ledger as git names it", so a
+ * chain-less caller cannot reach git in the host's alphabet while every
+ * tick's read is in git's (`.claude/rules/posture-sweep.md`, *Standing
+ * lenses*).
+ */
+function pendingDirRelAt(
+  repoRoot: string,
+  pendingDir: string,
+): string | undefined {
+  if (escapesRoot(repoRoot, pendingDir)) return undefined;
+  return gitPath(relative(repoRoot, pendingDir));
 }
 
 /**
@@ -1008,8 +1026,9 @@ export async function readPendingForDecision(
  * caller to decide how to surface it, and `flume status` (`src/cliStatus.ts`)
  * decides at its own arm.
  *
- * The one read on this page that takes bare paths rather than a
- * {@link PendingLedgerContext}: it runs where no chain resolved, which is the
+ * One of the two reads on this page that take bare paths rather than a
+ * {@link PendingLedgerContext} ({@link readLooseFilingTimes} is the other):
+ * it runs where no chain resolved, which is the
  * whole reason it exists beside the reads that compose a declared extension.
  * `stateRoot` is the root the listing's absence is proven from
  * ({@link readQueueOnDisk}), which this caller holds either way, and
@@ -1024,4 +1043,28 @@ export function readPendingLoose(
   const files = readQueueOnDisk(stateRoot, pendingDir);
   if (files === null) return { ok: true, entries: [], errors: [] };
   return parsePendingQueueLoose(files, maxEntryDepth);
+}
+
+/**
+ * {@link readLedgerFilingTimes} for a caller holding the two paths and no
+ * chain — `flume status`'s flow figures (`flowLine`, `src/queueFlow.ts`),
+ * which measure from the same filing times every selection orders by and
+ * must read them whether or not the chain came up.
+ *
+ * Same tip, same alphabet, same relocated-ledger answer as its sibling: a
+ * dock git cannot name has no filing times at all, and the read says so by
+ * answering none.
+ *
+ * Unlike {@link readPendingLoose}, this one reaches git, so it carries git's
+ * own failures — a cwd no repository holds, a repository with no commit yet.
+ * They are the caller's to classify: the observational verb that reads this
+ * withholds the figures it feeds and says so, rather than printing a queue
+ * nothing has ever been filed into (`.claude/rules/engineering.md`, *Loud or
+ * nothing*).
+ */
+export async function readLooseFilingTimes(
+  repoRoot: string,
+  pendingDir: string,
+): Promise<FilingTimes> {
+  return readFilingTimes(repoRoot, "HEAD", pendingDirRelAt(repoRoot, pendingDir));
 }

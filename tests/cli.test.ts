@@ -99,6 +99,7 @@ import {
   stubbedAgentChainSrc,
   writeRepoConfig,
 } from "./helpers/repoChain.ts";
+import { flowLine } from "../src/queueFlow.ts";
 import { makeScratchRepo, type ScratchRepo } from "./helpers/scratchRepo.ts";
 import { topLevelCommandNames } from "./helpers/shippedHelp.ts";
 import {
@@ -7990,5 +7991,235 @@ describe("flume exclusive — the operator's command under the ship lock", () =>
     const { code, out } = await runCli(scratch.dir, ["exclusive", "--"]);
     expect(out).toContain("usage: flume exclusive -- <command> [args...]");
     expect(code, out).toBe(2);
+  });
+});
+
+/**
+ * spec/cli.md "`flume status` owes exactly this", line 10 — the flow row: the
+ * median time from filing to shipping, the longest a ready `work` entry is
+ * waiting right now, and failed merges per shipped entry.
+ *
+ * Driven through the real verb over a real repository, because two of the
+ * three figures are git's answer about this fixture's own history: the filing
+ * times come off `git log`'s add commits, so a hand-built map of times would
+ * be this file's copy of the read the figures exist to fold
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*). The verdict side is written through `writeTickVerdict` for the same
+ * reason — the log the verb reads is the one the engine writes.
+ */
+describe('flume status — the flow row (spec/cli.md "flume status owes exactly this", line 10)', () => {
+  /**
+   * The instant this fixture's filings are dated from, and the instant its
+   * ships are dated against. Fixed rather than relative to now: the
+   * filing-to-ship spans are differences between two instants the case owns,
+   * so the median is exact and no spawn's wall clock reaches it.
+   */
+  const FILED_AT_MS = Date.parse("2026-01-01T00:00:00Z");
+  const HOUR_MS = 3_600_000;
+
+  /** One tick's verdict: what it shipped, when, and the merge fates it recorded. */
+  function verdict(opts: {
+    shippedTags: string[];
+    atMs: number;
+    mergeOutcomes?: TickVerdict["mergeOutcomes"];
+  }): TickVerdict {
+    return {
+      phaseName: "build",
+      tags: opts.shippedTags,
+      committed: true,
+      gateResults: [],
+      shippedTags: opts.shippedTags,
+      mergeOutcomes: opts.mergeOutcomes ?? [],
+      invocations: [],
+      timings: [],
+      summary: `build: shipped ${opts.shippedTags.join(", ")}`,
+      headSha: "0".repeat(40),
+      at: new Date(opts.atMs).toISOString(),
+    };
+  }
+
+  /** A `work` entry the queue reader and the gate switch both accept. */
+  const entry = (tag: string): unknown => ({
+    tag,
+    gate: { kind: "open" },
+    dependsOnForks: [],
+    files: {
+      new: [],
+      edit: [{ path: `src/${tag}.ts`, description: tag }],
+      retire: [],
+    },
+  });
+
+  /**
+   * File `tags` into the default queue as one commit dated `atMs` — the
+   * filing the figures measure from is an **add** under the entry's own
+   * filename (`readFilingTimes`, `src/filingOrder.ts`), so the fixture files
+   * through git rather than writing the queue and leaving it uncommitted.
+   */
+  async function fileEntries(
+    dir: string,
+    tags: string[],
+    atMs: number,
+  ): Promise<void> {
+    const flumeDir = join(dir, ".flume");
+    await seedQueue(resolvePendingDir(flumeDir), tags.map(entry));
+    const at = new Date(atMs).toISOString();
+    await exec("git", ["add", "-A"], { cwd: dir });
+    await exec("git", ["commit", "-q", "-m", `file ${tags.join(", ")}`], {
+      cwd: dir,
+      env: { ...process.env, GIT_AUTHOR_DATE: at, GIT_COMMITTER_DATE: at },
+    });
+  }
+
+  /** Retire `tags` from the queue as one commit — what shipping an entry leaves behind. */
+  async function retireEntries(dir: string, tags: string[]): Promise<void> {
+    for (const tag of tags) {
+      await exec(
+        "git",
+        ["rm", "-q", "--", `.flume/plan/pending/${entryFileName(tag)}`],
+        { cwd: dir },
+      );
+    }
+    await exec("git", ["commit", "-q", "-m", `ship ${tags.join(", ")}`], {
+      cwd: dir,
+    });
+  }
+
+  /** The flow row of a listing, read as the one whole line it is. */
+  const flowRow = (out: string): string | undefined =>
+    out.split("\n").find((line) => line.startsWith("flow: "));
+
+  it("flume status prints the median time from filing to shipping over the verdict history", async () => {
+    const repo = await makeScratchRepo("flume-status-flow-median-", "main");
+    try {
+      // Three ships, filed together and shipped an hour, two hours and nine
+      // hours later: an odd population, so the median is the middle span
+      // rather than a mean of two, and it is neither the shortest nor the
+      // longest — a figure reading either end reds here.
+      await fileEntries(repo.dir, ["ALPHA", "BRAVO", "CHARLIE"], FILED_AT_MS);
+      await retireEntries(repo.dir, ["ALPHA", "BRAVO", "CHARLIE"]);
+      const flumeDir = join(repo.dir, ".flume");
+      for (const [tag, hours] of [
+        ["ALPHA", 1],
+        ["BRAVO", 2],
+        ["CHARLIE", 9],
+      ] as const) {
+        await writeTickVerdict(
+          flumeDir,
+          verdict({
+            shippedTags: [tag],
+            atMs: FILED_AT_MS + hours * HOUR_MS,
+          }),
+        );
+      }
+
+      const r = await runCli(repo.dir, ["status"]);
+
+      expect(r.code, r.out).toBe(0);
+      // Vacuity: the row exists and the history it folded was populated —
+      // every figure below is read off the same three verdicts.
+      const row = flowRow(r.out);
+      expect(row, r.out).toBeDefined();
+      expect(row).toContain("median filing→ship 2h 0m");
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it("flume status prints the longest a ready work entry has been waiting", async () => {
+    const repo = await makeScratchRepo("flume-status-flow-wait-", "main");
+    try {
+      // Two ready entries, so the figure is a maximum over a populated set
+      // and not the only span there was. The older is dated two days, twelve
+      // hours and a half past — the half hour being slack, since the figure
+      // floors to the hour and the spawn below spends seconds of it.
+      const now = Date.now();
+      await fileEntries(repo.dir, ["RECENT"], now - 2 * HOUR_MS);
+      await fileEntries(
+        repo.dir,
+        ["WAITING"],
+        now - (60 * HOUR_MS + 30 * 60_000),
+      );
+
+      const r = await runCli(repo.dir, ["status"]);
+
+      expect(r.code, r.out).toBe(0);
+      // Vacuity: both entries are in the queue this row read, so the maximum
+      // below is over two ready entries rather than over nothing.
+      expect(r.out).toContain("pending: 2");
+      expect(flowRow(r.out)).toContain("longest ready wait 2d 12h");
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it("flume status prints failed merges per shipped entry", async () => {
+    const repo = await makeScratchRepo("flume-status-flow-rate-", "main");
+    try {
+      // Four ships over two ticks, one cherry-pick conflict between them —
+      // and a `merged` row beside it, so a figure counting every merge
+      // outcome rather than the failed one reads 0.50 and reds.
+      const flumeDir = join(repo.dir, ".flume");
+      await writeTickVerdict(
+        flumeDir,
+        verdict({
+          shippedTags: ["ALPHA", "BRAVO"],
+          atMs: FILED_AT_MS,
+          mergeOutcomes: [
+            { entryTag: "ALPHA", outcome: "merged" },
+            { entryTag: "BRAVO", outcome: "merged" },
+          ],
+        }),
+      );
+      await writeTickVerdict(
+        flumeDir,
+        verdict({
+          shippedTags: ["CHARLIE", "DELTA"],
+          atMs: FILED_AT_MS + HOUR_MS,
+          mergeOutcomes: [
+            { entryTag: "CHARLIE", outcome: "merged" },
+            { entryTag: "DELTA", outcome: "merged" },
+            { entryTag: "ECHO", outcome: "cherry-pick-conflict" },
+          ],
+        }),
+      );
+
+      const r = await runCli(repo.dir, ["status"]);
+
+      expect(r.code, r.out).toBe(0);
+      expect(flowRow(r.out)).toContain("failed merges per ship 0.25");
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it("flume status prints the flow line with no figures when the verdict history is empty", async () => {
+    const repo = await makeScratchRepo("flume-status-flow-empty-", "main");
+    try {
+      // A repository with a commit and nothing else: the filing read answers
+      // — an empty map — so this is the no-population case and never the
+      // withheld one the unreadable filing read prints.
+      const r = await runCliStreams(repo.dir, ["status"]);
+
+      expect(r.code, r.stderr).toBe(0);
+      // The expected row comes from the renderer the verb prints through, so
+      // the case pins the verb against the real writer rather than against a
+      // second spelling of the row here.
+      const expected = flowLine({
+        verdicts: [],
+        ready: [],
+        filingTimes: new Map(),
+        now: Date.now(),
+      });
+      // The title's own claim: no figures, all three — a row carrying one
+      // number and two absences would otherwise pass this.
+      expect(expected.split("not yet measurable").length - 1).toBe(3);
+      expect(flowRow(r.stdout)).toBe(expected);
+      // Line 10 of the listing is the last of it, so the row ends stdout.
+      const lines = r.stdout.split("\n").filter((line) => line.length > 0);
+      expect(lines[lines.length - 1]).toBe(expected);
+    } finally {
+      await repo.cleanup();
+    }
   });
 });
