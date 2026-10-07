@@ -1,19 +1,45 @@
 {
   "tag": "A-MERGE-CARRIES-A-BATCH-OF-SPANS-GATED-ONCE",
-  "gate": { "kind": "blockedBy", "tags": ["A-GATE-DECLARES-WHETHER-IT-READS-A-BATCH"] },
+  "gate": {
+    "kind": "open"
+  },
+  "dependsOnForks": [],
   "priority": 10,
   "files": {
+    "new": [],
     "edit": [
-      { "path": "src/waveMerge.ts", "description": "picking a batch in order, gating once, the ledger commit, and the serial fallback" },
-      { "path": "src/Dispatcher.ts", "description": "which finished spans of this tick a merge takes" },
-      { "path": "src/Gate.ts", "description": "the seam the batch context rides" },
-      { "path": "src/Phase.ts", "description": "the seam the batching predicate rides" },
-      { "path": "tests/Dispatcher.test.ts", "description": "the batched wave, its red fallback and its conflict fallback" },
-      { "path": "tests/worktrees.test.ts", "description": "the per-entry revert isolation a fallback preserves" }
-    ]
+      {
+        "path": "src/waveMerge.ts",
+        "description": "picking a batch in order, gating once, the ledger commit, and the serial fallback"
+      },
+      {
+        "path": "src/Dispatcher.ts",
+        "description": "which finished spans of this tick a merge takes"
+      },
+      {
+        "path": "src/Gate.ts",
+        "description": "the seam the batch context rides"
+      },
+      {
+        "path": "src/Phase.ts",
+        "description": "the seam the batching predicate rides"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the batched wave, its red fallback and its conflict fallback"
+      },
+      {
+        "path": "tests/worktrees.test.ts",
+        "description": "the per-entry revert isolation a fallback preserves"
+      }
+    ],
+    "retire": []
   },
   "summary": "a wave's merge carries up to mergeBatch finished spans of its own tick, cherry-picked in order and gated once; red or a conflict resets to the tip and merges them one at a time",
-  "per": { "path": "spec/worktrees.md", "section": "Batched merges" },
+  "per": {
+    "path": "spec/worktrees.md",
+    "section": "Batched merges"
+  },
   "acceptance": "a green batch ships every span in one ledger commit after one afterMerge gate run; a red batch, or a conflict while picking, resets to the tip before the batch and merges its spans individually, so blame and revert stay per entry",
   "tests": [
     "a merge carries up to mergeBatch finished spans of the same tick",
@@ -23,5 +49,7 @@
     "a conflict while picking a batch falls back to per-entry merging",
     "the afterMerge gates run once over a green batch"
   ],
+  "pins": [],
+  "laneTests": [],
   "notes": "Only spans waiting on the ship lock are candidates. A red batch costs one gate run more than merging serially would have — that is the priced trade, not a defect to design around."
 }
