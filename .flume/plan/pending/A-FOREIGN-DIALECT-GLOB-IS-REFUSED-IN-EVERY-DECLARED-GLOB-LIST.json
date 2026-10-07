@@ -1,0 +1,26 @@
+{
+  "tag": "A-FOREIGN-DIALECT-GLOB-IS-REFUSED-IN-EVERY-DECLARED-GLOB-LIST",
+  "gate": { "kind": "open" },
+  "priority": 20,
+  "files": {
+    "edit": [
+      { "path": "src/chainLoad.ts", "description": "the load-time dialect refusal grows the supervisor policy's glob list beside the fence's two fields" },
+      { "path": "harness/declaration.ts", "description": "the globs shape itself refuses a foreign dialect, so every list it shapes is covered at once" },
+      { "path": "tests/chain.test.ts", "description": "the partitionIgnore refusals beside the fence dialect block" },
+      { "path": "tests/harnessDeclaration.test.ts", "description": "the refusal over each list the declaration shapes as globs" }
+    ]
+  },
+  "summary": "a foreign-dialect glob is refused at the load that reads it — supervisorPolicy.partitionIgnore in the engine, and every list the package's declaration shapes as globs",
+  "per": { "path": ".claude/rules/engineering.md", "section": "Loud or nothing" },
+  "acceptance": "a '!'-leading or '{a,b}' glob in supervisorPolicy.partitionIgnore refuses the chain load naming the field and the dialect, every list the declaration shapes as globs refuses the same two spellings naming its own field, and an ordinary list still loads",
+  "tests": [
+    "a partitionIgnore glob that opens with `!` refuses the chain load",
+    "a partitionIgnore glob holding a `{…,…}` alternation refuses the chain load",
+    "the partitionIgnore refusal names the field and the dialect the glob was written in",
+    "a foreign-dialect glob refuses the declaration in every list it shapes as globs"
+  ],
+  "pins": [
+    "an ordinary partitionIgnore glob list loads unrefused"
+  ],
+  "notes": "foreignGlobForm (src/paths.ts) is the shared predicate and already exported; harness imports from ../src/paths.js as gates.ts does matchesAny, so neither half respells the dialect. A foreign sweep domain glob empties the frontier, so the rotation closes quiet-on-clean over nothing."
+}
