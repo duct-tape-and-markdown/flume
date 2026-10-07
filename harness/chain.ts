@@ -59,6 +59,7 @@ import { harnessGates, type GateEngine } from "./gates.js";
 import { defaultRefusesEntry, resolveHandoff } from "./handoff.js";
 import { namedLinesGate } from "./judgeGate.js";
 import { noteGlobs, planArtifacts } from "./layout.js";
+import { queueOrder } from "./order.js";
 import { provisioning, worktreeSetup } from "./provisioning.js";
 import {
   BUILD_PROMPT_DATA_KEYS,
@@ -413,6 +414,12 @@ export function harnessChain(options: HarnessChainOptions): Chain {
     // runs: every slice's window is a fact of disk a sibling's handoff can
     // produce, so nothing here is handoff-unwakeable.
     humanOnly: [],
+    // The queue's order (`order.ts`), unconditional for the same reason the
+    // refusal below is: it is the package's opinion about which work is next,
+    // and a consumer that wanted another would be writing its own chain
+    // rather than adopting this one. The operator's lever is the goal rank a
+    // record places, never a knob here (`spec/harness.md`, *The phases*).
+    order: queueOrder,
     // The package's per-entry refusal (`handoff.ts`), unconditional because
     // it is the floor: whatever handoff a phase runs, declared or default,
     // runs above it (`spec/harness.md`, *The default `handoff`*). Over the

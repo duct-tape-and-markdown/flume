@@ -1,7 +1,14 @@
 /**
- * The queue's goals as the drain that files and re-ranks them is shown them
- * (`spec/harness.md`, *Goals and decomposition*): every root `group` standing
- * in the queue, in the operator's order, with what still stands beneath it.
+ * The queue's goals: every root `group` standing in it, in the operator's
+ * order, with what still stands beneath each (`spec/harness.md`, *Goals and
+ * decomposition*).
+ *
+ * One reading of the forest, with two readers. The drain that files and
+ * re-ranks a goal is shown it as the block below; the order the package
+ * serves the queue in sequences by it (`harness/order.ts`), because the
+ * operator's rank is the queue's first key. A second walk spelled beside
+ * this one would be the same steps answering differently
+ * (`.claude/rules/engineering.md`, *A module is one job*).
  *
  * **A derivation over the queue, not a second copy of it.** The tick already
  * carries every entry file's bytes in its queue listing, and this block adds
@@ -65,12 +72,14 @@ const isGoal = (entry: PendingEntry): boolean =>
  * Every goal the queue carries, in the order the operator put them in: rank
  * ascending, a goal carrying no rank last, ties on the tag.
  *
- * The tag tiebreak is what makes the block the same bytes for the same queue,
+ * The tag tiebreak is what makes this reading total for the same queue,
  * whatever order the entry files were listed in — two goals at one rank is a
  * collision the drain must resolve, and it cannot read a collision off a
- * listing whose order moves under it.
+ * listing whose order moves under it. The order the package serves the queue
+ * in leans on the same totality: a wave's sequence may not move because a
+ * directory listing came back differently (`harness/order.ts`).
  */
-function standingGoals(pending: readonly PendingEntry[]): StandingGoal[] {
+export function standingGoals(pending: readonly PendingEntry[]): StandingGoal[] {
   const children = new Map<string, PendingEntry[]>();
   for (const entry of pending) {
     if (entry.parent === undefined) continue;

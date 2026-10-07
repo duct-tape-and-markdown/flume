@@ -3167,6 +3167,29 @@ out of (§3) and in what order a freed slot pulls, and the order
 is parallelism — two entries that declare an overlapping file never run
 together whatever order they are served in.
 
+**The order the harness package declares.** Adopt the harness package and you
+adopt its policy, unconditionally — `harness/order.ts`, four keys, applied in
+turn:
+
+1. **Work under an operator's goal, in the goals' order.** A goal is a root
+   `group`, and the rank it carries is the operator's; goals sort by it, a goal
+   carrying no rank last, ties on the tag.
+2. **With everything that work is `blockedBy`.** A goal claims its own subtree
+   and, transitively, every blocker standing outside it — serving a goal while
+   leaving its upstream behind the rest of the queue would rank a goal nothing
+   can progress. Upstream two goals share is served with the earlier of them.
+   Work under no goal sorts behind work under every goal.
+3. **Then the longest chain of work waiting behind an entry** — critical-path
+   over the same `blockedBy` edges, counting `work` alone, so the entry whose
+   delay costs the most sequencing goes first.
+4. **Then the engine's own default:** oldest filing, then tag.
+
+Nothing a producer files carries a rank, and where an entry came from orders
+nothing: a downstream report is urgent because the operator ranks the goal it
+sits under. The operator's lever is that `rank`, never a knob on the
+declaration — a consumer wanting another policy declares its own chain
+(`spec/harness.md`, *The phases*).
+
 ## Putting it together
 
 ```ts

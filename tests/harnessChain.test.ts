@@ -44,6 +44,7 @@ import {
 } from "../harness/declaration.ts";
 import { defaultHandoff, type Handoff } from "../harness/handoff.ts";
 import { consumerIgnores } from "../harness/ignores.ts";
+import { queueOrder } from "../harness/order.ts";
 import {
   PLAN_SLICE_PROMPT_SPAN_KEYS,
   promptPath,
@@ -513,6 +514,25 @@ it("the package declares build first and the plan slices after it, the sweep las
     "plan-inbox",
     "plan-derive",
   ]);
+});
+
+it("the factory declares the package's queue order", () => {
+  // Identity, not behavior: what the order serves is
+  // `tests/harnessOrder.test.ts`'s subject, and what this case claims is that
+  // the chain a consumer adopts reaches it — an order left off the chain
+  // would leave every case over it green while the loop served the engine's
+  // default.
+  expect(chainFor().order).toBe(queueOrder);
+
+  // On every declaration, not one: the order is the package's opinion about
+  // which work is next, and the operator's lever is the goal rank a record
+  // places rather than a field here.
+  expect(
+    chainFor({
+      ...DECLARATION,
+      slices: { enabled: ["plan-inbox"] },
+    }).order,
+  ).toBe(queueOrder);
 });
 
 it("a plan slice the declaration does not enable is absent from the returned chain", () => {
