@@ -1,6 +1,8 @@
 {
   "tag": "A-SINGLETONS-MERGED-SPAN-REPORTS-THE-GATED-TIP",
-  "gate": { "kind": "open" },
+  "gate": {
+    "kind": "open"
+  },
   "kind": "work",
   "files": {
     "new": [],
@@ -16,6 +18,14 @@
       {
         "path": "tests/Dispatcher.test.ts",
         "description": "the field's cases under both concurrencies"
+      },
+      {
+        "path": "src/Phase.ts",
+        "description": "`TickResult.gatedTip`s hover text, which states the singleton absence"
+      },
+      {
+        "path": "src/tickVerdict.ts",
+        "description": "the verdict fields own doc, stating the same absence"
       }
     ],
     "retire": []
@@ -25,7 +35,7 @@
     "path": "spec/loop.md",
     "section": "The tick verdict — one facts artifact"
   },
-  "acceptance": "a singleton tick whose span merged and whose `afterMerge` gates passed carries `gatedTip`; one whose span was reverted, refused or never picked carries none; and a fanout ship whose ledger rewrite exited tip-claimed carries none with `tipMoved` set",
+  "acceptance": "a singleton tick whose span merged and whose `afterMerge` gates passed carries `gatedTip`; one whose span was reverted, refused or never picked carries none; and a fanout ship whose ledger rewrite exited tip-claimed carries none with `tipMoved` set; and `TickResult.gatedTip` and the verdict field it carries onto disk no longer state that a singleton has none",
   "tests": [
     "a singleton tick whose span merged reports the gated tip it left",
     "a singleton tick whose afterMerge gates reverted its span reports no gated tip",
@@ -33,5 +43,5 @@
   ],
   "pins": [],
   "laneTests": [],
-  "notes": "`gatedTip` is set in `src/waveMerge.ts` alone, so every singleton verdict withholds it and a step delivering trunk infers one from commit subjects instead. The fanout half: `commitAttemptLedger` returns normally on a `tip-claimed` rewrite — it sets `tipMoved` and the caller still reads the tip, which may then name a commit no gate of this tick judged."
+  "notes": "`gatedTip` is set in `src/waveMerge.ts` alone, so every singleton verdict withholds it and a step delivering trunk infers one from commit subjects instead. The fanout half: `commitAttemptLedger` returns normally on a `tip-claimed` rewrite — it sets `tipMoved` and the caller still reads the tip. Both doc sites (`src/Phase.ts:501`, `src/tickVerdict.ts:977`) state the singleton absence spec/loop.md retired, so they move with the field."
 }

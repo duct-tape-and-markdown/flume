@@ -1,0 +1,57 @@
+{
+  "tag": "THE-MOUNT-DEAD-NARRATION-STATES-THE-RETIRED-ABORT",
+  "gate": {
+    "kind": "blockedBy",
+    "tags": [
+      "A-MOUNT-DEAD-69-ABORTS-ONLY-WHILE-THE-MOUNT-IS-STILL-DEAD"
+    ]
+  },
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/cliHelp.ts",
+        "description": "the loop verb's 69 row, the shipped sentence an operator reads"
+      },
+      {
+        "path": "docs/CLI.md",
+        "description": "the loop paragraph's 69 clause"
+      },
+      {
+        "path": "src/exitCodes.ts",
+        "description": "EX_MOUNT_DEAD's hover text, engine surface through the exports map"
+      },
+      {
+        "path": "src/Dispatcher.ts",
+        "description": "the resolution-failure fallback comment"
+      },
+      {
+        "path": "src/waveMerge.ts",
+        "description": "LedgerRefusalClass's parse-failure arm"
+      },
+      {
+        "path": "src/PendingSchema.ts",
+        "description": "PendingParseFailure's fold-into-mount-dead paragraph"
+      },
+      {
+        "path": "tests/cliHelp.test.ts",
+        "description": "the help page's rows and the docs/CLI.md read beside them"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "the mount-dead narration on the shipped help page, on docs/CLI.md and in four doc comments states the unconditional abort the spec retired, not the re-read that now decides it",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Narration is the ladder's bottom rung"
+  },
+  "acceptance": "`flume loop --help`'s 69 row and docs/CLI.md's loop paragraph state what spec/loop.md, *Exit codes — the run never lies to CI* now names — a child's 69 ends the run only while the chain still will not resolve or the queue still will not parse at the tip — and the four doc comments asserting the unconditional wall state it too: `grep -rn 'exactly as dead next tick' src/`, `grep -rn 'exactly as unusable next tick' src/` and `grep -rn 'against the same wall' src/ docs/` come back empty or name only sentences that carry the re-read",
+  "tests": [
+    "the loop help page's mount-dead row states the run aborts only while the mount is still dead",
+    "docs/CLI.md's loop paragraph states a child's 69 the supervisor does not abort on"
+  ],
+  "pins": [],
+  "laneTests": [],
+  "notes": "Verified on this tip: spec/loop.md heads *Mount-dead aborts — once the mount is still dead*, while `src/exitCodes.ts:28`, `src/Dispatcher.ts:962`, `src/waveMerge.ts:205`, `src/PendingSchema.ts:589`, `src/cliHelp.ts:729` and `docs/CLI.md:71` still state the unconditional wall. Blocked on the behavior: that entry names `src/loopSupervisor.ts` and its test alone and is in flight, so this narration could not ride it. Help and docs are shipped surface, pinnable for what they say."
+}
