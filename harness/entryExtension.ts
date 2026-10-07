@@ -2,9 +2,9 @@
  * The entry extension the harness package declares (`spec/harness.md`, *The
  * entry extension*) — `summary`, `per`, `acceptance`, `tests[]`, `pins[]`,
  * `laneTests[]`, `notes`, with their caps and their hints, plus the optional
- * {@link CONTRACT_TOUCHING_FIELD} the package's default handoff acts on and
- * the optional interface an entry states when it changes what its callers
- * call.
+ * {@link CONTRACT_TOUCHING_FIELD} the package's default handoff acts on, the
+ * optional interface an entry states when it changes what its callers call,
+ * and the optional {@link GOAL_RANK_FIELD} a goal carries.
  *
  * Each field is declared **once**, as the engine's `EntryExtensionField`:
  * the `schema` side validates at parse and gate time, the `hint` side
@@ -28,7 +28,7 @@
 import { z } from "zod";
 
 import type { EntryExtension, EntryExtensionField } from "../src/PendingSchema.js";
-import type { Declaration } from "./declaration.js";
+import { INBOX_PHASE, type Declaration } from "./declaration.js";
 import type { Lane } from "./runner.js";
 
 /**
@@ -210,6 +210,24 @@ export type LaneTest = z.output<typeof LaneTestsSchema>[number];
 export const CONTRACT_TOUCHING_FIELD = "contractTouching";
 
 /**
+ * The name of the goal rank (`spec/harness.md`, *The gates the discipline
+ * needs*): the operator's ordering over the queue's goals, and the only rank
+ * the queue carries now that nothing orders an entry by its filer's number.
+ *
+ * Declared here rather than in the engine core because the engine consumes no
+ * rank: a number it does not order by is one implementation's convention
+ * (`.claude/rules/engine-boundary.md`, *Capability vs convention*). The
+ * package is where flume's own convention ships.
+ *
+ * One spelling, two readers: the field declared below, and the goal-rank gate
+ * reading it off a queued entry (`harness/gates.ts`). A string literal at the
+ * gate would be a second copy of this declaration's key, kept in step by
+ * discipline (`.claude/rules/engineering.md`, *Derived state is computed,
+ * never restated beside its source*).
+ */
+export const GOAL_RANK_FIELD = "rank";
+
+/**
  * What the running lane will not reach, as a clause on the three named-line
  * hints — the reader `spec/harness.md`, *The runner interface* names for
  * `Runner.lanes`.
@@ -238,8 +256,9 @@ function laneClause(lanes: readonly Lane[]): string {
 /**
  * The package's fields, in the order `spec/harness.md` lists them — which is
  * the order they render in, since `renderSchemaForPrompt` follows
- * declaration order — with {@link CONTRACT_TOUCHING_FIELD} and the intended
- * interface last, after the six that section names.
+ * declaration order — with {@link CONTRACT_TOUCHING_FIELD}, the intended
+ * interface and {@link GOAL_RANK_FIELD} last, after the six that section
+ * names.
  *
  * Built per composition rather than held as a constant, because three of the
  * hints carry {@link laneClause} and one field's schema is held to the
@@ -347,6 +366,26 @@ function packageFields(context: ExtensionContext) {
         })
         .optional(),
       hint: `{ "changes": "what callers outside the touched modules gain or call differently", "hides": "what the shape stops asking a caller to know", "rejected": "the alternative shape this turns down, and why it lost" } — optional, for an entry that adds to or changes what code outside its own modules calls; all three parts or the entry is refused, and omitted entirely where no caller's view moves`,
+    },
+    /**
+     * The goal rank {@link GOAL_RANK_FIELD} names: where this goal sits in the
+     * operator's ordering of them.
+     *
+     * Shape alone here, and the shape is a whole number — **which entry may
+     * carry one, and which commit may write one, are the goal-rank gate's**
+     * (`harness/gates.ts`). Neither is expressible as a field schema: a
+     * declared field's validator is handed its own value and nothing beside
+     * it, so `kind`, `parent` and the commit that moved the number are all
+     * out of its reach. The hint states both rules because the plan tick that
+     * would break one reads the hint, not the gate.
+     *
+     * Optional on the schema and **required by that gate of every root
+     * `group`**: a goal with no rank has no place in the operator's ordering,
+     * which is the one thing the number is for.
+     */
+    [GOAL_RANK_FIELD]: {
+      schema: z.number().int().optional(),
+      hint: `a whole number, lowest first — where this goal sits in the operator's ordering of them. Carried by every root \`group\` and by nothing else: a \`work\` or \`step\` entry with one, a group under a parent with one, or a root group without one is refused. Written only by the slice that drains the records (\`${INBOX_PHASE}\`), and only from the record that stated it — the rank is the operator's lever, so a tick that set one itself would be pulling it`,
     },
   } satisfies Record<string, EntryExtensionField>;
 }

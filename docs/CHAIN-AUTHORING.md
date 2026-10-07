@@ -60,12 +60,12 @@ the first of them is what this page documents:
   (`plan-inbox`, `plan-derive`, `plan-sweep`), a fanout `build` phase, their
   prompts and discipline, the entry extension (`summary`, `per`,
   `acceptance`, `tests[]`, `pins[]`, `laneTests[]`, `notes`,
-  `contractTouching`, `interface`), the judge
+  `contractTouching`, `interface`, `rank`), the judge
   that proves a `tests[]` line green on the merged tree and red on the base
   and reports a `laneTests[]` line owed to the CI lane that runs it,
   the discipline gates that run ahead of whatever a consumer declared
   (`records`, `clean-tree`, `pending-gate`, `per cites resolve`,
-  `slice-state`), the records conventions, and the plan state
+  `goal rank`, `slice-state`), the records conventions, and the plan state
   as typed state rather than prose a cursor is regexed out of.
 
 One package, one version: an engine minor that breaks the chain surface ships

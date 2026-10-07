@@ -23,6 +23,7 @@ import {
   CONTRACT_TOUCHING_FIELD,
   ENTRY_CAPS,
   EntryFieldRemovalError,
+  GOAL_RANK_FIELD,
   entryExtension,
 } from "../harness/index.ts";
 import type { Declaration, Lane } from "../harness/index.ts";
@@ -65,12 +66,14 @@ const NAMED_LINE_FIELDS = ["tests", "pins", "laneTests"];
 /**
  * Every field the package declares, in declaration order — which is render
  * order: those six, with the host-gated named-line field among them beside
- * the two it shares a bar with, and the package's risk flag last.
+ * the two it shares a bar with, then the package's risk flag, the intended
+ * interface, and the goal rank last.
  */
 const PACKAGE_FIELDS = [
   ...SPEC_FIELDS.flatMap((field) => (field === "notes" ? ["laneTests", field] : [field])),
   CONTRACT_TOUCHING_FIELD,
   INTERFACE_FIELD,
+  GOAL_RANK_FIELD,
 ];
 
 /**
@@ -132,6 +135,10 @@ const everyPackageField: Record<string, unknown> = {
   notes: "context the spec does not carry",
   [CONTRACT_TOUCHING_FIELD]: true,
   [INTERFACE_FIELD]: wholeInterface,
+  // A whole number, which is the whole of the field's own schema: which entry
+  // may carry one and which commit may write one are the goal-rank gate's
+  // (`tests/harnessGates.test.ts`), so the parse leg here sees a bare rank.
+  [GOAL_RANK_FIELD]: 2,
 };
 
 /** A Standard Schema that accepts anything — this file judges wiring, not validation. */
@@ -250,6 +257,29 @@ it("docs/CHAIN-AUTHORING.md names every field the package's entry extension decl
   // cannot ship beside a page still naming the old set, and a field it retires
   // leaves no name standing there.
   expect([...rostered].sort()).toEqual([...fields].sort());
+});
+
+/**
+ * The goal rank's own schema, which is the whole of what a field validator can
+ * hold: a whole number. Placement and provenance need `kind`, `parent` and
+ * the span the commit moved, none of which a per-field validator is handed,
+ * so those are the goal-rank gate's (`tests/harnessGates.test.ts`).
+ */
+it("a goal rank that is not a whole number is refused", () => {
+  const extension = entryExtension();
+
+  // The passing side first, so the refusal below is this field's schema
+  // ruling rather than a parse that refuses every rank.
+  const whole = parsePendingQueue(entryQueue({ [GOAL_RANK_FIELD]: 4 }), extension);
+  expect(whole.errors).toEqual([]);
+  expect(whole.entries[0]).toMatchObject({ [GOAL_RANK_FIELD]: 4 });
+
+  const fractional = parsePendingQueue(
+    entryQueue({ [GOAL_RANK_FIELD]: 1.5 }),
+    extension,
+  );
+  expect(fractional.errors).toHaveLength(1);
+  expect(fractional.errors[0]).toMatchObject({ path: GOAL_RANK_FIELD });
 });
 
 it("a consumer field is merged into the entry extension beside the package's own", () => {

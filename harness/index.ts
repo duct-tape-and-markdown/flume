@@ -82,6 +82,7 @@ export {
   CONTRACT_TOUCHING_FIELD,
   ENTRY_CAPS,
   EntryFieldRemovalError,
+  GOAL_RANK_FIELD,
   entryExtension,
   type ExtensionContext,
   type LaneTest,

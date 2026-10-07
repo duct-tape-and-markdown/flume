@@ -1,9 +1,10 @@
 /**
  * The gates the package's discipline needs (`spec/harness.md`, *The gates the
  * discipline needs*) — the `per` gate, the records gate, the clean-tree gate,
- * the engine's pending gate wired to the consumer's fence, and the cursor
- * gate over every cursor a plan commit moves — as one ordered set per phase,
- * always ahead of whatever gates the consumer declared.
+ * the engine's pending gate wired to the consumer's fence, the goal-rank gate
+ * over the ranks a plan commit places and moves, and the cursor gate over
+ * every cursor a plan commit moves — as one ordered set per phase, always
+ * ahead of whatever gates the consumer declared.
  *
  * **Always first is mechanism here, not a promise.** {@link harnessGates}
  * returns the package's own and then the consumer's, so a declaration
@@ -13,8 +14,8 @@
  * about *any* commit the package's chain produces, and the ones whose subject
  * a given phase never writes cost a handful of at-ref reads to say so.
  *
- * One member is not uniform, and it is not a table of where a gate applies
- * either — it is the same reasoning read the other way, that build's fence
+ * Two members are not uniform, and neither is a table of where a gate
+ * applies — each is the same reasoning read the other way, that build's fence
  * admits no entry file.
  *
  * The pending gate's **merged-tree** placement carries the claim check
@@ -26,11 +27,16 @@
  * between that commit and its cherry-pick — a pre-merge read answers about a
  * tree the collision is not in.
  *
+ * The **goal-rank** gate is the other: a rank moves only where an entry file
+ * can be written, so build's commit carries no rank for it to place and no
+ * rank it could have moved.
+ *
  * The order they run in is dependency order, not the spec's listing
  * order: the dispatcher stops at the first refusal, so the pending gate —
  * which is what proves the queue parses at all — runs before the `per` gate
- * that reads cites out of it. The slice-state gate trails them, being the one
- * whose probe costs a process rather than a read.
+ * and the goal-rank gate that read fields out of it. The slice-state gate
+ * trails them, being the one whose probe costs a process rather than a
+ * read.
  *
  * **Every fact these gates judge on is one the engine reported.** The touched
  * span, the state root's offset, the gated commit, the span's base, the
@@ -57,16 +63,26 @@ import type { Gate, GateContext, GateResult } from "../src/Gate.js";
 import type { GitStatusRecord } from "../src/git.js";
 import { matchesAny } from "../src/paths.js";
 import type { GatedQueue, GatedQueueContext } from "../src/pendingLedger.js";
-import type { EntryExtension } from "../src/PendingSchema.js";
+import type {
+  EntryExtension,
+  ParseResult,
+  PendingEntry,
+  QueueFile,
+} from "../src/PendingSchema.js";
 import type { Phase } from "../src/Phase.js";
 
 import { resolveCite, type AtRefReader, type CiteLocus } from "./citeResolver.js";
 import {
   BUILD_PHASE,
+  INBOX_PHASE,
   PLAN_SLICES,
   type Declaration,
 } from "./declaration.js";
-import { entryExtension, PerSchema } from "./entryExtension.js";
+import {
+  entryExtension,
+  GOAL_RANK_FIELD,
+  PerSchema,
+} from "./entryExtension.js";
 import {
   continuingNotePath,
   notePaths,
@@ -97,9 +113,28 @@ export interface GateEngine {
    * `pendingGate` ahead of them parsed, over an offset none of them composed.
    *
    * Taken at the ref its context names, which is the gated commit for every
-   * caller here.
+   * caller here but one: the goal-rank gate reads the same listing at
+   * `ctx.baseSha` to learn which ranks this span moved, and a second spelling
+   * of "the queue at a ref" for that leg is the divergence this field exists
+   * to prevent.
    */
   readonly readGatedQueue: (ctx: GatedQueueContext) => Promise<GatedQueue>;
+  /**
+   * The engine's own queue parse (`FlumeApi.parsePendingQueue`) — core plus
+   * the chain's declared extension, with every default the schema states
+   * already folded in.
+   *
+   * The goal-rank gate wants this rather than its own `JSON.parse` for one
+   * default: `kind` is `work` unless an entry says otherwise, and that
+   * default is what decides whether an entry is a goal at all. A fallback
+   * spelled at the gate would be a second copy of the engine's
+   * (`.claude/rules/engineering.md`, *Derived state is computed, never
+   * restated beside its source*).
+   */
+  readonly parsePendingQueue: (
+    files: readonly QueueFile[],
+    extension?: EntryExtension,
+  ) => ParseResult;
   /** The read-only git helpers the gates read a commit through. */
   readonly git: {
     /**
@@ -266,6 +301,176 @@ function perGate(declaration: Declaration, engine: GateEngine): Gate {
         );
       }
       return { ok: true, message: `${queued.length} per cite(s) resolve` };
+    },
+  };
+}
+
+/**
+ * The goal rank's two rules, each read at the commit that could have broken
+ * it (`spec/harness.md`, *The gates the discipline needs*): **only a root
+ * `group` carries one**, and **only an inbox commit adds or changes one**.
+ *
+ * Neither is expressible one rung up. A declared field's validator is handed
+ * its own value and nothing beside it, so placement — which needs `kind` and
+ * `parent` off the same entry — and provenance — which needs the number the
+ * span started from and the phase that moved it — are both out of the
+ * schema's reach, and the hint beside that schema states what this enforces
+ * (`entryExtension.ts`, {@link GOAL_RANK_FIELD}).
+ *
+ * **Placement is a biconditional, and that is the whole of "the only rank".**
+ * A `work` or `step` entry carrying a rank is a producer ordering work by a
+ * number nothing consults; a root `group` carrying none is a goal with no
+ * place in the ordering, which is the one thing the number is for. Both are
+ * refused, by one read of the same pair.
+ *
+ * **Provenance is why the gate exists at all.** The rank is the operator's
+ * statement about which goal matters next, and every tick that reads the
+ * queue is one invocation away from writing a number that looks exactly like
+ * one the operator chose. Nothing downstream can tell them apart afterwards:
+ * a self-set rank reads as instruction on every tick after, and the loop
+ * starts steering itself. So the only commit that may move one is the slice
+ * that drains the operator's records, and the phase this gate was built for
+ * is the fact it decides on — no commit's shape is read for it
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ *
+ * Wired to the queue's producers alone, which is where a rank can move at
+ * all: build's fence admits no entry file.
+ *
+ * The commit's own listing is **parsed** through the engine, for `kind`'s
+ * default ({@link GateEngine.parsePendingQueue}); the base's is read raw,
+ * because the only two values that leg wants are `tag` and the rank, neither
+ * of which carries a default, and a base the *current* extension refuses is
+ * history rather than this commit's defect — the pending gate ahead of this
+ * one is what holds the commit's own queue to the schema.
+ *
+ * **One leg cannot be judged under a relocated state root** and the verdict
+ * says so rather than reading as green: the engine reads that queue off the
+ * disk at both ends of the span, so the two listings are one and no rank can
+ * read as moved (`readGatedQueue`, `src/pendingLedger.ts`). Placement still
+ * holds there, for the reason the pending gate's schema leg does — the disk
+ * listing is the queue the next tick reads.
+ */
+function goalRankGate(
+  phaseName: string,
+  engine: GateEngine,
+  extension: EntryExtension,
+): Gate {
+  /** Whether this phase is the one commit a rank may move on. */
+  const drain = phaseName === INBOX_PHASE;
+  /** The rank an entry carries, off the one spelling of the field's name. */
+  const rankOf = (entry: { readonly [k: string]: unknown }): unknown =>
+    entry[GOAL_RANK_FIELD];
+  return {
+    name: "goal rank",
+    when: "afterCommit",
+    async run(ctx) {
+      const queue = await engine.readGatedQueue(ctx);
+      if (queue.files === null) {
+        return {
+          ok: false,
+          message: `${queue.rel} missing at ${short(ctx.commitSha)}`,
+        };
+      }
+      const parsed = engine.parsePendingQueue(queue.files, extension);
+      if (!parsed.ok) {
+        // Normally the pending gate ahead of this one answers first. The arm
+        // is still the refusal, not a pass-through: `entries` is empty on a
+        // failed parse, and both legs below would read as green over nothing
+        // (`.claude/rules/engineering.md`, *A green verdict is proven
+        // non-vacuous*).
+        return refuse(
+          `${parsed.errors.length} entry file(s) do not parse at ${short(ctx.commitSha)}, so no rank in ${queue.rel} can be placed`,
+          parsed.errors.map(
+            (error) =>
+              `${error.file}: ${error.path === "" ? "" : `${error.path}: `}${error.message}`,
+          ),
+        );
+      }
+      if (parsed.entries.length === 0) {
+        // Spelled, never inherited: a drained queue holds no goal and no
+        // rank, and reporting that as a judged green is the false pass that
+        // hides longest.
+        return {
+          ok: true,
+          message: `${queue.rel} names no entry, so it holds no goal to rank`,
+          skipped: "the queue is empty",
+        };
+      }
+
+      const misplaced = parsed.entries.flatMap((entry: PendingEntry) => {
+        const rank = rankOf(entry);
+        const goal = entry.kind === "group" && entry.parent === undefined;
+        if (goal === (rank !== undefined)) return [];
+        return [
+          goal
+            ? `${entry.tag}: a root \`group\` is a goal and carries a \`${GOAL_RANK_FIELD}\`; this one carries none`
+            : `${entry.tag}: \`${GOAL_RANK_FIELD}\` \`${String(rank)}\` on a \`${entry.kind}\`${
+                entry.parent === undefined
+                  ? ""
+                  : ` under \`${entry.parent}\``
+              }, which is no goal`,
+        ];
+      });
+      if (misplaced.length > 0) {
+        return refuse(
+          `${misplaced.length} entr${misplaced.length === 1 ? "y" : "ies"} in ${queue.rel} put the goal rank somewhere it is not a goal's; the rank orders the operator's goals, so one on anything else is a number nothing consults and a goal without one has no place in that order`,
+          misplaced,
+        );
+      }
+
+      const ranked = parsed.entries.filter(
+        (entry: PendingEntry) => rankOf(entry) !== undefined,
+      ).length;
+      const placed = `${parsed.entries.length} entr${parsed.entries.length === 1 ? "y" : "ies"} placed, ${ranked} carrying a goal rank`;
+
+      if (queue.dirRel === undefined) {
+        // Provenance is unjudgeable here and the verdict says so rather than
+        // reading as green: the engine reads a relocated root's queue off the
+        // disk at both ends of the span, so the two listings are one and the
+        // leg below would report every rank unmoved whatever this commit did.
+        return {
+          ok: true,
+          message: `${placed}; no rank can read as moved under a relocated state root, where both ends of the span are one disk listing`,
+        };
+      }
+
+      // The base's own listing, through the same engine read: `tag` and the
+      // rank are all this leg wants, and a tag the base does not hold had no
+      // rank there, which is what "added" is.
+      const before = await engine.readGatedQueue({
+        ...ctx,
+        commitSha: ctx.baseSha,
+      });
+      const held = new Map<string, unknown>(
+        (before.files ?? []).map((file) => {
+          const entry = JSON.parse(file.raw) as Record<string, unknown>;
+          return [String(entry.tag), rankOf(entry)];
+        }),
+      );
+      const moved = parsed.entries.flatMap((entry: PendingEntry) => {
+        const now = rankOf(entry);
+        const then = held.get(entry.tag);
+        if (now === then) return [];
+        return [
+          then === undefined
+            ? `${entry.tag}: ranked \`${String(now)}\` by this commit`
+            : `${entry.tag}: \`${String(then)}\` -> \`${String(now)}\``,
+        ];
+      });
+      if (moved.length > 0 && !drain) {
+        return refuse(
+          `${phaseName}'s commit moves ${moved.length} goal rank${moved.length === 1 ? "" : "s"}, which only ${INBOX_PHASE} may do; the rank is the operator's statement about which goal is next, and a tick that sets one hands itself an instruction every tick after reads as the operator's`,
+          moved,
+        );
+      }
+
+      return {
+        ok: true,
+        message:
+          moved.length === 0
+            ? `${placed}; this commit moves none`
+            : `${placed}; ${moved.length} moved by ${phaseName}, which states them: ${moved.join("; ")}`,
+      };
     },
   };
 }
@@ -700,9 +905,10 @@ function isQueueProducer(name: string): boolean {
  * the others read. The dispatcher stops at the first refusal, so that order is
  * what decides which message a tick is handed back.
  *
- * The merged-tree pending gate is the one member the set does not carry for
- * every phase, and the module doc above says why: the queue a commit rewrote
- * is its subject, and build's fence admits no entry file.
+ * The merged-tree pending gate and the goal-rank gate are the two members the
+ * set does not carry for every phase, and the module doc above says why: the
+ * queue a commit rewrote is each one's subject, and build's fence admits no
+ * entry file.
  */
 export function harnessGates(options: HarnessGatesOptions): Gate[] {
   const { phase, declaration, engine, putDown, entryFields, declared = [] } =
@@ -738,6 +944,9 @@ export function harnessGates(options: HarnessGatesOptions): Gate[] {
     cleanTreeGate(phase.writablePaths, engine),
     engine.pendingGate(queue),
     perGate(declaration, engine),
+    ...(producer
+      ? [goalRankGate(phase.name, engine, queue.extension)]
+      : []),
     sliceStateGate(engine),
     ...(producer
       ? [engine.pendingGate({ ...queue, when: "afterMerge" as const })]

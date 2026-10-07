@@ -170,6 +170,7 @@ export function harnessChain(options: HarnessChainOptions): Chain {
   const engine: GateEngine = {
     pendingGate: api.pendingGate,
     readGatedQueue: api.readGatedQueue,
+    parsePendingQueue: api.parsePendingQueue,
     git: {
       readFileAtRef: api.git.readFileAtRef,
       isAncestor: api.git.isAncestor,
@@ -209,17 +210,17 @@ export function harnessChain(options: HarnessChainOptions): Chain {
 
   /**
    * The package's discipline gates, then the consumer's, then whatever the
-   * package judges for this phase — `harnessGates` places its four first,
-   * and `own` trails the declared list (`spec/harness.md`, *What a consumer
+   * package judges for this phase — `harnessGates` places its own first, and
+   * `own` trails the declared list (`spec/harness.md`, *What a consumer
    * declares*).
    *
    * Trailing is the point: the dispatcher runs a `when`'s gates in list
    * order and stops at the first refusal, and the package's judge is the
    * expensive one — it runs the consumer's suite, twice for a red line. A
    * consumer's seconds-long typecheck declared at the same `when` reports
-   * its refusal before that minutes-long run rather than behind it. The four
-   * stay ahead of both: they are claims about the commit itself, and each
-   * costs a handful of at-ref reads.
+   * its refusal before that minutes-long run rather than behind it. The
+   * package's own stay ahead of both: they are claims about the commit
+   * itself, and each costs a handful of at-ref reads.
    */
   const gatesFor = (
     phase: Pick<Phase, "writablePaths">,

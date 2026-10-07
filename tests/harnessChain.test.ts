@@ -1188,28 +1188,42 @@ it("the package's judge runs after a consumer's declared gates at the same when"
     afterMerge.indexOf("named lines"),
   );
 
-  // And the discipline gates still lead every phase's set, the
-  // consumer's declaration notwithstanding — one roster for every phase,
-  // since nothing in the set is built from the phase's own identity
-  // (`harness/gates.ts`).
-  const DISCIPLINE = [
-    "records",
-    "clean-tree",
-    "pending-gate",
-    "per cites resolve",
+  // And the discipline gates still lead every phase's set, the consumer's
+  // declaration notwithstanding: the four claims about any commit the chain
+  // produces, then the one member built from the phase's own identity — a
+  // rank moves only where an entry file can be written, so the goal-rank
+  // gate is a producer's and build's lead carries no row for it — then the
+  // cursor gate that trails on its spawn (`harness/gates.ts`).
+  const SHARED = ["records", "clean-tree", "pending-gate", "per cites resolve"];
+  const disciplineOf = (name: string): string[] => [
+    ...SHARED,
+    ...(PLAN_SLICES.some((slice) => slice === name) ? ["goal rank"] : []),
     "slice-state",
   ];
   expect(chain.phases.length).toBeGreaterThan(0);
+  // Vacuity pin on the split: both arms of that one member are reached, so
+  // neither the producer's roster nor build's is claimed over no phase.
+  expect(
+    new Set(
+      chain.phases.map((phase) =>
+        disciplineOf(phase.name).includes("goal rank"),
+      ),
+    ),
+  ).toEqual(new Set([true, false]));
   for (const phase of chain.phases) {
+    const discipline = disciplineOf(phase.name);
     expect([
       phase.name,
-      phase.gates.slice(0, DISCIPLINE.length).map((gate) => gate.name),
-    ]).toEqual([phase.name, DISCIPLINE]);
+      phase.gates.slice(0, discipline.length).map((gate) => gate.name),
+    ]).toEqual([phase.name, discipline]);
   }
   // Nothing of the package's trails into the consumer's own point either:
-  // build's afterCommit set is the discipline set, then the declared
+  // build's afterCommit set is its discipline set, then the declared
   // typecheck, and the judge hangs on afterMerge alone.
-  expect(at("afterCommit")).toEqual([...DISCIPLINE, declared.afterCommit]);
+  expect(at("afterCommit")).toEqual([
+    ...disciplineOf(BUILD_PHASE),
+    declared.afterCommit,
+  ]);
 });
 
 /**

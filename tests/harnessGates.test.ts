@@ -51,14 +51,16 @@ import {
 import { entryClaimPath, entryClaimSlug } from "../src/entryClaims.ts";
 import { renderPidClaim } from "../src/pidClaim.ts";
 import { readGatedQueue, readQueueAtRef } from "../src/pendingLedger.ts";
-import { entryFileName } from "../src/PendingSchema.ts";
+import { entryFileName, parsePendingQueue } from "../src/PendingSchema.ts";
 import { computeStateRootRel, matchesAny } from "../src/paths.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import {
   BUILD_PHASE,
+  INBOX_PHASE,
   PLAN_SLICES,
   type PlanSlice,
 } from "../harness/declaration.ts";
+import { GOAL_RANK_FIELD } from "../harness/entryExtension.ts";
 import { JUDGED_SLICES } from "../harness/planState.ts";
 import { putDownPredicate } from "../harness/putDown.ts";
 import type { RunnerFactory } from "../harness/runner.ts";
@@ -86,6 +88,7 @@ vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
 const engine: GateEngine = {
   pendingGate,
   readGatedQueue,
+  parsePendingQueue,
   git: { readFileAtRef, isAncestor, statusRecords },
 };
 
@@ -185,12 +188,17 @@ const queueEntry = (
   over: {
     per?: { path: string; section: string };
     edit?: string;
+    kind?: PendingEntry["kind"];
+    parent?: string;
+    rank?: number;
   } = {},
 ): PendingEntry => ({
   tag,
   gate: { kind: "open" },
   dependsOnForks: [],
-  kind: "work",
+  kind: over.kind ?? "work",
+  ...(over.parent === undefined ? {} : { parent: over.parent }),
+  ...(over.rank === undefined ? {} : { [GOAL_RANK_FIELD]: over.rank }),
   files: {
     new: [],
     edit: [{ path: over.edit ?? "src/widget.ts", description: "the work" }],
@@ -493,6 +501,214 @@ it("the gates a plan slice declares carry no filing-band row", () => {
     expect({ slice, band: names.filter((name) => name.includes("band")) })
       .toEqual({ slice, band: [] });
   }
+});
+
+/**
+ * The goal rank's two rules (`spec/harness.md`, *The gates the discipline
+ * needs*), each driven over a real plan commit through the real factory's
+ * gate for the real slice: only a root `group` carries a rank, and only the
+ * records drain adds or changes one.
+ *
+ * A **goal**, here and at the gate, is a `group` with no `parent`. Every
+ * fixture composes one through `queueEntry`, so the forest fields these cases
+ * turn on are the core's own rather than a bag shaped like an entry.
+ */
+const goalRankGateOf = (slice: PlanSlice): Gate => {
+  const gate = sliceGates(slice).find((g) => g.name === "goal rank");
+  if (!gate) throw new Error(`${slice}'s set has no gate named "goal rank"`);
+  return gate;
+};
+
+/** A goal, as the inbox slice files one: a root `group` carrying its rank. */
+const goal = (tag: string, rank: number): PendingEntry =>
+  queueEntry(tag, { kind: "group", rank });
+
+/**
+ * One queue committed and left as the span's base, so the rank the next
+ * commit moves is one the base really held. The commit itself is not gated —
+ * what the cases below judge is the span off it.
+ */
+const baseQueue = async (entries: readonly PendingEntry[]): Promise<void> => {
+  await writeQueue(entries);
+  git(repo, ["add", "-A"]);
+  git(repo, ["commit", "-q", "-m", "plan: the queue this span starts from"]);
+};
+
+it("a rank on an entry that is not a group is refused", async () => {
+  const gate = goalRankGateOf(INBOX_PHASE);
+
+  // The well-placed queue first: a goal with its rank beside a `work` entry
+  // with none, so the refusal below is this gate ruling rather than a gate
+  // that never returns anything else.
+  await writeQueue([goal("A-GOAL", 1), queueEntry("THE-WORK")]);
+  const placed = await gate.run(
+    ctxFor(commitAll("plan: a goal and a work entry"), {
+      phaseName: INBOX_PHASE,
+    }),
+  );
+  expect(placed, placed.details ?? placed.message).toMatchObject({ ok: true });
+  expect(placed.message).toContain("2 entries placed, 1 carrying a goal rank");
+
+  // The same rank on the `work` entry. Judged under the drain's own gate, so
+  // the provenance leg cannot be what refuses: this is placement alone.
+  await writeQueue([goal("A-GOAL", 1), queueEntry("THE-WORK", { rank: 2 })]);
+  const refused = await gate.run(
+    ctxFor(commitAll("plan: rank a work entry"), { phaseName: INBOX_PHASE }),
+  );
+
+  expect(refused.ok).toBe(false);
+  expect(refused.details).toContain("THE-WORK");
+  expect(refused.details).toContain("`work`");
+  // And the goal beside it is not swept up in the refusal.
+  expect(refused.details).not.toContain("A-GOAL");
+});
+
+it("a rank on a group that has a parent is refused", async () => {
+  const gate = goalRankGateOf(INBOX_PHASE);
+
+  // A group under a parent carrying no rank is the passing shape: only the
+  // root of the forest is a goal, so a nested group is ranked by nothing.
+  await writeQueue([
+    goal("A-GOAL", 1),
+    queueEntry("AN-EPIC", { kind: "group", parent: "A-GOAL" }),
+  ]);
+  const placed = await gate.run(
+    ctxFor(commitAll("plan: a goal and a group beneath it"), {
+      phaseName: INBOX_PHASE,
+    }),
+  );
+  expect(placed, placed.details ?? placed.message).toMatchObject({ ok: true });
+  expect(placed.message).toContain("2 entries placed, 1 carrying a goal rank");
+
+  await writeQueue([
+    goal("A-GOAL", 1),
+    queueEntry("AN-EPIC", { kind: "group", parent: "A-GOAL", rank: 2 }),
+  ]);
+  const refused = await gate.run(
+    ctxFor(commitAll("plan: rank a group under a parent"), {
+      phaseName: INBOX_PHASE,
+    }),
+  );
+
+  expect(refused.ok).toBe(false);
+  expect(refused.details).toContain("AN-EPIC");
+  // Named by the parent that disqualifies it, so the refusal says which half
+  // of "root group" the entry failed.
+  expect(refused.details).toContain("under `A-GOAL`");
+});
+
+it("a commit that adds a root group with no rank is refused", async () => {
+  const gate = goalRankGateOf(INBOX_PHASE);
+
+  await writeQueue([queueEntry("THE-WORK"), goal("A-GOAL", 1)]);
+  const placed = await gate.run(
+    ctxFor(commitAll("plan: a goal carrying its rank"), {
+      phaseName: INBOX_PHASE,
+    }),
+  );
+  expect(placed, placed.details ?? placed.message).toMatchObject({ ok: true });
+
+  // The same goal with the rank taken off it: a group at the root of the
+  // forest and no place in the operator's order.
+  await writeQueue([
+    queueEntry("THE-WORK"),
+    queueEntry("A-GOAL", { kind: "group" }),
+  ]);
+  const refused = await gate.run(
+    ctxFor(commitAll("plan: a goal with no rank"), { phaseName: INBOX_PHASE }),
+  );
+
+  expect(refused.ok).toBe(false);
+  expect(refused.details).toContain("A-GOAL");
+  expect(refused.details).toContain("carries none");
+});
+
+it("a rank a derive commit adds is refused naming the tag", async () => {
+  const gate = goalRankGateOf("plan-derive");
+
+  // The base holds work and no goal, so the span below really adds the rank
+  // rather than carrying one that was already there.
+  await baseQueue([queueEntry("THE-WORK")]);
+  await writeQueue([queueEntry("THE-WORK"), goal("A-GOAL", 1)]);
+  const span = commitAll("plan: derive files a goal and ranks it");
+  // Non-vacuity on the span: git named the entry file the rank arrived in.
+  expect(span.touchedPaths).toContain(
+    `${STATE_ROOT}/plan/pending/${entryFileName("A-GOAL")}`,
+  );
+
+  const refused = await gate.run(ctxFor(span, { phaseName: "plan-derive" }));
+
+  expect(refused.ok).toBe(false);
+  expect(refused.message).toContain("plan-derive");
+  expect(refused.message).toContain(INBOX_PHASE);
+  expect(refused.details).toContain("A-GOAL");
+  expect(refused.details).toContain("ranked `1` by this commit");
+});
+
+it("a rank a sweep commit changes is refused naming the tag", async () => {
+  const gate = goalRankGateOf("plan-sweep");
+
+  await baseQueue([goal("A-GOAL", 1), queueEntry("THE-WORK")]);
+  await writeQueue([goal("A-GOAL", 4), queueEntry("THE-WORK")]);
+  const span = commitAll("plan: sweep re-ranks the standing goal");
+  expect(span.touchedPaths).toEqual([
+    `${STATE_ROOT}/plan/pending/${entryFileName("A-GOAL")}`,
+  ]);
+
+  const refused = await gate.run(ctxFor(span, { phaseName: "plan-sweep" }));
+
+  expect(refused.ok).toBe(false);
+  expect(refused.message).toContain("plan-sweep");
+  expect(refused.details).toContain("A-GOAL: `1` -> `4`");
+});
+
+it("a rank an inbox commit adds to a root group passes the gate", async () => {
+  const gate = goalRankGateOf(INBOX_PHASE);
+
+  await baseQueue([queueEntry("THE-WORK")]);
+  await writeQueue([queueEntry("THE-WORK"), goal("A-GOAL", 3)]);
+  const span = commitAll("plan: the drain files the operator's goal");
+
+  const verdict = await gate.run(ctxFor(span, { phaseName: INBOX_PHASE }));
+
+  expect(verdict, verdict.details ?? verdict.message).toMatchObject({
+    ok: true,
+  });
+  // Non-vacuity: the green names the move it passed, so this is the drain's
+  // rank admitted rather than a span that moved nothing.
+  expect(verdict.message).toContain("A-GOAL: ranked `3` by this commit");
+  expect(verdict.skipped).toBeUndefined();
+});
+
+it("a rank an inbox commit changes on a standing goal passes the gate", async () => {
+  const gate = goalRankGateOf(INBOX_PHASE);
+
+  await baseQueue([goal("A-GOAL", 3), goal("ANOTHER-GOAL", 5)]);
+  await writeQueue([goal("A-GOAL", 7), goal("ANOTHER-GOAL", 5)]);
+  const span = commitAll("plan: the operator re-ranks a standing goal");
+
+  const verdict = await gate.run(ctxFor(span, { phaseName: INBOX_PHASE }));
+
+  expect(verdict, verdict.details ?? verdict.message).toMatchObject({
+    ok: true,
+  });
+  expect(verdict.message).toContain("A-GOAL: `3` -> `7`");
+  // And the goal the commit left alone is not reported as moved.
+  expect(verdict.message).not.toContain("ANOTHER-GOAL");
+  expect(verdict.skipped).toBeUndefined();
+});
+
+/**
+ * Build files no entry, so there is no rank on its commit to place and none
+ * it could have moved — the same reasoning the merged-tree pending gate's
+ * wiring rests on (`harness/gates.ts`).
+ */
+it("build's gate set carries no goal-rank row", () => {
+  const producer = sliceGates(INBOX_PHASE).map((g) => g.name);
+  // Vacuity pin: the row exists to be absent from build's set.
+  expect(producer).toContain("goal rank");
+
+  expect(gates().map((g) => g.name)).not.toContain("goal rank");
 });
 
 it("the records gate refuses a record written outside the tick's own tag", async () => {
@@ -994,6 +1210,7 @@ it("the clean-tree gate takes its status records from the engine rather than spa
   const wired: GateEngine = {
     pendingGate,
     readGatedQueue,
+    parsePendingQueue,
     git: {
       readFileAtRef,
       isAncestor,
@@ -1871,9 +2088,12 @@ it("the package's claim check covers a claimed entry's note, and build's own set
  * the package brings to a commit, so it is pinned for what it says against
  * the interface it describes.
  *
- * The names come from `gates()` — the real factory over the real declaration,
- * the same call every other case here runs — so a sixth gate added to the set
- * reds this until the page names it, and a rename carries the page with it.
+ * The names come from the real factory over the real declaration, the same
+ * calls every other case here runs — so a gate added to the set reds this
+ * until the page names it, and a rename carries the page with it. **Every
+ * phase's set, not build's:** a member wired to the queue's producers alone
+ * is absent from build's, and a demand read off build would let the page drop
+ * it with nothing red.
  *
  * The span is cut to the adoption section rather than the page read whole:
  * `docs/CHAIN-AUTHORING.md` documents `pending-gate` and the records gates at
@@ -1881,9 +2101,14 @@ it("the package's claim check covers a claimed entry's note, and build's own set
  * wherever it fell and pass over an inventory naming none of them.
  */
 it("docs/CHAIN-AUTHORING.md names every gate the package's discipline set holds", async () => {
-  const names = gates().map((g) => g.name);
-  // Vacuity pin: an empty set is named in full by every page there is.
-  expect(names.length).toBeGreaterThan(0);
+  const names = new Set([
+    ...gates().map((g) => g.name),
+    ...PLAN_SLICES.flatMap((slice) => sliceGates(slice).map((g) => g.name)),
+  ]);
+  // Vacuity pin: an empty set is named in full by every page there is, and a
+  // demand drawn off build alone would miss every producer-only member.
+  expect(names.size).toBeGreaterThan(0);
+  expect(names).toContain("goal rank");
 
   const page = await readFile(
     new URL("../docs/CHAIN-AUTHORING.md", import.meta.url),
@@ -1895,5 +2120,7 @@ it("docs/CHAIN-AUTHORING.md names every gate the package's discipline set holds"
   // no missing gate over no text at all.
   expect(inventory).toContain("**The harness package**");
 
-  expect(names.filter((name) => !inventory.includes(`\`${name}\``))).toEqual([]);
+  expect(
+    [...names].filter((name) => !inventory.includes(`\`${name}\``)),
+  ).toEqual([]);
 });
