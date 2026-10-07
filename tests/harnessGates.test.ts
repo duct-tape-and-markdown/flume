@@ -1794,7 +1794,7 @@ it("a plan commit moving sweptThrough on the tick that closes its rotation is al
  * The rotation's own arming tick, and the arm a rule keyed on a **changed
  * cursor value** could never have reached: the stamp stands still while the
  * slice rewrites its own state to open a rotation over the frontier that
- * stamp already drew (`.claude/rules/posture-sweep.md`, *The stamp*).
+ * stamp already drew (`spec/harness.md`, *The frontier is read off git*).
  *
  * Read as a rule over the pair rather than over the step, so the tick that
  * opens a rotation is green and the tick that drops what one covered is not.
@@ -1826,9 +1826,8 @@ it("a plan commit that arms a rotation over an unchanged stamp is not refused", 
  * Coverage is settled for the window, and the cursor holds none of it: a tick
  * that re-draws an open rotation without a neighborhood it already swept
  * moves nothing either ancestry half can see, and the next tick re-sweeps
- * what was paid for while reading as a smaller frontier
- * (`.claude/rules/posture-sweep.md`, *The frontier is decidable; the
- * neighborhood is judged*).
+ * what was paid for while reading as a smaller frontier (`spec/harness.md`,
+ * *A neighborhood is a frontier module read with its immediate imports*).
  */
 it("a plan commit that drops a module from an open rotation's covered set is refused", async () => {
   const stamp = git(repo, ["rev-parse", "HEAD"]);

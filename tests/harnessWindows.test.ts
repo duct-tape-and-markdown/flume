@@ -462,9 +462,8 @@ it("the sweep window is live while the plan state's rotation is open", () => {
 /**
  * The sweep is its own worker, so the queue decides nothing about its window:
  * what keeps insurance behind product is the declared phase order under the
- * supervisor's budget, not a window standing aside
- * (`.claude/rules/posture-sweep.md`, *The sweep runs beside build, never
- * ahead of it*).
+ * supervisor's budget, not a window standing aside (`spec/harness.md`, *The
+ * phases*).
  */
 it("the sweep window is live while the queue carries a pickable entry", () => {
   commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
@@ -2110,8 +2109,8 @@ it("the sweep window carries the frontier paths, the posture pages the range tou
  * The frontier is a set, and a long rotation is where that matters: six
  * hundred commits over two hundred paths, rendered once per commit, is the
  * same listing paid for many times over on every tick of the rotation — for
- * subjects and shas no sweep tick reads (`.claude/rules/posture-sweep.md`,
- * *The frontier is decidable; the neighborhood is judged*).
+ * subjects and shas no sweep tick reads (`spec/harness.md`, *The frontier is
+ * read off git*).
  */
 it("the sweep window names each frontier path once across the range, never once per commit that touched it", () => {
   const base = commit({ "src/a.ts": "export const a = 1;\n" }, "build: a");
@@ -2173,8 +2172,7 @@ const gitLines = (...args: string[]): string[] =>
  * commit that carries it is the merge. git's default `--name-only` listing
  * for a merge is empty, so that change is the one edit a scan reading the
  * default would attribute to no commit at all — in no frontier, arming no
- * rotation (`.claude/rules/posture-sweep.md`, *The frontier is decidable; the
- * neighborhood is judged*).
+ * rotation (`spec/harness.md`, *The frontier is read off git*).
  */
 it("the frontier lists a path a merge commit changed in neither parent", () => {
   const base = commit(
@@ -2416,9 +2414,8 @@ const armedModules = (rendered: string | undefined): string[] | undefined =>
  * sentence saying so names none of them. The set is the declaration's, read
  * against the tree the window already has open — so a tick handed the
  * sentence alone has to rebuild it, and a tick that walks the tree its own
- * way sweeps a domain nobody declared
- * (`.claude/rules/posture-sweep.md`, *The frontier is decidable; the
- * neighborhood is judged*).
+ * way sweeps a domain nobody declared (`spec/harness.md`, *The frontier is
+ * read off git*).
  */
 it("a sweep window whose range touched a posture page lists the domain modules the phrase delta arms", () => {
   const base = commit(
@@ -2523,8 +2520,7 @@ it("the retired-claim delta carries a deleted line that begins with two dashes",
  * claim it is, and whether it is retired at all rather than reworded a few
  * lines down, is only decidable against the page it left. A flat list costs
  * the tick a second diff over the locus to recover a fact the window already
- * read (`.claude/rules/posture-sweep.md`, *The frontier is decidable; the
- * neighborhood is judged*).
+ * read (`spec/harness.md`, *The frontier is read off git*).
  */
 it("the retired-claim delta names the locus page each deleted line left", () => {
   commit(
@@ -2654,8 +2650,7 @@ const advanceLine = (tip: string): string =>
  * before it opened are the same lines on every one of them. Drawn past the
  * stamp alone, each tick searches the tree for claims the tick before it
  * already searched; the retired-claim cursor is what that tick leaves behind
- * (`.claude/rules/posture-sweep.md`, *The frontier is decidable; the
- * neighborhood is judged*).
+ * (`spec/harness.md`, *The frontier is read off git*).
  */
 it("the retired-claim delta renders the lines deleted since the retired-claim cursor", () => {
   const base = commit(
@@ -2709,8 +2704,7 @@ it("the retired-claim delta renders the lines deleted since the retired-claim cu
  * the delta is diffed over, never off the frontier's. Drawn off the
  * frontier's, a page retired between the cursors is named by nothing, its
  * lines are never diffed, and the block reports whole over claims no tick
- * searched (`.claude/rules/posture-sweep.md`, *The frontier is decidable; the
- * neighborhood is judged*).
+ * searched (`spec/harness.md`, *The frontier is read off git*).
  */
 it("the retired-claim delta renders a locus page retired before the stamp and untouched since", () => {
   const searched = commit(

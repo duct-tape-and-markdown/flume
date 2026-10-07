@@ -186,7 +186,7 @@ it("a slice's state at a commit is judged against its state at the base through 
  * The retired-claim cursor moves on its own tick, ahead of a stamp the
  * rotation pins in place — so it is a field of the sweep's own file rather
  * than a second hand on `sweptThrough`, and absent reads as the stamp
- * (`.claude/rules/posture-sweep.md`, *The stamp*).
+ * (`spec/harness.md`, *The frontier is read off git*).
  */
 it("the sweep's retired-claim cursor is carried as a field, and dropping it under a standing stamp is not a move the sweep's own invariants allow", async () => {
   const searching: PlanStateWriteOf<"plan-sweep"> = {

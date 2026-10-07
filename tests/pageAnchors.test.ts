@@ -54,9 +54,8 @@ import {
 
 /**
  * The pages whose links are judged: every tree the sweep domain names that
- * holds markdown (`.claude/rules/posture-sweep.md`, *The pages are the
- * authority as they read this tick*), plus the consumer-facing roots and the
- * chain's own protocol page.
+ * holds markdown (`spec/harness.md`, *The sweep procedure*), plus the
+ * consumer-facing roots and the chain's own protocol page.
  *
  * `spec/` and `.claude/` are out, and deliberately: their prose is held by
  * its authors (`.claude/rules/engineering.md`, *Narration is the ladder's
@@ -71,11 +70,11 @@ const ANCHOR_DOMAIN: PageDomain = {
 
 /**
  * Every tree the sweep domain names, whether or not it holds markdown today
- * (`.claude/rules/posture-sweep.md`, *The pages are the authority as they
- * read this tick*). The pages they hold are asserted covered by what the
- * domain above reads, so a page added under a tree that carries none today
- * reds here rather than going unread — the domain is a declaration, and this
- * is what keeps it from being a hand-kept list.
+ * (`spec/harness.md`, *The sweep procedure*). The pages they hold are
+ * asserted covered by what the domain above reads, so a page added under a
+ * tree that carries none today reds here rather than going unread — the
+ * domain is a declaration, and this is what keeps it from being a hand-kept
+ * list.
  */
 const SWEEP_TREES: readonly string[] = [
   "bin",

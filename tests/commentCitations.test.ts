@@ -584,9 +584,9 @@ const FIXTURE_HELP_SURFACES: readonly RenderedSurface[] = [
 
 /**
  * What the page-name arm adds to the three trees the program reaches: the
- * rest of the sweep domain (`.claude/rules/posture-sweep.md`, *The pages are
- * the authority as they read this tick*), plus the chain this repo runs every
- * tick.
+ * rest of the sweep domain, which is the consumer's own declaration
+ * (`spec/harness.md`, *The sweep procedure*), plus the chain this repo runs
+ * every tick.
  *
  * `bin/` and `scripts/` sit in no tsconfig this repo has, and `.flume/` also
  * holds the worktree checkouts a tick runs in (`spec/worktrees.md`) — whole
