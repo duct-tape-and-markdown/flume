@@ -1,0 +1,21 @@
+{
+  "tag": "0-22-0-UPGRADES-WITHOUT-A-BROKEN-QUEUE",
+  "gate": { "kind": "open" },
+  "kind": "group",
+  "rank": 1,
+  "files": {
+    "new": [],
+    "edit": [],
+    "retire": []
+  },
+  "summary": "0.22.0 ships and a consumer upgrades to it by one version bump plus the release's migration note, its standing queue still readable and its loop still running",
+  "per": {
+    "path": "spec/harness.md",
+    "section": "Adoption and upgrade"
+  },
+  "acceptance": "a consumer on an earlier version bumps to 0.22.0, follows the release's migration note and nothing else, and its loop runs to hibernation: the queue it already carries parses after the note's steps, and no run ends over a parse failure a sibling slice has already repaired",
+  "tests": [],
+  "pins": [],
+  "laneTests": [],
+  "notes": "Operator record, 2026-10-07; the only standing goal. Outside the loop: the 0.22.0 cut and cartograph's upgrade (~157 entries carrying the retired `priority` key, two ticks at once). The abort half is open as `does-a-69-whose-cause-a-sibling-repaired-still-abort-the-run.md` — the spec sentence moves before any code can. The `priority` strip is the note's one line, so nothing is filed for it. The cut itself stays the interactive session's (`CLAUDE.md`, *Release cut*)."
+}

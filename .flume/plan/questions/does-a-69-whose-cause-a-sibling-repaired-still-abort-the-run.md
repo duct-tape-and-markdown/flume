@@ -40,3 +40,7 @@ a cite today, which is why this is a question and not an entry.
 
 Repro: two queue files with an unknown core key, `maxTicks` 2, `build` and
 `plan-inbox` awake.
+
+**Rank-1 goal waits on this ruling** (`0-22-0-UPGRADES-WITHOUT-A-BROKEN-QUEUE`):
+a consumer upgrading with a queue of stale entry files hits exactly this
+ordering, so arm (c) costs that consumer its first run after the bump.
