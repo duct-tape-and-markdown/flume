@@ -1,0 +1,26 @@
+{
+  "tag": "THE-GATE-ROSTER-PIN-READS-BOTH-DIRECTIONS",
+  "gate": { "kind": "open" },
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "tests/harnessGates.test.ts",
+        "description": "the adoption page's roster, read against the set in both directions"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "the adoption page's discipline-gate roster is pinned both ways, so a gate the set drops and the page keeps reds instead of standing as a name no package ships",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Narration is the ladder's bottom rung"
+  },
+  "acceptance": "the roster case asserts both that every gate the package's discipline set holds is named on the page and that every name the page's roster carries is a gate that set holds, over the same inventory span the forward arm already cuts to",
+  "tests": [],
+  "pins": [
+    "docs/CHAIN-AUTHORING.md names no discipline gate the package's set lacks"
+  ],
+  "laneTests": [],
+  "notes": "Measured drift: the page's `filing band` row outlived the gate and a build tick removed it by hand, nothing red. The converse arm reads the roster parenthetical in the harness-package bullet (`records`, `clean-tree`, `pending-gate`, `per cites resolve`, `goal rank`, `slice-state`), not the whole section — the section also names engine builtins such as `chain-load`, which that set never held. Green on the base today, so it is a pin."
+}

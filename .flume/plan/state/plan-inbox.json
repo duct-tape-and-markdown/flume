@@ -1,15 +1,8 @@
 {
   "drainedRuns": {
     "windows": {
-      "run": "36760791228",
-      "titles": [
-        "Dispatcher fanout — a recorded ledger refusal outranks a slot leg's throw > a wave whose merge stage refused its ledger rewrite reports that refusal when a slot leg also threw",
-        "Dispatcher fanout — a walled wave reports every wall it held > a wave holding a refused ledger rewrite and a slot leg's throw reports both walls on its verdict",
-        "Dispatcher fanout — a walled wave reports every wall it held > the wall a wave's ranking did not class rides the TickResult beside the class it did",
-        "Dispatcher — loadChainModule/pendingDir win32 total-path limit (DISPATCHER-NAMESPACEDJOIN-WIN32-PATH-TOTAL-LIMIT) > readPending/readPendingTolerant/commitPendingUpdate don't misread an existing or writable queue as absent when pendingDir exceeds win32's ~260-char limit",
-        "a wave whose slot leg throws outside a ledger read still writes the settled wave's verdict",
-        "the verdict a wave writes after a slot leg throws names every span it landed on trunk"
-      ]
+      "run": "34619272992",
+      "titles": []
     },
     "posix": {
       "run": "36760791228",

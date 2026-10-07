@@ -1,0 +1,53 @@
+{
+  "tag": "A-GATE-READS-THE-STEPS-ITS-SPANS-ENTRY-CARRIES",
+  "gate": { "kind": "open" },
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/Gate.ts",
+        "description": "the steps beside `entry` on the single-span context and on each batch span"
+      },
+      {
+        "path": "src/gateBatch.ts",
+        "description": "the batch span the engine builds from each attempt"
+      },
+      {
+        "path": "src/waveMerge.ts",
+        "description": "the fanout gate contexts, where the slot's steps are already in hand"
+      },
+      {
+        "path": "src/singletonTick.ts",
+        "description": "the singleton contexts, which carry no entry and so no steps"
+      },
+      {
+        "path": "examples/cascade-chain.ts",
+        "description": "`declaredFilesGate` judging the entry's footprint, steps included"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the context the dispatcher hands a gate on a step-bearing entry"
+      },
+      {
+        "path": "tests/examples.test.ts",
+        "description": "the example gate over a span that touched only a step's files"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "a gate reads the steps of the entry its span was provisioned for, so a footprint judged against an entry's declaration sees the steps the engine already folded in",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A fact the engine holds is reported, never rediscovered"
+  },
+  "acceptance": "a gate's context carries the entry's steps wherever it carries the entry — per span under a batch — and a declared-files gate passes a span that touched only a step's declared paths; a singleton context carries neither",
+  "tests": [
+    "a gate on a step-bearing entry reads that entry's steps on its context",
+    "each span of a batch carries its own entry's steps",
+    "a gate context built for a singleton tick carries no steps",
+    "the example declared-files gate passes a span that touched only a step's declared files"
+  ],
+  "pins": [],
+  "laneTests": [],
+  "notes": "The engine folds the steps into the fence union already (`declaredPaths`, `ShipContext.steps`), and `spec/chain.md`, *What a gate receives* gives `entry` for exactly this reason — the dispatcher holds it for the scoped fence, so it is reported rather than re-read. A gate cannot re-derive a subtree: it holds no queue."
+}

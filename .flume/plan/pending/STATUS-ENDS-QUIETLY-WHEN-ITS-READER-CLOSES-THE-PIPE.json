@@ -1,0 +1,32 @@
+{
+  "tag": "STATUS-ENDS-QUIETLY-WHEN-ITS-READER-CLOSES-THE-PIPE",
+  "gate": { "kind": "open" },
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/cli.ts",
+        "description": "the one place a closed stdout is answered, ahead of every verb's writes"
+      },
+      {
+        "path": "tests/cli.test.ts",
+        "description": "the closed-pipe cases for an observational verb"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "a reader that closes the pipe mid-listing ends a verb's writes quietly, keeping the exit code the verb would have had",
+  "per": {
+    "path": "spec/cli.md",
+    "section": "Subcommand surface"
+  },
+  "acceptance": "`flume status | head -1` exits 0 with no stack trace and no unhandled stdout error, and every verb that writes a listing keeps the exit code it would have had when its reader goes away; the answer is at the CLI's own output point, never per verb",
+  "tests": [
+    "status exits 0 when its reader closes the pipe before the listing ends",
+    "a verb whose reader closed the pipe prints no unhandled-error trace",
+    "a closed stdout leaves a refusing verb's own exit code intact"
+  ],
+  "pins": [],
+  "laneTests": [],
+  "notes": "Measured 2026-10-07 on Node 24.21.0: `pnpm flume status | head -2` died with `Error: write EPIPE` out of `console.log` in `statusVerb`. The cited section gives status no failure mode outside an unreadable file it must read, so a crash here prints an observation as its opposite. Every stdout-writing verb shares the door; `src/cliStatus.ts` is only where it was seen."
+}
