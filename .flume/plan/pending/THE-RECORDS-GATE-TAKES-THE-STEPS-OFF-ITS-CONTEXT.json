@@ -1,9 +1,10 @@
 {
   "tag": "THE-RECORDS-GATE-TAKES-THE-STEPS-OFF-ITS-CONTEXT",
   "gate": {
-    "kind": "blockedBy",
-    "tags": ["A-GATE-READS-THE-STEPS-ITS-SPANS-ENTRY-CARRIES"]
+    "kind": "open"
   },
+  "dependsOnForks": [],
+  "kind": "work",
   "files": {
     "new": [],
     "edit": [
