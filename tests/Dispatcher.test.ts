@@ -112,6 +112,7 @@ import {
   type FlumePaths,
 } from "../src/flumeApi.ts";
 import type {
+  BatchGateContext,
   Gate,
   GateContext,
   GatePhase,
@@ -476,7 +477,7 @@ async function awaitOnTrunk(repo: string, subject: string): Promise<void> {
 
 /**
  * One pick's whole ship-lock span, as a wait a sibling slot can hold on: the
- * lock file appears when `mergeAttempt` (`src/waveMerge.ts`) takes it and is
+ * lock file appears when `drainWaiting` (`src/waveMerge.ts`) takes it and is
  * gone when that span ends — past whatever the pick did inside it, and so
  * past the point a verdict built at that pick was frozen (spec/loop.md "The
  * ship lock and the worktree lock — sibling ticks take turns at git").
@@ -12193,7 +12194,7 @@ describe("Dispatcher fanout — a merge-stage throw outside the ledger rewrite c
   /**
    * The wall this stage has that is not a refused rewrite: a merge marker the
    * disk will not take. `mergeError` (`src/waveTick.ts`) holds every throw out
-   * of `mergeAttempt`, only one of which is `commitPendingUpdate` refusing, so
+   * of `drainWaiting`, only one of which is `commitPendingUpdate` refusing, so
    * the carry is driven here from the other side — over a wave whose first pick
    * has already cherry-picked, gated and retired its entry.
    *
@@ -12338,9 +12339,9 @@ describe("Dispatcher fanout — a merge-stage throw outside the ledger rewrite c
 
   /**
    * The other side of the same wall: a span that reaches its own commit
-   * *behind* the throw. `foldUncarriedAttempt` (`src/waveMerge.ts`) rows on
+   * *behind* the throw. `abandonWaiting` (`src/waveMerge.ts`) rows on
    * `mergeError` (`src/waveTick.ts`), which holds every throw out of
-   * `mergeAttempt` — so the `wave-walled` row is not the refused ledger
+   * `drainWaiting` — so the `wave-walled` row is not the refused ledger
    * rewrite's alone, and the sibling case that pins it drives it from the
    * refusal side only.
    *
@@ -26891,4 +26892,401 @@ it("the verdict a wave writes after a slot leg throws names every span it landed
   ]);
   // The entry the throw came from is named too — provisioned, never shipped.
   expect(verdict?.tags).toContain("BOOM-B");
+});
+
+/**
+ * spec/worktrees.md, *Batched merges*: one merge of a wave carrying up to
+ * `supervisorPolicy.mergeBatch` of the spans that have finished and are waiting
+ * on the ship lock — cherry-picked in order, gated once, shipped in one ledger
+ * commit, and taken back off to the tip before the batch when a gate reds or a
+ * pick conflicts.
+ *
+ * Every case here plants a **live** ship lock before the wave and releases it
+ * off the engine's own queue-depth line (`offerAttempt`, `src/waveMerge.ts`).
+ * That is what makes "several spans are waiting when the merge takes the lock"
+ * an event rather than a race: a wave merges each span as its agent finishes,
+ * so without a holder the first span merges alone and a batch forms only if two
+ * agents happen to land in the same window ({@link batchedWave}).
+ */
+describe("Dispatcher fanout — a merge carries a batch of spans, gated once (spec/worktrees.md 'Batched merges')", () => {
+  const lockPathFor = (repo: string): string =>
+    join(repo, ".git", "flume", "ship.lock");
+
+  /**
+   * Run one `build` wave over `entries` at a declared `mergeBatch`, with a
+   * sibling tick holding the ship lock until `release` of this wave's spans are
+   * waiting on it.
+   *
+   * The planted claim names this process, which is live, so the engine waits on
+   * it rather than reclaiming it — the same plant the worktree-lock scope case
+   * uses. It is removed from the wait's own continuation, so the release is the
+   * engine's line and not a sleep; a wait that blows removes it anyway, so the
+   * case reds on the blown wait it names instead of hanging on a tick that can
+   * never take the lock.
+   */
+  async function batchedWave(opts: {
+    entries: PendingEntry[];
+    mergeBatch: number;
+    gates: Gate[];
+    agent: Record<string, (cwd: string) => Promise<number | void>>;
+    /** How many of this wave's spans must be waiting before the lock is freed. */
+    release: number;
+  }): Promise<{ outcome: TickOutcome; lines: string[]; preHead: string }> {
+    await writePending(fx.repo, opts.entries);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    const preHead = await head(fx.repo);
+    const lockPath = lockPathFor(fx.repo);
+    await mkdir(dirname(lockPath), { recursive: true });
+    await writeFile(lockPath, renderPidClaim(process.pid, new Date()), "utf8");
+
+    const lines: string[] = [];
+    const log: Logger = {
+      info: (l) => lines.push(l),
+      warn: (l) => lines.push(l),
+      error: (l) => lines.push(l),
+    };
+    const released = (async () => {
+      try {
+        await waitFor(
+          `${opts.release} of this wave's span(s) waiting on the planted ship lock`,
+          () =>
+            lines.find((l) =>
+              l.includes(`${opts.release} span(s) waiting on the ship lock`),
+            ),
+        );
+      } finally {
+        await rm(lockPath, { force: true });
+      }
+    })();
+
+    const chain: Chain = {
+      phases: [
+        makePhase({
+          name: "build",
+          concurrency: "fanout",
+          gates: opts.gates,
+        }),
+      ],
+      humanOnly: [],
+      supervisorPolicy: { mergeBatch: opts.mergeBatch },
+    };
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent(opts.agent),
+      log,
+      maxParallel: 4,
+    });
+    const outcome = await dispatcher.tick();
+    await released;
+    return { outcome, lines, preHead };
+  }
+
+  /** An agent action that writes one file and commits it under the entry's tag. */
+  const shipsFile =
+    (tag: string, rel: string, content: string) =>
+    async (cwd: string): Promise<void> => {
+      await writeAndCommit(cwd, rel, content, `build(${tag}): ship`);
+    };
+
+  /** Every span of one `afterMerge` invocation, by tag — a batch's, or the one span's. */
+  const tagsOf = (ctx: GateContext | BatchGateContext): string[] =>
+    ctx.batch === undefined
+      ? [ctx.entry?.tag ?? "(no entry)"]
+      : ctx.batch.map((s) => s.entry?.tag ?? "(no entry)");
+
+  it("a merge carries up to mergeBatch finished spans of the same tick", async () => {
+    // Three spans waiting, two per merge: the first merge takes two and the
+    // second takes the remainder, which is what "up to" buys over "every span
+    // waiting".
+    const seen: string[][] = [];
+    const { outcome } = await batchedWave({
+      entries: [
+        makeEntry("CAP-A", ["src/cap-a.ts"]),
+        makeEntry("CAP-B", ["src/cap-b.ts"]),
+        makeEntry("CAP-C", ["src/cap-c.ts"]),
+      ],
+      mergeBatch: 2,
+      release: 3,
+      gates: [
+        {
+          name: "batch-width",
+          when: "afterMerge",
+          batches: true,
+          async run(ctx) {
+            seen.push(tagsOf(ctx));
+            return { ok: true, message: "" };
+          },
+        },
+      ],
+      agent: {
+        "cap-a": shipsFile("CAP-A", "src/cap-a.ts", "a\n"),
+        "cap-b": shipsFile("CAP-B", "src/cap-b.ts", "b\n"),
+        "cap-c": shipsFile("CAP-C", "src/cap-c.ts", "c\n"),
+      },
+    });
+
+    // Vacuity pin: three spans were carried, so the widths below are a
+    // partition of a populated set rather than a verdict over nothing.
+    expect(seen.flat().sort()).toEqual(["CAP-A", "CAP-B", "CAP-C"]);
+    // Which of the three finished first is a fact about the machine, so the
+    // claim is the shape of the partition and not which tag sits where.
+    expect(seen.map((g) => g.length)).toEqual([2, 1]);
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
+      "CAP-A",
+      "CAP-B",
+      "CAP-C",
+    ]);
+  });
+
+  it("the afterMerge gates run once over a green batch", async () => {
+    const runs: Array<{ gate: string; spans: number }> = [];
+    const probe = (name: string): Gate => ({
+      name,
+      when: "afterMerge",
+      batches: true,
+      async run(ctx) {
+        runs.push({ gate: name, spans: tagsOf(ctx).length });
+        return { ok: true, message: "" };
+      },
+    });
+    const { outcome } = await batchedWave({
+      entries: [
+        makeEntry("ONCE-A", ["src/once-a.ts"]),
+        makeEntry("ONCE-B", ["src/once-b.ts"]),
+      ],
+      mergeBatch: 2,
+      release: 2,
+      gates: [probe("once-first"), probe("once-second")],
+      agent: {
+        "once-a": shipsFile("ONCE-A", "src/once-a.ts", "a\n"),
+        "once-b": shipsFile("ONCE-B", "src/once-b.ts", "b\n"),
+      },
+    });
+
+    // Two gates, two spans: four runs is the per-span merge, two is the
+    // batched one, and each run saw the whole batch.
+    expect(runs).toEqual([
+      { gate: "once-first", spans: 2 },
+      { gate: "once-second", spans: 2 },
+    ]);
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
+      "ONCE-A",
+      "ONCE-B",
+    ]);
+  });
+
+  it("a green batch ships every span in one ledger commit", async () => {
+    const { outcome } = await batchedWave({
+      entries: [
+        makeEntry("LEDGER-A", ["src/ledger-a.ts"]),
+        makeEntry("LEDGER-B", ["src/ledger-b.ts"]),
+      ],
+      mergeBatch: 2,
+      release: 2,
+      // No `afterMerge` gate: a phase with none batches at the declared width,
+      // because there is no reader to misread the batch (`mergeBatchWidth`,
+      // `src/gateBatch.ts`).
+      gates: [],
+      agent: {
+        "ledger-a": shipsFile("LEDGER-A", "src/ledger-a.ts", "a\n"),
+        "ledger-b": shipsFile("LEDGER-B", "src/ledger-b.ts", "b\n"),
+      },
+    });
+
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
+      "LEDGER-A",
+      "LEDGER-B",
+    ]);
+    // One rewrite for the pair, not one per span — the whole claim.
+    expect(outcome.result?.ledgerCommitShas).toHaveLength(1);
+    expect(readPendingFromDisk(fx.repo)).toEqual([]);
+    expect(await readFile(join(fx.repo, "src/ledger-a.ts"), "utf8")).toBe("a\n");
+    expect(await readFile(join(fx.repo, "src/ledger-b.ts"), "utf8")).toBe("b\n");
+  });
+
+  it("a sibling tick's spans are never carried in this tick's batch", async () => {
+    // The sibling's entry is claimed, as an entry in flight is
+    // (spec/pending.md, *Claims — an entry in flight is left alone*), so this
+    // wave never selects it and has no span for it to batch. The batch below is
+    // this wave's own two and nothing else, with the sibling's tag still
+    // pending behind it.
+    const sibling = makeEntry("SIBLING-HELD", ["src/sibling.ts"]);
+    const { commonDir, segment } = await git.checkoutAddress(fx.repo);
+    const claimPath = entryClaimPath(
+      commonDir,
+      segment,
+      entryClaimSlug(sibling.tag),
+    );
+    await mkdir(dirname(claimPath), { recursive: true });
+    await writeFile(claimPath, renderPidClaim(process.pid, new Date()), "utf8");
+
+    const seen: string[][] = [];
+    const { outcome } = await batchedWave({
+      entries: [
+        makeEntry("MINE-A", ["src/mine-a.ts"]),
+        sibling,
+        makeEntry("MINE-B", ["src/mine-b.ts"]),
+      ],
+      mergeBatch: 3,
+      release: 2,
+      gates: [
+        {
+          name: "batch-membership",
+          when: "afterMerge",
+          batches: true,
+          async run(ctx) {
+            seen.push(tagsOf(ctx));
+            return { ok: true, message: "" };
+          },
+        },
+      ],
+      agent: {
+        "mine-a": shipsFile("MINE-A", "src/mine-a.ts", "a\n"),
+        "mine-b": shipsFile("MINE-B", "src/mine-b.ts", "b\n"),
+        // Registered so a wave that *did* pick the claimed entry fails loudly
+        // here rather than as a quiet absence from the batch below.
+        "sibling-held": shipsFile("SIBLING-HELD", "src/sibling.ts", "s\n"),
+      },
+    });
+
+    // One merge, carrying exactly this tick's two spans at a width that would
+    // have taken a third had one been waiting.
+    expect(seen).toHaveLength(1);
+    expect([...seen[0]!].sort()).toEqual(["MINE-A", "MINE-B"]);
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
+      "MINE-A",
+      "MINE-B",
+    ]);
+    expect(readPendingFromDisk(fx.repo).map((e) => e.tag)).toEqual([
+      "SIBLING-HELD",
+    ]);
+  });
+
+  it("a batch whose afterMerge gates red resets to the tip and merges its spans one at a time", async () => {
+    // Red over a batch, green over a span: the one gate shape that separates
+    // "the batch was gated" from "each span was".
+    const calls: Array<number | null> = [];
+    const { outcome, preHead } = await batchedWave({
+      entries: [
+        makeEntry("RED-A", ["src/red-a.ts"]),
+        makeEntry("RED-B", ["src/red-b.ts"]),
+      ],
+      mergeBatch: 2,
+      release: 2,
+      gates: [
+        {
+          name: "batch-only-red",
+          when: "afterMerge",
+          batches: true,
+          async run(ctx) {
+            calls.push(ctx.batch === undefined ? null : ctx.batch.length);
+            return ctx.batch === undefined
+              ? { ok: true, message: "span ok" }
+              : { ok: false, message: "batch refused" };
+          },
+        },
+      ],
+      agent: {
+        "red-a": shipsFile("RED-A", "src/red-a.ts", "a\n"),
+        "red-b": shipsFile("RED-B", "src/red-b.ts", "b\n"),
+      },
+    });
+
+    // One batched run, then one run per span: the extra gate run is the priced
+    // cost of a red batch, and the two after it are the individual gating.
+    expect(calls).toEqual([2, null, null]);
+    // Both entries ship, so the red batch cost nothing but a gate run — and
+    // each landed through a rewrite of its own.
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
+      "RED-A",
+      "RED-B",
+    ]);
+    expect(outcome.result?.ledgerCommitShas).toHaveLength(2);
+
+    const rows = outcome.verdict?.mergeOutcomes ?? [];
+    const rowFor = (tag: string) => rows.find((m) => m.entryTag === tag);
+    // The reset happened: each span was re-picked onto a trunk that no longer
+    // held the batch's commits, so each merge row names a commit it added
+    // rather than a span the tip already held whole.
+    for (const tag of ["RED-A", "RED-B"]) {
+      const row = rowFor(tag);
+      expect(row?.outcome).toBe("merged");
+      expect(row?.baseSha).not.toBe(row?.headSha);
+    }
+    // And the first of the two landed onto the tip the batch started from —
+    // `preHead`, since nothing else had committed to trunk by then.
+    expect(rows.filter((m) => m.baseSha === preHead)).toHaveLength(1);
+
+    // The batch's own passage is on the artifact under no tag, because it is
+    // not one entry's; the serial carries that followed are tagged.
+    const merges = (outcome.verdict?.timings ?? []).filter(
+      (t) => t.kind === "merge",
+    );
+    expect(merges.filter((t) => t.entryTag === undefined)).toHaveLength(1);
+    expect(
+      merges.flatMap((t) => (t.entryTag === undefined ? [] : [t.entryTag])).sort(),
+    ).toEqual(["RED-A", "RED-B"]);
+  });
+
+  it("a conflict while picking a batch falls back to per-entry merging", async () => {
+    // Disjoint declarations, colliding edits: the two entries are pickable
+    // together, and their spans are not. Whichever is picked second conflicts,
+    // which takes the batch off trunk before any gate sees it.
+    const gated: Array<number | null> = [];
+    const { outcome } = await batchedWave({
+      entries: [
+        makeEntry("CLASH-A", ["src/clash-a.ts"]),
+        makeEntry("CLASH-B", ["src/clash-b.ts"]),
+      ],
+      mergeBatch: 2,
+      release: 2,
+      gates: [
+        {
+          name: "clash-gate",
+          when: "afterMerge",
+          batches: true,
+          async run(ctx) {
+            gated.push(ctx.batch === undefined ? null : ctx.batch.length);
+            return { ok: true, message: "" };
+          },
+        },
+      ],
+      agent: {
+        "clash-a": async (cwd) => {
+          await writeAndCommit(cwd, "src/clash.ts", "A\n", "build(CLASH-A): ship");
+        },
+        "clash-b": async (cwd) => {
+          await writeAndCommit(cwd, "src/clash.ts", "B\n", "build(CLASH-B): ship");
+        },
+      },
+    });
+
+    // The conflict is a pick, so no gate ever saw the batch: the only gate run
+    // is the one span the serial pass carried clean.
+    expect(gated).toEqual([null]);
+    expect(outcome.result?.shippedTags ?? []).toHaveLength(1);
+    const rows = outcome.verdict?.mergeOutcomes ?? [];
+    expect(rows.filter((m) => m.outcome === "merged")).toHaveLength(1);
+    expect(rows.filter((m) => m.outcome === "cherry-pick-conflict")).toHaveLength(
+      1,
+    );
+    // The conflicting entry stays pending with its footprint recorded for the
+    // retry to partition against.
+    const conflicted = rows.find((m) => m.outcome === "cherry-pick-conflict");
+    expect(conflicted?.footprint).toContain("src/clash.ts");
+    expect(readPendingFromDisk(fx.repo).map((e) => e.tag)).toEqual([
+      conflicted?.entryTag,
+    ]);
+    // The batch attempt is on the artifact under no tag; each span the fallback
+    // carried has a tagged row of its own.
+    const merges = (outcome.verdict?.timings ?? []).filter(
+      (t) => t.kind === "merge",
+    );
+    expect(merges.filter((t) => t.entryTag === undefined)).toHaveLength(1);
+    expect(
+      merges.flatMap((t) => (t.entryTag === undefined ? [] : [t.entryTag])).sort(),
+    ).toEqual(["CLASH-A", "CLASH-B"]);
+  });
 });

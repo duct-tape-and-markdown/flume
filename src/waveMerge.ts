@@ -16,7 +16,8 @@
  * finishes** rather than after the batch settles (`spec/worktrees.md`,
  * *Fanout and worktrees — provisioning, isolation, teardown*): a wave never
  * waits on its slowest agent to merge its fastest. {@link openWaveMerge}
- * opens the stage, {@link mergeAttempt} carries one finished attempt, and
+ * opens the stage, {@link offerAttempt} takes one finished attempt and
+ * {@link drainWaiting} carries what is waiting, and
  * {@link closeWaveMerge} folds what they observed. Only the middle one
  * touches trunk, and the ledger commit rides inside its hold: a wave can
  * outlast many merges, and a queue that went on listing an entry already on
@@ -35,7 +36,11 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 
 import * as git from "./git.js";
-import { carryMergeSpan, type BystanderCheckpoint } from "./mergeSpan.js";
+import {
+  carryMergeBatch,
+  carryMergeSpan,
+  type BystanderCheckpoint,
+} from "./mergeSpan.js";
 import type { MergingMarker } from "./mergingMarkers.js";
 import {
   mergingDir,
@@ -97,7 +102,7 @@ const WAVE_NO_COMMIT_RANK: Record<NoCommitMode, number> = {
 };
 
 /**
- * One provisioned fanout entry's fate, as {@link mergeAttempt} reads it: the
+ * One provisioned fanout entry's fate, as {@link offerAttempt} reads it: the
  * attempt's own outcome plus the entry and worktree facts the merge stage
  * acts on. `declined` is the one fate that never reaches an attempt —
  * `shouldRun` turned this entry away before the render.
@@ -241,7 +246,7 @@ function waveNoCommitCause(
  * whatever threw to wall the wave.
  *
  * The attempts are not here. A wave hands them over one at a time, each as
- * its own agent finishes ({@link mergeAttempt}), so the set is not known
+ * its own agent finishes ({@link offerAttempt}), so the set is not known
  * when the stage opens.
  */
 interface WaveMergeSetup {
@@ -251,6 +256,15 @@ interface WaveMergeSetup {
   readonly provisioned: readonly PendingEntry[];
   /** The chain's footprint-ignore list, as the ledger rewrite consumes it. */
   readonly partitionIgnore: string[];
+  /**
+   * How many of this wave's finished spans one merge may carry
+   * (spec/worktrees.md, *Batched merges*) — the chain's `mergeBatch` read
+   * against this phase's `afterMerge` gates, which is the one derivation of it
+   * (`mergeBatchWidth`, `src/gateBatch.ts`). `1` is the serial carry every
+   * chain gets until both declarations agree, and the wave leg reads the width
+   * off the tick's own resolved chain rather than this stage re-resolving one.
+   */
+  readonly mergeWidth: number;
   /** Provisioning walls the wave recorded before the fanout. */
   readonly provisionFailures: ProvisionFailure[];
   /**
@@ -279,7 +293,8 @@ interface WaveMergeSetup {
 
 /**
  * A wave's merge stage while it is running: opened by {@link openWaveMerge},
- * advanced once per finished attempt by {@link mergeAttempt}, closed by
+ * advanced once per finished attempt by {@link offerAttempt} and
+ * {@link drainWaiting}, closed by
  * {@link closeWaveMerge}.
  *
  * It is a value rather than a set of locals because the stage is no longer
@@ -291,6 +306,33 @@ interface WaveMergeSetup {
  * nothing reads across entries except the checkpoint, the one thing the wave
  * is still explicitly once-per-wave about.
  */
+/**
+ * One finished attempt waiting on the ship lock: the attempt itself and the
+ * merge-outcome rows its fold already produced, which the ledger commit of
+ * whichever merge carries it has to record (spec/worktrees.md, *Batched
+ * merges*).
+ */
+interface WaitingSpan {
+  readonly attempt: EntryAttempt;
+  /** See {@link foldAttemptFacts}'s answer. */
+  readonly folded: readonly TickVerdictMergeOutcome[];
+}
+
+/**
+ * A waiting attempt that left a span to pick, with the range already read off
+ * it. The pair is on {@link EntryAttempt} only for an attempt that committed
+ * (`AttemptOutcome`, `src/tickAttempt.ts`), so it is read where the narrowing
+ * holds — once, in the drain — rather than re-asserted at each site a batch
+ * hands it to.
+ */
+interface BatchCandidate {
+  readonly attempt: EntryAttempt;
+  /** The span's base — the tip its agent branched from. */
+  readonly base: string;
+  /** The span's head — the last commit its agent left on its worktree branch. */
+  readonly head: string;
+}
+
 interface WaveMerge {
   readonly setup: WaveMergeSetup;
   /**
@@ -299,6 +341,14 @@ interface WaveMerge {
    * gate rows {@link closeWaveMerge} folds.
    */
   readonly attempts: EntryAttempt[];
+  /**
+   * The spans handed over and not yet carried — what "waiting on the ship lock"
+   * is, on disk nowhere and in memory here (spec/worktrees.md, *Batched
+   * merges*). A merge reads the front of it once it holds the lock, so this
+   * tick's own finished spans are the only candidates a batch has: a sibling
+   * tick's are in that tick's queue and merge on their own.
+   */
+  readonly waiting: WaitingSpan[];
   /** Entries whose span landed on trunk and whose `shipped` consult said so. */
   readonly shipped: PendingEntry[];
   /** Entries whose `afterMerge` gate failed and whose commit was reverted off trunk. */
@@ -430,6 +480,7 @@ export function openWaveMerge(setup: WaveMergeSetup): WaveMerge {
   return {
     setup,
     attempts: [],
+    waiting: [],
     shipped: [],
     mergeReverted: [],
     revertRefused: [],
@@ -449,22 +500,62 @@ export function openWaveMerge(setup: WaveMergeSetup): WaveMerge {
 }
 
 /**
- * Carry one finished attempt's span onto trunk, under the ship lock
+ * Hand one finished attempt to the merge stage: everything it observed away
+ * from trunk, folded now ({@link foldAttemptFacts}), and the span itself joined
+ * to the queue of spans waiting on the ship lock.
+ *
+ * Called the moment an agent returns, off the queue that serializes the merges
+ * (`src/waveTick.ts`), which is why the fold is here rather than inside the
+ * carry: a usage row is paid for as its agent finishes and must not wait behind
+ * a lock a sibling tick may hold for the length of its own merge span
+ * (spec/loop.md "Every agent invocation leaves a usage row").
+ *
+ * Enqueueing is what makes a batch possible at all (spec/worktrees.md, *Batched
+ * merges*): the next merge reads this queue once it holds the lock, so a span
+ * that finished while an earlier merge was running is there to be carried with
+ * whatever the merge takes next, rather than behind it.
+ */
+export async function offerAttempt(
+  w: WaveMerge,
+  r: EntryAttempt,
+): Promise<void> {
+  const folded = await foldAttemptFacts(w, r);
+  w.waiting.push({ attempt: r, folded });
+  // The queue depth as this attempt joined it — the fact the next merge reads
+  // to decide how wide it runs, said out loud because it is otherwise visible
+  // only as a gate that was handed more than one span
+  // (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+  // never rediscovered*). One line per entry per wave, and the boundary an
+  // operator reads a slow wave at: where its agent stopped and its merge began.
+  w.setup.leg.log.info(
+    `[flume] ${w.setup.phase.name}: ${r.entry.tag} is done; ` +
+      `${w.waiting.length} span(s) waiting on the ship lock, ` +
+      `${w.setup.mergeWidth} per merge`,
+  );
+}
+
+/**
+ * Carry the next merge's worth of waiting spans onto trunk, under one ship lock
  * (spec/loop.md "The ship lock and the worktree lock — sibling ticks take
- * turns at git"): the merge marker it stakes, the cherry-pick, the
- * `afterMerge` gates on the merged tip, the per-entry revert when one turns
- * red, the `shipped` consult, and the ledger commit retiring what it landed.
+ * turns at git"): the merge markers they stake, the cherry-picks, the
+ * `afterMerge` gates on the merged tip, the revert when one turns red, the
+ * `shipped` consults, and the ledger commits retiring what landed.
  *
- * Called as each agent finishes rather than once the batch has settled
- * (`spec/worktrees.md`, *Fanout and worktrees — provisioning, isolation,
- * teardown*), so a two-minute entry reaches trunk without waiting on a
- * fifteen-minute sibling. The lock is the span: it is taken here and
- * released before this returns, so a sibling tick — or the next finished
- * attempt of this same wave — picks onto the trunk as it then stands. The
- * caller serializes the calls; the lock is a pid claim, so two of them
- * in-flight in one process would wait on each other forever.
+ * Driven once per offered attempt rather than once per wave
+ * (`src/waveTick.ts`), so a two-minute entry reaches trunk without waiting on a
+ * fifteen-minute sibling. The lock is the merge: it is taken here and released
+ * before this returns, so a sibling tick — or this same wave's next drain —
+ * picks onto the trunk as it then stands. The caller serializes the calls; the
+ * lock is a pid claim, so two of them in-flight in one process would wait on
+ * each other forever.
  *
- * The offending entry of a red `afterMerge` gate is the one whose
+ * How many spans one call carries is {@link takeBatch}'s, and whether a batch
+ * ships as one is {@link carryBatch}'s. A drain whose waiting queue is already
+ * empty — every span of it carried by an earlier drain's batch — returns
+ * having touched nothing, which is the shape that makes one drain per offered
+ * attempt safe at any width.
+ *
+ * The offending entry of a red single-span `afterMerge` gate is the one whose
  * cherry-pick turned it red — nothing else changed since its pre-cherry-pick
  * trunk — so revert *only* its commit (reset to that point) and leave it
  * pending. Siblings already on trunk stay shipped; siblings merged after are
@@ -472,76 +563,189 @@ export function openWaveMerge(setup: WaveMergeSetup): WaveMerge {
  * back to the tip the wave was provisioned from, so no whole-wave blast
  * radius: one flaky merge-time gate does not kill N−1 clean commits.
  */
-export async function mergeAttempt(
-  w: WaveMerge,
-  r: EntryAttempt,
-): Promise<void> {
+export async function drainWaiting(w: WaveMerge): Promise<void> {
+  // Nothing has been offered since the last drain emptied the queue, so there
+  // is no lock to take: every span this drain would have carried is already on
+  // trunk through an earlier batch.
+  if (w.waiting.length === 0) return;
   const { leg } = w.setup;
-  // Where this attempt's own records begin. The stage's arrays are
-  // wave-cumulative and the rewrite below is per-entry, so the slice is what
-  // separates what *this* pick landed from what a sibling landed before it.
-  // Taken ahead of the fold, which contributes this pick's own first record
-  // when its attempt was reverted in its worktree with a footprint to land.
-  const shippedStart = w.shipped.length;
-  const outcomesStart = w.mergeOutcomes.length;
-  // Everything this attempt observed away from trunk, through the one fold a
-  // walled wave's uncarried attempt also takes ({@link foldAttemptFacts}), so
-  // an attempt's facts have one spelling whether or not its span is carried.
-  await foldAttemptFacts(w, r);
-
   // spec/loop.md "The ship lock and the worktree lock — sibling ticks take
-  // turns at git": one merge span at a time across this run's sibling ticks.
-  // The cherry-pick, the `afterMerge` judges that read the merged tip, the
-  // revert that may follow and the ledger rewrite that retires the tag all
-  // touch trunk — so this entry's whole passage is the span, not each git
-  // call inside it. A sibling holding it is waited on, never refused: it is
-  // this run's own writer, and tip verify absorbs the tip it moved.
+  // turns at git": one merge at a time across this run's sibling ticks. The
+  // cherry-picks, the `afterMerge` judges that read the merged tip, the revert
+  // that may follow and the ledger rewrites that retire the tags all touch
+  // trunk — so this drain's whole passage is the span, not each git call inside
+  // it. A sibling holding it is waited on, never refused: it is this run's own
+  // writer, and tip verify absorbs the tip it moved.
   //
-  // spec/loop.md "The tick verdict — one facts artifact": the merge row's
-  // milliseconds are the pick passage — the lock a sibling may still hold,
-  // the cherry-pick, the gates, the revert or the ship consult — so what the
-  // wave spent off the agent's clock is one number per entry, with the gate
-  // rows beside it as its breakdown. Stamped in its own `finally`, because
-  // every way out of that passage is a merge that happened, and stamped
-  // *before* the ledger rewrite below so a refusal there carries the same
-  // rows a completing wave's verdict would.
-  const mergeElapsed = startTiming();
+  // spec/loop.md "The tick verdict — one facts artifact": the merge rows
+  // partition this passage — the lock a sibling may still hold, the picks, the
+  // gates, the reverts, the ship consults and the ledger commits — one row per
+  // serial carry under its entry's tag, or one untagged row for a batch that
+  // shipped as one, charged in the order they were carried
+  // ({@link chargeMerge}).
+  const drainElapsed = startTiming();
   const shipLock = await git.acquireShipLock(leg.repoRoot, leg.log);
+  let charged = 0;
+  // Read with the lock in hand, which is what makes the batch *the spans
+  // waiting on the ship lock* (spec/worktrees.md, *Batched merges*) rather than
+  // the ones that happened to be waiting before the wait began: a span that
+  // finished while a sibling tick held the lock is carried by this merge
+  // instead of by one behind it.
+  const taken = takeBatch(w);
+  /**
+   * Close one row's share of this drain's clock: the time no row has closed
+   * yet, under the tag it belongs to. The rows partition the whole passage, so
+   * the lock a sibling held is charged to the first of them and the sum is what
+   * the drain spent.
+   *
+   * A batch's row carries **no** tag, exactly as its gate context withholds the
+   * entry: its picks, its one gate run and its one ledger commit are not one
+   * entry's passage, and dividing them between the spans would be a number the
+   * engine invented. A serial carry's row names its entry, which is every merge
+   * on a chain that left `mergeBatch` alone.
+   */
+  const chargeMerge = (tag?: string): void => {
+    const spent = drainElapsed() - charged;
+    charged += spent;
+    w.timings.push({
+      kind: "merge",
+      ...(tag === undefined ? {} : { entryTag: tag }),
+      ms: spent,
+    });
+  };
   try {
-    let staked: string | undefined;
-    try {
-      staked = await carrySpan(w, r);
-    } finally {
-      w.timings.push({
-        kind: "merge",
-        entryTag: r.entry.tag,
-        ms: mergeElapsed(),
-      });
+    // The rows the folds already produced for the attempts of this drain — an
+    // afterCommit revert's footprint reached no pick, so it rides the first
+    // ledger commit this drain lands rather than waiting for a wave's end
+    // (`.claude/rules/engineering.md`, *Loud or nothing*).
+    let folded: TickVerdictMergeOutcome[] = taken.flatMap((s) => [...s.folded]);
+    /**
+     * One ledger commit for what the merge just landed, inside the hold that
+     * landed it, never at the wave's end (`spec/worktrees.md`, *Fanout and
+     * worktrees — provisioning, isolation, teardown*): the lock is released
+     * below, and a queue still listing an entry in that gap would be read as
+     * current by the sibling agents, concurrent ticks and operators looking at
+     * the trunk it is already on.
+     *
+     * The folds' own rows ride the first commit this drain lands and no later
+     * one, so a footprint reaches trunk exactly once.
+     */
+    const land = async (
+      shipped: readonly PendingEntry[],
+      rows: readonly TickVerdictMergeOutcome[],
+    ): Promise<void> => {
+      const all = [...folded, ...rows];
+      folded = [];
+      await commitAttemptLedger(w, shipped, all);
+    };
+    // The attempts of this drain that left a span, with each range read where
+    // `committed` narrows it ({@link BatchCandidate}).
+    const spans: BatchCandidate[] = [];
+    for (const { attempt } of taken) {
+      if (!attempt.committed) continue;
+      spans.push({ attempt, base: attempt.spanBase, head: attempt.headSha });
     }
-    // The ledger commit lands inside the same hold as the pick that earned
-    // it, never at the wave's end (`spec/worktrees.md`, *Fanout and worktrees
-    // — provisioning, isolation, teardown*): the lock is released below, and
-    // a queue still listing this entry in that gap would be read as current
-    // by the sibling agents, concurrent ticks and operators looking at the
-    // trunk it is already on.
-    await commitAttemptLedger(
-      w,
-      w.shipped.slice(shippedStart),
-      w.mergeOutcomes.slice(outcomesStart),
-    );
-    // spec/loop.md "Crash equals stop": the queue on disk now accounts for
-    // this span, so the marker staked for it has nothing left to warn the next
-    // start about — retired here, with the rewrite that closed its hazard,
-    // rather than held for a wave that may still be running hours of agents.
-    // A refusal above throws past this line, leaving the marker standing
-    // exactly as a crash would.
-    if (staked !== undefined) await retireMergingMarker(leg, staked);
+    // spec/worktrees.md "Batched merges": one merge carrying several spans,
+    // picked in order and gated once. Red, or a conflict while picking, puts
+    // trunk back at the tip before the batch and the spans are merged one at a
+    // time below — so the batch arm either ships everything it carried or
+    // leaves the serial arm exactly the tree it would have started from.
+    let batched = false;
+    if (spans.length > 1) {
+      try {
+        batched = await carryBatch(w, spans, land);
+      } finally {
+        // Stamped however the batch left — shipped, unwound or thrown: every
+        // way out of it is a merge that happened, and a red batch's one extra
+        // gate run is the priced cost the section names, so it is on the
+        // artifact rather than folded silently into the serial rows below
+        // (spec/loop.md "The tick verdict — one facts artifact").
+        chargeMerge();
+      }
+    }
+    if (!batched) {
+      for (const s of taken) {
+        try {
+          const span = await carrySpan(w, s.attempt);
+          if (span.outcome) w.mergeOutcomes.push(span.outcome);
+          if (span.shipped) w.shipped.push(span.shipped);
+          await land(
+            span.shipped ? [span.shipped] : [],
+            span.outcome ? [span.outcome] : [],
+          );
+          // spec/loop.md "Crash equals stop": the queue on disk now accounts
+          // for this span, so the marker staked for it has nothing left to warn
+          // the next start about — retired with the rewrite that closed its
+          // hazard, never held for a wave that may still be running hours of
+          // agents. A refusal above throws past this line, leaving the marker
+          // standing exactly as a crash would.
+          if (span.staked !== undefined)
+            await retireMergingMarker(leg, span.staked);
+        } finally {
+          chargeMerge(s.attempt.entry.tag);
+        }
+      }
+    }
   } finally {
-    // Every way out of the span: shipped, reverted, refused, or thrown. A
+    // Every way out of the passage: shipped, reverted, refused, or thrown. A
     // leaked lock names a pid that is still alive, so a sibling — and this
-    // wave's own next finished attempt — would wait on it for the rest of
-    // the run.
+    // wave's own next drain — would wait on it for the rest of the run.
     shipLock.release();
+  }
+}
+
+/**
+ * The spans the next merge carries: the front of the waiting queue, up to
+ * `mergeWidth` of the attempts that left a span (spec/worktrees.md, *Batched
+ * merges*). Arrival order, which is agent-finish order, so the order spans
+ * reach trunk is the order they were ready.
+ *
+ * An attempt that left **no** span — declined, render-refused, reverted in its
+ * own worktree — is taken past the width rather than held back by it: it has no
+ * pick to cost a batch anything, and what it does need is the footprint ledger
+ * commit the drain lands under the lock either way.
+ */
+function takeBatch(w: WaveMerge): WaitingSpan[] {
+  const taken: WaitingSpan[] = [];
+  let spans = 0;
+  while (w.waiting.length > 0) {
+    const next = w.waiting[0]!;
+    if (next.attempt.committed) {
+      if (spans === w.setup.mergeWidth) break;
+      spans++;
+    }
+    taken.push(w.waiting.shift()!);
+  }
+  return taken;
+}
+
+/**
+ * The fold for the attempts a walled wave will never carry: everything each one
+ * observed away from trunk ({@link offerAttempt} already took that), plus the
+ * one fact only this leg can state — this span passed its afterCommit gates on
+ * its own worktree branch and no pick was ever attempted over it. The base/head
+ * pair is what makes it recoverable: the refusal leaves the branch standing,
+ * the next start's teardown does not, and the verdict is where the sha outlives
+ * the branch (spec/loop.md "The tick verdict — one facts artifact").
+ *
+ * Drains the queue, so the drains still chained behind a wall find nothing to
+ * carry and the wave reports one `wave-walled` row per uncarried span rather
+ * than one per drain that arrived after the wall.
+ */
+export function abandonWaiting(w: WaveMerge): void {
+  for (const s of w.waiting.splice(0)) {
+    // `committed` carries the span's base and head (`AttemptOutcome`,
+    // `src/tickAttempt.ts`), so the row always names what it is recovery for.
+    // An uncommitted attempt left no span to re-pick: the ancestry refusal, the
+    // in-worktree revert and the decline the fold already stated are the whole
+    // of what it has to say.
+    if (!s.attempt.committed) continue;
+    w.mergeOutcomes.push({
+      entryTag: s.attempt.entry.tag,
+      outcome: "wave-walled",
+      baseSha: s.attempt.spanBase,
+      headSha: s.attempt.headSha,
+    });
   }
 }
 
@@ -553,17 +757,18 @@ export async function mergeAttempt(
  * reaches trunk, so it is the whole of what an attempt whose span will never
  * be carried still has to say.
  *
- * Two callers, one spelling (`.claude/rules/engineering.md`, *The fix lands at
- * the mechanism*): {@link mergeAttempt}, ahead of the ship lock its pick
- * needs, and {@link foldUncarriedAttempt} for an attempt a walled wave will
- * not carry — a decline folded or a render refusal raised behind a refusing
- * pick is a fact of this tick, and the verdict built where the wave settles
- * names it ({@link waveWallThrow}).
+ * Answers with the merge-outcome rows it pushed, for the ledger commit the
+ * attempt's own carry lands: a footprint folded here reaches trunk only through
+ * that rewrite, and a drain that read it back off `w.mergeOutcomes` by index
+ * would be slicing an array its siblings push to concurrently
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
+ * beside its source*).
  */
 async function foldAttemptFacts(
   w: WaveMerge,
   r: EntryAttempt,
-): Promise<void> {
+): Promise<readonly TickVerdictMergeOutcome[]> {
+  const rows: TickVerdictMergeOutcome[] = [];
   w.attempts.push(r);
   w.attemptGateResults.push(...r.gateResults);
   // This entry's afterCommit rows, in front of the merge rows a carried span
@@ -598,9 +803,9 @@ async function foldAttemptFacts(
     // fact, not silence a partial ship summary would otherwise paper
     // over (spec/loop.md "Tip verify — one writer per branch, absorption
     // at the merge"). Distinct from the wave-level `tip-moved` outcome
-    // `carrySpan` pushes, which is the shared trunk racing during this
+    // `carrySpan` reports, which is the shared trunk racing during this
     // wave's own merge step.
-    w.mergeOutcomes.push({
+    rows.push({
       entryTag: r.entry.tag,
       outcome: "dropped-work",
       ...(r.spanBase ? { baseSha: r.spanBase } : {}),
@@ -615,7 +820,7 @@ async function foldAttemptFacts(
     // trunk instead of it living only in the gitignored prior-attempt
     // record.
     if (r.footprint && r.footprint.length > 0) {
-      w.mergeOutcomes.push({
+      rows.push({
         entryTag: r.entry.tag,
         outcome: "afterCommit-reverted",
         footprint: r.footprint,
@@ -625,68 +830,168 @@ async function foldAttemptFacts(
     }
     if (r.gateFailure) w.gateFailures.push(r.gateFailure);
   }
+  w.mergeOutcomes.push(...rows);
+  return rows;
 }
 
 /**
- * The fold for an attempt a walled wave will never carry, and the one fact
- * only that leg can state: this span passed its afterCommit gates on its own
- * worktree branch and no pick was ever attempted over it. The base/head pair
- * is what makes it recoverable — the refusal leaves the branch standing, the
- * next start's teardown does not, and the verdict is where the sha outlives
- * the branch (spec/loop.md "The tick verdict — one facts artifact").
+ * Carry several finished spans in one merge (spec/worktrees.md, *Batched
+ * merges*): cherry-picked onto the tip in order, the `afterMerge` gates run
+ * **once** over the result, and every span shipped in one ledger commit when
+ * they are green.
  *
- * Its own function rather than a flag on {@link foldAttemptFacts}, because
- * {@link mergeAttempt} takes a per-pick slice of `mergeOutcomes` across that
- * fold and hands it to the ledger rewrite: a `wave-walled` row under a tag the
- * pick is about to carry would be a second, contradictory fate for one span.
- * Only the wave leg (`src/waveTick.ts`), past the wall, has nothing to carry.
+ * Answers whether the batch shipped. `false` is the fallback the section names
+ * — red, or a conflict while picking — and by then trunk is back at the tip
+ * before the batch, so the caller merges the same spans one at a time, gated
+ * individually, and blame and revert stay per entry. The batch's own gate rows
+ * stay on the stage either way: they name a run that happened and what it cost,
+ * which is the one gate run more a red batch is priced at.
+ *
+ * No gate failure, no prior-attempt record and no merge outcome is recorded for
+ * a batch that did not ship. Each is a per-entry verdict, and the serial pass
+ * the caller runs next is what earns one per entry; a record written here would
+ * name every span for a verdict one of them is answerable for.
  */
-export async function foldUncarriedAttempt(
+async function carryBatch(
   w: WaveMerge,
-  r: EntryAttempt,
-): Promise<void> {
-  await foldAttemptFacts(w, r);
-  // `committed` carries the span's base and head (`AttemptOutcome`,
-  // `src/tickAttempt.ts`), so the row always names what it is recovery for.
-  // An uncommitted attempt left no span to re-pick: the ancestry refusal, the
-  // in-worktree revert and the decline the fold above already stated are the
-  // whole of what it has to say.
-  if (!r.committed) return;
-  w.mergeOutcomes.push({
-    entryTag: r.entry.tag,
-    outcome: "wave-walled",
-    baseSha: r.spanBase,
-    headSha: r.headSha,
+  spans: readonly BatchCandidate[],
+  land: (
+    shipped: readonly PendingEntry[],
+    rows: readonly TickVerdictMergeOutcome[],
+  ) => Promise<void>,
+): Promise<boolean> {
+  const { leg, phase } = w.setup;
+  const entryMergeGateResultsStart = w.mergeGateResults.length;
+  // The merge markers this batch stakes, one per span as its own pick begins,
+  // retired at whichever exit closed their hazard — the ledger commit of a
+  // green batch, or the reset of an unwound one.
+  const staked: string[] = [];
+  const batch = await carryMergeBatch({
+    leg,
+    phase,
+    checkpoint: w.checkpoint,
+    onGateRow: (row, ms) => {
+      w.mergeGateResults.push(row);
+      w.timings.push({ kind: "gate", gate: row.gate, ms });
+    },
+    spans: spans.map(({ attempt: r, base, head }) => ({
+      base,
+      head,
+      entry: r.entry,
+      stake: async () => {
+        // spec/loop.md "Crash equals stop": each span's marker goes down before
+        // its own pick, so a death anywhere inside the batch leaves a marker
+        // for every span already on trunk and none for a span not yet picked.
+        staked.push(slugify(r.entry.tag));
+        await writeMergingMarker(leg, r.entry, r.branch, base);
+      },
+      narrate: {
+        pickFailed: (message) =>
+          `[flume] cherry-pick failed for ${r.entry.tag}: ${message}; the batch goes back off trunk and its spans merge one at a time`,
+        absorbed: (shas) =>
+          `[flume] ${r.entry.tag}: trunk already held ${shas.map((sha) => sha.slice(0, 8)).join(", ")} of ${base.slice(0, 8)}..${head.slice(0, 8)}; absorbed, not a conflict`,
+        merged: (mergedSha, landedOnSha) =>
+          mergedSha === landedOnSha
+            ? `[flume] ${r.entry.tag}: trunk already holds the whole span ${base.slice(0, 8)}..${head.slice(0, 8)}; merged with no commit to add`
+            : `[flume] cherry-picked ${r.entry.tag} → ${mergedSha.slice(0, 8)}`,
+      },
+    })),
+    narrate: {
+      tipClaimed: (pid) =>
+        `[flume] ${phase.name}: tip claimed by pid ${pid}; refusing to cherry-pick ${spans.map((s) => s.attempt.entry.tag).join(", ")}, entries stay pending`,
+      gateFailed: (gate) =>
+        `[flume] afterMerge gate '${gate}' failed over the batch of ${spans.length}; each span merges on its own so blame and revert stay per entry`,
+      unwound: (why) =>
+        `[flume] ${phase.name}: batch of ${spans.length} taken back off trunk (${why}); merging its spans one at a time`,
+    },
   });
+  if (batch.fate === "tip-moved") {
+    // The shared trunk raced before this merge's first pick, so no span of the
+    // batch is on trunk and none is retryable from a landed sha. Each span's
+    // two shas are the whole recovery handle: the entry stays pending and its
+    // commits outlive the branch teardown deletes. Reported per span rather
+    // than once for the batch, because the refusal is every entry's fate
+    // (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+    // never rediscovered*).
+    w.tipMoved = true;
+    const rows = spans.map(
+      ({ attempt: r, base, head }): TickVerdictMergeOutcome => ({
+        entryTag: r.entry.tag,
+        outcome: "tip-moved",
+        baseSha: base,
+        headSha: head,
+      }),
+    );
+    w.mergeOutcomes.push(...rows);
+    await land([], rows);
+    return true;
+  }
+  if (batch.fate === "unwound") {
+    // The reset put trunk back at the tip before the batch, so nothing of these
+    // spans is on trunk and the markers staked for them warn of nothing left.
+    // Retired here rather than left for the serial pass to re-stake over: a
+    // crash between the unwind and the first serial pick would otherwise refuse
+    // the next start over spans the reset had already removed
+    // (spec/loop.md "Crash equals stop").
+    for (const slug of staked) await retireMergingMarker(leg, slug);
+    return false;
+  }
+  // Green: every span is on trunk and the gates ruled over all of them, so the
+  // `shipped` consult is the only verdict left and it is per span, asked with
+  // that span's own facts and the batch's gate rows
+  // ({@link consultShipped}).
+  const shipped: PendingEntry[] = [];
+  const rows: TickVerdictMergeOutcome[] = [];
+  const gateResults = w.mergeGateResults.slice(entryMergeGateResultsStart);
+  for (const [i, { attempt: r, base }] of spans.entries()) {
+    const landed = batch.landed[i]!;
+    const verdict = await consultShipped(w, r, base, landed, gateResults);
+    if (verdict.shipped) {
+      shipped.push(r.entry);
+      w.shipped.push(r.entry);
+    }
+    rows.push(verdict.outcome);
+  }
+  w.mergeOutcomes.push(...rows);
+  // One ledger commit for the whole batch (spec/worktrees.md, *Batched
+  // merges*), landed inside the hold its picks ran in — and the markers it
+  // staked retired with it, on {@link drainWaiting}'s serial terms.
+  await land(shipped, rows);
+  for (const slug of staked) await retireMergingMarker(leg, slug);
+  return true;
 }
 
 /**
- * The trunk half of one finished attempt, inside {@link mergeAttempt}'s ship
+ * The trunk half of one finished attempt, inside {@link drainWaiting}'s ship
  * lock: the merge marker it stakes, the wave's reading of the carry its span
  * takes (`carryMergeSpan`, `src/mergeSpan.ts`), and the `shipped` consult a
- * landed span reaches. Everything it observed there it records on the stage;
- * what the attempt observed before it is {@link foldAttemptFacts}'s.
+ * landed span reaches. Everything it observed away from trunk is
+ * {@link foldAttemptFacts}'s.
  *
  * The carry itself is the sequence a singleton phase's span takes too, so what
  * is left here is what only a wave has: a marker the next `loop` start reads,
  * rows and records under this entry's tag, the blame each failure it recorded
  * carries, and the consult that decides whether landing on trunk shipped.
  *
- * Answers with the merge-marker slug it staked, or `undefined` when it had
- * nothing to carry or refused before ever reaching the pick — the one fact
- * the caller needs to know whether a marker is standing for this entry once
- * the rewrite beside it has closed that marker's hazard.
+ * Answers with what this span leaves its drain to do: the merge-marker slug it
+ * staked, if any; the one merge outcome it earned, if any; and the entry it
+ * shipped, if it did. Returned rather than pushed onto the stage's arrays
+ * alone, because the drain's ledger commit needs exactly this span's own rows
+ * and those arrays are wave-cumulative.
  */
 async function carrySpan(
   w: WaveMerge,
   r: EntryAttempt,
-): Promise<string | undefined> {
+): Promise<{
+  staked?: string;
+  outcome?: TickVerdictMergeOutcome;
+  shipped?: PendingEntry;
+}> {
   // Nothing to carry: the attempt left no span on its branch — declined,
   // render-refused, reverted in its worktree. What it observed is already
   // folded ({@link foldAttemptFacts}).
-  if (!r.committed) return undefined;
+  if (!r.committed) return {};
   const { leg, phase } = w.setup;
-  const repoRoot = leg.repoRoot;
   const ref = priorAttemptRef(phase, r.entry);
   // `mergeGateResults` is wave-cumulative (never reset per entry —
   // `allGateResults` at close needs the whole wave's worth). Capture this
@@ -747,30 +1052,34 @@ async function carrySpan(
     // `dropped-work`. The span's two shas are the whole recovery handle: the
     // entry stays pending and its commits outlive the branch teardown deletes.
     w.tipMoved = true;
-    w.mergeOutcomes.push({
-      entryTag: r.entry.tag,
-      outcome: carried.fate,
-      baseSha: r.spanBase,
-      headSha: r.headSha,
-    });
-    return staked;
+    return {
+      ...(staked === undefined ? {} : { staked }),
+      outcome: {
+        entryTag: r.entry.tag,
+        outcome: carried.fate,
+        baseSha: r.spanBase,
+        headSha: r.headSha,
+      },
+    };
   }
   if (carried.fate === "cherry-pick-conflict") {
-    w.mergeOutcomes.push({
-      entryTag: r.entry.tag,
-      outcome: carried.fate,
-      // The footprint the carry captured off the span's own two commits, which
-      // is what `commitPendingUpdate` (`src/pendingLedger.ts`) lands on trunk
-      // for the retry to partition against.
-      ...(carried.footprint ? { footprint: carried.footprint } : {}),
-      baseSha: r.spanBase,
-      headSha: r.headSha,
-    });
     // A merge-stage failure — always entry-scoped, so
     // superviseLoop's quarantine leg can isolate it exactly like a
     // tagged provisioning failure.
     w.mergeFailures.push({ ...blamedOn(r.entry), ...carried.failure });
-    return staked;
+    return {
+      ...(staked === undefined ? {} : { staked }),
+      outcome: {
+        entryTag: r.entry.tag,
+        outcome: carried.fate,
+        // The footprint the carry captured off the span's own two commits, which
+        // is what `commitPendingUpdate` (`src/pendingLedger.ts`) lands on trunk
+        // for the retry to partition against.
+        ...(carried.footprint ? { footprint: carried.footprint } : {}),
+        baseSha: r.spanBase,
+        headSha: r.headSha,
+      },
+    };
   }
   if (
     carried.fate === "afterMerge-reverted" ||
@@ -802,27 +1111,63 @@ async function carrySpan(
     // and not the entry's own span base, because a span row's two shas always
     // bound the same range. The entry stays pending; its retry carries the
     // prior-attempt block the carry wrote.
-    w.mergeOutcomes.push({
-      entryTag: r.entry.tag,
-      outcome: carried.fate,
-      footprint: carried.touchedPaths,
-      baseSha: carried.landedOnSha,
-      headSha: carried.mergedSha,
-    });
-    return staked;
+    return {
+      ...(staked === undefined ? {} : { staked }),
+      outcome: {
+        entryTag: r.entry.tag,
+        outcome: carried.fate,
+        footprint: carried.touchedPaths,
+        baseSha: carried.landedOnSha,
+        headSha: carried.mergedSha,
+      },
+    };
   }
 
-  // Trunk holding the whole span leaves the pick nothing to add, and the
-  // entry is merged all the same. `shipped` below is asked exactly as for any
-  // other merge — whether work already on trunk ships is the chain's reading,
-  // never the engine's (spec/loop.md "Tip verify — one writer per branch,
-  // absorption at the merge").
-  //
-  // Landing on trunk isn't shipping, and the engine does not decide
-  // which of the two this is. It reports facts; the chain interprets
-  // (spec/pending.md "Ship detection trusts the agent's own account";
-  // .claude/rules/engine-boundary.md "Told, not inferred"). Undeclared
-  // means shipped.
+  const verdict = await consultShipped(
+    w,
+    r,
+    r.spanBase,
+    carried,
+    w.mergeGateResults.slice(entryMergeGateResultsStart),
+  );
+  return {
+    ...(staked === undefined ? {} : { staked }),
+    outcome: verdict.outcome,
+    ...(verdict.shipped ? { shipped: r.entry } : {}),
+  };
+}
+
+/**
+ * Ask the phase whether a span that landed on trunk and passed its gates
+ * *shipped*, and answer with the row either way.
+ *
+ * Trunk holding the whole span leaves the pick nothing to add, and the entry is
+ * merged all the same. `shipped` is asked exactly as for any other merge —
+ * whether work already on trunk ships is the chain's reading, never the
+ * engine's (spec/loop.md "Tip verify — one writer per branch, absorption at the
+ * merge").
+ *
+ * Landing on trunk isn't shipping, and the engine does not decide which of the
+ * two this is. It reports facts; the chain interprets (spec/pending.md "Ship
+ * detection trusts the agent's own account"; .claude/rules/engine-boundary.md
+ * "Told, not inferred"). Undeclared means shipped.
+ *
+ * One home for the consult, because a batched merge reaches it per span with
+ * the batch's own gate rows and a serial merge reaches it with that span's
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*): which
+ * rows the predicate reads is the caller's, and everything the consult then
+ * does with a refusal — the warning, the prior-attempt record, the stage
+ * failure — is the same either way.
+ */
+async function consultShipped(
+  w: WaveMerge,
+  r: EntryAttempt,
+  /** The span's base, read where `committed` narrowed it ({@link BatchCandidate}). */
+  spanBase: string,
+  landed: { mergedSha: string; landedOnSha: string; touchedPaths: string[] },
+  mergeGateResults: readonly ReportedGateResult[],
+): Promise<{ shipped: boolean; outcome: TickVerdictMergeOutcome }> {
+  const { leg, phase } = w.setup;
   let shipVerdict: boolean;
   // spec/chain.md "What a hook receives": a throwing `shipped` is not
   // `false`. The outcome is the one the seam already has for a predicate
@@ -834,15 +1179,12 @@ async function carrySpan(
     shipVerdict =
       phase.shipped?.({
         entry: r.entry,
-        mergedSha: carried.mergedSha,
-        baseSha: r.spanBase,
-        touchedPaths: carried.touchedPaths,
-        gateResults: [
-          ...r.gateResults,
-          ...w.mergeGateResults.slice(entryMergeGateResultsStart),
-        ],
+        mergedSha: landed.mergedSha,
+        baseSha: spanBase,
+        touchedPaths: landed.touchedPaths,
+        gateResults: [...r.gateResults, ...mergeGateResults],
         worktreePath: r.worktreePath,
-        repoRoot,
+        repoRoot: leg.repoRoot,
       }) ?? true;
   } catch (err) {
     shipThrew = thrownMessage(err);
@@ -850,7 +1192,7 @@ async function carrySpan(
   }
   if (!shipVerdict) {
     leg.log.warn(
-      `[flume] ${r.entry.tag}: cherry-picked ${carried.mergedSha.slice(0, 8)} but ${phase.name}.shipped ${shipThrew === undefined ? "returned false" : `threw: ${shipThrew}`} — commit stays on trunk, entry stays pending`,
+      `[flume] ${r.entry.tag}: cherry-picked ${landed.mergedSha.slice(0, 8)} but ${phase.name}.shipped ${shipThrew === undefined ? "returned false" : `threw: ${shipThrew}`} — commit stays on trunk, entry stays pending`,
     );
     // spec/loop.md "Prior-outcome feedback to the retrying tick": the
     // entry stays queued, so its next tick is a retry and gets the same
@@ -858,24 +1200,17 @@ async function carrySpan(
     // fact lives only in the verdict log, which a chain can only reach
     // by re-deriving "was the last attempt declined" from history —
     // exactly the rebuild `TickContext.priorAttempts` exists to spare
-    // it. Cleared by the existing shipped-entry sweep below the moment
-    // a later attempt ships clean. `shipThrew` rides it for the same
-    // reason it rides the merge outcome below: the disk record is what
-    // the *next* process reads, and a broken predicate collapsing into
+    // it. Cleared by the existing shipped-entry sweep the ledger rewrite
+    // runs the moment a later attempt ships clean. `shipThrew` rides it for
+    // the same reason it rides the merge outcome below: the disk record is
+    // what the *next* process reads, and a broken predicate collapsing into
     // "the chain parked this" is a wall the retry would invent.
     await leg.attempts.write(
-      ref,
-      buildNotShipped(carried.mergedSha, carried.touchedPaths, shipThrew),
+      priorAttemptRef(phase, r.entry),
+      buildNotShipped(landed.mergedSha, landed.touchedPaths, shipThrew),
     );
-    w.mergeOutcomes.push({
-      entryTag: r.entry.tag,
-      outcome: "not-shipped",
-      baseSha: carried.landedOnSha,
-      headSha: carried.mergedSha,
-      ...(shipThrew === undefined ? {} : { threw: shipThrew }),
-    });
     // A throw is a stage failure; a `false` is not. The run's accounting
-    // reads this list, never the `not-shipped` outcomes above — the outcome
+    // reads this list, never the `not-shipped` outcomes — the outcome
     // is the entry's fate, and re-filtering it for the throws would rebuild
     // beside the engine the split the engine already made
     // (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
@@ -884,18 +1219,30 @@ async function carrySpan(
     // there, and a hook broken for one entry is exactly what the per-entry
     // leg exists to isolate.
     if (shipThrew !== undefined)
-      w.shipFailures.push({ ...blamedOn(r.entry), ...stageFailureFacts(shipThrew) });
-    return staked;
+      w.shipFailures.push({
+        ...blamedOn(r.entry),
+        ...stageFailureFacts(shipThrew),
+      });
+    return {
+      shipped: false,
+      outcome: {
+        entryTag: r.entry.tag,
+        outcome: "not-shipped",
+        baseSha: landed.landedOnSha,
+        headSha: landed.mergedSha,
+        ...(shipThrew === undefined ? {} : { threw: shipThrew }),
+      },
+    };
   }
-
-  w.shipped.push(r.entry);
-  w.mergeOutcomes.push({
-    entryTag: r.entry.tag,
-    outcome: carried.fate,
-    baseSha: carried.landedOnSha,
-    headSha: carried.mergedSha,
-  });
-  return staked;
+  return {
+    shipped: true,
+    outcome: {
+      entryTag: r.entry.tag,
+      outcome: "merged",
+      baseSha: landed.landedOnSha,
+      headSha: landed.mergedSha,
+    },
+  };
 }
 
 /**
@@ -904,10 +1251,27 @@ async function carrySpan(
  *
  * Nothing here touches trunk. Each pick landed its own ledger commit and
  * retired its own merge marker inside its own ship-lock hold
- * ({@link mergeAttempt}), so what is left of the stage is the fold over what
+ * ({@link drainWaiting}), so what is left of the stage is the fold over what
  * those picks observed.
  */
 export function closeWaveMerge(w: WaveMerge): WaveMergeResult {
+  // A span offered and never carried is a commit this wave dropped with nothing
+  // on any surface saying so — the one failure the drive's shape makes
+  // impossible and no type holds: one drain is chained per offered attempt and
+  // each drain carries at least the front of the queue, so the queue is empty by
+  // the last of them (`drainWaiting`). Refused rather than closed over
+  // (`.claude/rules/engineering.md`, *Loud or nothing*); a wave that walled
+  // never reaches here, and its uncarried spans are rowed instead
+  // ({@link abandonWaiting}).
+  if (w.waiting.length > 0) {
+    throw new Error(
+      `${w.setup.phase.name}: ${w.waiting.length} finished span(s) were ` +
+        `waiting on the ship lock when the merge stage closed ` +
+        `(${w.waiting.map((s) => s.attempt.entry.tag).join(", ")}): every ` +
+        `offered span is carried or rowed, so this is a merge drive that lost ` +
+        `one`,
+    );
+  }
   // `revertRefused` is this stage's own bookkeeping — an entry whose gate
   // failed and whose revert off trunk was then refused — so the fold happens
   // here, beside the refusal verdict that folds the same three inputs, rather

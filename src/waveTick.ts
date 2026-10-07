@@ -18,10 +18,12 @@
  *
  * The stage in the middle that carries each span onto trunk is its own
  * module (`src/waveMerge.ts`), driven from here once per finished attempt —
- * `openWaveMerge`, then a serialized `mergeAttempt` behind each agent as it
- * returns, then `closeWaveMerge`. Only the middle one touches trunk, under
- * the ship lock it owns, and this entry's ledger commit lands inside that
- * same hold; the close is the fold over what the picks observed.
+ * `openWaveMerge`, then `offerAttempt` as each agent returns with a serialized
+ * `drainWaiting` behind it, then `closeWaveMerge`. Only the drain touches
+ * trunk, under the ship lock it owns, and the ledger commit of what it carried
+ * lands inside that same hold; the close is the fold over what the picks
+ * observed. A drain may carry several of this tick's waiting spans at once
+ * (spec/worktrees.md, *Batched merges*).
  *
  * Its sibling is `src/singletonTick.ts` — the same provisioning, attempt and
  * afterMerge machinery over a wave of one — and the orchestration around
@@ -51,6 +53,7 @@ import type {
 } from "./Phase.js";
 import type { PriorAttempt } from "./Prompt.js";
 import { priorAttemptRef } from "./priorAttempts.js";
+import { mergeBatchWidth } from "./gateBatch.js";
 import { blamedOn, byQueueOrder, nextDisjointPick } from "./selection.js";
 import { consultShouldRun, runAttempt } from "./tickAttempt.js";
 import type { PhaseTickOutcome, TickLegContext } from "./tickLeg.js";
@@ -62,9 +65,10 @@ import {
   type StakeLoss,
 } from "./tickVerdict.js";
 import {
+  abandonWaiting,
   closeWaveMerge,
-  foldUncarriedAttempt,
-  mergeAttempt,
+  drainWaiting,
+  offerAttempt,
   openWaveMerge,
   waveWallThrow,
   type EntryAttempt,
@@ -251,6 +255,12 @@ export async function runFanout(
     phase,
     provisioned,
     partitionIgnore,
+    // spec/worktrees.md "Batched merges": how many of this wave's finished
+    // spans one merge may carry, read off the tick's own resolved chain through
+    // the one derivation of it (`mergeBatchWidth`, `src/gateBatch.ts`) — the
+    // chain's `mergeBatch` and every `afterMerge` gate's own declaration have
+    // to agree before it is above one.
+    mergeWidth: mergeBatchWidth(chain, phase),
     provisionFailures,
     renderFailures,
     platformFailures,
@@ -262,7 +272,11 @@ export async function runFanout(
   // process would read its own live pid as a holder and wait on itself
   // forever (`acquireWaitLock`, `src/waitLock.ts`). `mergeTail` is that
   // queue — each attempt joins it the moment its agent returns, so the order
-  // spans land is finish order, not batch order.
+  // spans land is finish order, not batch order. One drain per offered attempt
+  // whatever the merge width is: a drain whose spans an earlier batch already
+  // carried finds its queue empty and returns (`drainWaiting`,
+  // `src/waveMerge.ts`), which is what keeps "every span is carried" true of
+  // this chain at any width.
   let mergeTail: Promise<void> = Promise.resolve();
   // The first throw out of a merge, held rather than propagated on the spot.
   // A throw there is the same wall it has always been — it stops the wave
@@ -438,15 +452,21 @@ export async function runFanout(
     perEntry.push(r);
     if (r.renderFailure) renderFailures.push(r.renderFailure);
     if (r.platformFailure) platformFailures.push(r.platformFailure);
-    // A walled wave carries no further span onto trunk — but what this
-    // attempt observed away from trunk is still a fact of this tick, and the
-    // verdict below is built where every slot has finished, so the facts half
-    // of the merge runs either way, naming the span it will not carry
-    // (`foldUncarriedAttempt`, `src/waveMerge.ts`).
+    // Everything this attempt observed away from trunk is folded and its span
+    // joins the queue of spans waiting on the ship lock *now*, off the merge
+    // queue below: a usage row is paid for as its agent finishes, and a span
+    // that is not waiting when the next merge takes the lock cannot be in its
+    // batch (spec/worktrees.md, *Batched merges*).
+    await offerAttempt(merge, r);
+    // A walled wave carries no further span onto trunk — but what the attempts
+    // waiting on it observed is still a fact of this tick, and the verdict
+    // below is built where every slot has finished, so the facts half of the
+    // merge runs either way, naming the spans it will not carry
+    // (`abandonWaiting`, `src/waveMerge.ts`).
     const queued = mergeTail.then(() =>
       mergeError === undefined
-        ? mergeAttempt(merge, r)
-        : foldUncarriedAttempt(merge, r),
+        ? drainWaiting(merge)
+        : Promise.resolve(abandonWaiting(merge)),
     );
     // The tail itself never rejects: a merge that threw must not take the
     // queue down with it, or every sibling behind it would reject with the

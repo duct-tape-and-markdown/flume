@@ -575,7 +575,7 @@ export type PendingRewriteResult = {
  * observed, and commit the result.
  *
  * The scope is a **single shipped set** — under fanout, the one entry whose
- * pick is holding the ship lock right now (`mergeAttempt`, `src/waveMerge.ts`),
+ * pick is holding the ship lock right now (`drainWaiting`, `src/waveMerge.ts`),
  * not a whole wave's. A wave can outlast many merges, so a rewrite that waited
  * for its slowest agent would leave a queue on disk listing entries already on
  * the trunk, read as current by every producer beside it (`spec/worktrees.md`,
@@ -588,7 +588,7 @@ export type PendingRewriteResult = {
  * merge", "Harness-driven commits carry no expected-tip bookkeeping": no sha
  * comparison — `liveForeignClaimPid`, checked fresh immediately before this
  * function's own harness-driven `commitPaths` call, the wave's other
- * tip-verify site beside `cherryPickRange` (`mergeAttempt`,
+ * tip-verify site beside `cherryPickRange` (`drainWaiting`,
  * `src/waveMerge.ts`). Checked before the writes: a refusal here leaves
  * every entry file untouched on disk rather than a write with no commit
  * behind it. No live claim means the rewrite recommits on whatever tip is

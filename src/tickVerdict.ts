@@ -619,7 +619,7 @@ export function startTiming(): () => number {
  *                            stage holds is the wall — a ledger rewrite that
  *                            refused, a merge marker the disk would not take,
  *                            a prior-attempt record the store refused, a
- *                            `revParse` that failed (`mergeAttempt`,
+ *                            `revParse` that failed (`drainWaiting`,
  *                            `src/waveMerge.ts`) — and the row is the same
  *                            for every one of them, because the fold is keyed
  *                            on the wave being walled and never on the cause.

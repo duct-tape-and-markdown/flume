@@ -1,5 +1,5 @@
 /**
- * The span carry: one finished span's whole passage onto trunk — the refusal
+ * The span carry: a finished span's whole passage onto trunk — the refusal
  * that may decline it before anything is staked, the checkpoint over the
  * operator's uncommitted work, the cherry-pick, the `afterMerge` gates over
  * the merged tip, and the revert that may take the span back off again.
@@ -11,6 +11,14 @@
  * module is one job*). A span is a base and a head on a worktree branch; that
  * a fanout wave has an entry to name it by and a singleton has only its phase
  * changes what the two legs *say* about the carry, never what the carry does.
+ *
+ * Two entry points over the same three steps, because a wave's merge may carry
+ * several spans at once (spec/worktrees.md, *Batched merges*):
+ * {@link carryMergeSpan} picks one range and gates it on its own, and
+ * {@link carryMergeBatch} picks N in order and gates the result once. The pick
+ * ({@link pickSpanRange}), the claim refusal ({@link foreignTipRefusal}) and
+ * the gate loop ({@link gateMergedTip}) are shared between them, so a batch is
+ * the same passage at a width rather than a second spelling of it.
  *
  * So what is not here is what the two do not share: the merge marker a wave
  * stakes before its pick, the blame half of every failure recorded
@@ -27,6 +35,13 @@
  * pick that earned it, one `await` past this return.
  */
 
+import { batchGateContext } from "./gateBatch.js";
+import type {
+  BatchGateContext,
+  GateBatchSpan,
+  GateContext,
+  GateSite,
+} from "./Gate.js";
 import { runGate } from "./gateRun.js";
 import * as git from "./git.js";
 import type { PendingEntry } from "./PendingSchema.js";
@@ -193,7 +208,9 @@ type SpanCarried =
  * claim before anything is staked, checkpoint the operator's work before the
  * first pick range, stake whatever the leg holds for the window between, pick
  * the range, gate the merged tip, and revert exactly the commits the pick added
- * when a gate turns red. Each step's reason is at the step.
+ * when a gate turns red. Each step's reason is at the step, in the step's own
+ * function — the three the batch carry below runs over N spans instead of one
+ * ({@link carryMergeBatch}).
  */
 export async function carryMergeSpan(carry: {
   /** The tick's leg: the primary checkout every call below runs in, its log, its record store, its tip claim. */
@@ -235,121 +252,45 @@ export async function carryMergeSpan(carry: {
   const { leg, phase, base, head, narrate } = carry;
   const repoRoot = leg.repoRoot;
 
-  // spec/loop.md "Tip verify — one writer per branch, absorption at the
-  // merge", "Harness-driven commits carry no expected-tip bookkeeping — the
-  // claim refuses, git arbitrates": no sha comparison against a recorded
-  // expectation. A live claim on the ref is a concurrent engine instance and
-  // refuses exactly as a moved tip used to — two engine instances interleaving
-  // picks on one ref is the one interference no cherry-pick or conflict check
-  // can catch on its own (`TickVerdict.tipMoved`, `src/tickVerdict.ts`).
-  // Absent one, whatever moved trunk was not an engine, and the pick below
-  // lands onto whatever tip is current, with git's own conflict detection the
-  // only content arbiter left.
-  const foreignClaim = await liveForeignClaimPid(repoRoot, leg.ownTipClaimPid);
-  if (foreignClaim !== null) {
-    leg.log.warn(narrate.tipClaimed(foreignClaim));
+  if (await foreignTipRefusal(leg, narrate.tipClaimed)) {
     // Refused ahead of the checkpoint and the pick, so trunk holds nothing of
     // this span and no bystander sha is staked. The leg's row is the whole
     // recovery handle: the span's commits outlive the branch teardown deletes
     // (`TickVerdictMergeOutcome`, `src/tickVerdict.ts`).
     return { fate: "tip-moved" };
   }
-  if (!carry.checkpoint.attempted) {
-    // spec/loop.md "Crash equals stop": whatever the operator has staged or
-    // unstaged on the primary checkout, recoverable from the tick verdict
-    // alone even if the pick below conflicts and its `--abort` (guarded, but
-    // still a reset) or a gate revert past it disturbs the checkout.
-    carry.checkpoint.attempted = true;
-    carry.checkpoint.sha = await git.checkpointBystanderState(repoRoot);
-  }
-  const landedOnSha = await git.revParse(repoRoot);
-  // The stake window: whatever the leg needs standing if this pick dies
-  // halfway through the range.
-  await carry.stake?.();
-  // The commits of this span trunk already held. A range pick absorbs those
-  // rather than refusing over them (`git.cherryPickRange`), so only a real
-  // conflict reaches the catch below. The whole range, in order, rather than
-  // the newest commit alone: the attempt's own ancestry check already cleared
-  // `base..head` as one completed span (spec/loop.md "The check is ancestry,
-  // and N commits are completion"), and a one-commit span is the same call.
-  let absorbed: readonly string[] = [];
-  try {
-    ({ absorbed } = await git.cherryPickRange(repoRoot, base, head));
-  } catch (err) {
-    const message = thrownMessage(err);
-    leg.log.warn(narrate.pickFailed(message));
-    let footprint: string[] | undefined;
-    try {
-      footprint = await git.diffNameOnly(repoRoot, base, head);
-    } catch {
-      // Footprint capture is best-effort; a retry without one partitions on
-      // the entry's declared files as before.
-    }
-    // Abort the in-progress pick so the checkout is clean for the ticks after
-    // this one. Without it, partially-applied changes block the next tick
-    // (which cannot run `pnpm install` and the like against a dirty trunk) and
-    // need a manual `git restore` to clear.
-    await git.cherryPickAbort(repoRoot);
-    return {
-      fate: "cherry-pick-conflict",
-      failure: stageFailureFacts(message),
-      ...(footprint ? { footprint } : {}),
-    };
-  }
-  const mergedSha = await git.revParse(repoRoot);
-  if (absorbed.length > 0) {
-    // Absorbed, never a conflict (spec/loop.md "Tip verify — one writer per
-    // branch, absorption at the merge"). Said out loud, because a span
-    // reaching trunk with fewer commits than it carried — or, when the two
-    // shas below are equal, with none — is otherwise visible only as a merge
-    // row whose two shas are equal.
-    leg.log.info(narrate.absorbed(absorbed));
-  }
-  // Computed once and read by every gate the loop runs, then again as the
-  // footprint of a revert — the same dedup the afterCommit loop does
-  // (`runAfterCommitGates`, `src/tickAttempt.ts`). Diffed as a range rather
-  // than read off `mergedSha`'s own single-commit show, so an earlier commit
-  // of the span is not missed (spec/loop.md "The check is ancestry, and N
-  // commits are completion").
-  const touchedPaths = await git.diffNameOnly(repoRoot, landedOnSha, mergedSha);
+  const picked = await pickSpanRange({
+    leg,
+    base,
+    head,
+    checkpoint: carry.checkpoint,
+    ...(carry.stake ? { stake: carry.stake } : {}),
+    narrate,
+  });
+  if (picked.fate === "cherry-pick-conflict") return picked;
+  const { mergedSha, landedOnSha, touchedPaths } = picked;
   const landed: SpanLanded = { mergedSha, landedOnSha, touchedPaths };
-  const afterMergeGates = phase.gates.filter((g) => g.when === "afterMerge");
-  let failingGate: ReportedGateResult | undefined;
-  for (const gate of afterMergeGates) {
-    const { result: gr, ms } = await runGate(
-      gate,
-      {
-        cwd: repoRoot,
-        repoRoot,
-        flumeDir: leg.flumeDir,
-        stateRootRel: leg.stateRootRel,
-        pendingDir: leg.pendingDir,
-        configDir: leg.configDir,
-        phaseName: phase.name,
-        commitSha: mergedSha,
-        touchedPaths,
-        ...(carry.entry ? { entry: carry.entry } : {}),
-        // The span's own base, not the tip it landed on: an `afterMerge` gate
-        // reading trunk needs the tip its agent branched from to tell an input
-        // the span ignored from one that landed after it started
-        // (spec/chain.md "What a gate receives"). Siblings provisioned from the
-        // same tip each carry their own value regardless.
-        baseSha: base,
-        // And the tip it landed onto beside it, which is what a cumulative
-        // gate measuring trunk before and after this span reads as its
-        // *before* (spec/chain.md "What a gate receives").
-        landedOnSha,
-        log: (l) => leg.log.info(l),
-      },
-      leg.gateScope,
-    );
-    const row = reportedGateRow(gate.name, gr);
-    carry.onGateRow(row, ms);
-    if (!gr.ok) {
-      failingGate = row;
-      break;
-    }
-  }
+  const failingGate = await gateMergedTip(
+    leg,
+    phase,
+    {
+      ...gateSite(leg, phase),
+      commitSha: mergedSha,
+      touchedPaths,
+      ...(carry.entry ? { entry: carry.entry } : {}),
+      // The span's own base, not the tip it landed on: an `afterMerge` gate
+      // reading trunk needs the tip its agent branched from to tell an input
+      // the span ignored from one that landed after it started
+      // (spec/chain.md "What a gate receives"). Siblings provisioned from the
+      // same tip each carry their own value regardless.
+      baseSha: base,
+      // And the tip it landed onto beside it, which is what a cumulative
+      // gate measuring trunk before and after this span reads as its
+      // *before* (spec/chain.md "What a gate receives").
+      landedOnSha,
+    },
+    carry.onGateRow,
+  );
   if (failingGate) {
     leg.log.warn(narrate.gateFailed(failingGate.gate));
     // The first red gate condemns exactly the commits the pick added — they
@@ -416,4 +357,367 @@ export async function carryMergeSpan(carry: {
   }
   leg.log.info(narrate.merged(mergedSha, landedOnSha));
   return { fate: "merged", ...landed };
+}
+
+/**
+ * One span a batched merge is asked to carry: the range, the entry whose facts
+ * the batch's gates read for it, the marker its leg stakes for it, and the
+ * words its own pick is reported in.
+ *
+ * The narration is the single-span vocabulary minus the steps a batch does not
+ * take per span — no gate runs over one span of a batch, so nothing reverts one
+ * either, and `tipClaimed` is the batch's one refusal rather than N
+ * ({@link BatchNarration}).
+ */
+interface BatchSpanInput {
+  /** The span's base — the tip its agent branched from, and its pick range's lower end. */
+  base: string;
+  /** The span's head — the last commit the agent left on its worktree branch. */
+  head: string;
+  /** The entry this span carries, for the batch's gates to read as its own ({@link GateBatchSpan}). */
+  entry?: PendingEntry;
+  /** This span's stake window, on {@link carryMergeSpan}'s terms — before its own pick, never the batch's first. */
+  stake?: () => Promise<void>;
+  /** The words this span's own pick is reported in. */
+  narrate: Pick<SpanNarration, "pickFailed" | "absorbed" | "merged">;
+}
+
+/**
+ * The words a leg reports the batch's own steps in — the ones that hold over
+ * every span it carried rather than over one of them, on
+ * {@link SpanNarration}'s terms.
+ */
+type BatchNarration = {
+  /** A live foreign tip claim refused the whole batch, by the pid holding it. */
+  tipClaimed(pid: number): string;
+  /** An `afterMerge` gate turned red over the batch's tip, by gate name. */
+  gateFailed(gate: string): string;
+  /** Trunk is back at the tip before the batch, and why it was taken there. */
+  unwound(why: string): string;
+};
+
+/**
+ * What became of a batched merge (spec/worktrees.md, *Batched merges*).
+ *
+ * `unwound` is the one fate a single-span carry has no equivalent of: trunk is
+ * back at the tip the batch started from and the spans are the leg's to carry
+ * one at a time, gated individually. It is not a verdict on any span — the
+ * serial pass that follows is what produces those — so it carries only the
+ * words the unwind happened in, for the leg's log and nothing else.
+ */
+type BatchCarried =
+  /** A live foreign claim refused before the first pick: trunk holds nothing of any span. */
+  | { fate: "tip-moved" }
+  /** Red, or a conflict while picking: trunk is back at the tip before the batch. */
+  | { fate: "unwound"; why: string }
+  /** Every span is on trunk, picked in order, and the batch's gates were green. */
+  | { fate: "merged"; landed: readonly SpanLanded[] };
+
+/**
+ * Carry a batch of spans onto trunk and answer with what became of all of them
+ * (spec/worktrees.md, *Batched merges*): picked in order onto the tip, gated
+ * **once** over the result, and taken back off to the tip before the batch when
+ * a gate turns red or a pick conflicts.
+ *
+ * The three steps are {@link carryMergeSpan}'s own, over N spans instead of one:
+ * the same foreign-claim refusal ahead of everything, the same pick per span,
+ * the same gate loop — handed a {@link BatchGateContext} instead of a single
+ * span's, which is the whole of what a gate declaring `batches: true` bought
+ * (`mergeBatchWidth`, `src/gateBatch.ts`).
+ *
+ * What it does **not** do is decide anything per span. No `shipped` consult, no
+ * prior-attempt record, no ledger commit: a green batch's spans each have their
+ * own, and a red one's are re-carried individually by the leg, so a verdict
+ * taken here would be a second, contradictory fate for the same span. The leg
+ * reads `landed` for the green case and re-enters the single-span carry for the
+ * unwound one (`src/waveMerge.ts`).
+ *
+ * **The unwind is loud or nothing.** `reset --keep` back to the tip before the
+ * batch can be refused — a bystander's uncommitted work colliding with the
+ * paths the batch touched, or a foreign commit landed on trunk since the last
+ * pick — and on that refusal this throws rather than answering. The batch's
+ * commits stay on trunk ungated, which is not a state any span's fate can
+ * describe and not one a serial re-carry can be run over: the wave walls, its
+ * merge markers stay standing for the next start to refuse over, and the
+ * operator repairs the checkout (`.claude/rules/engineering.md`, *Loud or
+ * nothing*).
+ */
+export async function carryMergeBatch(carry: {
+  /** The tick's leg: the primary checkout every call below runs in, its log, its tip claim. */
+  leg: TickLegContext;
+  /** The phase whose `afterMerge` gates judge the batch's tip. */
+  phase: Phase;
+  /** The spans to pick, in the order they are to land. At least two — one span is {@link carryMergeSpan}. */
+  spans: readonly BatchSpanInput[];
+  /** This carrier's {@link BystanderCheckpoint}, taken before the batch's first pick range if it has not been already. */
+  checkpoint: BystanderCheckpoint;
+  /** One `afterMerge` gate row and what it cost, on {@link carryMergeSpan}'s terms. */
+  onGateRow: (row: ReportedGateResult, ms: number) => void;
+  /** The words this leg reports the batch's own steps in ({@link BatchNarration}). */
+  narrate: BatchNarration;
+}): Promise<BatchCarried> {
+  const { leg, phase, spans, narrate } = carry;
+  const repoRoot = leg.repoRoot;
+  if (spans.length < 2) {
+    throw new Error(
+      `a batched merge of ${spans.length} span(s) is the single-span carry ` +
+        `under another name: a batch withholds every per-span fact from its ` +
+        `gates, so carrying one span through here would gate it over a ` +
+        `context that names no entry`,
+    );
+  }
+  if (await foreignTipRefusal(leg, narrate.tipClaimed)) {
+    return { fate: "tip-moved" };
+  }
+  // The tip before the batch — where a red gate or a conflicting pick puts
+  // trunk back. Read before the first pick and before the checkpoint the pick
+  // takes, so it is the tip whatever writer ran ahead of this batch left.
+  const batchBase = await git.revParse(repoRoot);
+  const landed: SpanLanded[] = [];
+  const gateSpans: GateBatchSpan[] = [];
+  /**
+   * Put trunk back at the tip before the batch. Nothing landed yet — the
+   * batch's first pick conflicted — is the one case with nothing to take off,
+   * and `revParse` would already equal `batchBase`; the guard is the empty
+   * `landed`, so no reset runs over a tip no pick of this batch moved.
+   */
+  const unwind = async (why: string): Promise<BatchCarried> => {
+    const last = landed[landed.length - 1];
+    if (last !== undefined) {
+      // The same guard the single-span revert takes, over the batch's whole
+      // range: a foreign commit that landed while the gates ran is legal
+      // history a reset to `batchBase` would discard (`checkMergedTipUnmoved`,
+      // `src/tipVerify.ts`).
+      const foreignTip = await checkMergedTipUnmoved(
+        repoRoot,
+        batchBase,
+        last.mergedSha,
+      );
+      if (foreignTip) throw new Error(`${why}; ${foreignTip}`);
+      await git.resetKeepTo(repoRoot, batchBase);
+    }
+    leg.log.warn(narrate.unwound(why));
+    return { fate: "unwound", why };
+  };
+  for (const span of spans) {
+    const picked = await pickSpanRange({
+      leg,
+      base: span.base,
+      head: span.head,
+      checkpoint: carry.checkpoint,
+      ...(span.stake ? { stake: span.stake } : {}),
+      narrate: span.narrate,
+    });
+    if (picked.fate === "cherry-pick-conflict") {
+      // The conflicting pick is already aborted, so what is on trunk is the
+      // spans before it. They go off too: a conflict is the batch's verdict,
+      // and each span's own is the serial pass's to take.
+      return unwind(`cherry-pick conflict: ${picked.failure.message}`);
+    }
+    landed.push(picked);
+    gateSpans.push({
+      ...(span.entry ? { entry: span.entry } : {}),
+      commitSha: picked.mergedSha,
+      baseSha: span.base,
+      landedOnSha: picked.landedOnSha,
+      touchedPaths: picked.touchedPaths,
+    });
+  }
+  const failingGate = await gateMergedTip(
+    leg,
+    phase,
+    // Every per-span fact on the span records, every batch-wide fact computed
+    // from them (`batchGateContext`, `src/gateBatch.ts`) — never restated here.
+    batchGateContext(gateSite(leg, phase), gateSpans),
+    carry.onGateRow,
+  );
+  if (failingGate) {
+    leg.log.warn(narrate.gateFailed(failingGate.gate));
+    // No prior-attempt record and no gate failure reported for the batch's own
+    // red: the serial pass below it re-runs these gates per span, and the
+    // entry each of them blames is the one that pass condemns. A record
+    // written here would name every span for a verdict one of them earned.
+    return unwind(
+      `afterMerge gate '${failingGate.gate}' failed over the batch: ${failingGate.message}`,
+    );
+  }
+  for (const [i, span] of spans.entries()) {
+    const l = landed[i]!;
+    leg.log.info(span.narrate.merged(l.mergedSha, l.landedOnSha));
+  }
+  return { fate: "merged", landed };
+}
+
+/**
+ * The live foreign tip claim both carries refuse to, before anything is staked
+ * or picked (`liveForeignClaimPid`, `src/tipVerify.ts`).
+ *
+ * spec/loop.md "Tip verify — one writer per branch, absorption at the merge",
+ * "Harness-driven commits carry no expected-tip bookkeeping — the claim
+ * refuses, git arbitrates": no sha comparison against a recorded expectation. A
+ * live claim on the ref is a concurrent engine instance and refuses exactly as
+ * a moved tip used to — two engine instances interleaving picks on one ref is
+ * the one interference no cherry-pick or conflict check can catch on its own
+ * (`TickVerdict.tipMoved`, `src/tickVerdict.ts`). Absent one, whatever moved
+ * trunk was not an engine, and the picks below land onto whatever tip is
+ * current, with git's own conflict detection the only content arbiter left.
+ *
+ * One refusal per carry, never per span of a batch: the claim is a statement
+ * about the ref, so asking it N times would read the same disk N times to
+ * answer N identical questions.
+ */
+async function foreignTipRefusal(
+  leg: TickLegContext,
+  narrate: (pid: number) => string,
+): Promise<boolean> {
+  const foreignClaim = await liveForeignClaimPid(
+    leg.repoRoot,
+    leg.ownTipClaimPid,
+  );
+  if (foreignClaim === null) return false;
+  leg.log.warn(narrate(foreignClaim));
+  return true;
+}
+
+/** One span's pick, as {@link pickSpanRange} answers it. */
+type SpanPicked =
+  | {
+      fate: "cherry-pick-conflict";
+      /** The conflict's own stage failure, unblamed ({@link StageFacts}). */
+      failure: StageFacts;
+      /** What the span would have added, captured off its own two commits before the abort. */
+      footprint?: string[];
+    }
+  | ({ fate: "picked" } & SpanLanded);
+
+/**
+ * Pick one span's range onto trunk: the checkpoint over the operator's
+ * uncommitted work, the leg's stake window, the range itself, and the facts of
+ * where it landed.
+ *
+ * One home for the step both carries take — once for a single span
+ * ({@link carryMergeSpan}), once per span of a batch
+ * ({@link carryMergeBatch}) — so what a pick absorbs, what it aborts and what
+ * it reports has one spelling (`.claude/rules/engineering.md`, *The fix lands
+ * at the mechanism*). The foreign-claim refusal is **not** here: it is one
+ * question per carry, asked by the caller ({@link foreignTipRefusal}).
+ */
+async function pickSpanRange(pick: {
+  leg: TickLegContext;
+  /** The span's base — the pick range's lower end. */
+  base: string;
+  /** The span's head — the pick range's upper end. */
+  head: string;
+  /** The carrier's checkpoint, taken here when this pick is the first of its carrier. */
+  checkpoint: BystanderCheckpoint;
+  /** The leg's stake window, between the checkpoint and the range. */
+  stake?: () => Promise<void>;
+  narrate: Pick<SpanNarration, "pickFailed" | "absorbed">;
+}): Promise<SpanPicked> {
+  const { leg, base, head, narrate } = pick;
+  const repoRoot = leg.repoRoot;
+  if (!pick.checkpoint.attempted) {
+    // spec/loop.md "Crash equals stop": whatever the operator has staged or
+    // unstaged on the primary checkout, recoverable from the tick verdict
+    // alone even if the pick below conflicts and its `--abort` (guarded, but
+    // still a reset) or a gate revert past it disturbs the checkout.
+    pick.checkpoint.attempted = true;
+    pick.checkpoint.sha = await git.checkpointBystanderState(repoRoot);
+  }
+  const landedOnSha = await git.revParse(repoRoot);
+  // The stake window: whatever the leg needs standing if this pick dies
+  // halfway through the range.
+  await pick.stake?.();
+  // The commits of this span trunk already held. A range pick absorbs those
+  // rather than refusing over them (`git.cherryPickRange`), so only a real
+  // conflict reaches the catch below. The whole range, in order, rather than
+  // the newest commit alone: the attempt's own ancestry check already cleared
+  // `base..head` as one completed span (spec/loop.md "The check is ancestry,
+  // and N commits are completion"), and a one-commit span is the same call.
+  let absorbed: readonly string[] = [];
+  try {
+    ({ absorbed } = await git.cherryPickRange(repoRoot, base, head));
+  } catch (err) {
+    const message = thrownMessage(err);
+    leg.log.warn(narrate.pickFailed(message));
+    let footprint: string[] | undefined;
+    try {
+      footprint = await git.diffNameOnly(repoRoot, base, head);
+    } catch {
+      // Footprint capture is best-effort; a retry without one partitions on
+      // the entry's declared files as before.
+    }
+    // Abort the in-progress pick so the checkout is clean for the ticks after
+    // this one. Without it, partially-applied changes block the next tick
+    // (which cannot run `pnpm install` and the like against a dirty trunk) and
+    // need a manual `git restore` to clear.
+    await git.cherryPickAbort(repoRoot);
+    return {
+      fate: "cherry-pick-conflict",
+      failure: stageFailureFacts(message),
+      ...(footprint ? { footprint } : {}),
+    };
+  }
+  const mergedSha = await git.revParse(repoRoot);
+  if (absorbed.length > 0) {
+    // Absorbed, never a conflict (spec/loop.md "Tip verify — one writer per
+    // branch, absorption at the merge"). Said out loud, because a span
+    // reaching trunk with fewer commits than it carried — or, when the two
+    // shas below are equal, with none — is otherwise visible only as a merge
+    // row whose two shas are equal.
+    leg.log.info(narrate.absorbed(absorbed));
+  }
+  // Computed once and read by every gate the loop runs, then again as the
+  // footprint of a revert — the same dedup the afterCommit loop does
+  // (`runAfterCommitGates`, `src/tickAttempt.ts`). Diffed as a range rather
+  // than read off `mergedSha`'s own single-commit show, so an earlier commit
+  // of the span is not missed (spec/loop.md "The check is ancestry, and N
+  // commits are completion").
+  const touchedPaths = await git.diffNameOnly(repoRoot, landedOnSha, mergedSha);
+  return { fate: "picked", mergedSha, landedOnSha, touchedPaths };
+}
+
+/**
+ * Run the phase's `afterMerge` gates over whatever the merge put on trunk,
+ * stopping at the first red and answering with its row.
+ *
+ * One loop for both carries: a single span's context and a batch's differ only
+ * in what they say about the spans ({@link GateContext} against
+ * {@link BatchGateContext}), and which of the two a gate may be handed is
+ * `runGate`'s to keep (`src/gateRun.ts`), so neither carry spells the loop or
+ * the refusal for itself.
+ */
+async function gateMergedTip(
+  leg: TickLegContext,
+  phase: Phase,
+  ctx: GateContext | BatchGateContext,
+  onGateRow: (row: ReportedGateResult, ms: number) => void,
+): Promise<ReportedGateResult | undefined> {
+  for (const gate of phase.gates) {
+    if (gate.when !== "afterMerge") continue;
+    const { result: gr, ms } = await runGate(gate, ctx, leg.gateScope);
+    const row = reportedGateRow(gate.name, gr);
+    onGateRow(row, ms);
+    if (!gr.ok) return row;
+  }
+  return undefined;
+}
+
+/**
+ * Where an `afterMerge` gate is running, for either carry: the trunk, this
+ * tick's state-root facts and the phase's name — the half of a gate's input
+ * that holds however many spans the merge carried ({@link GateSite}), composed
+ * once rather than at each of the two sites that add the span facts to it.
+ */
+function gateSite(leg: TickLegContext, phase: Phase): GateSite {
+  return {
+    cwd: leg.repoRoot,
+    repoRoot: leg.repoRoot,
+    flumeDir: leg.flumeDir,
+    stateRootRel: leg.stateRootRel,
+    pendingDir: leg.pendingDir,
+    configDir: leg.configDir,
+    phaseName: phase.name,
+    log: (l) => leg.log.info(l),
+  };
 }
