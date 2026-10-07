@@ -588,10 +588,12 @@ export interface QueueParseFailure {
  * must not read as an empty one, and nothing downstream may derive a decision
  * or a rewrite from it. `tick()` (`src/Dispatcher.ts`) catches it exactly
  * where it catches chain-resolution failure and folds it into the same
- * mount-dead failed-outcome shape — a queue no agent can parse is
- * exactly as unusable next tick as this one. The one read that answers with
- * {@link QueueParseFailure} instead is the decide-read taken for a phase that
- * can write the queue (`readPendingForDecision`, `src/pendingLedger.ts`).
+ * mount-dead failed-outcome shape — a queue no agent can parse is unusable to
+ * the next tick too, until its declared writer runs over it, which is the
+ * repair `flume loop`'s own re-read at the tip looks for before a 69 ends the
+ * run (`spec/loop.md`, *Exit codes — the run never lies to CI*). The one
+ * read that answers with {@link QueueParseFailure} instead is the decide-read
+ * taken for a phase that can write the queue (`readPendingForDecision`, `src/pendingLedger.ts`).
  *
  * `path` is a field a catcher reads, and the same value the message opens
  * with, taken from the engine's one spelling of where the ledger lives

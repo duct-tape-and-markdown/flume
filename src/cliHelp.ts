@@ -10,6 +10,7 @@ import {
   DEFAULT_ABORT_THRESHOLD,
   DEFAULT_MAX_TICKS,
   DEFAULT_TICK_BUDGET,
+  MOUNT_DEAD_RE_READ_LEGS,
 } from "./loopSupervisor.js";
 import { STATE_ROOT_DIRNAME } from "./paths.js";
 import { DEFAULT_LOG_VERDICTS } from "./tickVerdict.js";
@@ -430,6 +431,31 @@ function rootResolutionUsageRefusal(indent: number): string {
 }
 
 /**
+ * The tail of `flume loop`'s `69` row: what the supervisor decides on a
+ * child's mount-dead exit. The walls it names are rendered from the legs the
+ * re-read really takes (`MOUNT_DEAD_RE_READ_LEGS`, `src/loopSupervisor.ts`)
+ * rather than spelled a second time here, so a leg added to or renamed at
+ * that re-read cannot leave this page describing the ones it used to take
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never
+ * restated beside its source*).
+ */
+function mountDeadReReadClause(indent: number): string {
+  return wrapClause(
+    `On that child's 69 the run does not end on the child's word alone: ` +
+      `the supervisor re-reads the mount at the tip, as the next child ` +
+      `would, and aborts — propagating 69 — only while a wall still ` +
+      `stands, so the remaining --max ticks are never burned against one. ` +
+      `The legs: ${MOUNT_DEAD_RE_READ_LEGS.chain}, the exiting phase's ` +
+      `${MOUNT_DEAD_RE_READ_LEGS.prompt}, or ` +
+      `${MOUNT_DEAD_RE_READ_LEGS.queue}. A 69 whose cause no longer holds — ` +
+      `a sibling's repair or an operator's fix landed in the gap — is that ` +
+      `tick's error and nothing more, and the run goes on (it still counts ` +
+      `as an errored tick).`,
+    indent,
+  ).join(`\n${" ".repeat(indent)}`);
+}
+
+/**
  * The whole `2` row for a verb with no usage of its own to refuse, which
  * today is `status` alone.
  */
@@ -730,9 +756,8 @@ Exit codes:
       its own process before the first child, so a chain that will not load
       refuses the run there, naming the load error and starting no tick; a
       chain that loads for the supervisor and not for a child surfaces as
-      that child's own 69 (see \`flume tick --help\`). Either way the run
-      aborts instead of burning the remaining --max ticks against the same
-      wall.
+      that child's own 69 (see \`flume tick --help\`).
+      ${mountDeadReReadClause(6)}
   78  Stopped on a terminal misconfiguration: a child tick classified one
       (see \`flume tick --help\`), or every flag still standing names a
       phase the chain does not declare and no child is left to run — either

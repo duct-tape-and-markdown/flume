@@ -70,6 +70,28 @@ export const DEFAULT_MAX_TICKS = 1;
 export const DEFAULT_TICK_BUDGET = 50;
 
 /**
+ * The walls `superviseLoop` re-reads at the tip before a child's
+ * {@link EX_MOUNT_DEAD} ends the run — one phrase per leg of that re-read
+ * (`spec/loop.md`, *Exit codes — the run never lies to CI*), stated here
+ * because the refusal an operator reads and the surfaces that document the
+ * decision are three copies of one fact otherwise: the help page renders its
+ * `69` row from these (`src/cliHelp.ts`) and `docs/CLI.md` is pinned against
+ * them, so a leg added to or renamed at the re-read cannot leave either
+ * describing the legs it used to take
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
+ * beside its source*).
+ *
+ * `prompt` carries no subject: the refusal names the exiting phase and a
+ * surface documenting the class names the role, and both open the same
+ * phrase.
+ */
+export const MOUNT_DEAD_RE_READ_LEGS = {
+  chain: "the chain still will not load",
+  prompt: "declared prompt file still will not read",
+  queue: "the queue still will not read at the tip",
+} as const;
+
+/**
  * What one child the supervisor holds is asked for. The phase is the whole
  * reason this is a record rather than a bare quarantine set: a supervisor
  * that holds several children at once must tell each which phase it is, and
@@ -551,7 +573,7 @@ export async function superviseLoop(
   ): Promise<string | undefined> => {
     const resolved = await resolveChain();
     if (!resolved.ok) {
-      return `the chain still will not load (${resolved.why})`;
+      return `${MOUNT_DEAD_RE_READ_LEGS.chain} (${resolved.why})`;
     }
     const { chain } = resolved.loaded;
     // Absent from the loaded chain's roster is an orphaned flag, which is the
@@ -562,7 +584,7 @@ export async function superviseLoop(
       try {
         await readPhaseTemplate(configDir, declared.promptPath);
       } catch (err) {
-        return `${phase}'s declared prompt file still will not read (${thrownMessage(err)})`;
+        return `${phase}'s ${MOUNT_DEAD_RE_READ_LEGS.prompt} (${thrownMessage(err)})`;
       }
     }
     try {
@@ -580,7 +602,7 @@ export async function superviseLoop(
         log,
       });
     } catch (err) {
-      return `the queue still will not read at the tip (${thrownMessage(err)})`;
+      return `${MOUNT_DEAD_RE_READ_LEGS.queue} (${thrownMessage(err)})`;
     }
     return undefined;
   };
@@ -999,7 +1021,7 @@ export async function superviseLoop(
             `[flume] the same ${repeated.stage}-stage failure signature repeated on ` +
               `${repeated.count} consecutive ticks (${repeated.signature}); aborting ` +
               `after ${ticks} tick(s) instead of burning the remaining ticks ` +
-              `against the same wall.`,
+              `on a signature that has already repeated.`,
           );
         },
       };
@@ -1047,8 +1069,9 @@ export async function superviseLoop(
       // *Queue reads are strict*), and so can an operator, so the wall is
       // re-read here before the run ends on it.
       //
-      // The re-read is the next child's own two resolves, not a restatement
-      // of the cause: which wall the *child* hit is the child's to say and it
+      // The re-read is the next child's own resolves, one per leg
+      // (`MOUNT_DEAD_RE_READ_LEGS` above), not a restatement of the cause:
+      // which wall the *child* hit is the child's to say and it
       // already said it (`.claude/rules/engineering.md`, *Derived state is
       // computed, never restated beside its source*). What this process adds
       // is whether a wall still stands now.
@@ -1068,13 +1091,14 @@ export async function superviseLoop(
         };
         continue;
       }
-      // Both legs read clean at the tip, so the cause the child named is
+      // Every leg reads clean at the tip, so the cause the child named is
       // already gone — a sibling's repair or an operator's fix landed in the
       // gap. The tick is still an error (it did no work), which the
       // non-zero-exit leg below counts; the run is not.
       log.warn(
         `[flume] tick exited ${exitCode} (mount-dead), but the chain ` +
-          `resolves and the queue reads at the tip now — the cause it named ` +
+          `resolves, its prompt reads and the queue reads at the tip now — ` +
+          `the cause it named ` +
           `has been repaired since, so the run is not aborted on it`,
       );
     }

@@ -26,9 +26,13 @@ export const EX_TERMINAL_MISCONFIG = 78;
  * is a chain that *did* resolve but declares an inconsistent world
  * (orphaned awake flags); mount-dead is no resolved chain at all.
  * sysexits.h `EX_UNAVAILABLE`. `superviseLoop` fail-fasts on a child exiting
- * with this code exactly as it does on {@link EX_TERMINAL_MISCONFIG} — a
- * mount-dead chain is exactly as dead next tick as this one, so continuing
- * would only burn the remaining `--max` ticks re-hitting the same wall.
+ * with this code *once it re-reads the mount at the tip and a wall still
+ * stands* — the chain, the exiting phase's declared prompt, or the queue's
+ * parse — rather than burning the remaining `--max` ticks re-hitting it.
+ * Unlike {@link EX_TERMINAL_MISCONFIG}, which ends the run on the child's
+ * exit alone: a mount a sibling's repair or an operator's fix cleared in the
+ * gap leaves that child an errored tick and nothing more
+ * (`spec/loop.md`, *Exit codes — the run never lies to CI*).
  */
 export const EX_MOUNT_DEAD = 69;
 

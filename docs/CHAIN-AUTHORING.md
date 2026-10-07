@@ -2695,8 +2695,10 @@ const chain: Chain = {
   the run.
 - **`abortThreshold`** — the number of consecutive ticks the same
   stage-tagged failure signature must repeat, with no clearing tick
-  between them, before the supervisor aborts the run rather than burning
-  the remaining `--max` ticks against the same wall. Default 3. Bound **once
+  between them, before the supervisor aborts the run rather than spending
+  the remaining `--max` ticks on a signature that has already repeated.
+  Unconditional where the mount-dead abort is not: a repeated signature is
+  the run's own accounting, with no tip to re-read it against. Default 3. Bound **once
   per run** too: the streak is accounting that accumulates across the run.
 - **`maxTicks`** — how many `flume tick` children the supervisor holds at
   once. Default 1, which is the serial loop: one phase tick at a time, and

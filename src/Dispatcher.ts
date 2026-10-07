@@ -327,9 +327,10 @@ export interface TickOutcome {
    * True when the tick could not run at all — chain resolution threw and no
    * `chainLoadGate` reverted the producing commit: the mount-dead
    * failure class. The `flume tick` process exits `EX_MOUNT_DEAD`
-   * (`src/exitCodes.ts`); the `flume loop` supervisor fail-fasts on it
-   * (aborting the run) rather than proceeding to the next tick — a mount-dead
-   * chain is exactly as dead next tick as this one. Distinct from
+   * (`src/exitCodes.ts`); the `flume loop` supervisor re-reads the mount at
+   * the tip and aborts the run only while a wall still stands, a cause
+   * repaired in the gap leaving the tick an error and the run going on
+   * (`spec/loop.md`, *Exit codes — the run never lies to CI*). Distinct from
    * `hibernated` (clean stop) and from a no-commit tick (the agent ran but
    * produced or kept no commit).
    */
@@ -960,9 +961,9 @@ export class Dispatcher {
     // *unguarded* broken chain.ts has nothing to run: log loudly and return a
     // no-work failed outcome. The `flume tick` process exits
     // `EX_MOUNT_DEAD` (`src/exitCodes.ts`); the `flume loop` supervisor
-    // aborts the run on first occurrence rather than proceeding — a
-    // mount-dead chain is exactly as dead next tick as this one, so it does
-    // not burn the remaining `--max` ticks re-hitting the same wall.
+    // re-reads the mount at the tip and aborts the run while a wall still
+    // stands, so the remaining `--max` ticks are not burned re-hitting one —
+    // and a chain an operator fixed in the gap leaves the run going.
     let chainModule: LoadedChain;
     try {
       chainModule = await this.chainLoader();

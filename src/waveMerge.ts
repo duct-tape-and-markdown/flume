@@ -204,8 +204,10 @@ export class WaveLedgerRefusal extends WaveCarriedThrow {
  *
  * - `"parse-failure"` — the queue on disk would not parse. A fresh process
  *   reads the same bytes until the queue's declared writer runs over them, so
- *   the tick is mount-dead (69) and `flume loop` fail-fasts rather than
- *   burning its remaining ticks on the same wall.
+ *   the tick is mount-dead (69), and `flume loop` re-reads the queue at the
+ *   tip and ends the run only while it still will not read — a wave sibling's
+ *   own rewrite is one of the repairs that lands in that gap
+ *   (`spec/loop.md`, *Exit codes — the run never lies to CI*).
  * - `"commit-refusal"` — the queue parsed and the rewrite's own commit
  *   refused: a `git commit --only` fatal under a paused merge or cherry-pick,
  *   a named path git finds unchanged, a disk error, a lost `index.lock`.

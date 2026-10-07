@@ -21,6 +21,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import {
   EX_DATAERR,
   EX_IOERR,
+  EX_MOUNT_DEAD,
   EX_TERMINAL_MISCONFIG,
 } from "../src/exitCodes.ts";
 import {
@@ -59,6 +60,7 @@ import {
 import {
   DEFAULT_ABORT_THRESHOLD,
   FAILURE_STAGES,
+  MOUNT_DEAD_RE_READ_LEGS,
 } from "../src/loopSupervisor.ts";
 import type { SuperviseResult } from "../src/loopSupervisor.ts";
 import type { TickOutcome } from "../src/Dispatcher.ts";
@@ -1509,6 +1511,105 @@ describe("docs/CLI.md's loop sections against loopExitCode's derived range (CLI-
     await expectSectionNamesTheLoopRange(/^## `flume loop\b/);
   });
 
+});
+
+/**
+ * THE-MOUNT-DEAD-NARRATION-STATES-THE-RETIRED-ABORT — both surfaces an
+ * operator reads before the hover text told them a child's mount-dead exit
+ * ends the run outright, which is not what the supervisor decides: it
+ * re-reads the mount at the tip and aborts only while one of the re-read's
+ * legs still fails.
+ *
+ * Read against the legs the re-read really takes
+ * (`MOUNT_DEAD_RE_READ_LEGS`, `src/loopSupervisor.ts`) — the help row
+ * renders them and the page is checked against them, never against each
+ * other, since two prose copies move together in the commit that changes the
+ * behavior and agree while both are wrong
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ */
+it("the loop help page's mount-dead row states the run aborts only while the mount is still dead", async () => {
+  const legs = Object.values(MOUNT_DEAD_RE_READ_LEGS);
+  // Non-vacuity: a re-read whose legs collapsed would leave every read below
+  // holding over nothing, and the row could say anything.
+  expect(legs.length).toBeGreaterThan(2);
+
+  const { out, code } = await runCli(process.cwd(), ["loop", "--help"]);
+  expect(code).toBe(0);
+  const row = documentedExitCodeRows(out).get(EX_MOUNT_DEAD);
+  expect(row, "the loop block lists no mount-dead row").toBeDefined();
+  const stated = asStated(row!);
+
+  // The claim, in the direction the supervisor decides it: the abort stands
+  // only while a wall does, and the walls are the re-read's own legs.
+  expect(stated).toContain("only while a wall still stands");
+  for (const leg of legs) {
+    expect(
+      stated,
+      `the mount-dead row does not name the re-read leg "${leg}"`,
+    ).toContain(asStated(leg));
+  }
+  // And the other side of the condition reaches the operator on the same
+  // row: a 69 the run goes on past.
+  expect(stated).toContain("is that tick's error and nothing more");
+  // Negative scoped to this one row — the retired spellings, which claimed
+  // the abort unconditionally. Read against its own block rather than the
+  // page, which quotes "wall" for the consecutive-failure backstop too
+  // (`.claude/rules/posture-sweep.md`, *A negative assertion over a whole
+  // rendered artifact*).
+  expect(stated).not.toContain("either way the run aborts");
+  expect(stated).not.toContain("against the same wall");
+}, SPAWN_BUDGET_MS);
+
+/**
+ * The page half of the same drift. The code a declined 69 really leaves the
+ * run exiting is driven through `loopExitCode` over the result such a run
+ * reports rather than restated here, so the page's claim about the
+ * non-abort is read against the classifier that decides it.
+ */
+it("docs/CLI.md's loop paragraph states a child's 69 the supervisor does not abort on", async () => {
+  const legs = Object.values(MOUNT_DEAD_RE_READ_LEGS);
+  expect(legs.length).toBeGreaterThan(2);
+
+  // A run that spent its children on 69s the re-read declined to abort on:
+  // every tick errored, nothing shipped, and `mountDead` unset — which is
+  // exactly what distinguishes it from the abort below.
+  const declined: SuperviseResult = {
+    ticks: 2,
+    hibernated: false,
+    shippedTags: [],
+    erroredTicks: [`tick exited ${EX_MOUNT_DEAD} (mount-dead)`],
+    agentUsageByPhase: [],
+  };
+  const aborted: SuperviseResult = { ...declined, mountDead: true };
+  // Non-vacuity in the shape that matters here: the two runs differ in code,
+  // so the page is asserted to state the one the declined run really takes.
+  expect(loopExitCode(aborted)).toBe(EX_MOUNT_DEAD);
+  expect(loopExitCode(declined)).not.toBe(EX_MOUNT_DEAD);
+
+  const section = sectionOf(await readCliDoc(), /^## `flume loop\b/);
+  expect(section.length).toBeGreaterThan(0);
+  // Scoped to the sentences that name 69 rather than the whole section: the
+  // paragraph documents the verb's whole range, and a section-wide read
+  // would turn on whatever the neighbouring arms quote.
+  const window = asStated(
+    sentencesNamingExitCode(section, EX_MOUNT_DEAD).join("\n"),
+  );
+  expect(
+    window.length,
+    `the loop section spends no sentence on ${EX_MOUNT_DEAD}`,
+  ).toBeGreaterThan(0);
+
+  for (const leg of legs) {
+    expect(
+      window,
+      `the loop section's ${EX_MOUNT_DEAD} sentences do not name the re-read leg "${leg}"`,
+    ).toContain(asStated(leg));
+  }
+  // The declined 69 itself: the run goes on, and the code it ends on is the
+  // classifier's, not this page's to invent.
+  expect(window).toContain("the run goes on");
+  expect(window).toContain(`exits \`${loopExitCode(declined)}\``);
 });
 
 /**
