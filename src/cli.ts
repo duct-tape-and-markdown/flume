@@ -6,7 +6,8 @@
  *
  * No verb's body lives here. Each is a module named for its job —
  * `src/cliStatus.ts`, `src/cliBaton.ts`, `src/cliHistory.ts`,
- * `src/cliCheck.ts`, `src/cliFriction.ts`, `src/cliRender.ts`,
+ * `src/cliCheck.ts`, `src/cliFriction.ts`, `src/cliExclusive.ts`,
+ * `src/cliRender.ts`,
  * `src/cliTick.ts` and `src/cliLoop.ts` — and what this file owes each of
  * them is the words behind the verb, the roots it runs under, and, for the
  * three that hold a dispatcher, the run context `src/cliRunContext.ts`
@@ -30,8 +31,10 @@
 import { dirname, toNamespacedPath } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { splitAtSeparator } from "./cliArgs.js";
 import { batonVerb, stopVerb } from "./cliBaton.js";
 import { checkVerb } from "./cliCheck.js";
+import { exclusiveVerb } from "./cliExclusive.js";
 import { frictionVerb } from "./cliFriction.js";
 import { HELP_TOP, helpPageFor, wantsHelp } from "./cliHelp.js";
 import { logVerb } from "./cliHistory.js";
@@ -167,8 +170,15 @@ async function dispatch(): Promise<number> {
 
   // Per-subcommand --help short-circuits before any side effects (chain load,
   // baton mutation, agent invocation).
+  //
+  // Read ahead of argv's own `--` alone (`splitAtSeparator`,
+  // `src/cliArgs.ts`): a flag behind the separator belongs to whatever is
+  // being carried past it, so `flume exclusive -- git push --help` runs git's
+  // help rather than printing flume's and running nothing. Every other verb
+  // consumes nothing behind a separator and is unaffected — a stray `--`
+  // reaches its own trailing-positional refusal.
   const cmdHelp = helpPageFor(cmd);
-  if (cmdHelp !== undefined && wantsHelp(rest)) {
+  if (cmdHelp !== undefined && wantsHelp(splitAtSeparator(rest).ahead)) {
     process.stdout.write(cmdHelp);
     return 0;
   }
@@ -267,6 +277,7 @@ async function dispatch(): Promise<number> {
   if (cmd === "log") return logVerb(paths, rest);
   if (cmd === "check") return checkVerb(paths, rest);
   if (cmd === "friction") return frictionVerb(paths, rest);
+  if (cmd === "exclusive") return exclusiveVerb(paths, rest);
 
   // Every verb past this point holds a dispatcher, so the supervisor's handoff
   // is decoded and that dispatcher built once here — at the position the

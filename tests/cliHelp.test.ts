@@ -937,6 +937,10 @@ const VERB_ARGV: Record<string, readonly string[]> = {
   check: ["check"],
   render: ["render", "probe"],
   friction: ["friction"],
+  // The one verb that runs something: a command that exits 0 and reads
+  // nothing, so what either pass below observes is the verb's own
+  // disposition over the denied root rather than the command's.
+  exclusive: ["exclusive", "--", process.execPath, "-e", ""],
 };
 
 /**

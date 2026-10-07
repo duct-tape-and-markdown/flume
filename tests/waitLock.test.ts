@@ -1,8 +1,10 @@
 /**
  * The wait-and-reclaim guard, through the two locks composed on it
- * (`acquireShipLock` and the worktree lock, `src/git.ts`) and through the
- * primitive itself (`acquireWaitLock`, `src/waitLock.ts`) — spec/loop.md,
- * "The ship lock and the worktree lock — sibling ticks take turns at git".
+ * (`acquireShipLock` and the worktree lock, `src/git.ts`), through the
+ * primitive itself (`acquireWaitLock`, `src/waitLock.ts`), and through the
+ * one verb that takes a lock (`exclusiveVerb`, `src/cliExclusive.ts`) —
+ * spec/loop.md, "The ship lock and the worktree lock — sibling ticks take
+ * turns at git".
  *
  * Three claims, and each needs a different instrument:
  *
@@ -40,8 +42,9 @@ import { parsePidClaim, renderPidClaim } from "../src/pidClaim.ts";
 import { acquireWaitLock } from "../src/waitLock.ts";
 import { deadPid } from "./helpers/deadPid.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
+import { hermeticEnv } from "./helpers/gitEnv.ts";
 import { makeScratchRepo, type ScratchRepo } from "./helpers/scratchRepo.ts";
-import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
+import { CLI, SPAWN_BUDGET_MS, TSX_CLI, exec } from "./helpers/subprocess.ts";
 import { waitFor } from "./helpers/waitFor.ts";
 
 // This file starts processes (`git worktree` and the scratch repo's seed), so
@@ -288,5 +291,81 @@ describe("the ship lock and the worktree lock — sibling ticks take turns at gi
     // `remove` took away, which is a claim only now that the pin above says
     // `add` ran at all.
     expect(existsSync(wt)).toBe(false);
+  });
+});
+
+/**
+ * `flume exclusive`'s side of the same wait. The verb takes the ship lock the
+ * way a sibling tick takes it (spec/cli.md, *Subcommand surface*), so the
+ * claim is the one every acquirer here is held to — a live holder is waited
+ * on, not reclaimed — read through the verb's own process.
+ *
+ * Driven as a real `flume exclusive` rather than through the verb's function,
+ * because what is being proven is the ordering of two things an in-process
+ * call could not separate: the announcement, and the command still not having
+ * run. The command writes a marker, so "has not run yet" is a file that is
+ * not there while the holder stands.
+ */
+describe("flume exclusive behind a held ship lock", () => {
+  let scratch: ScratchRepo | undefined;
+
+  afterEach(async () => {
+    await scratch?.cleanup();
+    scratch = undefined;
+  });
+
+  it("flume exclusive waits for a held ship lock before running its command", async () => {
+    scratch = await makeScratchRepo("flume-exclusive-waits-", "main");
+    const repo = scratch.dir;
+    const lockPath = join(await gitCommonDir(repo), "flume", "ship.lock");
+    const marker = join(repo, "ran.txt");
+    await plantLiveHolder(lockPath);
+
+    // Spawned rather than captured on exit: the wait line has to be read
+    // while the command has still not run, and a run read after it finished
+    // carries both facts with no order between them.
+    const run = exec(
+      process.execPath,
+      [
+        TSX_CLI,
+        CLI,
+        "exclusive",
+        "--",
+        process.execPath,
+        "-e",
+        "require('node:fs').writeFileSync(process.argv[1],'ran')",
+        marker,
+      ],
+      { cwd: repo, env: hermeticEnv() },
+    );
+    let said = "";
+    run.child.stderr?.on("data", (chunk: Buffer | string) => {
+      said += String(chunk);
+    });
+
+    const line = await waitFor(
+      `the verb's wait line for the ship lock at ${lockPath}`,
+      () =>
+        said.includes("waiting for the ship lock") ? said : undefined,
+    );
+    // The holder this verb is waiting on, named: an operator at a stalled
+    // `flume exclusive` is looking for the pid to wait out.
+    expect(line).toContain(`pid ${process.pid}`);
+    expect(line).toContain(lockPath);
+    // Said so *and the command still not run*: a verb that announced a wait
+    // and spawned anyway would satisfy the line alone, which is the whole
+    // point of the lock.
+    expect(
+      existsSync(marker),
+      "the command ran while a live holder still held the ship lock",
+    ).toBe(false);
+
+    // The holder finishes; the next poll takes the lock and the command runs.
+    await rm(lockPath);
+    await run;
+    expect(existsSync(marker)).toBe(true);
+    // And the verb gave the lock back, so the next tick's merge is not queued
+    // behind an exited operator command.
+    expect(existsSync(lockPath)).toBe(false);
   });
 });

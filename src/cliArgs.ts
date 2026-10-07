@@ -4,9 +4,10 @@
  * `src/cli.ts` splits argv into a verb and the words behind it, and what
  * those words mean is each verb's own to read. These are the readings more
  * than one verb reaches for: one sequence that takes a `--flag <value>` pair
- * out of those words, and the two decisions about the value behind the flag
- * that sequence runs — so a reading has one home rather than a spelling per
- * verb (`.claude/rules/engineering.md`, *A module is one job*).
+ * out of those words, the two decisions about the value behind the flag that
+ * sequence runs, and the split at argv's own `--` separator that decides
+ * which side of it a word is on — so a reading has one home rather than a
+ * spelling per verb (`.claude/rules/engineering.md`, *A module is one job*).
  */
 
 /**
@@ -83,4 +84,27 @@ export function takeCountValue(
   flag: string,
 ): number | null | undefined {
   return takeDecidedValue(words, flag, parseMaxValue);
+}
+
+/**
+ * Split `words` at the first `--`: what stands ahead of the separator, and
+ * what stands behind it — `undefined` behind when no separator appears at
+ * all, `[]` when one appears last and names nothing.
+ *
+ * The separator is argv's own end-of-options marker, so one reading serves
+ * both sides of it: `src/cli.ts` reads the words *ahead* when it decides
+ * whether a `--help` on the command line is a request for a page (a `--help`
+ * behind the separator belongs to the command being carried, never to
+ * flume), and `exclusiveVerb` (`src/cliExclusive.ts`) reads the words behind
+ * as the command it runs. A verb that spelled its own `indexOf("--")` beside
+ * the dispatch's would be the second copy of one decision
+ * (`.claude/rules/engineering.md`, *A module is one job*).
+ */
+export function splitAtSeparator(words: readonly string[]): {
+  ahead: string[];
+  behind: string[] | undefined;
+} {
+  const idx = words.indexOf("--");
+  if (idx < 0) return { ahead: [...words], behind: undefined };
+  return { ahead: words.slice(0, idx), behind: words.slice(idx + 1) };
 }

@@ -7069,6 +7069,11 @@ describe("the run log (spec/cli.md §A log line carries the instant it was writt
       says: "usage: flume loop",
     },
     {
+      verb: "exclusive",
+      args: ["exclusive", "no-separator"],
+      says: "usage: flume exclusive",
+    },
+    {
       verb: "status",
       args: ["status"],
       says: "loop lock at",
@@ -7646,4 +7651,162 @@ describe("the signalled teardown — SIGBREAK, the win32 hangup", () => {
     },
     SPAWN_BUDGET_MS,
   );
+});
+
+/**
+ * `flume exclusive` — the operator's own command run with the ship lock held
+ * (spec/cli.md, *Subcommand surface*).
+ *
+ * The verb is the one declared exception to "the locks are engine-created,
+ * engine-consumed and engine-released" (spec/loop.md, *The ship lock and the
+ * worktree lock — sibling ticks take turns at git*), so what it owes is read
+ * off the lock file rather than off the verb's own report: the command is
+ * handed the lock's path and writes back what stood there *while it ran*,
+ * which is the only moment the claim is about. A case asserting the file
+ * afterwards alone would pass over a verb that took no lock at all, and one
+ * asserting it beforehand would pass over a verb that released too early.
+ *
+ * The wait behind a live holder is the fourth claim and lives beside the
+ * guard it belongs to (`tests/waitLock.test.ts`), where the holder can be
+ * planted and cleared around a running acquirer.
+ */
+describe("flume exclusive — the operator's command under the ship lock", () => {
+  let scratch: ScratchRepo | undefined;
+
+  afterEach(async () => {
+    await scratch?.cleanup();
+    scratch = undefined;
+  });
+
+  /**
+   * What the command the cases run writes back: the bytes standing at the
+   * lock file while it ran, and its own parent pid — the flume process that
+   * spawned it, which is the process a held lock must name.
+   */
+  interface Observed {
+    readonly claim: string;
+    readonly ppid: number;
+  }
+
+  /** The node program that records {@link Observed} — argv: lock, out. */
+  const PROBE =
+    "const fs=require('node:fs');" +
+    "fs.writeFileSync(process.argv[2],JSON.stringify({" +
+    "claim:fs.existsSync(process.argv[1])?fs.readFileSync(process.argv[1],'utf8'):''," +
+    "ppid:process.ppid}))";
+
+  /**
+   * Run the probe under the verb in a fresh repository, answering what it saw
+   * beside the lock path and the verb's own exit.
+   */
+  const runProbe = async (
+    name: string,
+  ): Promise<{
+    code: number;
+    out: string;
+    lockPath: string;
+    observed: Observed;
+  }> => {
+    scratch = await makeScratchRepo(name, "main");
+    const repo = scratch.dir;
+    const lockPath = join(await gitCommonDir(repo), "flume", "ship.lock");
+    const seen = join(repo, "observed.json");
+    const { code, out } = await runCli(repo, [
+      "exclusive",
+      "--",
+      process.execPath,
+      "-e",
+      PROBE,
+      lockPath,
+      seen,
+    ]);
+    expect(code, out).toBe(0);
+    return {
+      code,
+      out,
+      lockPath,
+      observed: JSON.parse(readFileSync(seen, "utf8")) as Observed,
+    };
+  };
+
+  it("flume exclusive runs the command with the ship lock held", async () => {
+    const { observed, lockPath } = await runProbe("flume-exclusive-held-");
+
+    // The command ran at all — the file it wrote is the witness, and every
+    // read below would hold over a verb that spawned nothing if the parse
+    // above had not already had to succeed.
+    expect(observed.ppid).toBeGreaterThan(0);
+
+    // And it ran with the lock held: the claim standing at the lock file
+    // while the command was running names the flume process that spawned it,
+    // which is what "held" means here. An empty `claim` is a verb that ran
+    // the command over no lock at all.
+    const claim = parsePidClaim(observed.claim);
+    expect(
+      claim,
+      `nothing readable stood at ${lockPath} while the command ran`,
+    ).not.toBeNull();
+    expect(
+      claim!.pid,
+      "the ship lock named a process other than the one running the command",
+    ).toBe(observed.ppid);
+  });
+
+  it("flume exclusive releases the ship lock after the command ends", async () => {
+    const { observed, lockPath } = await runProbe("flume-exclusive-released-");
+
+    // Non-vacuity first: the absence below is only a release if the file was
+    // there to release. The command read it while it ran.
+    expect(
+      parsePidClaim(observed.claim)?.pid,
+      "there was no lock to release",
+    ).toBe(observed.ppid);
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it("flume exclusive exits with the command's exit code", async () => {
+    scratch = await makeScratchRepo("flume-exclusive-code-", "main");
+    const repo = scratch.dir;
+    const ran = async (code: number): Promise<number> => {
+      const run = await runCli(repo, [
+        "exclusive",
+        "--",
+        process.execPath,
+        "-e",
+        `process.exit(Number(process.argv[1]))`,
+        String(code),
+      ]);
+      return run.code;
+    };
+
+    // Two codes, so neither a verb hardcoding success nor one reporting any
+    // failure as its own passes: the exit is the command's whichever it was.
+    expect(await ran(37)).toBe(37);
+    expect(await ran(0)).toBe(0);
+  });
+
+  it("flume exclusive without a -- separator exits 2", async () => {
+    scratch = await makeScratchRepo("flume-exclusive-no-sep-", "main");
+    const { code, out } = await runCli(scratch.dir, [
+      "exclusive",
+      process.execPath,
+      "-e",
+      "",
+    ]);
+    // The usage line, not merely the code: an argv this surface holds no verb
+    // for exits 2 as well, and a 2 read alone would pass over a CLI that had
+    // never heard of the verb.
+    expect(out).toContain("usage: flume exclusive -- <command> [args...]");
+    expect(code, out).toBe(2);
+    // And nothing ran: the separator is the whole grammar, so a word ahead of
+    // it is refused rather than read as the command.
+    expect(out).not.toContain("flume] exclusive:");
+  });
+
+  it("flume exclusive with no command after -- exits 2", async () => {
+    scratch = await makeScratchRepo("flume-exclusive-empty-", "main");
+    const { code, out } = await runCli(scratch.dir, ["exclusive", "--"]);
+    expect(out).toContain("usage: flume exclusive -- <command> [args...]");
+    expect(code, out).toBe(2);
+  });
 });

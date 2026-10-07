@@ -25,6 +25,7 @@ const SUBCOMMANDS = [
   "check",
   "render",
   "friction",
+  "exclusive",
 ] as const;
 type Subcommand = (typeof SUBCOMMANDS)[number];
 
@@ -129,8 +130,9 @@ const SHARED_ROOT_CLAUSE = rootClause([
 
 /**
  * The same clause for a verb that reaches none of the state under the root —
- * `log`, `check`, `friction`, `render`, each of which answers out of its own
- * guarded reads and never touches the baton or the stop flag. Carrying the
+ * `log`, `check`, `friction`, `render`, `exclusive`, each of which answers
+ * out of its own guarded reads and never touches the baton or the stop flag.
+ * Carrying the
  * access refusal here would state a cause that verb's own process cannot
  * return.
  */
@@ -404,7 +406,8 @@ function sharedRootRow(indent: number): string {
 /**
  * {@link sharedRootRow} for a verb whose whole `74` row is the state root's
  * and which reaches none of the state under it — `render`, which resolves
- * the roots, loads the chain and writes its prompt to stdout.
+ * the roots, loads the chain and writes its prompt to stdout, and
+ * `exclusive`, whose every other refusal is git's or the command's.
  */
 function readOnlyRootRow(indent: number): string {
   return exitCodeRow(
@@ -573,6 +576,12 @@ Commands:
   friction [name]     List (bare) the declared friction channel's notes —
                       filename, size, mtime — or, with <name>, print that
                       note's bytes verbatim. Never interpreted.
+  exclusive -- <command> [args...]
+                      Run the command holding the ship lock — the guard a
+                      tick holds across its merge span — and exit with the
+                      command's own code. Waits for a tick that is merging;
+                      makes the next one wait. How a remote change or a hand
+                      fix lands on trunk mid-run.
 
 Options:
   -h, --help          Print this message (\`flume help\` prints the same).
@@ -895,6 +904,45 @@ Exit codes:
       when there may be some. The bare list prints no rows at all on a
       refusal, never a partial listing.
       ${readOnlyRootRefusal(6)}
+`,
+  exclusive: `Usage: flume exclusive -- <command> [args...]
+
+Run <command> with the ship lock held — the guard a tick holds across its
+whole merge span: every cherry-pick onto the trunk, the afterMerge gates over
+the merged tree, and the ledger commit that ships the span. A tick already
+merging is waited for, and says so on stderr; a tick that finishes while the
+command runs waits in turn. Agents keep working throughout — the lock
+serializes merges, not ticks.
+
+This is how an operator lands something on trunk mid-run: a merged remote
+change, a hand fix, a rebase — outside the window a tick's tip verify refuses.
+The command is yours whole: no shell, so the words typed are the words the
+command gets; the working directory is the one you typed it in; the streams
+are this terminal's. flume learns nothing from it — no remote, no branch, no
+merge strategy — it only holds the lock while it runs.
+
+The worktree lock is never taken, so tick provisioning is not stalled, and
+nothing else about the two locks is a verb's: no verb drops either, and
+\`flume status\` prints nothing about them.
+
+Exit codes:
+  The command's own, whichever it exited with — that is the verb: 0 and
+  every non-zero code a command can return reach the caller unchanged, and a
+  command a signal ended exits 128 plus the signal's number. flume's own
+  refusals, taken before the command runs or in place of it:
+  2   Usage: no \`--\` separator on the command line, nothing behind it, or a
+      word ahead of it — this verb consumes no positional of its own, and
+      everything behind the separator is the command. A \`--help\` behind the
+      separator is the command's, never this page's.
+      ${rootResolutionUsageRefusal(6)}
+  69  Mount-dead (EX_UNAVAILABLE): the ship lock never resolved — its
+      directory is git's own, so a cwd git holds no repository for has
+      nothing to lock and the command does not run. Also: the command
+      itself never started — a binary PATH does not hold, or a win32 .cmd
+      shim, which no shell is spawned to reach. Either names the underlying
+      error, and a command that did not start has no code for this verb to
+      carry.
+${readOnlyRootRow(6)}
 `,
 };
 

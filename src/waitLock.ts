@@ -35,12 +35,14 @@ import {
 /**
  * How long an acquirer sleeps between two liveness probes of a live holder.
  *
- * Engine-internal and deliberately not a chain knob: no verb takes or drops
- * either lock and `flume status` prints nothing about them (spec/loop.md,
- * *The ship lock and the worktree lock — sibling ticks take turns at git*),
- * so a chain has nothing to key a policy off. The value trades a wait's
- * tail latency against the probe's cost, and at one merge span per tick the
- * lock is uncontended anyway.
+ * Engine-internal and deliberately not a chain knob: `flume status` prints
+ * nothing about either lock, no verb drops one, and the one verb that takes
+ * one takes it on an operator's behalf (`exclusiveVerb`,
+ * `src/cliExclusive.ts`) rather than on a chain's (spec/loop.md, *The ship
+ * lock and the worktree lock — sibling ticks take turns at git*), so a chain
+ * has nothing to key a policy off. The value trades a wait's tail latency
+ * against the probe's cost, and at one merge span per tick the lock is
+ * uncontended anyway.
  */
 const DEFAULT_POLL_MS = 250;
 

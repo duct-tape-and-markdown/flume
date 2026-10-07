@@ -1272,7 +1272,8 @@ async function acquireCommonDirLock(
  * tree, and the ledger commit that ships the span (spec/loop.md, *The ship
  * lock and the worktree lock — sibling ticks take turns at git*). The two
  * legs that have a merge span take it (`src/waveMerge.ts`,
- * `src/singletonTick.ts`); nothing else does.
+ * `src/singletonTick.ts`), and `flume exclusive` takes it for the operator's
+ * own command (`exclusiveVerb`, `src/cliExclusive.ts`); nothing else does.
  *
  * Held by a live sibling means waiting, never refusing: a sibling tick
  * merging is this run's own writer, and tip verify absorbs the tip it moved
