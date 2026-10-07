@@ -30,5 +30,10 @@
   ],
   "pins": [],
   "laneTests": [],
-  "notes": "Build note: the gate reads `readGatedQueue` + `descendantsOf` for the gated entry's own tag alone, so the reported field deletes the read and both its refusal arms. The extension reaches this gate for that one call; the goal-rank gate keeps its own. Blocked on the field landing — the adopting commit is where the chain's copy goes (per cite)."
+  "notes": "Build note: the gate reads `readGatedQueue` + `descendantsOf` for the gated entry's own tag alone, so the reported field deletes the read and both its refusal arms. The extension reaches this gate for that one call; the goal-rank gate keeps its own. Blocked on the field landing — the adopting commit is where the chain's copy goes (per cite).",
+  "observedFiles": [
+    ".flume/plan/notes/THE-RECORDS-GATE-TAKES-THE-STEPS-OFF-ITS-CONTEXT.md",
+    "harness/gates.ts",
+    "tests/harnessGates.test.ts"
+  ]
 }
