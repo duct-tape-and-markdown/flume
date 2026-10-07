@@ -16,6 +16,7 @@ import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 
 import { loadChainModule } from "../src/chainLoad.ts";
+import { mergeBatchWidth } from "../src/gateBatch.ts";
 import type { Chain, Phase } from "../src/Phase.ts";
 import { slugify } from "../src/paths.ts";
 import {
@@ -627,6 +628,102 @@ describe("Chain load — a partitionIgnore glob in a foreign dialect is refused 
     const chain = await loadWithIgnore("ordinary", ignore);
 
     expect(chain.supervisorPolicy?.partitionIgnore).toEqual(ignore);
+  });
+});
+
+/**
+ * `supervisorPolicy.mergeBatch` is the chain's half of a batched merge
+ * (spec/worktrees.md, *Batched merges*): the engine ships the default and
+ * the chain raises it. Driven through the real loader over a real
+ * `chain.ts`, like the dialect block above, and read back through the real
+ * consumer — `mergeBatchWidth` (`src/gateBatch.ts`), which is what the merge
+ * loop asks — rather than off the resolved object alone. A passthrough
+ * asserted on the object only would stay green over an engine that forgot to
+ * read it (`.claude/rules/engineering.md`, *A seam gate reads what the real
+ * writer wrote*).
+ */
+describe("Chain load — supervisorPolicy.mergeBatch reaches the merge width (spec/worktrees.md 'Batched merges')", () => {
+  /**
+   * A one-phase chain whose `afterMerge` gate declares it reads a batch, so
+   * the gate half of the predicate is satisfied and the declared width is
+   * the only thing left deciding.
+   */
+  async function chainWithMergeBatch(
+    prefix: string,
+    declared: string,
+  ): Promise<string> {
+    const cfg = await mkTempDir(`flume-cfg-merge-batch-${prefix}-`);
+    await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
+    await writeFile(
+      join(cfg, "chain.ts"),
+      `export default () => ({ chain: { phases: [{ name: "build", ` +
+        `description: "", promptPath: "prompt.md", concurrency: "fanout", ` +
+        `writablePaths: ["src/**"], gates: [{ name: "suite", ` +
+        `when: "afterMerge", batches: true, run: async () => ` +
+        `({ ok: true, message: "" }) }], handoff: () => [] }], ` +
+        `humanOnly: [], supervisorPolicy: { mergeBatch: ${declared} } } });\n`,
+      "utf8",
+    );
+    return cfg;
+  }
+
+  /** Load the chain written from `declared`, cleaning the fixture up after. */
+  async function loadWithMergeBatch(
+    prefix: string,
+    declared: string,
+  ): Promise<Chain> {
+    const cfg = await chainWithMergeBatch(prefix, declared);
+    try {
+      return (
+        await loadChainModule({ repoRoot: cfg, configDir: cfg, flumeDir: cfg })
+      ).chain;
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  }
+
+  it("a declared supervisor mergeBatch reaches the dispatcher's policy", async () => {
+    const chain = await loadWithMergeBatch("declared", "3");
+    const phase = chain.phases[0]!;
+
+    // Non-vacuity: the phase came back with the batch-reading gate the
+    // fixture declared, so the width below is the knob answering and not a
+    // gate list the loader dropped.
+    expect(phase.gates.map((gate) => gate.batches)).toEqual([true]);
+
+    expect(chain.supervisorPolicy?.mergeBatch).toBe(3);
+    expect(mergeBatchWidth(chain, phase)).toBe(3);
+  });
+
+  it("a mergeBatch below one refuses the chain load rather than clamping", async () => {
+    // Clamping is the silent degradation the posture refuses: a chain that
+    // asked for a batch and got the serial carry reads as a correct loop.
+    await expect(loadWithMergeBatch("zero", "0")).rejects.toThrow(
+      /supervisorPolicy\.mergeBatch: 0[\s\S]*must be a positive integer/,
+    );
+  });
+
+  it("an undeclared mergeBatch loads unrefused and merges one span at a time", async () => {
+    const cfg = await mkTempDir("flume-cfg-merge-batch-absent-");
+    try {
+      await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
+      await writeFile(
+        join(cfg, "chain.ts"),
+        `export default () => ({ chain: { phases: [{ name: "build", ` +
+          `description: "", promptPath: "prompt.md", concurrency: "fanout", ` +
+          `writablePaths: ["src/**"], gates: [], handoff: () => [] }], ` +
+          `humanOnly: [] } });\n`,
+        "utf8",
+      );
+      const chain = (
+        await loadChainModule({ repoRoot: cfg, configDir: cfg, flumeDir: cfg })
+      ).chain;
+
+      expect(chain.supervisorPolicy?.mergeBatch).toBeUndefined();
+      expect(mergeBatchWidth(chain, chain.phases[0]!)).toBe(1);
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
   });
 });
 

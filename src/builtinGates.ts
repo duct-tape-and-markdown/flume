@@ -8,7 +8,12 @@
 
 import { relative } from "node:path";
 
-import type { Gate, GateContext, GateResult, GatePhase } from "./Gate.js";
+import type {
+  GateContext,
+  GateResult,
+  GatePhase,
+  SingleSpanGate,
+} from "./Gate.js";
 import type { Phase } from "./Phase.js";
 import { EntryClaimStore, entryClaimSlug } from "./entryClaims.js";
 // `chainLoadGate` validates through the exact load path the runtime uses, so
@@ -62,7 +67,7 @@ export interface ShellGateOptions {
  * them as `GateResult.details` so the dispatcher can route them to the
  * logger or back to the agent as context on the next tick.
  */
-export function shellGate(opts: ShellGateOptions): Gate {
+export function shellGate(opts: ShellGateOptions): SingleSpanGate {
   return {
     name: opts.name,
     when: opts.when,
@@ -137,8 +142,8 @@ export interface PkgManagerOverride {
  * point a non-pnpm chain (or one gating the merged tree) needs without
  * hand-rolling `shellGate` from scratch.
  */
-export interface PkgManagerGate extends Gate {
-  (override?: PkgManagerOverride): Gate;
+export interface PkgManagerGate extends SingleSpanGate {
+  (override?: PkgManagerOverride): SingleSpanGate;
 }
 
 function pkgManagerGate(
@@ -146,7 +151,7 @@ function pkgManagerGate(
   args: string[],
   failHint: string,
 ): PkgManagerGate {
-  const build = (cmd: string, gateArgs: string[], when: GatePhase): Gate =>
+  const build = (cmd: string, gateArgs: string[], when: GatePhase): SingleSpanGate =>
     shellGate({ name, when, cmd, args: gateArgs, failHint });
   const defaultGate = build("pnpm", args, "afterCommit");
   const fn = ((override) =>
@@ -227,7 +232,7 @@ export const eslintGate: PkgManagerGate = pkgManagerGate(
  * gate — because `chain.ts` is universal to every flume project (the queue
  * is specific to a plan/build chain).
  */
-export const chainLoadGate: Gate = {
+export const chainLoadGate: SingleSpanGate = {
   name: "chain-load",
   when: "afterCommit",
   async run(ctx: GateContext): Promise<GateResult> {
@@ -375,7 +380,7 @@ export interface PendingGateOptions {
  * than it can re-scope the entry itself. `opts.when` is what a chain places
  * that check where it bites — see the option.
  */
-export function pendingGate(opts: PendingGateOptions): Gate {
+export function pendingGate(opts: PendingGateOptions): SingleSpanGate {
   const fenceWhen = opts.fenceWhen ?? (() => true);
   const withHint = (message: string): string =>
     opts.hint ? `${message} — ${opts.hint}` : message;
@@ -593,7 +598,7 @@ function touchedEntryRecords(
 export function writablePathsGate(
   globs: string[],
   entryScope?: string[],
-): Gate {
+): SingleSpanGate {
   return {
     name: "writable-paths",
     when: "afterCommit",

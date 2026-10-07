@@ -102,6 +102,7 @@ const fullDeclaration = (): Record<string, unknown> => ({
   },
   supervisor: {
     maxParallel: 4,
+    mergeBatch: 2,
     tickTimeoutMs: 1_800_000,
     abortThreshold: 3,
     maxTicks: 2,
@@ -285,6 +286,22 @@ describe("the harness declaration schema", () => {
     expect(parsed.supervisor?.maxParallel).toBe(4);
     expect(parsed.supervisor?.killGraceMs).toBe(15_000);
     expect(parsed.supervisor?.partitionIgnore).toEqual(["pnpm-lock.yaml"]);
+  });
+
+  it("a declared supervisor mergeBatch parses, and a width below one is refused", () => {
+    // The knob the engine counts merges by (`Chain.supervisorPolicy`,
+    // `src/Phase.ts`): a positive integer here, and the engine's own load
+    // refuses the rest of the range again over a chain the factory built.
+    const parsed = parseDeclaration(fullDeclaration());
+    expect(parsed.supervisor?.mergeBatch).toBe(2);
+
+    const declared = fullDeclaration();
+    declared["supervisor"] = {
+      ...(declared["supervisor"] as Record<string, unknown>),
+      mergeBatch: 0,
+    };
+
+    expect(refusalFor(declared)).toContain("supervisor.mergeBatch");
   });
 
   it("a capabilities list a load-time probe returned empty parses", () => {

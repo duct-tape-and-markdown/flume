@@ -18,7 +18,12 @@
  */
 
 import type { FlumeApi } from "../src/flumeApi.js";
-import type { Gate, GateContext, GatePhase } from "../src/Gate.js";
+import type {
+  Gate,
+  GateContext,
+  GatePhase,
+  SingleSpanGate,
+} from "../src/Gate.js";
 
 import { BUILD_PHASE, type Declaration } from "./declaration.js";
 import { runnableShell, shellArgs } from "./declaredShell.js";
@@ -155,9 +160,9 @@ function shellCommand(
   shell: string,
   command: string,
   when: GatePhase,
-): Gate {
+): SingleSpanGate {
   const under = runnableShell(api, shell, `gate "${command}"`);
-  const spawning = (env: Record<string, string>): Gate =>
+  const spawning = (env: Record<string, string>): SingleSpanGate =>
     api.shellGate({
       name: command,
       when,

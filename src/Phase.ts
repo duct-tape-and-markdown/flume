@@ -1126,6 +1126,25 @@ export interface Chain {
      */
     maxParallel?: number;
     /**
+     * How many finished spans of one wave a single merge may carry
+     * (spec/worktrees.md, *Batched merges*) — the spans waiting on the ship
+     * lock at that moment, from this tick only. Default 1, which is a merge
+     * per span: the serial carry every consumer gets until it declares
+     * otherwise. A positive integer; anything else refuses the chain at load,
+     * because a merge that may carry no span can never ship one.
+     *
+     * Raising it is necessary but not sufficient: the phase batches only
+     * where every one of its `afterMerge` gates declares `batches: true`
+     * (`Gate`, `src/Gate.ts`), since a gate written for one span would read
+     * the batch's facts as one entry's. A phase with one such gate undeclared
+     * runs at a width of one whatever this says — `mergeBatchWidth`
+     * (`src/gateBatch.ts`) is where the two are read together.
+     *
+     * Same per-tick scope as `maxParallel`: the width is read off the tick's
+     * own resolved chain, and nothing about it accumulates across a run.
+     */
+    mergeBatch?: number;
+    /**
      * Wall-clock timeout per agent invocation in milliseconds — overrides
      * `DispatcherOptions.tickTimeoutMs` (`src/Dispatcher.ts`), whose own
      * default is unset (no cap). Same per-tick scope as `maxParallel`: the

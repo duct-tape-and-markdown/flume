@@ -34,6 +34,7 @@ import type {
   Gate,
   GateResult,
   Phase,
+  SingleSpanGate,
   TickContext,
 } from "../src/index.ts";
 
@@ -155,9 +156,9 @@ function isDeclaredFile(
  * the reporter's absolute filenames against the entry's declaration.
  */
 export function judgedByEntryTests(
-  suite: Gate,
+  suite: SingleSpanGate,
   gitPath: FlumeApi["gitPath"],
-): Gate {
+): SingleSpanGate {
   return {
     ...suite,
     async run(ctx): Promise<GateResult> {

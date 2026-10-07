@@ -9,7 +9,12 @@
  * lands at the mechanism*).
  */
 
-import type { Gate, GateContext, GateResult } from "./Gate.js";
+import type {
+  BatchGateContext,
+  Gate,
+  GateContext,
+  GateResult,
+} from "./Gate.js";
 import type { Logger } from "./log.js";
 import { startTiming, type TickVerdictTiming } from "./tickVerdict.js";
 import { throwFacts } from "./thrown.js";
@@ -72,13 +77,13 @@ interface TimedGateResult {
  */
 export async function runGate(
   gate: Gate,
-  ctx: GateContext,
+  ctx: GateContext | BatchGateContext,
   scope: GateRunScope,
 ): Promise<TimedGateResult> {
   const elapsed = startTiming();
   try {
     const result = await withGateCheckouts(scope.worktreeCtx, () =>
-      gate.run(ctx),
+      invoke(gate, ctx),
     );
     return { result, ms: elapsed() };
   } catch (err) {
@@ -91,4 +96,29 @@ export async function runGate(
       ms: elapsed(),
     };
   }
+}
+
+/**
+ * The gate's `run`, against the context shape it declared it reads.
+ *
+ * "Only a gate that declares `batches: true` is ever handed one"
+ * (spec/chain.md, *What a gate receives*) is the `Gate` union's claim, and
+ * this is where the claim is kept: a caller that batched a merge over a gate
+ * that reads one span is refused here rather than shipping a verdict the
+ * gate took over the last pick's facts. The throw lands in {@link runGate}'s
+ * own catch and is recorded as that gate's failure, so the merge reverts
+ * loudly (`.claude/rules/engineering.md`, *Loud or nothing*) — a caller bug
+ * costs a reverted span, never a false green.
+ */
+function invoke(
+  gate: Gate,
+  ctx: GateContext | BatchGateContext,
+): Promise<GateResult> {
+  if (ctx.batch === undefined) return gate.run(ctx);
+  if (gate.batches === true) return gate.run(ctx);
+  throw new Error(
+    `gate '${gate.name}' was handed a batch of ${ctx.batch.length} spans ` +
+      `without declaring batches: true; a gate written for one span would ` +
+      `read the batch's facts as one entry's`,
+  );
 }

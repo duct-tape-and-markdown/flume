@@ -32,11 +32,13 @@ export type GatePhase =
   | "afterMerge";
 
 /**
- * Inputs passed to every gate at run time. The dispatcher constructs this
- * once per gate invocation; gates should treat it as read-only and confine
- * side effects to disk operations inside `cwd`.
+ * Where a gate is running, and what it writes through — the half of a gate's
+ * input surface that holds however many spans the merge it judges carried.
+ * {@link GateContext} and {@link BatchGateContext} each extend it, so the
+ * dispatcher composes one placement and the two shapes differ only in what
+ * they say about the span (spec/chain.md, "What a gate receives").
  */
-export interface GateContext {
+export interface GateSite {
   /** Absolute path of the worktree (or trunk for afterMerge gates). */
   cwd: string;
   /**
@@ -110,6 +112,56 @@ export interface GateContext {
   repoRoot: string;
   /** Phase the gate is running for. */
   phaseName: string;
+  /** Logger for harness-side output. Gates should not write to stdout directly. */
+  log: (line: string) => void;
+}
+
+/**
+ * One span of a batched merge, as the gates over that batch read it
+ * (spec/worktrees.md, "Batched merges"). The per-span facts a single-span
+ * context carries on {@link GateContext} itself: a batch withholds them
+ * there and states them here, once per span, in the order the batch picked
+ * them.
+ *
+ * `commitSha` is the span's own merged tip, reported rather than left for a
+ * gate to chain out of its neighbour's `landedOnSha`
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*) — and it is what {@link BatchGateContext.commitSha}
+ * is computed from, never a second copy of.
+ */
+export interface GateBatchSpan {
+  /**
+   * The pending entry this span was provisioned for, as the wave selected it
+   * — absent on a span that carries none, exactly as {@link GateContext.entry}
+   * is.
+   */
+  entry?: PendingEntry;
+  /** The span's own tip once it was picked onto trunk. */
+  commitSha: string;
+  /** The sha this span started from — {@link GateContext.baseSha}, per span. */
+  baseSha: string;
+  /**
+   * The trunk tip this span landed onto — {@link GateContext.landedOnSha},
+   * per span. The batch's picks are sequential, so each span's value is the
+   * tip its own pick went onto rather than the tip the batch started from.
+   */
+  landedOnSha: string;
+  /** The span's own changed paths, the range its own two shas bound. */
+  touchedPaths: readonly string[];
+}
+
+/**
+ * Inputs passed to a gate judging **one** span. The dispatcher constructs
+ * this once per gate invocation; gates should treat it as read-only and
+ * confine side effects to disk operations inside `cwd`.
+ *
+ * `batch` is the discriminant against {@link BatchGateContext} and is always
+ * absent here: a gate handed this one reads the span's facts off the context
+ * directly.
+ */
+export interface GateContext extends GateSite {
+  /** Never set here — see {@link BatchGateContext.batch}. */
+  batch?: undefined;
   /**
    * SHA of the commit under inspection — the tip of the gated span. Set on
    * every dispatcher-built context at both stages, so it is required: no
@@ -175,8 +227,42 @@ export interface GateContext {
    * already holds for the scoped fence, never re-read from the queue.
    */
   entry?: PendingEntry;
-  /** Logger for harness-side output. Gates should not write to stdout directly. */
-  log: (line: string) => void;
+}
+
+/**
+ * Inputs passed to a gate judging a **batch** — one merge that carried
+ * several spans (spec/worktrees.md, "Batched merges"). Only a gate declaring
+ * `batches: true` is ever handed one ({@link BatchingGate}), because a gate
+ * written for one span would read a batch's facts as one entry's.
+ *
+ * The single-span facts are withheld rather than filled with the last pick's:
+ * {@link GateContext.entry}, {@link GateContext.baseSha} and
+ * {@link GateContext.landedOnSha} are absent, and each span states its own on
+ * {@link batch}.
+ */
+export interface BatchGateContext extends GateSite {
+  /**
+   * One record per span the merge carried, in the order they were picked —
+   * never empty, since a merge that carried no span runs no gate.
+   */
+  batch: readonly GateBatchSpan[];
+  /**
+   * The batch's last pick — the tip the gates are judging, which is the one
+   * fact a single-span context and a batch context agree on.
+   */
+  commitSha: string;
+  /**
+   * The union of every span's {@link GateBatchSpan.touchedPaths}, in the
+   * order the batch first saw each path: what a path-keyed gate must read,
+   * because any span's edit is in the tree the gates run over.
+   */
+  touchedPaths: readonly string[];
+  /** Withheld under a batch — each span states its own on {@link batch}. */
+  entry?: undefined;
+  /** Withheld under a batch — each span states its own on {@link batch}. */
+  baseSha?: undefined;
+  /** Withheld under a batch — each span states its own on {@link batch}. */
+  landedOnSha?: undefined;
 }
 
 /**
@@ -270,17 +356,14 @@ export interface GateResult {
 }
 
 /**
- * The declared shape of one validation step. Gates are data the dispatcher
- * runs at the declared `when` point in the lifecycle; the prompt never
- * needs to remind the agent to run them.
+ * What every gate declares, batching or not — the half of {@link Gate} that
+ * does not depend on how many spans one merge may hand it.
  */
-export interface Gate {
+export interface GateIdentity {
   /** Stable identifier; appears in logs and gate-failure prompt context. */
   name: string;
   /** When in the lifecycle this gate runs. */
   when: GatePhase;
-  /** The check itself. Must be pure-ish; idempotent; no commits or pushes. */
-  run: (ctx: GateContext) => Promise<GateResult>;
   /**
    * The single command line this gate runs, when it has one — `shellGate`
    * sets it from its `cmd`/`args`, so a chain wanting the agent to
@@ -291,3 +374,48 @@ export interface Gate {
    */
   command?: string;
 }
+
+/**
+ * A gate written for **one** span — the default, and what every gate is
+ * until it says otherwise. Its `run` is typed over {@link GateContext}
+ * alone, so the span's entry, base and landing are there to read without a
+ * guard, and the merge is held to one span at a time on its behalf
+ * (spec/worktrees.md, "Batched merges").
+ */
+export interface SingleSpanGate extends GateIdentity {
+  /**
+   * Absent, or `false` spelled out: either way this gate reads one span.
+   * Typed `false` rather than `boolean` so the discriminant against
+   * {@link BatchingGate} cannot be widened by a variable.
+   */
+  batches?: false;
+  /** The check itself. Must be pure-ish; idempotent; no commits or pushes. */
+  run: (ctx: GateContext) => Promise<GateResult>;
+}
+
+/**
+ * A gate that has declared it reads a batch. Its `run` takes either shape,
+ * because a batch is what a merge *may* carry and never what it must: with
+ * `supervisorPolicy.mergeBatch` at its default of one, or a wave with a
+ * single span to ship, a batching gate is handed the same
+ * {@link GateContext} every other gate gets.
+ *
+ * The declaration is what buys batching for the whole phase — a phase
+ * batches only when every one of its `afterMerge` gates declares it
+ * (`mergeBatchWidth`, `src/gateBatch.ts`) — so a gate written for one entry
+ * fails safe to serial merging instead of reading the last pick's facts as
+ * the batch's.
+ */
+export interface BatchingGate extends GateIdentity {
+  /** This gate reads {@link BatchGateContext.batch} when it is handed one. */
+  batches: true;
+  /** The check itself. Must be pure-ish; idempotent; no commits or pushes. */
+  run: (ctx: GateContext | BatchGateContext) => Promise<GateResult>;
+}
+
+/**
+ * The declared shape of one validation step. Gates are data the dispatcher
+ * runs at the declared `when` point in the lifecycle; the prompt never
+ * needs to remind the agent to run them.
+ */
+export type Gate = SingleSpanGate | BatchingGate;

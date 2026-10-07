@@ -48,7 +48,22 @@ export type {
   WorktreeSetupResult,
 } from "./Phase.js";
 
-export type { Gate, GateContext, GatePhase, GateResult } from "./Gate.js";
+export type {
+  Gate,
+  GateContext,
+  GatePhase,
+  GateResult,
+  // The gate surface's own split, named because a chain that wraps a gate
+  // holds one in a signature: where a gate runs, what a gate declares, and
+  // the two shapes a `run` may be typed over (spec/chain.md, "What a gate
+  // receives").
+  GateSite,
+  GateIdentity,
+  SingleSpanGate,
+  BatchingGate,
+  BatchGateContext,
+  GateBatchSpan,
+} from "./Gate.js";
 
 export {
   shellGate,

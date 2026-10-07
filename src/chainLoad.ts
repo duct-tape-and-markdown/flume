@@ -144,35 +144,59 @@ function resolveWorktreesBaseDeclaration(
 }
 
 /**
- * Validate the one supervisor knob whose out-of-range value is a run that
- * cannot happen: `supervisorPolicy.maxTicks` is how many `flume tick`
- * children the supervisor holds at once (`src/Phase.ts`), and a supervisor
- * that may hold none can never start one — the run would report the flags
- * still standing as an orphaned baton and stop having done nothing. Refused
- * here, at the load, rather than at the boundary where the symptom appears
+ * Validate the supervisor knobs whose out-of-range value is a run that cannot
+ * happen. Both count a thing a tick must have at least one of, so both are
+ * positive integers: the value counts processes or commits, and `1.5` of
+ * either is not a budget anyone declared on purpose. Refused here, at the
+ * load, rather than at the boundary where the symptom appears
  * (`.claude/rules/engineering.md`, *Loud or nothing*).
  *
- * A positive integer, because the value counts processes: `1.5` children is
- * not a budget anyone declared on purpose. Undeclared is a strict no-op —
- * `superviseLoop` falls back to `DEFAULT_MAX_TICKS`
- * (`src/loopSupervisor.ts`), the serial loop.
+ * - `supervisorPolicy.maxTicks` is how many `flume tick` children the
+ *   supervisor holds at once (`src/Phase.ts`), and a supervisor that may hold
+ *   none can never start one — the run would report the flags still standing
+ *   as an orphaned baton and stop having done nothing.
+ * - `supervisorPolicy.mergeBatch` is how many finished spans one merge
+ *   carries (spec/worktrees.md, *Batched merges*), and a merge that may carry
+ *   none ships nothing. Clamping it instead would be the silent degradation
+ *   the same posture refuses: a chain that asked for a batch and got the
+ *   serial carry reads as a correct loop.
  *
- * The other knobs in the block are deliberately not checked beside it: each
- * of them degrades to something an operator can read off a run, and the
+ * Undeclared is a strict no-op for either — `superviseLoop` falls back to
+ * `DEFAULT_MAX_TICKS` (`src/loopSupervisor.ts`) and the merge to
+ * `DEFAULT_MERGE_BATCH` (`src/gateBatch.ts`), which together are the serial
+ * loop.
+ *
+ * The other knobs in the block are deliberately not checked beside them: each
+ * of those degrades to something an operator can read off a run, and the
  * engine validates only what its mechanics consume
  * (`.claude/rules/engine-boundary.md`, *Capability vs convention*).
  */
 function validateSupervisorPolicyDeclaration(chain: Chain): void {
-  const maxTicks = chain.supervisorPolicy?.maxTicks;
-  if (maxTicks === undefined) return;
-  if (!Number.isInteger(maxTicks) || maxTicks < 1) {
-    throw new Error(
-      `chain declares supervisorPolicy.maxTicks: ${JSON.stringify(maxTicks)}; ` +
-        `it must be a positive integer — it is how many flume tick children ` +
-        `the loop supervisor holds at once, and a supervisor that may hold ` +
-        `none can never run one. Omit it for the default of one (the serial ` +
-        `loop).`,
-    );
+  const counted: { field: string; value: number | undefined; why: string }[] = [
+    {
+      field: "maxTicks",
+      value: chain.supervisorPolicy?.maxTicks,
+      why:
+        `it is how many flume tick children the loop supervisor holds at ` +
+        `once, and a supervisor that may hold none can never run one`,
+    },
+    {
+      field: "mergeBatch",
+      value: chain.supervisorPolicy?.mergeBatch,
+      why:
+        `it is how many finished spans one merge carries, and a merge that ` +
+        `may carry none can never ship one`,
+    },
+  ];
+  for (const { field, value, why } of counted) {
+    if (value === undefined) continue;
+    if (!Number.isInteger(value) || value < 1) {
+      throw new Error(
+        `chain declares supervisorPolicy.${field}: ${JSON.stringify(value)}; ` +
+          `it must be a positive integer — ${why}. Omit it for the default ` +
+          `of one (the serial loop).`,
+      );
+    }
   }
 }
 

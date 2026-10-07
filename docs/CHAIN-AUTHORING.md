@@ -924,8 +924,53 @@ says so below.
   its extension declares — rather than to the phase's uniform bar alone. The
   engine reads none of those fields; a gate reads them back through the
   chain's own extension schema.
+- `batch` — set only when one merge carried several spans, and only for a
+  gate that declared it reads one
+  ([*Reading a batched merge*](#reading-a-batched-merge)). One record per
+  span, in the order they were picked, each carrying that span's own
+  `entry`, `commitSha`, `baseSha`, `landedOnSha` and `touchedPaths`. Absent
+  everywhere else, which is every merge until a chain raises
+  `supervisorPolicy.mergeBatch` (§9).
 - `log` — the harness-side output channel. A gate does not write to stdout
   itself.
+
+### Reading a batched merge
+
+A merge normally carries one span, and a gate reads that span's facts off
+`ctx` directly. Raise `supervisorPolicy.mergeBatch` (§9) and one merge may
+carry several of a wave's finished spans at once, gated once over the result
+— which is a different input, so a gate opts into it by name:
+
+```ts
+const cumulative: Gate = {
+  name: "no-new-todos",
+  when: "afterMerge",
+  batches: true,
+  async run(ctx) {
+    // `ctx.batch` is the discriminant: absent is the one-span shape.
+    const bases = ctx.batch
+      ? ctx.batch.map((span) => span.baseSha)
+      : [ctx.baseSha];
+    // ...measure `ctx.touchedPaths` against each base.
+  },
+};
+```
+
+- **`batches: true` is a claim about `run`, not a request.** A gate that
+  declares it is handed the one-span shape whenever the merge carried one
+  span, which is every merge on a chain that left `mergeBatch` alone. The
+  declaration only says the gate is *able* to read a batch.
+- **One undeclared gate holds the whole phase to one span per merge.** The
+  width applies where every `afterMerge` gate of the phase declares it, so a
+  gate written for one entry fails safe to serial merging instead of reading
+  the last pick's facts as the batch's. Adding an ordinary gate to a batching
+  phase narrows it back to one, silently as far as correctness goes and
+  visibly in how many merges a wave runs.
+- **A batch withholds rather than approximates.** `entry`, `baseSha` and
+  `landedOnSha` are absent under a batch — the type says so — because no
+  single value of any of them is true of the merge. `commitSha` is the
+  batch's last pick and `touchedPaths` is the union of the spans', so a
+  path-keyed gate still sees every edit in the tree it is reading.
 
 ### Use the built-ins first
 
@@ -2482,9 +2527,10 @@ one for the rest of the run.
 Beside the net, the block carries the knobs that shape the run and the tick
 themselves and have nowhere else to be set from a chain: how many tick
 children the supervisor holds at once, how wide a fanout wave inside one of
-them runs, the wall-clock cap on one agent invocation, the paths the fanout
-partition ignores, and the grace a signalled tick gives the agent tree it
-started before it stops waiting. Each knob ships as an engine default;
+them runs, how many of that wave's finished spans one merge carries, the
+wall-clock cap on one agent invocation, the paths the fanout partition
+ignores, and the grace a signalled tick gives the agent tree it started
+before it stops waiting. Each knob ships as an engine default;
 `Chain.supervisorPolicy` lets a chain choose otherwise:
 
 ```ts
@@ -2497,6 +2543,7 @@ const chain: Chain = {
     maxTicks: 2,
     killGraceMs: 30_000,
     maxParallel: 2,
+    mergeBatch: 4,
     tickTimeoutMs: 45 * 60_000,
     partitionIgnore: ["pnpm-lock.yaml"],
   },
@@ -2578,6 +2625,24 @@ const chain: Chain = {
   the scarce resource, though: a wave's agents are a memory term the host holds
   all at once, and this number is what multiplies it ([*What a wave costs in memory*](#what-a-wave-costs-in-memory)). A singleton
   chain never reads it. Read **per tick**.
+- **`mergeBatch`** — how many of a wave's finished spans one merge carries.
+  Default 1: a merge per span, which is the serial carry and every
+  consumer's behavior until it declares otherwise. Above one, the spans
+  waiting on the ship lock at that moment are cherry-picked onto the tip in
+  order and the `afterMerge` gates run once over the result, so a wave of N
+  entries pays one gate run instead of N; a red batch, or a conflict while
+  picking, resets and re-merges its spans one at a time so blame and revert
+  stay per entry (`spec/worktrees.md`, "Batched merges"). Raising it is
+  necessary but not sufficient: the phase batches only where **every** one
+  of its `afterMerge` gates declares `batches: true`
+  ([*Reading a batched merge*](#reading-a-batched-merge)), and one gate
+  without it holds the phase to a span per merge whatever this says. Raise
+  it where the `afterMerge` gates are the expensive part of a wave — a full
+  suite on trunk — and leave it alone where they are cheap, since a red
+  batch costs one gate run more than merging serially would have. A positive
+  integer; anything else refuses the chain at load rather than clamping,
+  because a chain that asked for a batch and silently got the serial carry
+  reads as a correct loop. Read **per tick**.
 - **`tickTimeoutMs`** — wall-clock cap on one agent invocation, in
   milliseconds. Default unset: **no cap**, which means the only brake on a
   runaway invocation is an operator watching verdict lines. Exceeded, the
