@@ -1,6 +1,7 @@
 /**
  * paths — shared path machinery: the win32 total-path-limit fix idiom, the
- * glob matcher, the filesystem-safe tag slug, the length bound every
+ * glob matcher with the foreign-dialect forms a fence may not carry, the
+ * filesystem-safe tag slug, the length bound every
  * composed path component passes through, the dot-prefixed-name test, the
  * fold into git's alphabet with the escape verdict and state-root offset
  * built on it, and the layout a repo root, a flume state root, and a config
@@ -194,6 +195,66 @@ function globToRegex(glob: string): RegExp {
     return token.replace(/[.+^${}()|[\]\\?]/g, "\\$&"); // escape regex specials
   });
   return new RegExp(`^${re}$`);
+}
+
+/**
+ * A glob form this dialect reads as a literal and nearly every other glob
+ * dialect reads as an operator — the shape {@link matchesAny} can only
+ * silently match nothing.
+ *
+ * `form` names the characters as they read in the glob; `dialect` names what
+ * they mean where they came from. Unexported: a caller reads the two fields
+ * off the answer and never names the type, so exporting it would be public
+ * surface with no consumer (`.claude/rules/engineering.md`, *An export earns
+ * its consumer*). The site that refuses composes the message
+ * (`src/chainLoad.ts`), because the phase and field names are its facts; what
+ * the dialect is, and which spellings are foreign to it, are this module's —
+ * the same reason `matchesAny` lives here rather than beside each enforcer.
+ */
+interface ForeignGlobForm {
+  /** The offending characters, as prose naming what the glob opened with or carried. */
+  form: string;
+  /** Where that form comes from and what it means there. */
+  dialect: string;
+}
+
+/**
+ * The two decidable foreign forms (spec/pending.md, *The entry-scoped write
+ * guard is opt-in, and off by default*): a leading `!` and a `{…,…}`
+ * alternation. Both compile here to a literal — `globToRegex` escapes `!`,
+ * `{`, `}` and `,` like any other non-wildcard — so the fence they were
+ * meant to carve admits nothing at all, and every path the author believed
+ * fenced is fenced by a different glob or by none.
+ *
+ * Only these two, and only where they are decidable: a `!` anywhere but the
+ * first character is a literal in the dialects that spell negation too, and
+ * a brace pair with no comma expands to itself in the dialects that spell
+ * brace sets. Guessing past that is reading intent out of punctuation
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*) — a path whose
+ * name genuinely holds a brace is a path, and the matcher already matches it.
+ *
+ * `undefined` for every other glob, which is the overwhelming majority: this
+ * is a refusal over two spellings, not a grammar the engine imposes on a
+ * fence.
+ */
+export function foreignGlobForm(glob: string): ForeignGlobForm | undefined {
+  if (glob.startsWith("!")) {
+    return {
+      form: "opens with `!`",
+      dialect:
+        "a negation in gitignore, minimatch and picomatch, excluding what " +
+        "the globs before it admitted",
+    };
+  }
+  if (/\{[^{}]*,[^{}]*\}/.test(glob)) {
+    return {
+      form: "holds a `{…,…}` alternation",
+      dialect:
+        "a set in brace-expansion dialects (bash, minimatch, picomatch), " +
+        "standing for each of its branches in turn",
+    };
+  }
+  return undefined;
 }
 
 /**

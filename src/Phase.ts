@@ -763,7 +763,10 @@ export interface Phase {
    * Paths are relative to the repo root. Patterns are matched by
    * `matchesAny` (`src/paths.ts`), the one home for the dialect they are
    * read in; it rides `FlumeApi`, so a chain predicate over the same globs
-   * shares the enforcing matcher instead of hand-rolling one.
+   * shares the enforcing matcher instead of hand-rolling one. A glob written
+   * in another dialect — a leading `!` for a negation, a `{a,b}` set — is a
+   * literal here, so the chain load refuses it in this field and in
+   * `entryChannelPaths` rather than let it fence nothing.
    */
   writablePaths: string[];
 

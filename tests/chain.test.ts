@@ -409,6 +409,127 @@ describe("this repo's chain is the harness factory applied to its declaration (s
 });
 
 /**
+ * A fence is matched by `matchesAny`, whose only wildcards are `*` and `**`
+ * (spec/pending.md, *The entry-scoped write guard is opt-in, and off by
+ * default*). The two spellings every other glob dialect reads as operators —
+ * a leading `!`, a `{a,b}` set — are literals here, so a fence carrying one
+ * admits nothing a commit will ever touch and the author's intended exception
+ * or set is enforced by accident of whatever else the list spells. The chain
+ * load refuses both, in `writablePaths` and in `entryChannelPaths` alike,
+ * since the write guard matches their union.
+ *
+ * Driven through the real loader over a real `chain.ts` on disk — the same
+ * resolve-and-refuse a tick and `chainLoadGate` perform — rather than by
+ * calling the validator, so a refusal this file pins is one a commit actually
+ * reds on.
+ */
+describe("Chain load — a fence glob in a foreign dialect is refused (spec/pending.md 'The entry-scoped write guard is opt-in, and off by default')", () => {
+  /** Write a one-phase chain whose fence fields are the caller's literal. */
+  async function chainWithFence(
+    prefix: string,
+    fields: string,
+  ): Promise<string> {
+    const cfg = await mkTempDir(`flume-cfg-fence-dialect-${prefix}-`);
+    await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
+    await writeFile(
+      join(cfg, "chain.ts"),
+      `export default () => ({ chain: { phases: [{ name: "build", ` +
+        `description: "", promptPath: "prompt.md", concurrency: "fanout", ` +
+        `${fields}, gates: [], handoff: () => [] }], humanOnly: [] } });\n`,
+      "utf8",
+    );
+    return cfg;
+  }
+
+  function fencePaths(cfg: string): FlumePaths {
+    return { repoRoot: cfg, configDir: cfg, flumeDir: cfg };
+  }
+
+  it("a writablePaths glob opening with ! is refused at chain load, naming the glob", async () => {
+    const cfg = await chainWithFence(
+      "negation",
+      `writablePaths: ["src/**", "!src/vendor/**"]`,
+    );
+    try {
+      // The glob verbatim, because the fix is to edit that line: a refusal
+      // naming only the field leaves the author diffing the list by eye.
+      await expect(loadChainModule(fencePaths(cfg))).rejects.toThrow(
+        /writablePaths glob "!src\/vendor\/\*\*"/,
+      );
+      // And the accepting leg: the sibling glob that carries no foreign form
+      // loads on its own, so the refusal is the `!` and not the fixture.
+      const ok = await chainWithFence("negation-ok", `writablePaths: ["src/**"]`);
+      try {
+        expect(
+          (await loadChainModule(fencePaths(ok))).chain.phases[0]!.writablePaths,
+        ).toEqual(["src/**"]);
+      } finally {
+        await rm(ok, { recursive: true, force: true });
+      }
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  });
+
+  it("a channel path holding a brace alternation is refused at chain load, naming the glob", async () => {
+    // The channel half of the union, so a dialect mistake cannot reach the
+    // write guard through the field the ceiling check does not read.
+    const cfg = await chainWithFence(
+      "alternation",
+      `writablePaths: ["**"], scopeWritesToEntry: true, ` +
+        `entryChannelPaths: ["notes/{park,ship}/*.md"]`,
+    );
+    try {
+      await expect(loadChainModule(fencePaths(cfg))).rejects.toThrow(
+        /entryChannelPaths glob "notes\/\{park,ship\}\/\*\.md"/,
+      );
+      // A brace pair with no comma is no alternation anywhere, so it stays a
+      // path: the refusal is the comma-separated set, not the brace.
+      const ok = await chainWithFence(
+        "alternation-ok",
+        `writablePaths: ["**"], scopeWritesToEntry: true, ` +
+          `entryChannelPaths: ["notes/{park}/*.md"]`,
+      );
+      try {
+        expect(
+          (await loadChainModule(fencePaths(ok))).chain.phases[0]!
+            .entryChannelPaths,
+        ).toEqual(["notes/{park}/*.md"]);
+      } finally {
+        await rm(ok, { recursive: true, force: true });
+      }
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  });
+
+  it("the refusal names the dialect the glob was written in", async () => {
+    // Naming the glob is half the fix; the other half is why a glob that
+    // reads correctly elsewhere reads as nothing here. Both forms, since each
+    // carries its own dialect.
+    const negation = await chainWithFence(
+      "dialect-negation",
+      `writablePaths: ["!docs/**"]`,
+    );
+    const alternation = await chainWithFence(
+      "dialect-alternation",
+      `writablePaths: ["docs/{a,b}.md"]`,
+    );
+    try {
+      await expect(loadChainModule(fencePaths(negation))).rejects.toThrow(
+        /negation in gitignore, minimatch and picomatch[\s\S]*literal character in flume's dialect/,
+      );
+      await expect(loadChainModule(fencePaths(alternation))).rejects.toThrow(
+        /set in brace-expansion dialects \(bash, minimatch, picomatch\)[\s\S]*literal character in flume's dialect/,
+      );
+    } finally {
+      await rm(negation, { recursive: true, force: true });
+      await rm(alternation, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
  * `Chain.seedDir` once named a directory `flume job new` copied into a fresh
  * job dir. The engine seeds no second state root beneath a checkout
  * (spec/jobs.md, *The checkout is the unit of isolation*), so there is no

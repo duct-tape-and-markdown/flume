@@ -17,6 +17,7 @@ import {
   computeStateRootRel,
   entryWriteScope,
   entryWriteScopeUnion,
+  foreignGlobForm,
   gitPath,
   matchesAny,
   namespacedJoin,
@@ -479,6 +480,78 @@ describe("matchesAny — a declared literal path matches only itself", () => {
     expect(matchesAny("docs/elsewhere/deep/a.md", ["docs/::DOUBLESTAR::/**.md"])).toBe(false);
     expect(matchesAny("docs/::DOUBLESTAR::/a.md", ["docs/::DOUBLESTAR::/*.md"])).toBe(true);
     expect(matchesAny("docs/::DOUBLESTAR::/deep/a.md", ["docs/::DOUBLESTAR::/*.md"])).toBe(false);
+  });
+});
+
+// The dialect's own home (per spec/pending.md "The entry-scoped write guard
+// is opt-in, and off by default": "a glob that opens with `!`, or holds a
+// `{…,…}` alternation, means a negation or a set in most dialects and a
+// literal in this one"). The pin below is the premise the load-time refusal
+// rests on — the matcher really does read both forms as literals — so the
+// refusal and what makes it necessary are asserted over the same matcher
+// rather than against a remembered reading of it.
+describe("foreignGlobForm — the two spellings a fence may not carry", () => {
+  it("matchesAny treats * and ** as the only wildcards and a declared literal path matches only itself", () => {
+    // The two wildcards, each in its own reach.
+    expect(matchesAny("src/a.ts", ["src/*.ts"])).toBe(true);
+    expect(matchesAny("src/deep/a.ts", ["src/*.ts"])).toBe(false);
+    expect(matchesAny("src/deep/a.ts", ["src/**.ts"])).toBe(true);
+
+    // And every other glob operator as a literal — the two forms the load
+    // refuses included, which is why it refuses them. A leading `!` matches
+    // only a path whose first character is `!`, and never the negation's
+    // intended complement.
+    expect(matchesAny("!src/vendor/a.ts", ["!src/vendor/**"])).toBe(true);
+    expect(matchesAny("src/vendor/a.ts", ["!src/vendor/**"])).toBe(false);
+    expect(matchesAny("src/a.ts", ["!src/vendor/**"])).toBe(false);
+
+    // A brace alternation matches the braces, never either branch.
+    expect(matchesAny("docs/{a,b}.md", ["docs/{a,b}.md"])).toBe(true);
+    expect(matchesAny("docs/a.md", ["docs/{a,b}.md"])).toBe(false);
+    expect(matchesAny("docs/b.md", ["docs/{a,b}.md"])).toBe(false);
+  });
+
+  it("reports the leading `!` and the brace alternation, each with the dialect it came from", () => {
+    expect(foreignGlobForm("!src/vendor/**")?.form).toContain("`!`");
+    expect(foreignGlobForm("!src/vendor/**")?.dialect).toContain("negation");
+    expect(foreignGlobForm("docs/{a,b}.md")?.form).toContain("alternation");
+    expect(foreignGlobForm("docs/{a,b}.md")?.dialect).toContain(
+      "brace-expansion",
+    );
+    // Position-free: the alternation is refused wherever it sits, including
+    // the first character, where the `!` arm would otherwise claim it first.
+    expect(foreignGlobForm("{a,b}/**")?.form).toContain("alternation");
+  });
+
+  it("reports nothing for the globs a fence legitimately carries, so the refusal is two spellings and not a grammar", () => {
+    const ordinary = [
+      "src/**",
+      "src/*.ts",
+      "package.json",
+      "tsconfig*.json",
+      ".github/**",
+      "docs/faq?.md",
+      ".flume/plan/notes/*.md",
+      // A `!` that is not the first character is a literal in the dialects
+      // that spell negation too, so it is a path here and nothing is guessed
+      // from it.
+      "docs/wow!.md",
+      // A brace pair with no comma expands to itself under brace expansion,
+      // so it names a path rather than a set.
+      "docs/{draft}/*.md",
+    ];
+    for (const glob of ordinary) {
+      expect({ glob, foreign: foreignGlobForm(glob) }).toEqual({
+        glob,
+        foreign: undefined,
+      });
+    }
+    // Non-vacuity for the loop above: the same list run through the refused
+    // spellings does report, so a predicate that answered `undefined` for
+    // everything would not pass here.
+    expect(ordinary.map((g) => foreignGlobForm(`!${g}`)).every(Boolean)).toBe(
+      true,
+    );
   });
 });
 

@@ -37,6 +37,7 @@ import type { Chain } from "./Phase.js";
 import {
   assertStateRootRelative,
   chainModulePath,
+  foreignGlobForm,
   namespacedJoin,
 } from "./paths.js";
 
@@ -196,6 +197,50 @@ function validateNoDeadDeclarations(chain: Chain): void {
           `entryChannelPaths is only consulted on a scoped tick, so it governs nothing here. ` +
           `Set scopeWritesToEntry: true on '${phase.name}', or remove entryChannelPaths.`,
       );
+    }
+  }
+}
+
+/**
+ * Refuse a fence glob written in a dialect this engine does not read
+ * (spec/pending.md, *The entry-scoped write guard is opt-in, and off by
+ * default*). A phase's `writablePaths` and `entryChannelPaths` are matched by
+ * `matchesAny` (`src/paths.ts`) — regex specials escaped, `*` and `**` the
+ * only wildcards — so a leading `!` or a `{…,…}` alternation compiles to a
+ * literal and the glob matches nothing any commit will ever touch. Which
+ * spellings are foreign, and what they mean where they came from, is the
+ * dialect's own fact and lives with the matcher (`foreignGlobForm`); the
+ * phase and the field are this site's, so this is where the message is
+ * composed.
+ *
+ * Refused here, at the load, because the symptom otherwise is not a failure
+ * at all: the author who wrote `!src/vendor/**` to carve an exception gets a
+ * fence that silently admits nothing, and the paths they believed excluded
+ * are excluded only by accident of what else the list happens to spell
+ * (`.claude/rules/engineering.md`, *Loud or nothing*). Both fields together,
+ * since the write guard matches the union of them and a dialect mistake in
+ * either half degrades the same fence.
+ */
+function validateFenceGlobDialect(chain: Chain): void {
+  for (const phase of chain.phases) {
+    const fields: [string, string[]][] = [
+      ["writablePaths", phase.writablePaths],
+      ["entryChannelPaths", phase.entryChannelPaths ?? []],
+    ];
+    for (const [field, globs] of fields) {
+      for (const glob of globs) {
+        const foreign = foreignGlobForm(glob);
+        if (!foreign) continue;
+        throw new Error(
+          `phase '${phase.name}' declares the ${field} glob ` +
+            `${JSON.stringify(glob)}, which ${foreign.form}: that is ` +
+            `${foreign.dialect}, and a literal character in flume's dialect — ` +
+            `path matching is matchesAny, where regex specials are escaped ` +
+            `and '*' and '**' are the only wildcards, so this glob matches ` +
+            `only a path spelling it exactly. Spell the paths out, or narrow ` +
+            `with '*' and '**'.`,
+        );
+      }
     }
   }
 }
@@ -389,7 +434,8 @@ export async function loadChainModule(
   validatePendingDirDeclaration(chain);
   validateSupervisorPolicyDeclaration(chain);
   validateNoDeadDeclarations(chain);
-  // The fifth declaration this load decides, and the only one whose check is
+  validateFenceGlobDialect(chain);
+  // The last declaration this load decides, and the only one whose check is
   // also its answer: evaluating `Chain.worktreesBase` is what refuses an
   // unusable base, so the value rides the loaded module from here and no
   // reader runs chain code a second time to get it (spec/worktrees.md,
