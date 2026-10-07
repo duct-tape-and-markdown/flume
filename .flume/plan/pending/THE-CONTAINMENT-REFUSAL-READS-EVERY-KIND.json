@@ -1,0 +1,39 @@
+{
+  "tag": "THE-CONTAINMENT-REFUSAL-READS-EVERY-KIND",
+  "gate": {
+    "kind": "open"
+  },
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/PendingSchema.ts",
+        "description": "the containment arm, gated on `kind === \"work\"`, and the rendered blockedBy clause that states its scope"
+      },
+      {
+        "path": "tests/PendingSchema.test.ts",
+        "description": "the group and step containment refusals, the sibling admission beside them, and the rendered-schema fixture"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "no entry's blockedBy reaches into its own containment, whatever its kind \u2014 the work-only arm generalizes rather than growing a third scope clause",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Loud or nothing"
+  },
+  "acceptance": "a `group` whose `blockedBy` names one of its own descendants or a group above it, and a `step` whose `blockedBy` names the step containing it or one of its own substeps, are refused like any malformed queue \u2014 naming the entry and the edge, through the one containment read the work arm already builds; a step blocked on a sibling step of the same work entry still parses, and the rendered `blockedBy` clause states one containment rule for every kind rather than a third scope sentence",
+  "tests": [
+    "a group entry whose blockedBy names one of its own descendants is refused at the queue read",
+    "a group entry whose blockedBy names a group that contains it is refused at the queue read",
+    "a step entry whose blockedBy names one of its own substeps is refused at the queue read",
+    "a step entry whose blockedBy names the step that contains it is refused at the queue read",
+    "the rendered schema states that no entry's blockedBy reaches into its own containment"
+  ],
+  "pins": [
+    "a step entry blockedBy a sibling step of the same work entry is admitted"
+  ],
+  "laneTests": [],
+  "notes": "On this tip the containment arm is gated `entry.kind !== \"work\"` (`src/PendingSchema.ts:1020`), so a group waiter and a step waiter both skip it. The group arm's premise settled at 1ba05676: `spec/pending.md`, *Pickability* has an entry inherit its ancestors' gates, so a group blocked on its own descendant blocks that descendant on itself. Dropping the kind guard is the whole fix, and it shortens the rendered clause the build note called its longest line."
+}
