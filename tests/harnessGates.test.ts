@@ -66,6 +66,7 @@ import { putDownPredicate } from "../harness/putDown.ts";
 import type { RunnerFactory } from "../harness/runner.ts";
 import { sectionOf } from "./helpers/docSections.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
+import { expectNoFindings } from "./helpers/repoProgram.ts";
 import { stubRunner } from "./helpers/stubRunner.ts";
 import { SPAWN_BUDGET_MS, gitOutSync } from "./helpers/subprocess.ts";
 
@@ -2150,21 +2151,18 @@ it("the package's claim check covers a claimed entry's note, and build's own set
  * the factory builds (`.claude/rules/engineering.md`, *Narration is the
  * ladder's bottom rung*, the `docs/` carve-out): the page states which gates
  * the package brings to a commit, so it is pinned for what it says against
- * the interface it describes.
+ * the interface it describes — in both directions, since a roster that drops
+ * a member and one that keeps a name no package ships mislead a consumer the
+ * same way.
  *
  * The names come from the real factory over the real declaration, the same
- * calls every other case here runs — so a gate added to the set reds this
- * until the page names it, and a rename carries the page with it. **Every
- * phase's set, not build's:** a member wired to the queue's producers alone
- * is absent from build's, and a demand read off build would let the page drop
- * it with nothing red.
- *
- * The span is cut to the adoption section rather than the page read whole:
- * `docs/CHAIN-AUTHORING.md` documents `pending-gate` and the records gates at
- * length further down, so a whole-page read would report every name found
- * wherever it fell and pass over an inventory naming none of them.
+ * calls every other case here runs — so a gate added to the set reds the
+ * forward arm until the page names it, and a rename carries the page with it.
+ * **Every phase's set, not build's:** a member wired to the queue's producers
+ * alone is absent from build's, and a demand read off build would let the page
+ * drop it with nothing red.
  */
-it("docs/CHAIN-AUTHORING.md names every gate the package's discipline set holds", async () => {
+const disciplineGateNames = (): Set<string> => {
   const names = new Set([
     ...gates().map((g) => g.name),
     ...PLAN_SLICES.flatMap((slice) => sliceGates(slice).map((g) => g.name)),
@@ -2173,7 +2171,17 @@ it("docs/CHAIN-AUTHORING.md names every gate the package's discipline set holds"
   // demand drawn off build alone would miss every producer-only member.
   expect(names.size).toBeGreaterThan(0);
   expect(names).toContain("goal rank");
+  return names;
+};
 
+/**
+ * The span both arms read, cut to the adoption section rather than the page
+ * read whole: `docs/CHAIN-AUTHORING.md` documents `pending-gate` and the
+ * records gates at length further down, so a whole-page read would report
+ * every name found wherever it fell and pass over an inventory naming none of
+ * them.
+ */
+async function adoptionInventory(): Promise<string> {
   const page = await readFile(
     new URL("../docs/CHAIN-AUTHORING.md", import.meta.url),
     "utf8",
@@ -2183,8 +2191,56 @@ it("docs/CHAIN-AUTHORING.md names every gate the package's discipline set holds"
   // The cut landed on the inventory: without this a renamed heading reports
   // no missing gate over no text at all.
   expect(inventory).toContain("**The harness package**");
+  return inventory;
+}
 
-  expect(
-    [...names].filter((name) => !inventory.includes(`\`${name}\``)),
-  ).toEqual([]);
+it("docs/CHAIN-AUTHORING.md names every gate the package's discipline set holds", async () => {
+  const names = disciplineGateNames();
+  const inventory = await adoptionInventory();
+
+  expectNoFindings(
+    [...names]
+      .filter((name) => !inventory.includes(`\`${name}\``))
+      .map((name) => `the set holds \`${name}\`, which the inventory never names`),
+  );
+});
+
+/**
+ * The roster parenthetical the harness-package bullet spends on the gates —
+ * the introducing phrase, then the names it opens. The span narrows from the
+ * inventory because the inventory at large backticks engine builtins the
+ * package's set never held (`chain-load`), the entry extension's fields and
+ * the slice names: read back whole it would report every one of them as a
+ * gate the page claims.
+ */
+const ROSTER = /discipline gates[^(]*\(([^)]*)\)/;
+
+/** A name the page backticks, wherever a span is read for the ones it holds. */
+const BACKTICKED = /`([^`]+)`/g;
+
+/**
+ * And back the other way. A name the roster carries that the set does not
+ * hold is a gate no package ships, standing in the adoption inventory as one
+ * the consumer's commits will meet. Measured drift: the roster outlived a
+ * gate, and the row left by hand with nothing red.
+ */
+it("docs/CHAIN-AUTHORING.md names no discipline gate the package's set lacks", async () => {
+  const names = disciplineGateNames();
+  const roster = ROSTER.exec(await adoptionInventory())?.[1] ?? "";
+
+  // Loud or nothing: a reworded introduction cuts no roster at all, and an
+  // empty span names no gate the set lacks for the same reason a blank page
+  // names none — so the cut is asserted before it is read.
+  expect(roster, "the inventory spends no parenthetical on the gates").not.toBe(
+    "",
+  );
+  const rostered = [...roster.matchAll(BACKTICKED)].map((found) => found[1]!);
+  // Vacuity pin: the cut landed on names, not on a parenthetical of prose.
+  expect(rostered.length).toBeGreaterThan(0);
+
+  expectNoFindings(
+    rostered
+      .filter((name) => !names.has(name))
+      .map((name) => `the roster names \`${name}\`, which the set does not hold`),
+  );
 });
