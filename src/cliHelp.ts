@@ -623,7 +623,15 @@ supervisor is live, what that run has spent on agents so far ("agent usage
 this run: <phase> ×N (...)", one entry per phase whose ticks invoked an
 agent at or after the instant loop.pid states the run took the lock; no live
 supervisor — a live run that has invoked none yet, or one whose lock states
-no instant (written by flume before 0.17) — prints nothing extra), then,
+no instant (written by flume before 0.17) — prints nothing extra), then one
+line per goal standing ("goal <TAG>: work <TAG>, <TAG>; stood <span>" — the
+goal's remaining work entries and how long it has stood — in the order the
+queue serves them, each goal by the position of its earliest ready work
+under the chain's declared order, goals with nothing ready last and marked
+so; a queue carrying no goal prints nothing extra, and an order that could
+not be taken at all (the filing read failed, or the chain's own order hook
+refused the ready set) prints the rows in the queue's default order behind a
+line saying the served order was withheld, with the reason on stderr), then,
 last, the queue's flow figures ("flow: median filing→ship <span>; longest
 ready wait <span>; failed merges per ship <rate>", each derived at the
 moment of asking from the verdict history and the filing times git holds,

@@ -13,15 +13,24 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 /**
- * The state-root-relative chain fields {@link minimalChainSrc} can declare.
- * Each is spliced in as that field's value (JSON-encoded here, so callers
- * pass the value itself); a field left absent is absent from the chain.
+ * The chain fields {@link minimalChainSrc} can declare. A field left absent is
+ * absent from the chain. The two state-root-relative paths are spliced in as
+ * that field's value (JSON-encoded here, so callers pass the value itself);
+ * the one field naming a hook is spliced in as source, which its own entry
+ * says.
  */
 export interface MinimalChainDeclarations {
   /** `Chain.friction`, verbatim — undeclared turns every friction behavior off. */
   friction?: string;
   /** `Chain.pendingDir`, verbatim — undeclared leaves the engine's default. */
   pendingDir?: string;
+  /**
+   * `Chain.order`, spliced in as **source** rather than as a value: the
+   * sequencing policy is a function, so a fixture declaring one hands over the
+   * expression a chain module would hold rather than something JSON can carry.
+   * Undeclared leaves the queue's own default order.
+   */
+  orderSrc?: string;
 }
 
 /** The phase shape {@link minimalChainSrc} renders, plus what it declares beside it. */
@@ -72,6 +81,7 @@ function chainSrc(shape: MinimalChainShape, agentSrc = ""): string {
     `    handoff: () => [],\n` +
     `  }],\n` +
     `  humanOnly: [],\n` +
+    (shape.orderSrc === undefined ? "" : `  order: ${shape.orderSrc},\n`) +
     declared +
     `}${agentSrc} });\n`
   );

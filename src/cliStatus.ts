@@ -4,9 +4,10 @@
  * exactly this").
  *
  * One job: every row is a fact read off disk and printed, in the order that
- * page states — the flow figures included, folded from the two histories
- * this verb reads at the door that owns the fold (`flowLine`,
- * `src/queueFlow.ts`) rather than arithmetic spelled here. The verb
+ * page states — the goal rows and the flow figures included, folded at the
+ * doors that own them (`goalRows`, `src/queueGoals.ts`; `flowLine`,
+ * `src/queueFlow.ts`) from the queue and the two histories this verb reads,
+ * rather than arithmetic or an ordering spelled here. The verb
  * interprets none of them — a claim's state root, a
  * capability skip, a chain that would not load are each said and left to the
  * reader, the engine reporting facts and its reader owning what they mean
@@ -25,9 +26,10 @@ import { existsLoudUnder } from "./fsProbe.js";
 import { currentRefPath, gitCommonDir, liveTipClaim, tipClaimPath } from "./git.js";
 import { loopLockPath, resolvePendingDir, stopFlagPath } from "./paths.js";
 import { readLooseFilingTimes, readPendingLoose } from "./pendingLedger.js";
-import type { ParseResult } from "./PendingSchema.js";
+import type { ParseResult, PendingEntry } from "./PendingSchema.js";
 import { liveLoopClaim, statedStateRoot, type PidClaim } from "./pidClaim.js";
 import { flowLine } from "./queueFlow.js";
+import { goalRows } from "./queueGoals.js";
 import {
   readRunEnd,
   runEndLine,
@@ -36,7 +38,7 @@ import {
   type RunEndRead,
 } from "./runEnd.js";
 import { readRunSpend, type RunSpend } from "./runSpend.js";
-import { gateReadyEntries } from "./selection.js";
+import { gateReadyEntries, servedReadyEntries } from "./selection.js";
 import { readTickVerdicts, type TickVerdict } from "./tickVerdict.js";
 import { thrownMessage } from "./thrown.js";
 
@@ -407,16 +409,62 @@ export async function statusVerb(paths: FlumePaths): Promise<number> {
   // reported, never rediscovered*). A queue that did not parse offers the
   // entries it could read, which is what every other row of this listing
   // already says about it.
-  console.log(
-    flowLine({
-      verdicts,
-      ready: gateReadyEntries(
-        pending.entries,
-        new Set(chain?.capabilities ?? []),
-      ),
-      filingTimes,
-      now: Date.now(),
-    }),
+  //
+  // One ready set and one instant for both rows below: a listing whose goal
+  // rows and flow row disagreed about which entries are ready, or about what
+  // time it is, would be two reports of one queue. The goals' own read takes
+  // this same derivation again inside the door that orders it — the set is a
+  // pure filter over the queue already in hand, and the flow figures keep the
+  // unordered one on purpose, so a chain's policy refusing the order costs
+  // this listing the goals' sequence and nothing else.
+  const ready = gateReadyEntries(
+    pending.entries,
+    new Set(chain?.capabilities ?? []),
   );
+  const now = Date.now();
+  // spec/cli.md "`flume status` owes exactly this", line 9: one row per goal
+  // standing, in the order the queue serves them.
+  //
+  // The order is the dispatcher's own, taken through the door that applies the
+  // chain's policy for every other surface (`servedReadyEntries`,
+  // `src/selection.ts`), so these rows cannot rank two goals differently from
+  // the tick that will pick between them. Two inputs can leave it untakeable,
+  // and `status` exits 0 over both: the filing read above, which the order's
+  // own default and the chain's context are read from, and the chain's
+  // declared policy, which refuses a set it would not order. Either way the
+  // rows print in the queue's default order and say the served order was
+  // withheld — withholding the goals themselves would hide the queue's
+  // standing work over a failure that is about its sequence
+  // (`.claude/rules/engineering.md`, *Loud or nothing*).
+  let served: PendingEntry[] | undefined;
+  let orderWithheld: string | undefined;
+  if (filingTimes === undefined) {
+    orderWithheld = "the filing read failed";
+  } else {
+    try {
+      served = servedReadyEntries({
+        pending: pending.entries,
+        filingTimes,
+        chain,
+      });
+    } catch (err) {
+      orderWithheld = "the chain's order hook refused this queue";
+      operatorLog.error(
+        `[flume] status: the chain's order hook failed over the ready set: ` +
+          `${thrownMessage(err)} — withholding the order the goal rows are ` +
+          "ranked by rather than printing one no policy returned",
+      );
+    }
+  }
+  for (const row of goalRows({
+    listing: pending.entries,
+    ready: served ?? ready,
+    ...(orderWithheld !== undefined ? { orderWithheld } : {}),
+    filingTimes,
+    now,
+  })) {
+    console.log(row);
+  }
+  console.log(flowLine({ verdicts, ready, filingTimes, now }));
   return 0;
 }

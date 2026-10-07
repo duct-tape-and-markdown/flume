@@ -8223,3 +8223,300 @@ describe('flume status — the flow row (spec/cli.md "flume status owes exactly 
     }
   });
 });
+
+/**
+ * spec/cli.md "`flume status` owes exactly this", line 9 — the Goals rows: one
+ * row per goal standing, in the order the queue serves them, each naming the
+ * goal's remaining `work` and how long it has stood.
+ *
+ * Driven through the real verb over a real repository and a real chain,
+ * because every half of the claim is something outside this file's hand: the
+ * order is the chain's own `order` applied by the engine's one call site, the
+ * standing span is git's answer about this fixture's commits, and the readiness
+ * partition is the gate switch's. A hand-built ready set or a hand-written row
+ * would re-author the producer whose agreement with the verb is the subject
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ */
+describe('flume status — the Goals rows (spec/cli.md "flume status owes exactly this", line 9)', () => {
+  const HOUR_MS = 3_600_000;
+
+  /** A `group` entry — a goal where it names no parent, an epic where it does. */
+  const group = (tag: string, parent?: string): unknown => ({
+    tag,
+    gate: { kind: "open" },
+    kind: "group",
+    files: { new: [], edit: [], retire: [] },
+    ...(parent === undefined ? {} : { parent }),
+  });
+
+  /** A `work` or `step` entry under `parent`, gated as the case needs. */
+  const unit = (opts: {
+    tag: string;
+    parent: string;
+    kind?: "work" | "step";
+    gate?: unknown;
+  }): unknown => ({
+    tag: opts.tag,
+    gate: opts.gate ?? { kind: "open" },
+    kind: opts.kind ?? "work",
+    parent: opts.parent,
+    files: {
+      new: [],
+      edit: [{ path: `src/${opts.tag}.ts`, description: opts.tag }],
+      retire: [],
+    },
+  });
+
+  /**
+   * File `entries` into the default queue as one commit dated `atMs` — the
+   * standing span a row states is measured from an **add** under the entry's
+   * own filename (`readFilingTimes`, `src/filingOrder.ts`), so the fixture
+   * files through git rather than leaving the queue uncommitted.
+   */
+  async function fileEntries(
+    dir: string,
+    entries: unknown[],
+    atMs: number,
+  ): Promise<void> {
+    await seedQueue(resolvePendingDir(join(dir, ".flume")), entries);
+    const at = new Date(atMs).toISOString();
+    await exec("git", ["add", "-A"], { cwd: dir });
+    await exec("git", ["commit", "-q", "-m", "file entries"], {
+      cwd: dir,
+      env: { ...process.env, GIT_AUTHOR_DATE: at, GIT_COMMITTER_DATE: at },
+    });
+  }
+
+  /** Every Goals row of a listing, in the order it printed them. */
+  const goalRowsOf = (out: string): string[] =>
+    out.split("\n").filter((line) => line.startsWith("goal "));
+
+  /** The tag a Goals row is about. */
+  const goalTagOf = (row: string): string =>
+    row.slice("goal ".length, row.indexOf(":"));
+
+  it("the Goals rows order each goal by the position of its earliest ready work", async () => {
+    const repo = await makeScratchRepo("flume-status-goals-order-", "main");
+    try {
+      // Two goals, each with one ready work entry, filed in that sequence: the
+      // queue's own default order serves EARLY's work first, so a row set
+      // ordered by anything but the chain's policy reads EARLY first too. The
+      // policy reverses the ready set, which is the one ordering that puts
+      // LATE's goal on top — so this case cannot pass over a status that
+      // sorted the goals itself.
+      const now = Date.now();
+      await fileEntries(
+        repo.dir,
+        [group("G-EARLY"), unit({ tag: "W-EARLY", parent: "G-EARLY" })],
+        now - 4 * HOUR_MS,
+      );
+      await fileEntries(
+        repo.dir,
+        [group("G-LATE"), unit({ tag: "W-LATE", parent: "G-LATE" })],
+        now - 2 * HOUR_MS,
+      );
+      await writeRepoConfig(
+        repo.dir,
+        minimalChainSrc({ orderSrc: "(ready) => [...ready].reverse()" }),
+      );
+
+      const r = await runCliStreams(repo.dir, ["status"]);
+
+      expect(r.code, r.stderr).toBe(0);
+      // Vacuity: the chain loaded (no failure row), the queue held both goals
+      // and both work entries, and both goals printed a row — so the sequence
+      // asserted below is over two rows and not over one or none.
+      expect(r.stdout).not.toContain("chain: failed to load");
+      expect(r.stdout).toContain("pending: 4");
+      expect(goalRowsOf(r.stdout).map(goalTagOf)).toEqual(["G-LATE", "G-EARLY"]);
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it("a goal with no ready work is ordered last and marked as having nothing ready", async () => {
+    const repo = await makeScratchRepo("flume-status-goals-unready-", "main");
+    try {
+      // Both goals carry a work entry; one of them is parked, so the goal has
+      // remaining work and nothing ready — the case the row has to tell from
+      // "no work at all". Filed in one commit and named so that the default
+      // order's tag tiebreak would put the unready goal first: it printing last
+      // is the claim, and nothing but the readiness partition puts it there.
+      const now = Date.now();
+      await fileEntries(
+        repo.dir,
+        [
+          group("G-AAA-PARKED"),
+          unit({
+            tag: "W-PARKED",
+            parent: "G-AAA-PARKED",
+            gate: { kind: "parked", reason: "waiting on a human" },
+          }),
+          group("G-ZZZ-READY"),
+          unit({ tag: "W-READY", parent: "G-ZZZ-READY" }),
+        ],
+        now - 3 * HOUR_MS,
+      );
+      await writeRepoConfig(repo.dir, minimalChainSrc());
+
+      const r = await runCliStreams(repo.dir, ["status"]);
+
+      expect(r.code, r.stderr).toBe(0);
+      const rows = goalRowsOf(r.stdout);
+      // Vacuity: two rows, in the order the listing printed them — the ready
+      // goal first, the one with nothing ready last.
+      expect(rows.map(goalTagOf)).toEqual(["G-ZZZ-READY", "G-AAA-PARKED"]);
+      // Each row reads its own block, never the whole listing: the mark is a
+      // claim about the unready goal's row, and the ready goal's row is where
+      // its absence is a claim (`.claude/rules/posture-sweep.md`, *Standing
+      // lenses*).
+      expect(rows[1]).toContain("nothing ready");
+      expect(rows[1]).toContain("W-PARKED");
+      expect(rows[0]).not.toContain("nothing ready");
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it("a Goals row names the goal's remaining work entries and how long it has stood", async () => {
+    const repo = await makeScratchRepo("flume-status-goals-row-", "main");
+    try {
+      // One goal, filed two days and twelve and a half hours ago — the half
+      // hour is slack, since the span floors to the hour and the spawn below
+      // spends seconds of it. Its work sits under an epic, so the row's work
+      // list is the whole subtree's and not the goal's direct children; and a
+      // step under one of those work entries is work the session carries
+      // rather than a queue entry of its own, so the row must not name it.
+      const now = Date.now();
+      await fileEntries(
+        repo.dir,
+        [
+          group("G-SOLO"),
+          group("E-EPIC", "G-SOLO"),
+          unit({ tag: "W-ONE", parent: "E-EPIC" }),
+          unit({ tag: "W-TWO", parent: "E-EPIC" }),
+          unit({ tag: "S-STEP", parent: "W-ONE", kind: "step" }),
+        ],
+        now - (60 * HOUR_MS + 30 * 60_000),
+      );
+      await writeRepoConfig(repo.dir, minimalChainSrc());
+
+      const r = await runCliStreams(repo.dir, ["status"]);
+
+      expect(r.code, r.stderr).toBe(0);
+      const rows = goalRowsOf(r.stdout);
+      // Vacuity: the goal is the queue's one root group, so there is exactly
+      // one row and every clause below is read off it.
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toContain("work W-ONE, W-TWO");
+      expect(rows[0]).not.toContain("S-STEP");
+      expect(rows[0]).toContain("stood 2d 12h");
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it("status exits 0 and says the Goals order is withheld when the chain's order hook throws", async () => {
+    const repo = await makeScratchRepo("flume-status-goals-refused-", "main");
+    try {
+      const now = Date.now();
+      await fileEntries(
+        repo.dir,
+        [group("G-ONE"), unit({ tag: "W-ONE", parent: "G-ONE" })],
+        now - HOUR_MS,
+      );
+      await writeRepoConfig(
+        repo.dir,
+        minimalChainSrc({
+          orderSrc: `() => { throw new Error("this policy refuses"); }`,
+        }),
+      );
+
+      const r = await runCliStreams(repo.dir, ["status"]);
+
+      // The one exit `status` takes is an unreadable file, and a chain's own
+      // policy throwing is not one (spec/cli.md, "Subcommand surface").
+      expect(r.code, r.stderr).toBe(0);
+      expect(r.stdout).toContain("goals: served order withheld");
+      // The goals themselves are not withheld with their order: the failure is
+      // about the sequence, and the standing work is still a fact this listing
+      // read. The reason reaches stderr, where the chain's own message is.
+      const rows = goalRowsOf(r.stdout);
+      expect(rows.map(goalTagOf)).toEqual(["G-ONE"]);
+      expect(rows[0]).toContain("work W-ONE");
+      expect(r.stderr).toContain("this policy refuses");
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it("status exits 0 and withholds the Goals order and standing times when the filing read fails", async () => {
+    // A queue under a root no repository holds: the filing read is `git log`'s,
+    // and it answers nothing here — the case spec/cli.md names as a report
+    // rather than a failure. Not a denied file, which `chmod` does not deny on
+    // win32 (`.claude/rules/platform-facts.md`, *`chmod` denies nothing on
+    // win32*); the absent repository denies on every host.
+    const dir = await mkFixtureRoot("flume-status-goals-unfiled-");
+    try {
+      await seedQueue(resolvePendingDir(join(dir, ".flume")), [
+        group("G-ONE"),
+        unit({ tag: "W-ONE", parent: "G-ONE" }),
+      ]);
+
+      const r = await runCliStreams(dir, ["status"]);
+
+      expect(r.code, r.stderr).toBe(0);
+      // Vacuity: the queue read succeeded — it is only the filing read that
+      // failed — so the row below is over a goal this listing really holds.
+      expect(r.stdout).toContain("pending: 2");
+      expect(r.stdout).toContain("goals: served order withheld");
+      const rows = goalRowsOf(r.stdout);
+      expect(rows.map(goalTagOf)).toEqual(["G-ONE"]);
+      // The standing time is withheld, never printed as a span measured from a
+      // filing nothing read (`.claude/rules/engineering.md`, *Loud or
+      // nothing*). Read off the row, not the listing.
+      expect(rows[0]).toContain("standing withheld");
+      expect(rows[0]).not.toContain("stood ");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("status prints no Goals row when the queue carries no goal", async () => {
+    const repo = await makeScratchRepo("flume-status-goals-none-", "main");
+    try {
+      // A root `work` entry and nothing above it: the queue is populated and
+      // holds no goal, so the whole block is absent rather than a header over
+      // nothing (spec/cli.md, "`flume status` owes exactly this").
+      await fileEntries(
+        repo.dir,
+        [
+          {
+            tag: "W-ROOT",
+            gate: { kind: "open" },
+            kind: "work",
+            files: {
+              new: [],
+              edit: [{ path: "src/root.ts", description: "root" }],
+              retire: [],
+            },
+          },
+        ],
+        Date.now() - HOUR_MS,
+      );
+      await writeRepoConfig(repo.dir, minimalChainSrc());
+
+      const r = await runCliStreams(repo.dir, ["status"]);
+
+      expect(r.code, r.stderr).toBe(0);
+      // Vacuity: the listing read a queue with an entry in it, so the absence
+      // below is "no goal" and not "no queue".
+      expect(r.stdout).toContain("pending: 1");
+      expect(goalRowsOf(r.stdout)).toEqual([]);
+      expect(r.stdout).not.toContain("goals: served order withheld");
+    } finally {
+      await repo.cleanup();
+    }
+  });
+});

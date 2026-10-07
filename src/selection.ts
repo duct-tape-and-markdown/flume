@@ -206,6 +206,48 @@ export function gateReadyEntries(
   );
 }
 
+/**
+ * {@link gateReadyEntries} in the order the queue serves it — the ready set a
+ * selection would hand its first slot, read with no tick around it.
+ *
+ * `flume status`'s goal rows are the consumer (`goalRows`,
+ * `src/queueGoals.ts`): a goal's place in that listing is the place of its
+ * earliest ready work, and a verb that sorted the ready set itself would be a
+ * second ordering free to disagree with the one dispatch serves. So the
+ * question is asked here, where the chain's policy is applied for every other
+ * surface ({@link orderedForSelection}), and the chain's declaration and the
+ * `OrderContext` it reads stay inside this module — an observational caller
+ * holds a queue and a chain, not a selection's facts.
+ *
+ * Carries nothing in flight, which is the empty list every selection but a
+ * wave's own refill is handed (`OrderContext.inFlight`, `src/Phase.ts`): a
+ * read taken outside a tick is carrying no entry by construction.
+ *
+ * `chain` is `undefined` where none loaded — the best-effort load an
+ * observational verb takes (`loadChainForObservation`,
+ * `src/cliChainLoad.ts`) — and the queue's own default order is then what it
+ * serves. A chain whose policy refuses this set throws, as it does at every
+ * other surface that reports one: the caller says what it withheld rather than
+ * printing an order no policy returned.
+ */
+export function servedReadyEntries(opts: {
+  pending: readonly PendingEntry[];
+  /** When each of `pending` was filed — the default order's own input. */
+  filingTimes: FilingTimes;
+  chain: Chain | undefined;
+}): PendingEntry[] {
+  const ready = gateReadyEntries(
+    opts.pending,
+    new Set(opts.chain?.capabilities ?? []),
+  ).sort(byFilingThenTag(opts.filingTimes));
+  return orderedForSelection(opts.chain?.order, ready, {
+    pending: opts.pending,
+    queued: new Set(opts.pending.map((e) => e.tag)),
+    filingTimes: opts.filingTimes,
+    inFlight: [],
+  });
+}
+
 /** Whether this run's live quarantine holds the entry **as read** ({@link entryDeclaredKey}). */
 function heldByQuarantine(
   entry: PendingEntry,
