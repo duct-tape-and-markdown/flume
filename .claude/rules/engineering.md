@@ -260,7 +260,7 @@ ticks produce by default, and this section is how the sweep sees it.
 A finding under this section is **debt until it recurs or bites**: the
 refactor is behavior-free, so it queues only when the shape can change
 behavior or hide a failure, or when the same family is noted three times in
-one rotation (`posture-sweep.md`, *Routing*). When it does queue, the entry
+one rotation (`spec/harness.md`, *The sweep procedure*). When it does queue, the entry
 names the target shape — which file takes which job — so build moves code
 rather than judging it, and the typecheck, the suite, and the export and
 citation pins hold the move.

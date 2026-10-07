@@ -1,93 +1,19 @@
 # Posture sweep
 
-Administering the engineering postures. A posture page states a shape
-standard; the sweep is what applies it to code that already exists. Without
-it a newly-ratified phrase governs only code written after it.
+This repo's lenses for the sweep. The procedure — the frontier, the
+neighborhood, the rotation, the routing bar, the stamp — is the package's
+(`spec/harness.md`, *The sweep procedure*), and the domain and the posture
+pages are declared in `.flume/declaration.ts` (`slices.sweep`).
 
-Binds on plan's **Sweep** dimension.
+`tests/` is not a frontier of its own: a test is read as part of the
+neighborhood of the module it exercises, and a test-only finding files against
+that module.
 
-The procedure is the package's (`spec/harness.md`, *The sweep procedure*);
-this page carries it only until the sweep prompt does. The interactive
-session that confirms the shipped prompt trims this page to this repo's
-domain and *Standing lenses*.
-
-## The pages are the authority as they read this tick
-
-The sweep domain is `src/`, `harness/`, `bin/`, `examples/`, `scripts/`
-(the last three are build surface no typecheck reads, so the sweep is their
-only lens). `tests/` is not a frontier of its own: a test is read as part of
-the neighborhood of the module it exercises, and a test-only finding files
-against that module. The posture pages
-are `.claude/rules/engineering.md` and `.claude/rules/engine-boundary.md`.
-
-Every section of those pages, as written at this tick, is in scope. Nothing
-is swept from a remembered list. A ratified phrase change applies from the
-next rotation forward — it never reopens a stamped window.
-
-This page is procedure, not a posture page, and it is deliberately left off
-the declared list: a lens edited here reaches every neighborhood swept after
-the edit and reopens none already covered. Arming the whole domain for a
-lens would price every wording change at a full rotation, which is the cost
-this page exists to keep off the loop. Root config and the declaration are
-likewise outside the domain; a finding there arrives through the inbox.
-
-## The frontier is decidable; the neighborhood is judged
-
-Three delta kinds arm the sweep. The first two are read off `git log
---name-only` forward from the stamp — no file reads:
-
-- A **code delta** puts the window's touched modules in the frontier.
-- A **phrase delta** — the window touched a posture page itself — puts
-  **every module across the sweep domain** in the frontier, because a changed
-  phrase has been applied to nothing yet.
-- A **retired-claim delta** — the window touched `spec/` — is read off the
-  spec diff's *deleted* lines. A sentence the spec no longer states is a
-  claim every doc comment, `docs/` page, and README section may still
-  assert. For this delta alone the domain widens to `docs/` and `README.md`,
-  and the frontier is every site a search for the deleted claim's key
-  phrases turns up — a text search is the right tool here, because the
-  finding is prose, not a symbol. A tick that searched the deleted lines advances the **retired-claim cursor** through the commits that deleted them, so the delta shrinks as the frontier does and a claim is searched once per rotation; no hits closes it in one tick.
-
-A tick sweeps **neighborhoods** — one frontier module read together with
-its immediate imports, then the next — until its budget line says to put the
-rotation down (`spec/harness.md`, *A tick puts work down*), and records every
-frontier module it read as **covered** in the plan state before it does. The
-budget is the bound, not a count: a rotation armed by a phrase delta is the
-whole domain, and one module per tick prices it at a hundred ticks.
-
-Covered is settled for the window. A later tick never re-sweeps or re-draws
-it, even where fresh judgment would cut the boundary differently — the cursor
-decides coverage, never re-derivation.
-
-## The sweep runs beside build, never ahead of it
-
-The sweep is its own worker: an armed or open rotation makes the slice live,
-and it runs whenever the supervisor's budget has room, while build ships
-beside it. Nothing about pickable work stops a neighborhood being swept, and
-nothing about a sweep holds build — the entry claim and the ship lock are what
-keep the two off each other (`spec/harness.md`, *The phases*). Declared phase
-order is the tiebreak when the budget is short, and the sweep is declared last
-among the plan slices for exactly this reason.
-
-**Why:** the sweep is insurance; shipped entries are the product. Insurance
-that costs the product nothing is scheduled; insurance scheduled ahead of the
-product inverts the loop's economics.
-
-## The rotation closes when the frontier empties
-
-Untouched modules never enter the frontier, so a quiet tree closes in one
-tick, never one tick per skip. **Quiet-on-clean is the normal verdict**,
-recorded by advancing the stamp alone.
-
-An armed or open rotation is a live plan job: the chain keeps the sweep
-slice live while the plan state's rotation is open or commits
-past the stamp touch the domain; when it runs is the budget's (above).
-Hibernation is the empty frontier's verdict alone.
-
-## A violation counts only when verified on disk this tick
-
-Cited by symbol and line. A finding read off a remembered impression, a
-commit message, or a prior tick's note does not count.
+This page is deliberately not a declared posture page: Claude Code loads it
+into every tick, so a lens edited here reaches every neighborhood swept after
+the edit and reopens none already covered, where declaring it would price
+every wording change at a full rotation. Root config and the declaration are
+outside the domain; a finding there arrives through the inbox.
 
 ## Standing lenses
 
@@ -130,54 +56,3 @@ these. Each is a bulleted lead so a cite can name it.
   references (`code-navigation.md`) — never a plain no-hits. A host without
   the instrument leaves the finding unmade and says so (`engineering.md`,
   *An export earns its consumer*).
-
-## Routing
-
-The filing bar is **correctness-adjacency**: a finding becomes a queue
-entry only when the defect can change behavior, hide a failure, or leave a
-vacuous verdict over load-bearing machinery.
-
-- Correctness-adjacent, purely mechanical fix → a **pending entry**, `per`
-  citing the owning section of the posture page.
-- A cohesion finding — a module carrying a second job, a job with no file,
-  a helper or vocabulary spelled three ways, a sequence copied across legs
-  (`engineering.md`, *A module is one job*) → an **accepted-debt line**,
-  like any other shape, unless the shape can change behavior or hide a
-  failure, in which case it is the correctness-adjacent entry above. The
-  three-notes rule below is how a persistent cohesion family reaches the
-  queue: once, naming the target shape, in a wave of its own.
-- Pure shape — duplication, narration drift, style, a vacuity whose subject
-  is not load-bearing → an **accepted-debt line in the plan commit body**.
-  A later rotation re-noting the same debt is cheaper than a queue that
-  grows faster than build drains it — until the re-note is itself the
-  recurring cost. **A shape family accepted as debt in three plan commit
-  bodies is filed once**: a single entry `per` this section that claims no
-  property (no `tests[]`, no `pins[]`), names every site in `files`, and
-  ships in a wave of its own. The count is read off `git log` over every
-  plan commit body, unbounded and never estimated, for the reason
-  `spec/harness.md`, *The phases* gives: it self-terminates, since a filed
-  family stops being re-noted, and a window is how a family re-noted once
-  per rotation never files; below it, shape stays out of the queue.
-- Needs a design decision → an **open question**, naming the section and the
-  fork.
-- A defect no section of the posture pages covers → an **open question
-  proposing the section**: the site, the shape, and the sentence that would
-  have named it. The pages are build's input as well as the sweep's lens, so
-  a gap in them recurs in every tick until a human writes the rule; the site
-  rides the question, since no section exists for an entry's `per` or a debt
-  line to cite.
-
-Never file against a divergence the site declares and cites as deliberate.
-
-## The stamp
-
-The plan state carries two sweep cursors: the stamp, and the retired-claim cursor a tick advances on its own as it searches. While a rotation is open the frontier is re-derived each tick from the stamp against the live tip, so
-a commit landing mid-rotation joins the frontier at the next tick rather than
-waiting for the next rotation; a module already covered stays covered for the
-rotation, whatever lands on it after. The rendered window names the tip it
-was drawn from, and the tick that closes the rotation stamps exactly that
-tip — never a sha it rediscovered itself. The cursor is **copied forward
-verbatim** on every other plan tick.
-
-The job re-arms when commits past the stamp touch the sweep domain or a
-posture page.
