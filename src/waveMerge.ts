@@ -916,6 +916,7 @@ async function carryBatch(
       base,
       head,
       entry: r.entry,
+      steps: r.steps,
       stake: async () => {
         // spec/loop.md "Crash equals stop": each span's marker goes down before
         // its own pick, so a death anywhere inside the batch leaves a marker
@@ -1046,6 +1047,10 @@ async function carrySpan(
     base: r.spanBase,
     head: r.headSha,
     entry: r.entry,
+    // The slot's own listing of the entry's steps, already in hand for the
+    // ship consult below: the gates over this span judge one session, and the
+    // session's footprint is both (`GateContext.steps`, `src/Gate.ts`).
+    steps: r.steps,
     ref,
     checkpoint: w.checkpoint,
     stake: async () => {

@@ -772,7 +772,11 @@ async function runAfterCommitGates(
         commitSha,
         touchedPaths: spanTouchedPaths,
         baseSha: spanBase,
-        ...(assignedEntry ? { entry: assignedEntry } : {}),
+        // The entry and its steps together, or neither: the pair is the
+        // session's whole assignment, so a gate judging the span against the
+        // declaration reads the same footprint the write guard below was
+        // scoped from (`GateContext.steps`, `src/Gate.ts`).
+        ...(assignedEntry ? { entry: assignedEntry, steps: assignedSteps } : {}),
         log: (l) => ctx.log.info(l),
       },
       ctx,

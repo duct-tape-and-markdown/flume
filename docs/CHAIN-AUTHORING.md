@@ -976,13 +976,21 @@ says so below.
   its extension declares — rather than to the phase's uniform bar alone. The
   engine reads none of those fields; a gate reads them back through the
   chain's own extension schema.
+- `steps` — that entry's steps, every descendant of it in the queue the
+  selection read, in that listing's own order. It travels with `entry`:
+  absent on a singleton tick, `[]` for an entry no producer decomposed. The
+  span is one *session's*, and a session's footprint is the entry's `files`
+  and its steps' together — the union the write guard scopes a fanout tick
+  to, and the same listing `assignedSteps` renders to the agent (§1) — so a
+  gate judging a commit against its declaration reads both halves here. It cannot walk for the second: a gate is handed one entry and
+  no queue.
 - `batch` — set only when one merge carried several spans, and only for a
   gate that declared it reads one
   ([*Reading a batched merge*](#reading-a-batched-merge)). One record per
   span, in the order they were picked, each carrying that span's own
-  `entry`, `commitSha`, `baseSha`, `landedOnSha` and `touchedPaths`. Absent
-  everywhere else, which is every merge until a chain raises
-  `supervisorPolicy.mergeBatch` (§9).
+  `entry`, `steps`, `commitSha`, `baseSha`, `landedOnSha` and
+  `touchedPaths`. Absent everywhere else, which is every merge until a chain
+  raises `supervisorPolicy.mergeBatch` (§9).
 - `log` — the harness-side output channel. A gate does not write to stdout
   itself.
 

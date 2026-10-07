@@ -227,6 +227,14 @@ export async function carryMergeSpan(carry: {
    * which has no entry at all.
    */
   entry?: PendingEntry;
+  /**
+   * That entry's steps, as the queue listing its slot pulled from held them
+   * (`GateContext.steps`, `src/Gate.ts`). Stated by every leg that states an
+   * {@link entry} — an entry no producer decomposed states the empty list —
+   * and absent with it, so what reaches the gates is the leg's own account of
+   * the session's assignment rather than a default invented here.
+   */
+  steps?: readonly PendingEntry[];
   /** Where a gate revert's prior-attempt record lands (`priorAttemptRef`, `src/priorAttempts.ts`). */
   ref: PriorAttemptRef;
   /** This carrier's {@link BystanderCheckpoint}, updated in place when this span is the one that takes it. */
@@ -278,6 +286,10 @@ export async function carryMergeSpan(carry: {
       commitSha: mergedSha,
       touchedPaths,
       ...(carry.entry ? { entry: carry.entry } : {}),
+      // The entry's steps beside it: one span is one session, and a session's
+      // footprint is the entry's declaration and its steps' together
+      // (`GateContext.steps`, `src/Gate.ts`).
+      ...(carry.steps ? { steps: carry.steps } : {}),
       // The span's own base, not the tip it landed on: an `afterMerge` gate
       // reading trunk needs the tip its agent branched from to tell an input
       // the span ignored from one that landed after it started
@@ -376,6 +388,8 @@ interface BatchSpanInput {
   head: string;
   /** The entry this span carries, for the batch's gates to read as its own ({@link GateBatchSpan}). */
   entry?: PendingEntry;
+  /** That entry's steps, on {@link carryMergeSpan}'s terms — stated with {@link entry} and absent with it. */
+  steps?: readonly PendingEntry[];
   /** This span's stake window, on {@link carryMergeSpan}'s terms — before its own pick, never the batch's first. */
   stake?: () => Promise<void>;
   /** The words this span's own pick is reported in. */
@@ -517,6 +531,7 @@ export async function carryMergeBatch(carry: {
     landed.push(picked);
     gateSpans.push({
       ...(span.entry ? { entry: span.entry } : {}),
+      ...(span.steps ? { steps: span.steps } : {}),
       commitSha: picked.mergedSha,
       baseSha: span.base,
       landedOnSha: picked.landedOnSha,

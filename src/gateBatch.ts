@@ -68,9 +68,10 @@ export function mergeBatchWidth(chain: Chain, phase: Phase): number {
  *   a path two spans edited is named once and a path-keyed gate still sees
  *   every edit in the tree it is reading.
  *
- * `entry`, `baseSha` and `landedOnSha` are withheld by the shape itself
- * ({@link BatchGateContext}), so there is no last-pick value for a gate to
- * read as the batch's.
+ * `entry`, `steps`, `baseSha` and `landedOnSha` are withheld by the shape
+ * itself ({@link BatchGateContext}), so there is no last-pick value for a gate
+ * to read as the batch's — an assignment least of all, since the entry a
+ * path-keyed gate would read it for is one of N the merge carried.
  *
  * An empty batch throws rather than composing a context with no tip: a merge
  * that carried no span runs no gate, so reaching here with none is the

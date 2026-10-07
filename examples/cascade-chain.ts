@@ -239,11 +239,21 @@ const inWords = (s: SpanShape): string =>
  * the three classes *mean* about the tree is nobody's rule but this chain's,
  * so the judgement lives here. Every fact it needs is one the engine already
  * reported on `GateContext` (spec/chain.md, *What a gate receives*) and none
- * is re-derived: `entry` is the pick the span was provisioned for,
- * `touchedPaths` is what the commit changed, `baseSha` is the tip the tick
- * branched from — the one value that separates "the tick created this" from
- * "it was already there", and the reason this gate never shells its own
- * `git merge-base` or guesses the base from a worktree path.
+ * is re-derived: `entry` is the pick the span was provisioned for, `steps` is
+ * the rest of that one session's assignment, `touchedPaths` is what the commit
+ * changed, `baseSha` is the tip the tick branched from — the one value that
+ * separates "the tick created this" from "it was already there", and the
+ * reason this gate never shells its own `git merge-base` or guesses the base
+ * from a worktree path.
+ *
+ * **The declaration judged is the session's, not the entry's alone.** A span
+ * is provisioned for a `work` entry *and its steps*, and the engine fenced it
+ * to the union of their `files`, so a session that spent its tick on a step's
+ * paths touched its own declaration and nothing of its parent's. Reading
+ * `entry.files` alone would refuse exactly that span — a gate narrower than
+ * the fence the same engine handed the agent. The steps arrive on the context
+ * beside the entry, and a gate could not walk for them: it holds one entry and
+ * no queue.
  *
  * Only declared paths the span actually touched are judged — a deliberate
  * narrowing, declared here with the refusal that bounds it
@@ -282,11 +292,19 @@ export function declaredFilesGate(
       }
       const { baseSha, commitSha, touchedPaths } = ctx;
       const span = `${baseSha.slice(0, 7)}..${commitSha.slice(0, 7)}`;
-      const declared = new Map<string, DeclaredKind>([
-        ...entry.files.new.map((f) => [f.path, "new"] as const),
-        ...entry.files.edit.map((f) => [f.path, "edit"] as const),
-        ...entry.files.retire.map((p) => [p, "retire"] as const),
-      ]);
+      // The session's whole declaration: the entry's own classes and its
+      // steps', which is the union the engine fenced the tick to
+      // (`GateContext.steps`). Keyed by path, so a path two of the session's
+      // entries both name is judged once, under the last of them in listing
+      // order — this gate judges the span against the queue, and a path
+      // declared twice within one session is the queue's own defect.
+      const declared = new Map<string, DeclaredKind>(
+        [entry, ...(ctx.steps ?? [])].flatMap((e) => [
+          ...e.files.new.map((f) => [f.path, "new"] as const),
+          ...e.files.edit.map((f) => [f.path, "edit"] as const),
+          ...e.files.retire.map((p) => [p, "retire"] as const),
+        ]),
+      );
       const judged = touchedPaths.filter((p) => declared.has(p));
       if (judged.length === 0) {
         if (declared.size === 0) {
@@ -294,12 +312,12 @@ export function declaredFilesGate(
             ok: true,
             message: `${entry.tag}: declares no files, so the span ${span} has no class to judge`,
             skipped:
-              "an entry with an empty files declaration contradicts nothing",
+              "an entry whose own files declaration and its steps' are both empty contradicts nothing",
           };
         }
         return {
           ok: false,
-          message: `${entry.tag}: the span ${span} touched none of the ${declared.size} path(s) the entry declared`,
+          message: `${entry.tag}: the span ${span} touched none of the ${declared.size} path(s) the entry and its steps declared`,
           details: [
             "The commit ships the entry, so a declaration met by nothing retires unmet work. Produce the declared paths, or leave the entry for plan to re-file:",
             ...[...declared].map(([path, kind]) => `- ${path}: declared ${kind}, untouched`),

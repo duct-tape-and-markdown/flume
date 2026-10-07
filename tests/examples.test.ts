@@ -1885,9 +1885,21 @@ describe("cascade-chain.ts — the entry's file classes are judged against the s
     files: { new: [], edit: [], retire: [], ...files },
   });
 
+  /** A step of {@link TAG}, declaring its own file the way any entry does. */
+  const stepDeclaring = (
+    tag: string,
+    files: Partial<PendingEntry["files"]>,
+  ): PendingEntry => ({
+    ...entryDeclaring(files),
+    tag,
+    kind: "step",
+    parent: TAG,
+  });
+
   const ctxFor = (
     entry: PendingEntry | undefined,
     touchedPaths: string[],
+    steps?: PendingEntry[],
   ): GateContext => ({
     cwd: "/nonexistent/declared-files-fixture",
     repoRoot: "/nonexistent/declared-files-fixture",
@@ -1900,7 +1912,7 @@ describe("cascade-chain.ts — the entry's file classes are judged against the s
     commitSha: TIP,
     log: () => {},
     touchedPaths,
-    ...(entry ? { entry } : {}),
+    ...(entry ? { entry, steps: steps ?? [] } : {}),
   });
 
   it("the cascade example's gate reads the entry tag and the span's base sha from its gate context", async () => {
@@ -2029,6 +2041,57 @@ describe("cascade-chain.ts — the entry's file classes are judged against the s
     expect(partial.message).toContain("1 declared path(s)");
     expect(partial.skipped).toBeUndefined();
     expect(reader.asked.map((a) => a.path)).toEqual(["src/kept.ts", "src/kept.ts"]);
+  });
+
+  it("the example declared-files gate passes a span that touched only a step's declared files", async () => {
+    // A span is one session's: the `work` entry it was provisioned for and
+    // its steps, fenced to the union of their `files`
+    // (`GateContext.steps`, `src/Gate.ts`). A session that spent its tick on
+    // a step's paths met its own declaration and nothing of its parent's, so
+    // a gate reading `entry.files` alone refuses a commit the engine's own
+    // fence allowed.
+    const reader = readerOver({
+      [BASE]: ["src/parent.ts"],
+      [TIP]: ["src/parent.ts", "src/step-born.ts"],
+    });
+    const gate = declaredFilesGate(reader.read);
+    const entry = entryDeclaring({
+      edit: [{ path: "src/parent.ts", description: "the entry's own file" }],
+    });
+    const steps = [
+      stepDeclaring("STEP-OF-FIXTURE", {
+        new: [{ path: "src/step-born.ts", description: "the step's file" }],
+      }),
+    ];
+
+    const green = await gate.run(ctxFor(entry, ["src/step-born.ts"], steps));
+
+    // The step's path was judged — under its own `new` class, against both
+    // ends of the span — rather than skipped past: a green that read nothing
+    // would report the same `ok` the zero-judged refusal exists to prevent.
+    expect(green.ok, green.message).toBe(true);
+    expect(green.message).toContain("1 declared path(s)");
+    expect(green.skipped).toBeUndefined();
+    expect(reader.asked).toEqual([
+      { ref: BASE, path: "src/step-born.ts" },
+      { ref: TIP, path: "src/step-born.ts" },
+    ]);
+
+    // And the steps are folded into the declaration, not swapped for it: the
+    // same session's commit misfiling a step's path is still refused, and the
+    // refusal counts every path the session declared.
+    const misfiled = await gate.run(
+      ctxFor(entry, ["src/parent.ts"], [
+        stepDeclaring("STEP-OF-FIXTURE", {
+          new: [{ path: "src/parent.ts", description: "claims to create it" }],
+        }),
+      ]),
+    );
+    expect(misfiled.ok).toBe(false);
+    expect(misfiled.details).toContain("src/parent.ts: declared new");
+    const untouched = await gate.run(ctxFor(entry, ["docs/elsewhere.md"], steps));
+    expect(untouched.ok).toBe(false);
+    expect(untouched.message).toContain("2 path(s)");
   });
 });
 
