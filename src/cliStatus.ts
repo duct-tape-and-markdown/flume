@@ -42,8 +42,23 @@ export async function statusVerb(paths: FlumePaths): Promise<number> {
   // and reported at `main`'s arm, so this needs no guard of its own for it;
   // the loop-lock and tip-claim reads below guard their own files, which that
   // refusal says nothing about.
-  const awake = new Baton(flumeDir).awake();
+  const baton = new Baton(flumeDir);
+  const awake = baton.awake();
   console.log(awake.length ? `awake: ${awake.join(", ")}` : "hibernating");
+  // spec/cli.md "`flume status` owes exactly this", line 1: the operator's
+  // own end of the baton, on a line of its own rather than folded into the
+  // awake list. The two sets are independent — a hold outranks a flag and
+  // neither implies the other — so one line naming both could not say which
+  // marker stood for which phase.
+  //
+  // Absent is silence, like every other row here: no hold directory, or one
+  // standing empty, is no hold at all. A directory that is present and will
+  // not read refuses through the read itself and is reported at `main`'s arm
+  // (`src/cli.ts`), because a hold printed as absent is the one wake the
+  // operator asked the loop not to take (`.claude/rules/engineering.md`,
+  // *Loud or nothing*).
+  const held = baton.held();
+  if (held.length) console.log(`held: ${held.join(", ")}`);
   // Surface supervisor liveness beside the awake markers — the 2026-07-29
   // incident's "hibernating" reading left the operator to infer
   // relaunch-safety instead of being told it. No pidfile: silent, leaving

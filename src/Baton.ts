@@ -71,13 +71,13 @@ interface MarkerDir {
 /**
  * Filesystem-marker mechanism for which phases wake next. Presence of
  * `<flumeDir>/awake/<name>` wakes the named phase on the next tick; absence
- * sleeps it. Idempotent — wake/sleep/hold tolerate repeated calls and missing
+ * sleeps it. Idempotent — wake/sleep/hold/unhold tolerate repeated calls and missing
  * markers so concurrent ticks and partial crashes don't corrupt state.
  *
  * Beside the flags, the hold markers under `<flumeDir>/held` — the operator's
  * end of the baton. A hold is not a flag: it wakes nothing and never empties
  * the baton, and what it does is outrank a handoff's wake of the phase it
- * names ({@link hold}, {@link held}, {@link isHeld}).
+ * names ({@link hold}, {@link unhold}, {@link held}, {@link isHeld}).
  *
  * A flag is a **queue of depth one**, not a level: each {@link wake} writes a
  * fresh {@link BatonToken}, and a tick that read a token at its start sleeps
@@ -366,6 +366,30 @@ export class Baton {
       markers.entrySubject,
       join(markers.dir, name),
       "",
+    );
+  }
+
+  /**
+   * Idempotent, unconditional: remove the hold marker if one stands.
+   *
+   * The operator's own undo, and only theirs — `flume wake <phase>` clears
+   * the hold, wakes the phase and says it did, while a handoff's wake never
+   * reaches here: the hold is the operator's, and the wake a handoff performs
+   * is not the verb (`spec/loop.md`, *Baton — presence wakes, absence
+   * hibernates*).
+   *
+   * A removal is a write of the directory holding the marker, so a marker
+   * that is there and will not go refuses in the write's own direction, the
+   * disposition {@link sleep} takes over a flag: a hold reported cleared and
+   * still on disk is every later wake of that phase declined over an intent
+   * the operator has already withdrawn.
+   */
+  unhold(name: string): void {
+    const markers = this.holdMarkers;
+    removeUnderStateRoot(
+      this.stateRoot,
+      markers.entrySubject,
+      join(markers.dir, name),
     );
   }
 

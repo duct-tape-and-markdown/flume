@@ -20,6 +20,7 @@ const SUBCOMMANDS = [
   "loop",
   "wake",
   "sleep",
+  "hold",
   "stop",
   "log",
   "check",
@@ -397,7 +398,7 @@ function readOnlyRootRefusal(indent: number): string {
 
 /**
  * The whole `74` row for a verb whose refusals under the state root are all
- * of them — `wake`, `sleep`, `stop`.
+ * of them — `wake`, `sleep`, `hold`, `stop`.
  */
 function sharedRootRow(indent: number): string {
   return exitCodeRow(74, [SHARED_ROOT_ONLY_LEAD, SHARED_ROOT_CLAUSE], indent);
@@ -557,6 +558,11 @@ Commands:
   loop [--max N]      Run ticks until hibernation (default cap ${DEFAULT_TICK_BUDGET}).
   wake <phase>        Mark <phase> awake (touch .flume/awake/<phase>).
   sleep <phase>       Mark <phase> hibernating (remove .flume/awake/<phase>).
+  hold <phase>        Hold <phase>: remove .flume/awake/<phase> and write
+                      .flume/held/<phase>. A handoff's wake of a held phase is
+                      declined, and neither the supervisor nor a bare tick
+                      runs it; tick --phase still does, and wake clears the
+                      hold.
   stop                Write .flume/stop and print what happens next: a live
                       supervisor finishes its in-flight tick then ends the
                       run; the next loop refuses to start until the flag is
@@ -594,8 +600,10 @@ Run \`flume <command> --help\` — or \`flume help <command>\`, or \`flume --hel
 const HELP_SUB: Record<Subcommand, string> = {
   status: `Usage: flume status
 
-Print baton state: awake phases (or "hibernating" if none), then, when
-.flume/loop.pid exists, supervisor liveness ("supervisor pid N live" or
+Print baton state: awake phases (or "hibernating" if none), then, when any
+phase is held, the held phases on a line of their own ("held: <phase>,
+<phase>", read from .flume/held/; nothing held prints nothing extra), then,
+when .flume/loop.pid exists, supervisor liveness ("supervisor pid N live" or
 "loop.pid present, process dead — stale"; no pidfile prints nothing extra),
 then, when .flume/run-end.json exists, how the last run that ended under
 this root ended ("last run end: <reason> at <instant>", the reason and time
@@ -757,6 +765,27 @@ Exit codes:
   0   Success (no-op if already hibernating).
   2   Missing <phase> argument, an extra positional past <phase>, or <phase>
       names a phase the loaded chain does not declare.
+      ${rootResolutionUsageRefusal(6)}
+${sharedRootRow(6)}
+`,
+  hold: `Usage: flume hold <phase>
+
+Hold <phase>, the operator's own end of the baton: remove .flume/awake/<phase>
+and write .flume/held/<phase>. While the hold stands, a handoff's wake of that
+phase is declined and reported on the tick verdict with its reason, and
+neither \`flume loop\`'s supervisor nor a bare \`flume tick\` runs the phase —
+\`flume tick --phase <phase>\` does, as the operator's own explicit action.
+\`flume wake <phase>\` removes the hold, wakes the phase and says it did; a
+handoff never removes one. Idempotent — a repeat call stands the same marker
+up and prints the same statement. Validated and reported exactly as \`wake\`
+is: the same best-effort chain load against the chain's declared phases, the
+same stderr report on a chain that will not load.
+
+Exit codes:
+  0   Success — including when the hold already stood, and when no awake flag
+      stood to clear.
+  2   Missing <phase> argument, an extra positional past <phase>, or <phase>
+      names a phase the loaded chain does not declare. No marker is written.
       ${rootResolutionUsageRefusal(6)}
 ${sharedRootRow(6)}
 `,

@@ -208,6 +208,10 @@ Harness-managed state — every name here is one the runtime spells itself
 (`STATE_ROOT_NAMES` and the accessors in `src/paths.ts`):
 
 - `.flume/awake/<phase>` — baton flag files. Presence = phase is awake.
+- `.flume/held/<phase>` — hold markers, the operator's end of the baton:
+  `flume hold <phase>` writes one and clears the phase's flag, `flume wake`
+  removes it. A hold outranks a handoff's wake, so a handoff never removes
+  one.
 - `.flume/plan/pending/<tag>.json` — structured handoff between plan and
   build, one file per entry so two producers and a ship merge without a
   conflict. This is the default location; a chain moves the directory with

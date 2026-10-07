@@ -273,6 +273,7 @@ async function dispatch(): Promise<number> {
   if (cmd === "status") return statusVerb(paths);
   if (cmd === "wake") return batonVerb(paths, rest, "wake");
   if (cmd === "sleep") return batonVerb(paths, rest, "sleep");
+  if (cmd === "hold") return batonVerb(paths, rest, "hold");
   if (cmd === "stop") return stopVerb(paths, rest);
   if (cmd === "log") return logVerb(paths, rest);
   if (cmd === "check") return checkVerb(paths, rest);

@@ -932,6 +932,7 @@ const VERB_ARGV: Record<string, readonly string[]> = {
   loop: ["loop", "--max", "1"],
   wake: ["wake", "probe"],
   sleep: ["sleep", "probe"],
+  hold: ["hold", "probe"],
   stop: ["stop"],
   log: ["log"],
   check: ["check"],

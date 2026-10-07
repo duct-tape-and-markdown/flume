@@ -1,18 +1,19 @@
 /**
  * The verbs whose whole effect is a marker under the state root and a
- * sentence about it — `flume wake`, `flume sleep` and `flume stop`
- * (spec/cli.md, *Subcommand surface*).
+ * sentence about it — `flume wake`, `flume sleep`, `flume hold` and
+ * `flume stop` (spec/cli.md, *Subcommand surface*).
  *
  * One file because that is one job: each takes no flags, writes one path, and
- * prints what it wrote. `wake` and `sleep` are the same sequence under two
- * names, so they are one function with a table of the two differences
- * (`.claude/rules/engineering.md`, *A module is one job*) — a validation arm
- * added to one of them cannot go missing from the other.
+ * prints what it wrote. `wake`, `sleep` and `hold` are the same sequence
+ * under three names, so they are one function with a table of what separates
+ * them (`.claude/rules/engineering.md`, *A module is one job*) — a validation
+ * arm added to one of them cannot go missing from the others.
  *
- * The file is the interface in every case: `touch <flumeDir>/awake/<phase>`
- * and `touch <flumeDir>/stop` are equally the mechanism (spec/loop.md,
- * *Baton — presence wakes, absence hibernates*; *Graceful stop — the stop
- * flag*). These verbs are discoverability plus a printed statement.
+ * The file is the interface in every case: `touch <flumeDir>/awake/<phase>`,
+ * `touch <flumeDir>/held/<phase>` and `touch <flumeDir>/stop` are equally the
+ * mechanism (spec/loop.md, *Baton — presence wakes, absence hibernates*;
+ * *Graceful stop — the stop flag*). These verbs are discoverability plus a
+ * printed statement.
  */
 
 import { Baton } from "./Baton.js";
@@ -26,7 +27,7 @@ import {
 } from "./stateRootAccess.js";
 
 /**
- * `wake`/`sleep`'s best-effort chain load: a missing or broken chain must
+ * The mutating verbs' best-effort chain load: a missing or broken chain must
  * never block the marker mutation — there is nothing to validate the phase
  * name against. Only a chain that loads *successfully* and does not declare
  * `phase` among its `chain.phases` refuses. Reached with `configDir`,
@@ -38,7 +39,7 @@ import {
  * surfaces use, so a chain that throws is named on stderr here too rather
  * than swallowed by a second bare catch beside it
  * (`.claude/rules/engineering.md`, "The fix lands at the mechanism"). The
- * cost `wake`/`sleep` pay is its own — not a rebased pending count, but a
+ * cost these verbs pay is its own — not a rebased pending count, but a
  * phase name nothing checked.
  */
 async function chainRefusesPhase(
@@ -56,18 +57,75 @@ async function chainRefusesPhase(
   return !chain.phases.some((p) => p.name === phase);
 }
 
-/** What separates `wake` from `sleep`: the mutation, and the word for it. */
+/**
+ * What separates `wake`, `sleep` and `hold`: the markers the verb moves, the
+ * word for what it did, and — where it moved a second marker the operator did
+ * not name — the clause that says so.
+ *
+ * `hold` is a row here and not a fourth spelling: the usage read, the chain
+ * validation and the printed sentence are the same sequence for all three
+ * (`.claude/rules/engineering.md`, *A module is one job*).
+ *
+ * The clause is what makes these verbs each other's undo readable. Two
+ * markers decide one phase — the flag under `awake/` and the hold under
+ * `held/` — and the verb that stands one up puts the other down, so a
+ * sentence naming only the marker the operator typed leaves the other move
+ * unreported. `undefined` is the honest silence: the second marker was not
+ * standing, so this call moved nothing but its own.
+ */
 const BATON_MUTATIONS = {
-  wake: { apply: (baton: Baton, phase: string) => baton.wake(phase), said: "woke" },
-  sleep: { apply: (baton: Baton, phase: string) => baton.sleep(phase), said: "slept" },
+  wake: {
+    said: "woke",
+    apply: (baton: Baton, phase: string): string | undefined => {
+      // Read before the clear, because the clause states what *this* call
+      // changed: `flume wake <phase>` removes the hold, wakes the phase and
+      // says it did (`spec/loop.md`, *Baton — presence wakes, absence
+      // hibernates*), and a wake over an unheld phase has nothing to say
+      // about a hold.
+      const wasHeld = baton.isHeld(phase);
+      // The hold goes down first and the flag up second, so no instant has
+      // this phase carrying a flag under a standing hold. That state is one
+      // the pick and the handoff's wake filter already decline — a handoff
+      // whose own check lost the race with a marker write, `Baton.hold`
+      // (`src/Baton.ts`) — and a verb that produced it on purpose would be
+      // asking those readers to distinguish a race from an operator's
+      // intent. The gap this order leaves instead is a phase
+      // neither held nor awake, which every reader of the baton already
+      // spells "nothing to run".
+      if (wasHeld) baton.unhold(phase);
+      baton.wake(phase);
+      return wasHeld ? "hold cleared" : undefined;
+    },
+  },
+  sleep: {
+    said: "slept",
+    apply: (baton: Baton, phase: string): string | undefined => {
+      baton.sleep(phase);
+      return undefined;
+    },
+  },
+  hold: {
+    said: "held",
+    apply: (baton: Baton, phase: string): string | undefined => {
+      const wasAwake = baton.isAwake(phase);
+      // Marker first, flag second, for the reason `Baton.hold`
+      // (`src/Baton.ts`) states: no window leaves the phase pickable with the
+      // operator's intent recorded nowhere.
+      baton.hold(phase);
+      baton.sleep(phase);
+      return wasAwake ? "awake flag cleared" : undefined;
+    },
+  },
 } as const;
 
 /** Which marker mutation a call of {@link batonVerb} performs. */
 type BatonMutation = keyof typeof BATON_MUTATIONS;
 
 /**
- * `flume wake <phase>` and `flume sleep <phase>`: exactly one positional, the
- * phase validated against the chain where one loads, then the marker.
+ * `flume wake <phase>`, `flume sleep <phase>` and `flume hold <phase>`:
+ * exactly one positional, the phase validated against the chain where one
+ * loads, then the markers, then the sentence naming every marker this call
+ * moved.
  */
 export async function batonVerb(
   paths: FlumePaths,
@@ -86,8 +144,8 @@ export async function batonVerb(
     return 2;
   }
   const { apply, said } = BATON_MUTATIONS[mutation];
-  apply(new Baton(paths.flumeDir), phase);
-  console.log(`${said} ${phase}`);
+  const also = apply(new Baton(paths.flumeDir), phase);
+  console.log(also === undefined ? `${said} ${phase}` : `${said} ${phase} — ${also}`);
   return 0;
 }
 

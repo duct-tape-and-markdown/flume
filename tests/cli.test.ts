@@ -52,6 +52,7 @@ import {
   awakeDir,
   computeStateRootRel,
   DEFAULT_PENDING_REL,
+  heldDir,
   loopLockPath,
   renderedPromptsDir,
   resolvePendingDir,
@@ -2008,6 +2009,186 @@ describe("flume wake/sleep — a chain that fails to load (WAKE-SLEEP-CHAIN-LOAD
         expect(existsSync(join(repo.dir, ".flume", "awake", "probe"))).toBe(
           false,
         );
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+});
+
+/**
+ * THE-HOLD-VERB-IS-THE-OPERATORS-END-OF-THE-BATON — `flume hold <phase>`
+ * stands up the marker the pick and the handoff's wake filter already decline
+ * on, and `flume wake <phase>` is its undo (`spec/loop.md`, *Baton — presence
+ * wakes, absence hibernates*). Two markers decide one phase, so each case
+ * below reads **both** off disk after the verb ran, and reads the sentence the
+ * verb printed about the one the operator did not type: a verb that moved the
+ * second marker silently is a hold an operator believes is still standing.
+ *
+ * Driven through the real process rather than the class, because the claim is
+ * the verb's — the argv read, the dispatch arm, the marker writes and the
+ * printed line (`.claude/rules/engineering.md`, *A seam gate reads what the
+ * real writer wrote*).
+ */
+describe("flume hold (spec/cli.md §Subcommand surface)", () => {
+  it(
+    "flume hold removes the phase's awake flag and writes its held marker",
+    async () => {
+      const repo = await makeScratchRepo("flume-hold-verb-", "main");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+        const flumeDir = join(repo.dir, ".flume");
+        const baton = new Baton(flumeDir);
+
+        // The control the claim rests on: the flag this verb is about really
+        // stood first, so "removes" names a move rather than a state the
+        // fixture started in (`.claude/rules/engineering.md`, *A green verdict
+        // is proven non-vacuous*).
+        const woke = await runCli(repo.dir, ["wake", "probe"]);
+        expect(woke.code, woke.out).toBe(0);
+        expect(existsSync(join(awakeDir(flumeDir), "probe"))).toBe(true);
+        expect(baton.isHeld("probe")).toBe(false);
+
+        const held = await runCliStreams(repo.dir, ["hold", "probe"]);
+
+        expect(held.code, held.stderr).toBe(0);
+        // Both markers, both directions: the one the verb wrote and the one it
+        // cleared, each read as the file the next tick's baton will read.
+        expect(existsSync(join(heldDir(flumeDir), "probe"))).toBe(true);
+        expect(baton.isHeld("probe")).toBe(true);
+        expect(existsSync(join(awakeDir(flumeDir), "probe"))).toBe(false);
+        expect(baton.isAwake("probe")).toBe(false);
+        // And the line names the move the operator did not type. The whole
+        // line, because the clause is the claim: a `toContain` over the verb
+        // word alone would pass on a sentence that reported one marker.
+        expect(held.stdout.trim()).toBe("held probe — awake flag cleared");
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it(
+    "flume wake clears a hold and says it did",
+    async () => {
+      const repo = await makeScratchRepo("flume-hold-verb-", "main");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+        const flumeDir = join(repo.dir, ".flume");
+        const baton = new Baton(flumeDir);
+
+        const held = await runCliStreams(repo.dir, ["hold", "probe"]);
+        expect(held.code, held.stderr).toBe(0);
+        // Non-vacuity: the hold this case clears was standing, and nothing
+        // was awake, so the hold is the only marker the wake below can move
+        // besides its own.
+        expect(baton.isHeld("probe")).toBe(true);
+        // A hold over a phase that was never awake has no flag to clear, so
+        // the verb's own line carries no second clause. Read as the whole
+        // line rather than as a `not` over the process's output, which turns
+        // on whatever else that output quotes
+        // (`.claude/rules/posture-sweep.md`, *Standing lenses*).
+        expect(held.stdout.trim()).toBe("held probe");
+
+        const woke = await runCliStreams(repo.dir, ["wake", "probe"]);
+
+        expect(woke.code, woke.stderr).toBe(0);
+        expect(existsSync(join(heldDir(flumeDir), "probe"))).toBe(false);
+        expect(baton.isHeld("probe")).toBe(false);
+        expect(baton.isAwake("probe")).toBe(true);
+        expect(woke.stdout.trim()).toBe("woke probe — hold cleared");
+
+        // And a wake over an unheld phase says nothing about a hold: the
+        // clause is a report of what this call moved, never a fixed suffix.
+        const again = await runCliStreams(repo.dir, ["wake", "probe"]);
+        expect(again.code, again.stderr).toBe(0);
+        expect(again.stdout.trim()).toBe("woke probe");
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it(
+    "flume hold with a trailing positional exits 2",
+    async () => {
+      const repo = await makeScratchRepo("flume-hold-verb-", "main");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+        const flumeDir = join(repo.dir, ".flume");
+
+        const r = await runCli(repo.dir, ["hold", "probe", "extra"]);
+
+        expect(r.code).toBe(2);
+        expect(r.out).toContain("usage: flume hold <phase>");
+        // Refused before either marker moved: running something other than
+        // what the operator typed is the harm the class exists to refuse
+        // (spec/cli.md, *Subcommand surface*).
+        expect(existsSync(join(heldDir(flumeDir), "probe"))).toBe(false);
+        expect(existsSync(join(awakeDir(flumeDir), "probe"))).toBe(false);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it(
+    "flume hold with no phase exits 2",
+    async () => {
+      const repo = await makeScratchRepo("flume-hold-verb-", "main");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+
+        const r = await runCli(repo.dir, ["hold"]);
+
+        expect(r.code).toBe(2);
+        expect(r.out).toContain("usage: flume hold <phase>");
+        // Nothing under the state root was made: a verb with no phase to name
+        // has no marker to write, and the hold dir is the baton's own first
+        // write (`Baton.hold`, `src/Baton.ts`).
+        expect(existsSync(heldDir(join(repo.dir, ".flume")))).toBe(false);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it(
+    "flume status prints held phases on a line of their own",
+    async () => {
+      const repo = await makeScratchRepo("flume-hold-status-", "main");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+        const baton = new Baton(join(repo.dir, ".flume"));
+
+        // The control: nothing held prints nothing extra, so the row below is
+        // this verb reading the markers rather than a line it always writes.
+        const quiet = await runCliStreams(repo.dir, ["status"]);
+        expect(quiet.code, quiet.stderr).toBe(0);
+        const quietLines = quiet.stdout.split("\n");
+        expect(quietLines).toContain("hibernating");
+        // The row's own arm, not a `not` over the whole listing: this reads
+        // the lines that would carry it (`.claude/rules/posture-sweep.md`,
+        // *Standing lenses*).
+        expect(quietLines.filter((line) => line.startsWith("held:"))).toEqual([]);
+
+        baton.wake("probe");
+        baton.hold("gate");
+
+        const r = await runCliStreams(repo.dir, ["status"]);
+
+        expect(r.code, r.stderr).toBe(0);
+        // Two rows, not one: the awake set and the held set are independent —
+        // neither implies the other — so a listing folding them together
+        // could not say which marker stood for which phase.
+        const lines = r.stdout.split("\n");
+        expect(lines).toContain("awake: probe");
+        expect(lines).toContain("held: gate");
       } finally {
         await repo.cleanup();
       }
@@ -7045,6 +7226,7 @@ describe("the run log (spec/cli.md §A log line carries the instant it was writt
   const VERB_REFUSALS: readonly VerbRefusal[] = [
     { verb: "wake", args: ["wake"], says: "usage: flume wake <phase>" },
     { verb: "sleep", args: ["sleep"], says: "usage: flume sleep <phase>" },
+    { verb: "hold", args: ["hold"], says: "usage: flume hold <phase>" },
     { verb: "stop", args: ["stop", "extra"], says: "usage: flume stop" },
     {
       verb: "log",
