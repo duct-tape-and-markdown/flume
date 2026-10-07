@@ -1,0 +1,38 @@
+{
+  "tag": "A-BLOCKEDBY-ACROSS-ITS-OWN-CONTAINMENT-IS-REFUSED",
+  "gate": {
+    "kind": "blockedBy",
+    "tags": ["THE-RENDERED-SCHEMA-STATES-THE-FOREST-RULES-THE-PARSE-ENFORCES"]
+  },
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/PendingSchema.ts",
+        "description": "the queue-wide forest read, where the blocker cycle is already refused, and the rendered schema beside it"
+      },
+      {
+        "path": "tests/PendingSchema.test.ts",
+        "description": "the two containment refusals, the admission beside them, and the rendered rule"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "a work entry whose blockedBy names an ancestor of itself or one of its own steps is refused at the read, rather than parsed into an entry reported queued that can never be picked",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Loud or nothing"
+  },
+  "acceptance": "a queue in which a `work` entry's `blockedBy` names an ancestor of itself, or one of its own steps, is refused like any malformed queue, naming the entry and the edge it declared; a `blockedBy` naming a group that is not the waiter's ancestor still parses, and the rendered schema states the rule",
+  "tests": [
+    "a work entry whose blockedBy names its own parent group is refused at the queue read",
+    "a work entry whose blockedBy names a group two levels above it is refused at the queue read",
+    "a work entry whose blockedBy names one of its own steps is refused at the queue read",
+    "the rendered schema states that a work entry's blockedBy names no ancestor or step of its own"
+  ],
+  "pins": [
+    "a work entry blockedBy a group that is no ancestor of it is admitted"
+  ],
+  "laneTests": [],
+  "notes": "`queueForestErrors` refuses a parent cycle and a blocker cycle; a path closing through containment is invisible to both. Pickability reads absence from the queue (`settledBlockers`, `src/selection.ts`), a group leaves only with its last descendant, a step only in its work entry's session — so each waits on the other. The group-waiter arm waits on does-a-groups-blockedby-gate-hold-its-descendants.md. Blocked on the renderer so the rule ships with its sentence."
+}
