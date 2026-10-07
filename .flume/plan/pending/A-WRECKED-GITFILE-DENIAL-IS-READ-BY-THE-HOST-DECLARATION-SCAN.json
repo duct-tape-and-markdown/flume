@@ -1,6 +1,10 @@
 {
   "tag": "A-WRECKED-GITFILE-DENIAL-IS-READ-BY-THE-HOST-DECLARATION-SCAN",
-  "gate": { "kind": "open" },
+  "gate": {
+    "kind": "open"
+  },
+  "dependsOnForks": [],
+  "kind": "work",
   "files": {
     "new": [],
     "edit": [
@@ -30,5 +34,10 @@
     "no case in tests/ denies by wrecking a worktree's gitfile"
   ],
   "laneTests": [],
-  "notes": "Measured drift: five walled-wave cases armed on `writeFile(join(cwd, '.git'), 'gitdir: /flume-no-such-gitdir')` — green on posix, silently unarmed on the windows lane until 1f397af0 replaced the arming. The scan reads a permission bit alone, so a recurrence is undetectable. A source scan cannot decide the gitdir is absent, so any `gitdir:` write is the primitive; the suite holds none today, which is why the suite arm is a pin."
+  "notes": "Measured drift: five walled-wave cases armed on `writeFile(join(cwd, '.git'), 'gitdir: /flume-no-such-gitdir')` — green on posix, silently unarmed on the windows lane until 1f397af0 replaced the arming. The scan reads a permission bit alone, so a recurrence is undetectable. A source scan cannot decide the gitdir is absent, so any `gitdir:` write is the primitive; the suite holds none today, which is why the suite arm is a pin.",
+  "observedFiles": [
+    ".flume/plan/notes/A-WRECKED-GITFILE-DENIAL-IS-READ-BY-THE-HOST-DECLARATION-SCAN.md",
+    "tests/helpers/hostDeclarations.ts",
+    "tests/hostDeclarations.test.ts"
+  ]
 }
