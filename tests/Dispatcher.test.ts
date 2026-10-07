@@ -13045,11 +13045,31 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
 });
 
 /**
+ * Stake a live foreign tip claim over trunk's current ref, at the engine's own
+ * spelling of that path — a second spelling of the tip-claims layout here
+ * would pass while the engine looked somewhere else entirely.
+ *
+ * The vitest worker plays the live holder, exactly as the CLI's own held-claim
+ * case does: no dispatcher in this file declares `ownTipClaimPid`, so any live
+ * pid reads as a concurrent engine instance. One home for the staking, because
+ * the two waves that arm it — a single ship and a ship behind a ship — differ
+ * in which pick is claimed over, never in what a claim is.
+ */
+async function stakeForeignTipClaim(): Promise<void> {
+  const ref = await git.currentRefPath(fx.repo);
+  expect(ref.kind).toBe("ref");
+  const claimPath = git.tipClaimPath(
+    await git.gitCommonDir(fx.repo),
+    ref.kind === "ref" ? ref.path : "",
+  );
+  await mkdir(dirname(claimPath), { recursive: true });
+  await writeFile(claimPath, String(process.pid), "utf8");
+}
+
+/**
  * The sibling refusal on the same call as {@link waveRefusedByPausedMerge},
  * taken one step earlier: a live foreign tip claim, checked *before* the
- * rewrite is written. The claim path comes from the engine's own accessors —
- * a second spelling of the tip-claims layout here would pass while the
- * engine looked somewhere else entirely.
+ * rewrite is written.
  *
  * One arming, three cases: what this refusal reports about the disk it did not
  * touch, what the wave reports about the ledger commit it did not land, and
@@ -13066,26 +13086,15 @@ async function waveRefusedByTipClaim(): Promise<{
   await writePending(fx.repo, [makeEntry("SHIP-A", ["src/a.ts"])]);
   new Baton(join(fx.repo, ".flume")).wake("build");
 
-  const ref = await git.currentRefPath(fx.repo);
-  expect(ref.kind).toBe("ref");
-  const claimPath = git.tipClaimPath(
-    await git.gitCommonDir(fx.repo),
-    ref.kind === "ref" ? ref.path : "",
-  );
-
   let armed = false;
   const claimTip: Gate = {
     name: "claim-tip",
     when: "afterMerge",
     async run() {
-      await mkdir(dirname(claimPath), { recursive: true });
-      // The vitest worker plays the live holder, exactly as the CLI's own
-      // held-claim case does: this Dispatcher declares no `ownTipClaimPid`,
-      // so any live pid reads as a concurrent engine instance. Staked from
-      // an afterMerge gate so it lands *after* the cherry-pick's own tip
-      // check — otherwise nothing ships and the ledger call is never
+      // Staked from an afterMerge gate so it lands *after* the cherry-pick's
+      // own tip check — otherwise nothing ships and the ledger call is never
       // reached at all.
-      await writeFile(claimPath, String(process.pid), "utf8");
+      await stakeForeignTipClaim();
       armed = true;
       return { ok: true, message: "tip claimed by a foreign engine" };
     },
@@ -29050,6 +29059,113 @@ it("a fanout ship whose ledger rewrite a foreign tip claim stopped reports no ga
   // …and `tipMoved` above is what tells this absence from the quiet tick's:
   // the anchor still names a trunk the pick did move.
   expect(verdict?.headSha).toEqual(expect.stringMatching(/^[0-9a-f]{40}$/));
+});
+
+/**
+ * Two picks that both ship, each under its own hold — one slot wide and no
+ * `batches`, so each span merges and ledger-commits alone in queue order
+ * ({@link gatedTipWave}).
+ *
+ * With `claimOn`, that tag's `afterMerge` gate stakes a live foreign tip claim
+ * before passing, so the pick ships and *its* ledger rewrite takes the claim
+ * exit while the pick ahead of it has already left a gated tip on the stage —
+ * the one wave shape on which skipping the read and clearing it differ.
+ * Without `claimOn` the same wave lands both rewrites, which is both the arm
+ * the absence discriminates against and the property a clearing read must not
+ * take with it.
+ */
+async function waveShippingTwice(opts: { claimOn?: string } = {}): Promise<{
+  outcome: TickOutcome;
+  armed: boolean;
+}> {
+  await writePending(fx.repo, [
+    makeEntry("SHIP-ONE", ["src/ship-one.ts"]),
+    makeEntry("SHIP-TWO", ["src/ship-two.ts"]),
+  ]);
+  new Baton(join(fx.repo, ".flume")).wake("build");
+
+  let armed = false;
+  const claimTip: Gate = {
+    name: "claim-tip",
+    when: "afterMerge",
+    async run(ctx) {
+      if (opts.claimOn !== undefined && ctx.entry?.tag === opts.claimOn) {
+        await stakeForeignTipClaim();
+        armed = true;
+      }
+      return { ok: true, message: "claim-tip passes" };
+    },
+  };
+  const dispatcher = new Dispatcher({
+    chainLoader: staticLoader({
+      phases: [
+        makePhase({
+          name: "build",
+          concurrency: "fanout",
+          writablePaths: ["src/**"],
+          gates: [claimTip],
+        }),
+      ],
+      humanOnly: [],
+    }),
+    repoRoot: fx.repo,
+    configDir: fx.configDir,
+    agent: fanoutAgent({
+      "ship-one": (cwd) =>
+        writeAndCommit(cwd, "src/ship-one.ts", "one\n", "build: SHIP-ONE"),
+      "ship-two": (cwd) =>
+        writeAndCommit(cwd, "src/ship-two.ts", "two\n", "build: SHIP-TWO"),
+    }),
+    log: silent,
+    maxParallel: 1,
+  });
+  return { outcome: await dispatcher.tick(), armed };
+}
+
+it("a wave whose every ship's rewrite committed reports the tip its last ledger commit left", async () => {
+  const { outcome, armed } = await waveShippingTwice();
+  const verdict = outcome.verdict;
+  expect(verdict).toBeDefined();
+
+  // Non-vacuity: no claim was staked, both picks shipped under a hold of their
+  // own, and the wave landed two ledger commits — so "the last" is a choice
+  // between two shas here rather than the only one on offer.
+  expect(armed).toBe(false);
+  expect(verdict?.shippedTags).toEqual(["SHIP-ONE", "SHIP-TWO"]);
+  const ledger = outcome.result?.ledgerCommitShas ?? [];
+  expect(ledger).toHaveLength(2);
+  expect(ledger[0]).not.toBe(ledger[1]);
+
+  // The claim: the later ship's ledger commit, on both surfaces.
+  expect(verdict?.gatedTip).toBe(ledger[1]);
+  expect(outcome.result?.gatedTip).toBe(ledger[1]);
+});
+
+it("a wave whose last ship's ledger rewrite a foreign tip claim stopped reports no gated tip", async () => {
+  const { outcome, armed } = await waveShippingTwice({ claimOn: "SHIP-TWO" });
+  const verdict = outcome.verdict;
+  expect(verdict).toBeDefined();
+
+  // Non-vacuity, and the shape the claim needs: both picks shipped, the claim
+  // really was staked over the second, and exactly one ledger commit landed —
+  // the first pick's, which is the tip an exit that only *skips* its read
+  // leaves standing as the last ship's. The sibling above is the arm proving
+  // the field is filled on this wave shape when every rewrite commits
+  // (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
+  expect(armed).toBe(true);
+  expect(verdict?.shippedTags).toEqual(["SHIP-ONE", "SHIP-TWO"]);
+  expect(verdict?.tipMoved).toBe(true);
+  const ledger = outcome.result?.ledgerCommitShas ?? [];
+  expect(ledger).toHaveLength(1);
+  expect(ledger[0]).toEqual(expect.stringMatching(/^[0-9a-f]{40}$/));
+
+  // The claim: absent on both surfaces — the last ship's rewrite recorded no
+  // tip, so the field reports nothing rather than the tip the pick ahead of it
+  // left, which no gate of this tick judged as a last ship's.
+  expect(Object.keys(verdict!)).not.toContain("gatedTip");
+  expect(verdict?.gatedTip).toBeUndefined();
+  expect(outcome.result?.gatedTip).toBeUndefined();
+  expect(verdict?.gatedTip).not.toBe(ledger[0]);
 });
 
 /*

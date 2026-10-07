@@ -429,17 +429,18 @@ interface WaveMerge {
    * spec/loop.md "The tick verdict — one facts artifact": the trunk tip as
    * this wave's **last ship** left it, re-read under the ship lock that
    * carried it once that pick's `afterMerge` gates had passed and its ledger
-   * commit had landed ({@link drainWaiting}). Overwritten by each later pick
-   * that ships, so what survives the wave is the last one; `undefined` while
-   * nothing has shipped.
+   * commit had landed ({@link drainWaiting}). Decided afresh by each later
+   * pick that ships, so what survives the wave is the last one; `undefined`
+   * while nothing has shipped.
    *
    * A read rather than `ledgerShas`' last element: three of the rewrite's four
    * exits write no commit, and the tip after one of those is the merged sha
    * the pick landed — a fact only git holds at that moment
    * (`.claude/rules/engineering.md`, *Derived state is computed, never
-   * restated beside its source*). The fourth, `tip-claimed`, takes no read at
-   * all: a foreign engine holds the tip, so the ref under this hold is not
-   * this tick's to report as gated.
+   * restated beside its source*). The fourth, `tip-claimed`, clears the field
+   * instead of reading: a foreign engine holds the tip, so the ref under this
+   * hold is not this tick's to report as gated — and a skipped read would
+   * leave an earlier pick's tip standing as the last ship's.
    */
   gatedTip: string | undefined;
   /** A tip claim or a per-entry ancestry refusal stopped at least one span. */
@@ -682,17 +683,22 @@ export async function drainWaiting(w: WaveMerge): Promise<void> {
       // nothing shipped onto, and `headSha` is the field that reports that
       // one.
       //
-      // And only a land whose rewrite was not stopped by a foreign tip claim.
-      // That exit is the one case where the ref under this hold is not ours:
-      // a concurrent engine instance has claimed the tip, so the sha a read
-      // here would return may name a commit no gate of this tick judged. The
-      // exit says so itself, off the call that took it rather than off a tip
-      // comparison around it — `w.tipMoved` is the wave-level fact and is set
-      // by the per-entry ancestry refusal too, which stops no rewrite
+      // A land that shipped *decides* the field, both ways: the `tip-claimed`
+      // exit is the one case where the ref under this hold is not ours — a
+      // concurrent engine instance has claimed the tip, so the sha a read here
+      // would return may name a commit no gate of this tick judged — and it
+      // therefore clears the field rather than skipping the read, or the tip an
+      // earlier pick left would stand as this wave's last ship's, which is the
+      // confident wrong answer the field exists to refuse
+      // (`.claude/rules/engineering.md`, *Loud or nothing*). The exit says so
+      // itself, off the call that took it rather than off a tip comparison
+      // around it — `w.tipMoved` is the wave-level fact and is set by the
+      // per-entry ancestry refusal too, which stops no rewrite
       // (`.claude/rules/engineering.md`, *A fact the engine holds is
       // reported, never rediscovered*).
-      if (shipped.length > 0 && exit !== "tip-claimed")
-        w.gatedTip = await git.revParse(leg.repoRoot);
+      if (shipped.length > 0)
+        w.gatedTip =
+          exit === "tip-claimed" ? undefined : await git.revParse(leg.repoRoot);
     };
     // The attempts of this drain that left a span, with each range read where
     // `committed` narrows it ({@link BatchCandidate}).
