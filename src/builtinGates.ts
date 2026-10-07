@@ -169,26 +169,30 @@ function pkgManagerGate(
 ): PkgManagerGate {
   const build = (cmd: string, gateArgs: string[], when: GatePhase): BatchingGate =>
     shellGate({ name, when, cmd, args: gateArgs, failHint });
-  const defaultGate = build("pnpm", args, "afterCommit");
-  const fn = ((override) =>
-    build(
-      override?.cmd ?? "pnpm",
-      override?.args ?? args,
-      override?.when ?? "afterCommit",
-    )) as PkgManagerGate;
-  Object.defineProperty(fn, "name", {
-    value: defaultGate.name,
-    configurable: true,
-  });
-  fn.when = defaultGate.when;
-  // Taken off the construction rather than respelled, for the same reason
-  // `name`, `when` and `command` are: the dual identity is one gate's
-  // declaration seen twice, and a `batches` spelled here could disagree with
-  // what `shellGate` built (`.claude/rules/engineering.md`, *Derived state is
-  // computed, never restated beside its source*).
-  fn.batches = defaultGate.batches;
-  fn.run = defaultGate.run;
-  fn.command = defaultGate.command!;
+  // The bare form *is* the gate `shellGate` built for the default flavor: the
+  // dual identity is one declaration seen twice, so every key rides off that
+  // construction rather than being respelled here, where a copy could go
+  // short or disagree (`.claude/rules/engineering.md`, *Derived state is
+  // computed, never restated beside its source*). The unasserted `return` is
+  // the check: a key `shellGate`'s return gains reaches the bare form through
+  // the spread, and a hand-copied key list that missed one would red the
+  // typecheck instead of shipping a callable the bare form lacks.
+  //
+  // `name` is the one key split out, because a function's own `name` is
+  // non-writable and `Object.assign` therefore throws on it; it takes
+  // `defineProperty`, and the call signature's own `name: string` is what
+  // satisfies the interface afterwards.
+  const { name: gateName, ...keys } = build("pnpm", args, "afterCommit");
+  const fn = Object.assign(
+    (override?: PkgManagerOverride): BatchingGate =>
+      build(
+        override?.cmd ?? "pnpm",
+        override?.args ?? args,
+        override?.when ?? "afterCommit",
+      ),
+    keys,
+  );
+  Object.defineProperty(fn, "name", { value: gateName, configurable: true });
   return fn;
 }
 
