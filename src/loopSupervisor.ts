@@ -22,6 +22,7 @@ import {
 import { frictionCountLine } from "./friction.js";
 import { existsLoudUnder } from "./fsProbe.js";
 import { defaultStateRoot, stopFlagPath } from "./paths.js";
+import { signalOfStop, writeRunEnd, type RunEndCause } from "./runEnd.js";
 import { signalProcessTree, spawnProcessTree } from "./processTree.js";
 import { thrownMessage } from "./thrown.js";
 
@@ -415,6 +416,15 @@ type StopFacts = Omit<
  */
 interface RunEnd {
   stop: StopFacts;
+  /**
+   * What the run-end record this end writes says (`src/runEnd.ts`). Stated by
+   * the site that decided the end, never derived from {@link StopFacts} at the
+   * write below: two of these ends carry identical facts — a signalled stop and
+   * a spent budget are both "not hibernated, nothing else set" — so a reason
+   * read off the result would name whichever the shape happened to match
+   * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+   */
+  cause: RunEndCause;
   finish: () => Promise<void>;
 }
 
@@ -541,12 +551,22 @@ export async function superviseLoop(
     agentUsageByPhase: totalAgentUsageByPhase(runVerdicts),
     ...stop,
   });
-  const signalledEnd = (): RunEnd => ({
-    stop: { hibernated: false },
-    finish: async () => {
-      log.info(`[flume] signalled; stopping after ${ticks} tick(s)`);
-    },
-  });
+  // The signal's own name where the teardown that aborted stated one
+  // (`signalOfStop`, `src/runEnd.ts`) — the supervisor sees no signal of its
+  // own, so an unnamed abort records a signalled end and nothing further.
+  const signalledEnd = (): RunEnd => {
+    const named = signalOfStop(stopSignal);
+    return {
+      stop: { hibernated: false },
+      cause: {
+        reason: "signal",
+        ...(named !== undefined ? { signal: named } : {}),
+      },
+      finish: async () => {
+        log.info(`[flume] signalled; stopping after ${ticks} tick(s)`);
+      },
+    };
+  };
 
   /**
    * Drop every hold whose stage judged a tree the trunk has moved past, before
@@ -624,6 +644,8 @@ export async function superviseLoop(
     const why = opts.chainUnresolved;
     ending = {
       stop: { hibernated: false, mountDead: true },
+      // No tick exit code: no child ran, so there is none to state.
+      cause: { reason: "mount-dead" },
       finish: async () => {
         log.error(
           `[flume] mount-dead: the chain failed to load (${why.message}); ` +
@@ -714,6 +736,7 @@ export async function superviseLoop(
       );
       ending ??= {
         stop: { hibernated: false },
+        cause: { reason: "unreadable-verdict" },
         finish: async () => {
           log.error(
             `[flume] this tick's verdict is ` +
@@ -860,6 +883,7 @@ export async function superviseLoop(
       const repeated = abort;
       ending ??= {
         stop: { hibernated: false, repeatedFailure: repeated },
+        cause: { reason: "abort-threshold" },
         finish: async () => {
           log.error(
             `[flume] the same ${repeated.stage}-stage failure signature repeated on ` +
@@ -884,6 +908,10 @@ export async function superviseLoop(
         stop: {
           hibernated: false,
           terminal: { kind: "orphaned-awake", phases },
+        },
+        cause: {
+          reason: "terminal-misconfiguration",
+          tickExitCode: exitCode,
         },
         finish: async () => {
           log.error(
@@ -910,6 +938,7 @@ export async function superviseLoop(
       // restated beside its source*).
       ending ??= {
         stop: { hibernated: false, mountDead: true },
+        cause: { reason: "mount-dead", tickExitCode: exitCode },
         finish: async () => {
           log.error(
             `[flume] tick exited ${exitCode} (mount-dead): the child named ` +
@@ -973,6 +1002,7 @@ export async function superviseLoop(
       const hibernated = baton.hibernating();
       ending ??= {
         stop: { hibernated, stoppedByFlag: true },
+        cause: { reason: "stop-flag" },
         finish: async () => {
           log.info(
             `[flume] stop flag present; ending run after ${ticks} tick(s)`,
@@ -998,6 +1028,7 @@ export async function superviseLoop(
     if (awake.length === 0) {
       ending = {
         stop: { hibernated: true },
+        cause: { reason: "hibernation" },
         finish: async () => {
           log.info(`[flume] hibernating after ${ticks} tick(s)`);
           await logFrictionSummary();
@@ -1006,6 +1037,7 @@ export async function superviseLoop(
     } else if (started >= tickBudget) {
       ending = {
         stop: { hibernated: false },
+        cause: { reason: "tick-budget" },
         finish: async () => {
           log.info(`[flume] reached --max ${tickBudget}; stopping`);
           await logFrictionSummary();
@@ -1023,6 +1055,9 @@ export async function superviseLoop(
           hibernated: false,
           terminal: { kind: "orphaned-awake", phases },
         },
+        // No tick exit code: this wall is read off the baton and the chain's
+        // roster, never off a child's exit.
+        cause: { reason: "terminal-misconfiguration" },
         finish: async () => {
           log.error(
             `[flume] terminal misconfiguration: orphaned awake flags name ` +
@@ -1044,6 +1079,27 @@ export async function superviseLoop(
           `never run one. Declare supervisorPolicy.maxTicks as a positive integer.`,
       );
     }
+  }
+  // spec/loop.md "Crash equals stop": the run says on disk how it ended,
+  // before it narrates it and before the caller releases what it holds, so the
+  // record is there for every end the loop above *decided*. The one path past
+  // this is the throw a non-positive `maxTicks` takes, which is a declaration
+  // defect rather than a run ending: it is already as loud as a failure gets,
+  // and the record exists for the ends that are quiet
+  // (`.claude/rules/engineering.md`, *Loud or nothing*).
+  //
+  // A write that fails is reported and the run still returns its totals. The
+  // run is over either way; taking the ticks, the ships and the spend down with
+  // an unwritable record would cost the operator the facts that are in hand to
+  // report the loss of one that is not.
+  try {
+    writeRunEnd(flumeDir, ending.cause);
+  } catch (err) {
+    log.error(
+      `[flume] the run ended (${ending.cause.reason}) but its end could not ` +
+        `be recorded: ${thrownMessage(err)}. \`flume status\` will read the ` +
+        `previous run's record, or none.`,
+    );
   }
   await ending.finish();
   return settled(ending.stop);

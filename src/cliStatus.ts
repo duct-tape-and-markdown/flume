@@ -23,6 +23,13 @@ import { loopLockPath, resolvePendingDir, stopFlagPath } from "./paths.js";
 import { readPendingLoose } from "./pendingLedger.js";
 import type { ParseResult } from "./PendingSchema.js";
 import { liveLoopClaim, statedStateRoot, type PidClaim } from "./pidClaim.js";
+import {
+  readRunEnd,
+  runEndLine,
+  RUN_DIED_UNRECORDED_LINE,
+  RUN_END_UNREADABLE_LINE,
+  type RunEndRead,
+} from "./runEnd.js";
 import { readRunSpend, type RunSpend } from "./runSpend.js";
 import { thrownMessage } from "./thrown.js";
 
@@ -88,8 +95,39 @@ export async function statusVerb(paths: FlumePaths): Promise<number> {
         : "loop.pid present, process dead — stale",
     );
   }
+  // spec/cli.md "`flume status` owes exactly this", line 3: how the last run
+  // that ended under this root ended, from the record that run wrote
+  // (`src/runEnd.ts`).
+  //
+  // Beside a **stale** `loop.pid` the record is not the answer: the run holding
+  // that lock reached no end it could record, and whatever stands in the file
+  // is an earlier run's. So the stale lock this verb already read decides the
+  // line, and nothing is inferred from a record's age or from the lock's
+  // (spec/loop.md, *Crash equals stop*).
+  //
+  // Guarded like the reads around it, and for the same reason: an unstattable
+  // record, or one under a root a plain file stands at, must never print as a
+  // root no run has ended under (`.claude/rules/engineering.md`, *Loud or
+  // nothing*). A record that is there and will not parse is reported as that,
+  // not withheld.
+  let runEnd: RunEndRead;
+  try {
+    runEnd = readRunEnd(flumeDir);
+  } catch (err) {
+    operatorLog.error(
+      `[flume] status: the run-end record failed to read: ${thrownMessage(err)}`,
+    );
+    return EX_IOERR;
+  }
+  if (loopLockPresent && loopClaim === null) {
+    console.log(RUN_DIED_UNRECORDED_LINE);
+  } else if (runEnd.kind === "read") {
+    console.log(runEndLine(runEnd.record));
+  } else if (runEnd.kind === "unreadable") {
+    console.log(RUN_END_UNREADABLE_LINE);
+  }
   // spec/loop.md "Graceful stop — the stop flag" / spec/cli.md "`flume
-  // status` owes exactly this" line 3: named right after supervisor
+  // status` owes exactly this" line 4: named right after supervisor
   // liveness, before the tip claim — the ack ritual only works if the
   // operator who forgot the flag finds it where they look first.
   // Absent is the only silent reading and is proven the same way `loop.pid`

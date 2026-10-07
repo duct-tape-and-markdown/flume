@@ -348,8 +348,9 @@ the tip claim below is taken with, so two starts racing cannot both take it —
 and writes its pid there. A second loop started against the same state root is
 refused (exit 1, naming the holder's pid) while the recorded pid is alive —
 two supervisors racing one baton would corrupt plan/build state. A stale pidfile left by a dead process is reclaimed
-automatically, and the lock is dropped on normal exit, `SIGINT`, and `SIGTERM`,
-so no manual cleanup is ever required.
+automatically, and the lock is dropped on normal exit, `SIGINT`, `SIGTERM`, and
+a hangup (`SIGHUP`, or `SIGBREAK` on win32), so no manual cleanup is ever
+required.
 
 The lock lives under `flumeDir`, not the repo: the state root is the resource
 that races, and a dock relocated via `FLUME_DIR` carries its lock with it —
@@ -378,6 +379,14 @@ plus a fact when the signal is bypassed. `flume status` reports the
 current tip's claim, and the state root that claim was taken for
 (`tip claimed by pid N for <state root>`, or stale), alongside
 supervisor liveness.
+
+Every run that ends says how it ended in `<flumeDir>/run-end.json` — the
+reason (hibernation, the stop flag, the tick budget, the abort threshold, a
+signal, or one of the walls the supervisor fail-fasts on), the signal or the
+child exit code that identified it, and the instant — and `flume status`
+prints it. A death no handler runs on (`SIGKILL`, `TerminateProcess`) records
+nothing, and status reports *that* from the stale `loop.pid` the dead run left
+rather than from the previous run's record.
 
 ## Trunk contract: HEAD is truth
 

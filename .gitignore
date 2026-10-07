@@ -11,6 +11,7 @@ dist/
 .flume/tick-verdict/
 .flume/invocations/
 .flume/loop.pid
+.flume/run-end.json
 .flume/tick-verdicts.jsonl
 .flume/stop
 .env

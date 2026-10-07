@@ -544,6 +544,7 @@ export const STATE_ROOT_NAMES = {
   merging: "merging",
   loopLock: "loop.pid",
   stopFlag: "stop",
+  runEnd: "run-end.json",
   tickVerdict: "tick-verdict",
   tickVerdictsLog: "tick-verdicts.jsonl",
   invocations: "invocations",
@@ -674,6 +675,16 @@ export function loopLockPath(flumeDir: string): string {
  */
 export function stopFlagPath(flumeDir: string): string {
   return join(flumeDir, STATE_ROOT_NAMES.stopFlag);
+}
+
+/**
+ * The run-end record — `<flumeDir>/run-end.json` (`src/runEnd.ts`). One file
+ * per state root, overwritten by each run that ends: the question it answers
+ * is how the *last* run ended, so a history beside it would be a second
+ * artifact nothing asks of it.
+ */
+export function runEndPath(flumeDir: string): string {
+  return join(flumeDir, STATE_ROOT_NAMES.runEnd);
 }
 
 /**

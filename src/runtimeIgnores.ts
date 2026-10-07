@@ -54,6 +54,7 @@ export const RUNTIME_IGNORES = [
   STATE_ROOT_NAMES.loopLock,
   STATE_ROOT_NAMES.tickVerdictsLog,
   STATE_ROOT_NAMES.stopFlag,
+  STATE_ROOT_NAMES.runEnd,
 ] as const;
 
 /**

@@ -26,7 +26,12 @@ import type {
   TickVerdict,
   TickVerdictInvocation,
 } from "../src/tickVerdict.ts";
-import { slugify } from "../src/paths.ts";
+import { runEndPath, slugify, stopFlagPath } from "../src/paths.ts";
+import {
+  readRunEnd,
+  signalledStop,
+  type RunEndRecord,
+} from "../src/runEnd.ts";
 import { Baton } from "../src/Baton.ts";
 import { loopCompletionSummary, loopExitCode } from "../src/cliVerdict.ts";
 import { denyDirectory, denyFile } from "./helpers/denial.ts";
@@ -3384,5 +3389,180 @@ describe("superviseLoop — the child table, one child per awake phase", () => {
     expect(calls).toBeGreaterThan(1);
     expect(mostAtOnce).toBe(1);
     expect(res.hibernated).toBe(true);
+  });
+});
+
+/**
+ * spec/loop.md "Crash equals stop", *A run records how it ended*: every end the
+ * supervisor reaches leaves `<flumeDir>/run-end.json` behind, naming the reason
+ * it ended under.
+ *
+ * Driven writer-to-reader: the real `superviseLoop` ends the run and the real
+ * `readRunEnd` (`src/runEnd.ts`) decodes what it wrote, so neither side of the
+ * record is this suite's own vocabulary (`.claude/rules/engineering.md`, *A seam
+ * gate reads what the real writer wrote*). Each case asserts the end it is about
+ * on the `SuperviseResult` first: a reason read off a record over a run that
+ * ended some other way would be green for the wrong end.
+ */
+describe("superviseLoop — a run records how it ended", () => {
+  /**
+   * The record the run just wrote, through the real reader, with the window it
+   * must have been stamped inside already checked — so each case below asserts
+   * the reason and nothing it would have had to restate.
+   */
+  const recordedEnd = (flumeDir: string, since: number): RunEndRecord => {
+    const read = readRunEnd(flumeDir);
+    expect(read.kind).toBe("read");
+    // The accessor's path, not a spelling repeated here: the reader took its
+    // own, and this is the pin that it is the one the state root states.
+    expect(existsSync(runEndPath(flumeDir))).toBe(true);
+    if (read.kind !== "read") throw new Error("unreachable: asserted above");
+    const at = Date.parse(read.record.at);
+    expect(at).toBeGreaterThanOrEqual(since - 1_000);
+    expect(at).toBeLessThanOrEqual(Date.now() + 1_000);
+    return read.record;
+  };
+
+  it("the supervisor writes run-end.json naming hibernation as the reason it ended", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const baton = new Baton(flumeDir);
+    baton.wake("plan");
+    let calls = 0;
+    const runTick = (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      if (calls >= 2) baton.sleep("plan");
+      return Promise.resolve({ exitCode: 0 });
+    };
+
+    const since = Date.now();
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: 50,
+      runTick,
+      log: silent,
+    });
+
+    // The end under test: the baton emptied, inside the budget.
+    expect(res.hibernated).toBe(true);
+    expect(res.ticks).toBe(2);
+    const record = recordedEnd(flumeDir, since);
+    expect(record.reason).toBe("hibernation");
+    // Neither identifier belongs to this end: no signal arrived and no child's
+    // exit decided it, so the record claims neither.
+    expect(record.signal).toBeUndefined();
+    expect(record.tickExitCode).toBeUndefined();
+  });
+
+  it("a run ended by the stop flag records the stop flag as its reason", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const baton = new Baton(flumeDir);
+    baton.wake("plan"); // never slept — only the flag can end this run
+    let calls = 0;
+    const runTick = async (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      // The operator's `flume stop`, landing while the first tick runs.
+      await writeFile(stopFlagPath(flumeDir), "");
+      return { exitCode: 0 };
+    };
+
+    const since = Date.now();
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: 50,
+      runTick,
+      log: silent,
+    });
+
+    // The end under test, and not the budget or hibernation: one tick ran, the
+    // flag ended the run, and the baton still carries its flag.
+    expect(calls).toBe(1);
+    expect(res.stoppedByFlag).toBe(true);
+    expect(res.hibernated).toBe(false);
+    expect(recordedEnd(flumeDir, since).reason).toBe("stop-flag");
+  });
+
+  it("a run ended by the tick budget records the budget as its reason", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    new Baton(flumeDir).wake("plan"); // never slept → never hibernates
+    let calls = 0;
+    const runTick = (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      return Promise.resolve({ exitCode: 0 });
+    };
+
+    const since = Date.now();
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: 3,
+      runTick,
+      log: silent,
+    });
+
+    // The end under test: the budget was spent, with a flag still standing.
+    expect(calls).toBe(3);
+    expect(res.ticks).toBe(3);
+    expect(res.hibernated).toBe(false);
+    expect(res.stoppedByFlag).toBeUndefined();
+    expect(recordedEnd(flumeDir, since).reason).toBe("tick-budget");
+  });
+
+  it("a run ended by a signal records the signal", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    new Baton(flumeDir).wake("build"); // never slept → only the signal ends this
+    const stop = new AbortController();
+    const runTick = ({
+      stopSignal,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+      // The teardown's own abort, carrying the signal it took — the statement
+      // the handler makes in production (`src/cliTeardown.ts`).
+      stop.abort(signalledStop("SIGTERM"));
+      expect(stopSignal.aborted).toBe(true);
+      return Promise.resolve({ exitCode: 0 });
+    };
+
+    const since = Date.now();
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: 5,
+      runTick,
+      stopSignal: stop.signal,
+      log: silent,
+    });
+
+    // The end under test: one tick ran, the signal ended the run inside a
+    // budget of five, and the baton never emptied.
+    expect(res.ticks).toBe(1);
+    expect(res.hibernated).toBe(false);
+    const record = recordedEnd(flumeDir, since);
+    expect(record.reason).toBe("signal");
+    expect(record.signal).toBe("SIGTERM");
+  });
+
+  it("a run the mount-dead wall ended records the child exit code it fail-fasted on", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    new Baton(flumeDir).wake("plan"); // an aborted tick does no baton work
+    let calls = 0;
+    const runTick = (): Promise<{ exitCode: number | null }> => {
+      calls++;
+      return Promise.resolve({ exitCode: EX_MOUNT_DEAD });
+    };
+
+    const since = Date.now();
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: 9,
+      runTick,
+      log: silent,
+    });
+
+    // The end under test: the first mount-dead child ended the run, well
+    // inside the budget.
+    expect(calls).toBe(1);
+    expect(res.mountDead).toBe(true);
+    const record = recordedEnd(flumeDir, since);
+    expect(record.reason).toBe("mount-dead");
+    // The fact this run holds is the child's exit code; the supervisor's own
+    // exit is the CLI's to decide after this record is written.
+    expect(record.tickExitCode).toBe(EX_MOUNT_DEAD);
   });
 });

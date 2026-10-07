@@ -588,6 +588,11 @@ const HELP_SUB: Record<Subcommand, string> = {
 Print baton state: awake phases (or "hibernating" if none), then, when
 .flume/loop.pid exists, supervisor liveness ("supervisor pid N live" or
 "loop.pid present, process dead — stale"; no pidfile prints nothing extra),
+then, when .flume/run-end.json exists, how the last run that ended under
+this root ended ("last run end: <reason> at <instant>", the reason and time
+that run recorded; beside a stale loop.pid the line says the current run
+died without recording an end instead, since a run a SIGKILL ended records
+nothing),
 then, when HEAD names a ref and a tip claim exists for it, its holder and
 the state root that holder took the tip for ("tip claimed by pid N for <state
 root>" — or "a state root it did not state", where the claim names none — or

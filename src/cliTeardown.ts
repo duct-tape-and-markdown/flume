@@ -20,6 +20,30 @@
  */
 
 import type { Logger } from "./log.js";
+import { signalledStop } from "./runEnd.js";
+
+/**
+ * The signals this teardown runs on, each with the exit code convention gives
+ * it — 128 plus the signal's own number — and the whole install site: a signal
+ * added here is a row, never a second `process.on` somewhere else
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ *
+ * `SIGHUP` and `SIGBREAK` are the hangup pair (spec/loop.md, *Crash equals
+ * stop*): a closed terminal sends the first, a closed console or a Ctrl-Break
+ * the second, and under node's default disposition either ended the process
+ * with nothing released and no end recorded. `SIGBREAK` exists on win32 alone
+ * — a listener for it on a host whose node does not know the name is inert, so
+ * the row is declared once rather than per host.
+ */
+const TEARDOWN_SIGNALS: ReadonlyArray<{
+  readonly signal: NodeJS.Signals;
+  readonly exitCode: number;
+}> = [
+  { signal: "SIGINT", exitCode: 130 },
+  { signal: "SIGTERM", exitCode: 143 },
+  { signal: "SIGHUP", exitCode: 129 },
+  { signal: "SIGBREAK", exitCode: 149 },
+];
 
 /**
  * What a signal handler says at receipt, before the wait it is announcing
@@ -65,14 +89,20 @@ interface SignalledTeardown {
 }
 
 /**
- * Install the `exit`, `SIGINT` and `SIGTERM` handlers, before the first thing
- * {@link SignalledTeardown.release} would drop is taken. A signal landing
- * during an acquisition must find a handler, not node's default disposition —
- * which runs nothing and leaves whatever is already on disk.
+ * Install the `exit` handler and one per {@link TEARDOWN_SIGNALS} row, before
+ * the first thing {@link SignalledTeardown.release} would drop is taken. A
+ * signal landing during an acquisition must find a handler, not node's default
+ * disposition — which runs nothing and leaves whatever is already on disk.
  */
 export function installSignalledTeardown(teardown: SignalledTeardown): void {
-  const releaseAndExit = async (code: number): Promise<never> => {
-    teardown.abort.abort();
+  const releaseAndExit = async (
+    signal: NodeJS.Signals,
+    code: number,
+  ): Promise<never> => {
+    // The abort carries the signal's name, because the work being wound down is
+    // what records how the run ended and this handler is the only thing that
+    // knows which signal arrived (`signalledStop`, `src/runEnd.ts`).
+    teardown.abort.abort(signalledStop(signal));
     const inFlight = teardown.inFlight();
     if (inFlight !== undefined) {
       // The wait, announced before it starts rather than explained after it
@@ -90,6 +120,7 @@ export function installSignalledTeardown(teardown: SignalledTeardown): void {
     process.exit(code);
   };
   process.on("exit", teardown.release);
-  process.on("SIGINT", () => void releaseAndExit(130));
-  process.on("SIGTERM", () => void releaseAndExit(143));
+  for (const { signal, exitCode } of TEARDOWN_SIGNALS) {
+    process.on(signal, () => void releaseAndExit(signal, exitCode));
+  }
 }

@@ -80,6 +80,11 @@ import {
   type TickVerdict,
   type TickVerdictInvocation,
 } from "../src/tickVerdict.ts";
+import {
+  readRunEnd,
+  runEndLine,
+  RUN_DIED_UNRECORDED_LINE,
+} from "../src/runEnd.ts";
 import { deadPid } from "./helpers/deadPid.ts";
 import { denyDirectory, denyFile } from "./helpers/denial.ts";
 import { fileWithContent, pidClaimIn, waitFor } from "./helpers/waitFor.ts";
@@ -110,6 +115,7 @@ import {
   processAlive,
   runCli,
   runCliStreams,
+  runNodeStreams,
 } from "./helpers/subprocess.ts";
 
 // This file starts processes, so it declares the lane's one budget — cases
@@ -3361,6 +3367,12 @@ async function reapAll(pids: readonly (number | undefined)[]): Promise<void> {
  */
 async function signalledLoopRun(opts: {
   agent?: "in-process" | "spawned";
+  /**
+   * The signal the operator sends, `SIGTERM` by default — the teardown runs
+   * the same sequence for every row it installs (`src/cliTeardown.ts`), so an
+   * arm about another row changes this and nothing else.
+   */
+  signal?: NodeJS.Signals;
   grandchild?: boolean;
   /** `agent: "spawned"` only — the agent process swallows the SIGTERM. */
   ignoreSigterm?: boolean;
@@ -3384,6 +3396,8 @@ async function signalledLoopRun(opts: {
   lockStatement: string;
   grandchildPid: number | undefined;
   loopPidPath: string;
+  /** The state root the run held, for an arm reading what it left there. */
+  flumeDir: string;
   claimPath: string;
   exited: Promise<void>;
   out: () => string;
@@ -3487,7 +3501,7 @@ async function signalledLoopRun(opts: {
     const exited = new Promise<void>((resolveExit) => {
       loop?.on("exit", () => resolveExit());
     });
-    process.kill(supervisorPid, "SIGTERM");
+    process.kill(supervisorPid, opts.signal ?? "SIGTERM");
 
     return {
       parkedPid,
@@ -3495,6 +3509,7 @@ async function signalledLoopRun(opts: {
       lockStatement,
       grandchildPid,
       loopPidPath,
+      flumeDir: join(repo.dir, ".flume"),
       claimPath: tipClaimPath(await gitCommonDir(repo.dir), "refs/heads/main"),
       exited,
       out: () => out,
@@ -3778,6 +3793,49 @@ describe("flume loop — a signalled run takes down its whole tick tree (spec/lo
         // was reaped before the release, so this is a settled fact, not a
         // race: no wait stands between the parent's exit and this read.
         expect(processAlive(run.parkedPid)).toBe(false);
+      } finally {
+        await run.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  /**
+   * spec/loop.md "Crash equals stop", *A run records how it ended*: a hangup is
+   * the same event a SIGTERM is, one keystroke further away — the operator's
+   * terminal closed instead of their Ctrl-C. Under node's default disposition it
+   * ended the supervisor outright, so the lock and the claim stood until a
+   * liveness probe happened to catch the pid dead and the run recorded nothing.
+   *
+   * Driven exactly as the SIGTERM arms above are, through the same helper with
+   * one option changed — which is what makes "the same teardown" the claim
+   * rather than a second sequence that resembles it — and the run's own record
+   * is read back through the real reader to name which signal the teardown saw.
+   */
+  it.skipIf(process.platform === "win32")(
+    "a SIGHUP ends the run through the same teardown as SIGTERM",
+    async () => {
+      const run = await signalledLoopRun({ signal: "SIGHUP" });
+      try {
+        await run.exited;
+
+        // The teardown ran — the run ended on the signal rather than by
+        // reaching `--max`...
+        expect(run.out()).toContain("signalled; stopping after");
+        // ...dropped both guards it held...
+        expect(existsSync(run.loopPidPath)).toBe(false);
+        expect(existsSync(run.claimPath)).toBe(false);
+        // ...and took the writer they were held for with it.
+        expect(processAlive(run.parkedPid)).toBe(false);
+
+        // And the run said so on disk, naming the signal the handler received:
+        // a record carrying `SIGTERM` here would mean the name was inferred
+        // from the sequence rather than stated by the handler that took it.
+        const read = readRunEnd(run.flumeDir);
+        expect(read.kind).toBe("read");
+        if (read.kind !== "read") throw new Error("unreachable: asserted above");
+        expect(read.record.reason).toBe("signal");
+        expect(read.record.signal).toBe("SIGHUP");
       } finally {
         await run.cleanup();
       }
@@ -7307,3 +7365,208 @@ it(
   },
   SPAWN_BUDGET_MS,
 );
+
+/**
+ * spec/cli.md "`flume status` owes exactly this", line 3, and spec/loop.md
+ * "Crash equals stop", *A run records how it ended*.
+ *
+ * Both arms drive a **real** `flume loop` to a real end first, so the record
+ * status reads is the supervisor's own statement rather than a file this suite
+ * authored in the writer's vocabulary (`.claude/rules/engineering.md`, *A seam
+ * gate reads what the real writer wrote*). The line is then compared against
+ * `runEndLine` over the record on disk — the one renderer both sides share, so
+ * neither the reason nor the instant is respelled here.
+ */
+describe("flume status — the last run's end", () => {
+  /**
+   * The last-run-end rows of a listing, read as whole lines. A negative over
+   * the whole output would turn on whatever else the listing quotes — a temp
+   * path carrying this fixture's own words — rather than on the row the case is
+   * about (`.claude/rules/posture-sweep.md`, *Standing lenses*).
+   */
+  const runEndRows = (out: string): string =>
+    out
+      .split("\n")
+      .filter((line) => line.startsWith("last run end:"))
+      .join("\n");
+
+  /** A repo whose chain loads, with one real `flume loop` already ended in it. */
+  const repoWithEndedRun = async (): Promise<ScratchRepo> => {
+    const repo = await makeScratchRepo("flume-cli-repo-", "main");
+    try {
+      await writeRepoConfig(repo.dir, minimalChainSrc());
+      const loop = await runCli(repo.dir, ["loop", "--max", "0"]);
+      // The end this record is about: an empty baton, so the run hibernated
+      // rather than spending a child or hitting a wall.
+      expect(loop.code, loop.out).toBe(0);
+      expect(loop.out).toContain("hibernating after 0 tick(s)");
+      return repo;
+    } catch (err) {
+      await repo.cleanup();
+      throw err;
+    }
+  };
+
+  it(
+    "flume status reports the reason and time run-end.json records",
+    async () => {
+      const before = Date.now();
+      const repo = await repoWithEndedRun();
+      try {
+        const flumeDir = join(repo.dir, ".flume");
+        const read = readRunEnd(flumeDir);
+        expect(read.kind).toBe("read");
+        if (read.kind !== "read") throw new Error("unreachable: asserted above");
+        // What the run wrote: the reason it ended under, stamped inside this
+        // case's own window — so the instant the line carries is the run's and
+        // not a default or an epoch.
+        expect(read.record.reason).toBe("hibernation");
+        const at = Date.parse(read.record.at);
+        expect(at).toBeGreaterThanOrEqual(before - 1_000);
+        expect(at).toBeLessThanOrEqual(Date.now() + 1_000);
+
+        const status = await runCli(repo.dir, ["status"]);
+
+        expect(status.code, status.out).toBe(0);
+        // The record, through the renderer both sides read it with.
+        expect(runEndRows(status.out)).toBe(runEndLine(read.record));
+        // Nothing stands at loop.pid, so this run's end is the answer rather
+        // than a death the lock would have reported.
+        expect(status.out).not.toContain(RUN_DIED_UNRECORDED_LINE);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it(
+    "flume status says the current run died without recording an end beside a stale loop.pid",
+    async () => {
+      const repo = await repoWithEndedRun();
+      try {
+        const flumeDir = join(repo.dir, ".flume");
+        // Non-vacuity: a record *is* there, written by the run above — which is
+        // what makes the line below a refusal to report it as this run's end
+        // rather than silence over an empty state root.
+        const read = readRunEnd(flumeDir);
+        expect(read.kind).toBe("read");
+        if (read.kind !== "read") throw new Error("unreachable: asserted above");
+        // A later run that died on a signal no handler runs on: its lock is
+        // still there, naming a pid that is gone, and it recorded nothing. The
+        // claim is the real writer's own rendering (`renderPidClaim`,
+        // `src/pidClaim.ts`), never a spelling by this suite's hand.
+        await writeFile(
+          loopLockPath(flumeDir),
+          renderPidClaim(deadPid(), new Date()),
+          "utf8",
+        );
+
+        const status = await runCli(repo.dir, ["status"]);
+
+        expect(status.code, status.out).toBe(0);
+        expect(status.out).toContain("loop.pid present, process dead — stale");
+        // One row, and it is the death — the earlier run's record is not
+        // reported as the end of the run that left this lock.
+        expect(runEndRows(status.out)).toBe(RUN_DIED_UNRECORDED_LINE);
+        expect(runEndRows(status.out)).not.toContain(read.record.reason);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+});
+
+/**
+ * The win32 half of the hangup pair (spec/loop.md, *Crash equals stop*):
+ * `SIGBREAK` is a signal only Windows has — no other host's node names it among
+ * the signals it knows, so no other host can deliver one and a case for it
+ * there would prove nothing about the row. The windows lane is the proof.
+ *
+ * Driven through the real `installSignalledTeardown` in a child of its own, and
+ * driven **twice**: once on `SIGTERM`, once on `SIGBREAK`, with the two traces
+ * compared. That comparison is the claim — "the same teardown" is only worth
+ * asserting against the row already known to work, and a second sequence that
+ * merely resembles it would differ somewhere in the trace.
+ */
+describe("the signalled teardown — SIGBREAK, the win32 hangup", () => {
+  /**
+   * A child that installs the real teardown, hands it a settling piece of work,
+   * and emits the signal argv names — the delivery path node itself takes to a
+   * signal listener.
+   *
+   * The trace goes to a file rather than stdout: the teardown ends with
+   * `process.exit`, which may truncate a pipe that has not drained, and a lost
+   * line would read as a step the teardown skipped.
+   */
+  const teardownScript = (trace: string): string =>
+    `import { appendFileSync } from "node:fs";\n` +
+    `import { installSignalledTeardown } from ${JSON.stringify(
+      fileURLToPath(new URL("../src/cliTeardown.ts", import.meta.url)),
+    )};\n` +
+    `import { signalOfStop } from ${JSON.stringify(
+      fileURLToPath(new URL("../src/runEnd.ts", import.meta.url)),
+    )};\n` +
+    `const note = (line) => appendFileSync(${JSON.stringify(trace)}, line + "\\n");\n` +
+    `const abort = new AbortController();\n` +
+    `let drained = false;\n` +
+    `const inFlight = new Promise((resolve) => {\n` +
+    `  setTimeout(() => { drained = true; resolve(undefined); }, 25);\n` +
+    `});\n` +
+    `let dropped = false;\n` +
+    `installSignalledTeardown({\n` +
+    `  abort,\n` +
+    `  waitingOn: "the in-flight work",\n` +
+    `  inFlight: () => inFlight,\n` +
+    `  killGraceMs: () => 1234,\n` +
+    `  release: () => {\n` +
+    `    if (dropped) return;\n` +
+    `    dropped = true;\n` +
+    `    note("released: drained=" + drained + " signal=" + signalOfStop(abort.signal));\n` +
+    `  },\n` +
+    `  log: { info: note, warn: note, error: note },\n` +
+    `});\n` +
+    `process.emit(process.argv[2]);\n`;
+
+  it.runIf(process.platform === "win32")(
+    "a SIGBREAK ends the run through the same teardown as SIGTERM",
+    async () => {
+      const dir = await mkTempDir("flume-teardown-sigbreak-");
+      try {
+        const run = async (
+          signal: string,
+        ): Promise<{ code: number; trace: string }> => {
+          const trace = join(dir, `${signal}.log`);
+          const script = join(dir, `${signal}.ts`);
+          await writeFile(script, teardownScript(trace), "utf8");
+          const { code } = await runNodeStreams(dir, [TSX_CLI, script, signal]);
+          return { code, trace: readFileSync(trace, "utf8") };
+        };
+
+        const term = await run("SIGTERM");
+        const brk = await run("SIGBREAK");
+
+        // The teardown ran on the SIGBREAK: it announced the wait, drained the
+        // work before releasing, named the signal to that work, and exited on
+        // the signal's own code (128 + SIGBREAK's 21).
+        expect(brk.trace).toContain(
+          "signalled; waiting for the in-flight work to exit",
+        );
+        expect(brk.trace).toContain("released: drained=true signal=SIGBREAK");
+        expect(brk.code).toBe(149);
+
+        // ...and it is the SIGTERM sequence, not a second one: the two traces
+        // differ by the signal's name alone. Non-vacuity rides this — a trace
+        // that never reached the teardown would be empty on both sides and
+        // equal.
+        expect(term.code).toBe(143);
+        expect(term.trace).toContain("released: drained=true signal=SIGTERM");
+        expect(brk.trace.split("SIGBREAK").join("SIGTERM")).toBe(term.trace);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+});
