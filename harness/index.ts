@@ -32,6 +32,7 @@ export {
   judgeNamedLines,
   type JudgeOutcome,
   type JudgeRequest,
+  type JudgeSpan,
   type JudgeVerdict,
   type LineLane,
   type LineState,

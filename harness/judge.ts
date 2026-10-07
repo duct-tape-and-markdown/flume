@@ -11,6 +11,13 @@
  * already passed before the work names a behavior the entry did not
  * introduce.
  *
+ * It accepts a **batch**: the spans one merge carried, each with its own
+ * base. The suite runs once over the merged tree — it is the consumer's whole
+ * suite whatever the merge carried — and the base half builds one tree per
+ * distinct base, so an entry is never proved against a sibling's starting
+ * point. A single span is a batch of one, and no arm below branches on which
+ * it was handed.
+ *
  * Every observation reaches the judge through the runner interface
  * (`runner.ts`), so nothing here knows which tool ran — no report is parsed,
  * no exit code is read, no test file is named. A consumer running cargo or a
@@ -139,32 +146,42 @@ export interface JudgeVerdict {
    */
   readonly failingFiles: readonly string[];
   /**
-   * The subset of {@link failingFiles} the span itself changed — read against
-   * {@link JudgeRequest.footprint}, which the verdict does not restate. A
-   * failure in one of these is the span's however the base ran, so the base
-   * is not asked about it.
+   * The subset of {@link failingFiles} the merge's own spans changed — read
+   * against the union of every {@link JudgeSpan.footprint}, which the verdict
+   * does not restate. A failure in one of these is the merge's however the
+   * bases ran, so no base is asked about it.
    *
    * Empty over a green suite, and empty over a red suite whose every failing
-   * file the span never touched — the case that sends those files to the base.
+   * file no span touched — the case that sends those files to the bases.
    */
   readonly ownFailingFiles: readonly string[];
   /**
-   * Every failure the base run over {@link failingFiles} reported, in report
-   * order. That run happens exactly when the suite is red, `failingFiles` is
-   * populated, and {@link ownFailingFiles} is empty, so whether it happened
-   * is read off those rather than off a fourth field restating them
-   * (`.claude/rules/engineering.md`, *Derived state is computed, never
-   * restated beside its source*).
+   * Every failure the base runs over {@link failingFiles} reported, in the
+   * order the bases were asked. Those runs happen exactly when the suite is
+   * red, `failingFiles` is populated, and {@link ownFailingFiles} is empty, so
+   * whether they happened is read off those rather than off a fourth field
+   * restating them (`.claude/rules/engineering.md`, *Derived state is
+   * computed, never restated beside its source*). Over a batch every distinct
+   * base is asked, and a failure at any one of them is enough: a file red
+   * before one of these spans existed is not a red the merge can be held to.
    *
-   * Non-empty is the `base-red` outcome: the suite was failing before this
-   * span existed.
+   * Non-empty is the `base-red` outcome: the suite was failing before the
+   * spans this merge carried existed.
    */
   readonly baseFailures: readonly TestFailure[];
 }
 
-/** What the judge is asked to rule on. */
-export interface JudgeRequest {
-  /** The entry's `tests[]`: green on the merged tree, red at the base. */
+/**
+ * One span of the merge the judge is ruling over: an entry's named lines, and
+ * the facts that tell what that span did from what it inherited.
+ *
+ * A span the merge carried with no entry — or one whose commit put its work
+ * down — states empty line lists and keeps its {@link footprint}: its edits
+ * are in the tree the suite ran over, so a failure in one of its files is the
+ * merge's own however the bases run.
+ */
+export interface JudgeSpan {
+  /** The entry's `tests[]`: green on the merged tree, red at this span's base. */
   readonly tests: readonly string[];
   /** The entry's `pins[]`: green on the merged tree, never run at the base. */
   readonly pins: readonly string[];
@@ -176,20 +193,32 @@ export interface JudgeRequest {
    */
   readonly laneTests: readonly LaneTest[];
   /**
-   * The commit the merged tree is judged against. Required rather than
-   * optional: a judge handed no base cannot rule on a `tests[]` line, and a
-   * caller that has no base sha resolves that before it gets here.
+   * The commit this span's `tests[]` lines are judged against. Required rather
+   * than optional: a judge handed no base cannot rule on a `tests[]` line, and
+   * a caller that has no base sha resolves that before it gets here. Spans
+   * sharing a value share one base tree, and each distinct value builds its
+   * own — which is the whole of what a batch costs over a single span.
    */
   readonly baseSha: string;
   /**
-   * The gated span's changed paths, in git's own alphabet — a gate hands over
-   * `GateContext.touchedPaths`, which the dispatcher already computed. It is
-   * the only value that tells a failure the span caused from one it merely
-   * inherited, so it is required for the same reason {@link baseSha} is: a
-   * caller with no footprint has no span, and a judge handed none would read
-   * every red suite as the span's.
+   * This span's changed paths, in git's own alphabet — a gate hands over
+   * `GateContext.touchedPaths`, or one `GateBatchSpan`'s, which the dispatcher
+   * already computed. It is the only value that tells a failure the merge
+   * caused from one it merely inherited, so it is required for the same reason
+   * {@link baseSha} is: a caller with no footprint has no span, and a judge
+   * handed none would read every red suite as the merge's.
    */
   readonly footprint: readonly string[];
+}
+
+/** What the judge is asked to rule on. */
+export interface JudgeRequest {
+  /**
+   * The spans one merge carried, in the order they landed — never empty,
+   * since a merge that carried no span runs no gate. A serial merge passes
+   * one, which is the shape every arm below is written over.
+   */
+  readonly spans: readonly JudgeSpan[];
   /** The tree to run in. */
   readonly cwd: string;
 }
@@ -238,41 +267,74 @@ const firstOf = (failures: readonly TestFailure[]): string => {
 };
 
 /**
- * Judge one entry's named lines through a declared runner.
+ * The short shas a message names a set of base trees by, in first-seen order.
+ * One for a serial merge, so a batch's message reads as the single-span one
+ * did with one base in it.
+ */
+const shortBases = (shas: readonly string[]): string =>
+  [...new Set(shas)].map((sha) => sha.slice(0, 7)).join(", ");
+
+/**
+ * Judge the named lines of every span one merge carried, through a declared
+ * runner.
  *
- * The merged-tree run happens once and carries both lanes, because it is the
- * consumer's whole suite either way. The base run happens only when a
- * `tests[]` line survived to need it, and only the `tests[]` lines are asked
- * about there — a `pins[]` line names a property that was already true, so
- * asking whether it holds at the base is asking a question whose answer
- * changes nothing.
+ * The merged-tree run happens **once** over all of them and carries every
+ * lane, because it is the consumer's whole suite either way — one span's or
+ * five. The base runs happen only when a `tests[]` line survived to need one,
+ * and then **one tree per distinct base**, over the union of the files the
+ * lines of the spans sharing that base named and asked about exactly those
+ * lines: a span is proved against the tree its own entry branched from, never
+ * a sibling's. Only `tests[]` lines reach a base — a `pins[]` line names a
+ * property that was already true, so asking whether it holds at the base is
+ * asking a question whose answer changes nothing.
  *
  * A base run that fails is not a problem: red is the expectation there, and a
  * file that cannot even load at the base (it imports a symbol the entry
  * introduced) carries no passing test and so reads red — conservative in the
  * direction that matters.
  *
- * A `laneTests[]` line reaches neither run's base half. Its case is one this
- * host cannot run, so the merged run is asked whether the case exists at all
- * — skipped counts — and the ruling stops there: the lane is the proof, and
- * a base run over a case that never ran here would compare two silences.
+ * A `laneTests[]` line reaches no base run. Its case is one this host cannot
+ * run, so the merged run is asked whether the case exists at all — skipped
+ * counts — and the ruling stops there: the lane is the proof, and a base run
+ * over a case that never ran here would compare two silences.
  *
- * A **red merged suite** reaches the base too, and for the opposite question:
- * whether it was red before this span existed. That question is asked only
- * when *no* failing file is in the span's footprint, and then over all of
- * them, through the same `runAtBase` — the overlay it lays down is the
- * working tree's copy of a file the span never changed, so the base's own
- * verdict is what runs. One failing file the span *did* touch settles the
- * blame here and spends no base run: that overlay would carry the span's own
- * breakage to the base and report it back as the base's.
+ * A **red merged suite** reaches the bases too, and for the opposite question:
+ * whether it was red before these spans existed. That question is asked only
+ * when *no* failing file is in any span's footprint, and then over all of them
+ * at every distinct base, through the same `runAtBase` — the overlay it lays
+ * down is the working tree's copy of a file no span changed, so each base's
+ * own verdict is what runs, and a failure at any one of them is a red the
+ * merge did not make. One failing file a span *did* touch settles the blame
+ * here and spends no base run: that overlay would carry the merge's own
+ * breakage to a base and report it back as the base's.
  */
 export async function judgeNamedLines(
   runner: Runner,
   request: JudgeRequest,
 ): Promise<JudgeVerdict> {
-  const { tests, pins, laneTests, baseSha, footprint, cwd } = request;
-  const named = [...tests, ...pins, ...laneTests.map((l) => l.title)];
-  const spanFiles = new Set(footprint);
+  const { spans, cwd } = request;
+  if (spans.length === 0) {
+    throw new Error(
+      `the judge was handed no span to rule on: a merge that carried none ` +
+        `runs no gate, so reaching here with none is the caller's bug and ` +
+        `not a verdict to report (spec/harness.md, The judges).`,
+    );
+  }
+  /** Every span's footprint: any one span's edit is in the tree the suite ran. */
+  const spanFiles = new Set(spans.flatMap((s) => s.footprint));
+  const bases = [...new Set(spans.map((s) => s.baseSha))];
+  const tests = spans.flatMap((s) => s.tests);
+  const pins = spans.flatMap((s) => s.pins);
+  /** What the one merged-tree run is asked about: every span's lines, once. */
+  const named = [
+    ...new Set(
+      spans.flatMap((s) => [
+        ...s.tests,
+        ...s.pins,
+        ...s.laneTests.map((l) => l.title),
+      ]),
+    ),
+  ];
 
   const run = await runner.run(named, cwd);
   const failingFiles = [...new Set(run.failures.map((f) => f.file))];
@@ -298,7 +360,7 @@ export async function judgeNamedLines(
    * One host-gated line. A case the run skipped is exactly as good as a case
    * it passed — neither proves the behavior here — so both read `owed`, and
    * only a title no test carries at all is refused. A case that *failed* here
-   * never reaches this: the suite is red and the whole entry is unjudgeable
+   * never reaches this: the suite is red and the whole merge is unjudgeable
    * (`spec/harness.md`, *The judges*).
    */
   const draftLane = ({ lane, title }: LaneTest): LineVerdict => {
@@ -311,28 +373,44 @@ export async function judgeNamedLines(
       owedTo: lane,
     };
   };
-  const lines: LineVerdict[] = [
-    ...tests.map((line) => draft(line, "tests")),
-    ...pins.map((line) => draft(line, "pins")),
-    ...laneTests.map(draftLane),
-  ];
+  /**
+   * Each span's line verdicts, kept beside the span they came from: the base
+   * half has to know whose base a `tests[]` line is proved at, and the flat
+   * list the verdict reports is these in landing order.
+   */
+  const drafted: { readonly span: JudgeSpan; lines: readonly LineVerdict[] }[] =
+    spans.map((span) => ({
+      span,
+      lines: [
+        ...span.tests.map((line) => draft(line, "tests")),
+        ...span.pins.map((line) => draft(line, "pins")),
+        ...span.laneTests.map(draftLane),
+      ],
+    }));
+  const lines = drafted.flatMap((d) => d.lines);
 
   if (!run.ok) {
-    const short = baseSha.slice(0, 7);
-    // Every failing file is one the span never touched, so the base can be
-    // asked whether they were failing already. One file the span *did* touch
-    // settles the blame here, and no base run is spent.
+    const at = shortBases(bases);
+    // Every failing file is one no span touched, so the bases can be asked
+    // whether they were failing already. One file a span *did* touch settles
+    // the blame here, and no base run is spent.
     const askBase = failingFiles.length > 0 && observed.ownFailingFiles.length === 0;
-    const baseFailures = askBase
-      ? (await runner.runAtBase([], failingFiles, baseSha, cwd)).failures
-      : [];
+    const baseFailures: TestFailure[] = [];
+    if (askBase) {
+      // Sequentially, one base tree at a time: each is a checkout the runner
+      // plants and the gate boundary reclaims.
+      for (const baseSha of bases) {
+        const atBase = await runner.runAtBase([], failingFiles, baseSha, cwd);
+        baseFailures.push(...atBase.failures);
+      }
+    }
 
     if (baseFailures.length > 0) {
       return {
         outcome: "base-red",
         message:
-          `the suite was already red at ${short}: ${baseFailures.length} failure(s) there ` +
-          `across ${failingFiles.length} file(s) this span never touched` +
+          `the suite was already red at ${at}: ${baseFailures.length} failure(s) there ` +
+          `across ${failingFiles.length} file(s) no span of this merge touched` +
           firstOf(baseFailures),
         lines,
         ...observed,
@@ -345,19 +423,19 @@ export async function judgeNamedLines(
       message:
         `the suite is not green: ${run.failures.length} failure(s)` +
         firstOf(run.failures) +
-        // What the base run found, and nothing concluded from it. One green
-        // run over these files says the failure is not standing at the base;
-        // it does not say this span caused it — a load-sensitive case is red
+        // What the base runs found, and nothing concluded from them. A green
+        // run over these files says the failure is not standing at that base;
+        // it does not say this merge caused it — a load-sensitive case is red
         // on the merged tree and green at the base whichever span was
         // merging, and a drain reading a standing prior-attempt record acts
         // on the verdict either way.
-        (askBase ? `; the same ${failingFiles.length} file(s) ran green at ${short}` : ""),
+        (askBase ? `; the same ${failingFiles.length} file(s) ran green at ${at}` : ""),
       lines,
       ...observed,
     };
   }
 
-  if (named.length === 0) {
+  if (lines.length === 0) {
     return {
       outcome: "empty",
       message: `the suite is green (${run.passed} passed) and the entry named no line — nothing judged`,
@@ -371,7 +449,7 @@ export async function judgeNamedLines(
     return {
       outcome: "unnamed",
       message:
-        `${unnamed.length} of ${named.length} named line(s) have no test: ${quote(unnamed)} ` +
+        `${unnamed.length} of ${lines.length} named line(s) have no test: ${quote(unnamed)} ` +
         `— title a passing test with each line verbatim; a laneTests[] line's ` +
         `case is skipped on this host, never absent from the suite`,
       lines,
@@ -391,20 +469,47 @@ export async function judgeNamedLines(
     };
   }
 
-  const files = [...new Set(lines.filter((l) => l.lane === "tests").flatMap((l) => l.files))];
-  if (files.length === 0) {
-    throw new Error(
-      `the runner reported ${tests.length} carried tests[] line(s) and no file holding them, ` +
-        `so there is nothing to lay over the base (spec/harness.md, The runner interface).`,
+  // One base tree per distinct base among the spans that named a `tests[]`
+  // line, each over the union of the files those spans' lines were carried in
+  // and asked about exactly those lines. The answer is written back onto the
+  // span it belongs to, so no line is ruled from a sibling's base.
+  for (const baseSha of bases) {
+    const own = drafted.filter(
+      (d) => d.span.baseSha === baseSha && d.span.tests.length > 0,
     );
+    if (own.length === 0) continue;
+    const names = [...new Set(own.flatMap((d) => d.span.tests))];
+    const files = [
+      ...new Set(
+        own.flatMap((d) =>
+          d.lines.filter((l) => l.lane === "tests").flatMap((l) => l.files),
+        ),
+      ),
+    ];
+    if (files.length === 0) {
+      throw new Error(
+        `the runner reported ${names.length} carried tests[] line(s) and no file holding them, ` +
+          `so there is nothing to lay over the base (spec/harness.md, The runner interface).`,
+      );
+    }
+    const atBase = await runner.runAtBase(names, files, baseSha, cwd);
+    for (const d of own) {
+      d.lines = d.lines.map((l): LineVerdict =>
+        l.lane === "tests"
+          ? {
+              ...l,
+              state: answerFor(atBase, l.line, `the base run at ${baseSha}`).carried
+                ? "green-on-base"
+                : "proven",
+            }
+          : l,
+      );
+    }
   }
-
-  const atBase = await runner.runAtBase(tests, files, baseSha, cwd);
-  const ruled = lines.map((l): LineVerdict => {
-    if (l.lane !== "tests") return l;
-    const carried = answerFor(atBase, l.line, `the base run at ${baseSha}`).carried;
-    return { ...l, state: carried ? "green-on-base" : "proven" };
-  });
+  const ruled = drafted.flatMap((d) => d.lines);
+  const provedAt = shortBases(
+    spans.filter((s) => s.tests.length > 0).map((s) => s.baseSha),
+  );
 
   const greenOnBase = ruled.filter((l) => l.state === "green-on-base");
   if (greenOnBase.length > 0) {
@@ -412,7 +517,7 @@ export async function judgeNamedLines(
       outcome: "green-on-base",
       message:
         `${greenOnBase.length} of ${tests.length} tests[] line(s) already pass at ` +
-        `${baseSha.slice(0, 7)}: ${quote(greenOnBase)} — each names a behavior the entry did not introduce`,
+        `${provedAt}: ${quote(greenOnBase)} — each names a behavior the entry did not introduce`,
       lines: ruled,
       ...observed,
     };
@@ -421,7 +526,7 @@ export async function judgeNamedLines(
   return {
     outcome: "proven",
     message:
-      `${tests.length} tests[] line(s) green (${run.passed} passed) and red at ${baseSha.slice(0, 7)}` +
+      `${tests.length} tests[] line(s) green (${run.passed} passed) and red at ${provedAt}` +
       (pins.length > 0 ? `; ${pins.length} pins[] line(s) green` : "") +
       owedClause(ruled),
     lines: ruled,

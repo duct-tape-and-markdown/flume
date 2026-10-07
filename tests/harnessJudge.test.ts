@@ -22,9 +22,17 @@
 
 import { describe, expect, it } from "vitest";
 
-import { judgeNamedLines, type RunResult, type Runner, type TestFailure } from "../harness/index.ts";
+import {
+  judgeNamedLines,
+  type JudgeSpan,
+  type RunResult,
+  type Runner,
+  type TestFailure,
+} from "../harness/index.ts";
 import { namedLinesGate } from "../harness/judgeGate.ts";
-import type { GateContext } from "../src/Gate.ts";
+import type { GateBatchSpan, GateContext, GateSite } from "../src/Gate.ts";
+import { batchGateContext, mergeBatchWidth } from "../src/gateBatch.ts";
+import type { Chain, Phase } from "../src/Phase.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 
 const BASE_SHA = "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c";
@@ -87,7 +95,12 @@ const answer = (suite: FakeSuite, names: readonly string[]): RunResult => {
 
 const fakeRunner = (
   merged: FakeSuite,
-  atBase?: FakeSuite,
+  /**
+   * What the base run finds: one suite for every base, or a function of the
+   * base sha where a batch's spans branched from different ones and each tree
+   * has its own answer.
+   */
+  atBase?: FakeSuite | ((baseSha: string) => FakeSuite),
 ): { runner: Runner; asked: Asked } => {
   const asked: Asked = { run: [], runAtBase: [] };
   const runner: Runner = {
@@ -99,7 +112,7 @@ const fakeRunner = (
     runAtBase: async (names, files, baseSha, cwd) => {
       asked.runAtBase.push({ names, files, baseSha, cwd });
       if (!atBase) throw new Error("the base run happened, and this case declared no base suite");
-      return answer(atBase, names);
+      return answer(typeof atBase === "function" ? atBase(baseSha) : atBase, names);
     },
   };
   return { runner, asked };
@@ -116,11 +129,15 @@ describe("the judge", () => {
     });
 
     const verdict = await judgeNamedLines(runner, {
-      tests: [line],
-      pins: [],
-      laneTests: [],
-      baseSha: BASE_SHA,
-      footprint: FOOTPRINT,
+      spans: [
+        {
+          tests: [line],
+          pins: [],
+          laneTests: [],
+          baseSha: BASE_SHA,
+          footprint: FOOTPRINT,
+        },
+      ],
       cwd: CWD,
     });
 
@@ -151,11 +168,15 @@ describe("the judge", () => {
     );
 
     const verdict = await judgeNamedLines(runner, {
-      tests: [stale, fresh],
-      pins: [],
-      laneTests: [],
-      baseSha: BASE_SHA,
-      footprint: FOOTPRINT,
+      spans: [
+        {
+          tests: [stale, fresh],
+          pins: [],
+          laneTests: [],
+          baseSha: BASE_SHA,
+          footprint: FOOTPRINT,
+        },
+      ],
       cwd: CWD,
     });
 
@@ -189,11 +210,15 @@ describe("the judge", () => {
     );
 
     const verdict = await judgeNamedLines(runner, {
-      tests: [here],
-      pins: [],
-      laneTests: [{ lane: "win32", title: gated }],
-      baseSha: BASE_SHA,
-      footprint: FOOTPRINT,
+      spans: [
+        {
+          tests: [here],
+          pins: [],
+          laneTests: [{ lane: "win32", title: gated }],
+          baseSha: BASE_SHA,
+          footprint: FOOTPRINT,
+        },
+      ],
       cwd: CWD,
     });
 
@@ -237,11 +262,15 @@ describe("the judge", () => {
     });
 
     const verdict = await judgeNamedLines(runner, {
-      tests: [],
-      pins: [],
-      laneTests: [{ lane: "win32", title: gated }],
-      baseSha: BASE_SHA,
-      footprint: FOOTPRINT,
+      spans: [
+        {
+          tests: [],
+          pins: [],
+          laneTests: [{ lane: "win32", title: gated }],
+          baseSha: BASE_SHA,
+          footprint: FOOTPRINT,
+        },
+      ],
       cwd: CWD,
     });
 
@@ -274,11 +303,15 @@ describe("the judge", () => {
     );
 
     const verdict = await judgeNamedLines(runner, {
-      tests: [test],
-      pins: [pin],
-      laneTests: [],
-      baseSha: BASE_SHA,
-      footprint: FOOTPRINT,
+      spans: [
+        {
+          tests: [test],
+          pins: [pin],
+          laneTests: [],
+          baseSha: BASE_SHA,
+          footprint: FOOTPRINT,
+        },
+      ],
       cwd: CWD,
     });
 
@@ -306,11 +339,15 @@ describe("the judge", () => {
     });
 
     const verdict = await judgeNamedLines(runner, {
-      tests: [],
-      pins: [],
-      laneTests: [],
-      baseSha: BASE_SHA,
-      footprint: FOOTPRINT,
+      spans: [
+        {
+          tests: [],
+          pins: [],
+          laneTests: [],
+          baseSha: BASE_SHA,
+          footprint: FOOTPRINT,
+        },
+      ],
       cwd: CWD,
     });
 
@@ -333,14 +370,18 @@ describe("the judge", () => {
     });
 
     const verdict = await judgeNamedLines(runner, {
-      tests: [line],
-      pins: [],
-      laneTests: [],
-      baseSha: BASE_SHA,
-      // The failing file is the span's own, so the ruling is settled here and
-      // no base run is asked for — the case's subject is the merged-tree
-      // reading, and the blame arm has its own case below.
-      footprint: [...FOOTPRINT, "tests/other.test.ts"],
+      spans: [
+        {
+          tests: [line],
+          pins: [],
+          laneTests: [],
+          baseSha: BASE_SHA,
+          // The failing file is the span's own, so the ruling is settled here and
+          // no base run is asked for — the case's subject is the merged-tree
+          // reading, and the blame arm has its own case below.
+          footprint: [...FOOTPRINT, "tests/other.test.ts"],
+        },
+      ],
       cwd: CWD,
     });
 
@@ -375,11 +416,15 @@ describe("the judge", () => {
     );
 
     const verdict = await judgeNamedLines(runner, {
-      tests: [line],
-      pins: [],
-      laneTests: [],
-      baseSha: BASE_SHA,
-      footprint: FOOTPRINT,
+      spans: [
+        {
+          tests: [line],
+          pins: [],
+          laneTests: [],
+          baseSha: BASE_SHA,
+          footprint: FOOTPRINT,
+        },
+      ],
       cwd: CWD,
     });
 
@@ -417,11 +462,15 @@ describe("the judge", () => {
     });
 
     const verdict = await judgeNamedLines(runner, {
-      tests: [line],
-      pins: [],
-      laneTests: [],
-      baseSha: BASE_SHA,
-      footprint: FOOTPRINT,
+      spans: [
+        {
+          tests: [line],
+          pins: [],
+          laneTests: [],
+          baseSha: BASE_SHA,
+          footprint: FOOTPRINT,
+        },
+      ],
       cwd: CWD,
     });
 
@@ -452,11 +501,15 @@ describe("the judge", () => {
     );
 
     const verdict = await judgeNamedLines(runner, {
-      tests: [line],
-      pins: [],
-      laneTests: [],
-      baseSha: BASE_SHA,
-      footprint: FOOTPRINT,
+      spans: [
+        {
+          tests: [line],
+          pins: [],
+          laneTests: [],
+          baseSha: BASE_SHA,
+          footprint: FOOTPRINT,
+        },
+      ],
       cwd: CWD,
     });
 
@@ -493,13 +546,17 @@ describe("the judge", () => {
     });
 
     const verdict = await judgeNamedLines(runner, {
-      tests: [line],
-      pins: [],
-      laneTests: [],
-      baseSha: BASE_SHA,
-      // Both failing files are the span's own: the subject here is the blame
-      // list's order, not what a base run would say about it.
-      footprint: [...FOOTPRINT, "tests/zebra.test.ts", "tests/apple.test.ts"],
+      spans: [
+        {
+          tests: [line],
+          pins: [],
+          laneTests: [],
+          baseSha: BASE_SHA,
+          // Both failing files are the span's own: the subject here is the blame
+          // list's order, not what a base run would say about it.
+          footprint: [...FOOTPRINT, "tests/zebra.test.ts", "tests/apple.test.ts"],
+        },
+      ],
       cwd: CWD,
     });
 
@@ -527,11 +584,15 @@ describe("the judge", () => {
 
     await expect(
       judgeNamedLines(runner, {
-        tests: [line],
-        pins: [],
-        laneTests: [],
-        baseSha: BASE_SHA,
-        footprint: FOOTPRINT,
+        spans: [
+          {
+            tests: [line],
+            pins: [],
+            laneTests: [],
+            baseSha: BASE_SHA,
+            footprint: FOOTPRINT,
+          },
+        ],
         cwd: CWD,
       }),
     ).rejects.toThrow(/reported no result for the named line/);
@@ -545,9 +606,7 @@ describe("the judge", () => {
  * agreement claim (`.claude/rules/engineering.md`, *A seam gate reads what
  * the real writer wrote*).
  */
-const gateContext = (
-  over: Pick<GateContext, "entry" | "touchedPaths">,
-): GateContext => ({
+const SITE: GateSite = {
   cwd: CWD,
   repoRoot: CWD,
   flumeDir: `${CWD}/.flume`,
@@ -555,10 +614,16 @@ const gateContext = (
   pendingDir: `${CWD}/.flume/plan/pending`,
   configDir: `${CWD}/.flume`,
   phaseName: "build",
+  log: () => {},
+};
+
+const gateContext = (
+  over: Pick<GateContext, "entry" | "touchedPaths">,
+): GateContext => ({
+  ...SITE,
   commitSha: "a".repeat(40),
   baseSha: BASE_SHA,
   landedOnSha: "b".repeat(40),
-  log: () => {},
   ...over,
 });
 
@@ -754,5 +819,260 @@ describe("the named-lines gate", () => {
     expect((result.details ?? "").split("\n").filter((l) => l.startsWith("FAIL "))).toEqual([
       `FAIL ${inherited.file} × ${inherited.name}: ${inherited.message}`,
     ]);
+  });
+});
+
+/**
+ * A second base for a batch whose spans branched from different tips — the
+ * shape one base tree per span is the cost of.
+ */
+const OTHER_BASE = "9a8b7c6d5e4f30211203f4e5d6c7b8a99a8b7c6d";
+
+describe("the judge over a batch", () => {
+  const first = "the widget refuses a negative count";
+  const second = "the gauge rounds half up";
+  const third = "the dial clamps at the ceiling";
+
+  /** One span of a batch: its `tests[]`, and whichever facts a case varies. */
+  const span = (
+    tests: readonly string[],
+    over?: { readonly baseSha?: string; readonly footprint?: readonly string[] },
+  ): JudgeSpan => ({
+    tests,
+    pins: [],
+    laneTests: [],
+    baseSha: over?.baseSha ?? BASE_SHA,
+    footprint: over?.footprint ?? FOOTPRINT,
+  });
+
+  /** A merged tree carrying one passing test per line, each in its own file. */
+  const MERGED: FakeSuite = {
+    passing: [
+      { fullName: `widget > ${first}`, file: "tests/widget.test.ts" },
+      { fullName: `gauge > ${second}`, file: "tests/gauge.test.ts" },
+      { fullName: `dial > ${third}`, file: "tests/dial.test.ts" },
+    ],
+  };
+
+  it("the judge runs the suite once over a batch's merged tree", async () => {
+    const { runner, asked } = fakeRunner(MERGED, { passing: [] });
+
+    const verdict = await judgeNamedLines(runner, {
+      spans: [span([first]), span([second], { footprint: ["src/gauge.ts"] })],
+      cwd: CWD,
+    });
+
+    // Vacuity: two spans, two lines, and both really were proven — so "once"
+    // is a suite that covered the whole batch rather than one asked about
+    // half of it.
+    expect(verdict.outcome).toBe("proven");
+    expect(verdict.lines.map((l) => l.state)).toEqual(["proven", "proven"]);
+
+    // One run, asked about every span's line: the merged tree is the
+    // consumer's whole suite whatever the merge carried.
+    expect(asked.run).toHaveLength(1);
+    expect(asked.run[0]?.names).toEqual([first, second]);
+  });
+
+  it("the judge builds one base tree per distinct base in a batch", async () => {
+    const { runner, asked } = fakeRunner(MERGED, { passing: [] });
+
+    await judgeNamedLines(runner, {
+      spans: [
+        span([first]),
+        span([second], { footprint: ["src/gauge.ts"] }),
+        span([third], { baseSha: OTHER_BASE, footprint: ["src/dial.ts"] }),
+      ],
+      cwd: CWD,
+    });
+
+    // Two bases among three spans, so two trees — and the shared one is asked
+    // about both its spans' lines at once rather than once per span.
+    expect(asked.runAtBase).toEqual([
+      {
+        names: [first, second],
+        files: ["tests/widget.test.ts", "tests/gauge.test.ts"],
+        baseSha: BASE_SHA,
+        cwd: CWD,
+      },
+      { names: [third], files: ["tests/dial.test.ts"], baseSha: OTHER_BASE, cwd: CWD },
+    ]);
+
+    // Non-vacuous the other way: the same three spans sharing one base build
+    // one tree, so the count above is the distinct bases and not the spans.
+    const shared = fakeRunner(MERGED, { passing: [] });
+    await judgeNamedLines(shared.runner, {
+      spans: [
+        span([first]),
+        span([second], { footprint: ["src/gauge.ts"] }),
+        span([third], { footprint: ["src/dial.ts"] }),
+      ],
+      cwd: CWD,
+    });
+    expect(shared.asked.runAtBase).toHaveLength(1);
+  });
+
+  it("each entry's named lines are proved red at that entry's own base", async () => {
+    const spans = [
+      span([first]),
+      span([second], { baseSha: OTHER_BASE, footprint: ["src/gauge.ts"] }),
+    ];
+    const carried = (fullName: string, file: string): FakeSuite => ({
+      passing: [{ fullName, file }],
+    });
+    // Each base carries its *sibling's* line and never its own span's: a
+    // judge that asked the wrong tree would read both lines as already green
+    // there, which is the whole difference one base per entry buys.
+    const { runner, asked } = fakeRunner(MERGED, (baseSha) =>
+      baseSha === BASE_SHA
+        ? carried(`gauge > ${second}`, "tests/gauge.test.ts")
+        : carried(`widget > ${first}`, "tests/widget.test.ts"),
+    );
+
+    const verdict = await judgeNamedLines(runner, { spans, cwd: CWD });
+
+    // Vacuity: two trees were built, each asked about its own span's line.
+    expect(asked.runAtBase.map((r) => [r.baseSha, r.names])).toEqual([
+      [BASE_SHA, [first]],
+      [OTHER_BASE, [second]],
+    ]);
+    expect(verdict.outcome).toBe("proven");
+    expect(verdict.lines.map((l) => l.state)).toEqual(["proven", "proven"]);
+    // Both bases are named, so a reader sees which tree each line was proved
+    // against rather than one sha standing for the batch.
+    expect(verdict.message).toContain(BASE_SHA.slice(0, 7));
+    expect(verdict.message).toContain(OTHER_BASE.slice(0, 7));
+
+    // Non-vacuous: each tree's answer really is read against the span that
+    // branched from it. Hand every base its own span's line and both come
+    // back already green there.
+    const own = fakeRunner(MERGED, (baseSha) =>
+      baseSha === BASE_SHA
+        ? carried(`widget > ${first}`, "tests/widget.test.ts")
+        : carried(`gauge > ${second}`, "tests/gauge.test.ts"),
+    );
+    const already = await judgeNamedLines(own.runner, { spans, cwd: CWD });
+    expect(already.outcome).toBe("green-on-base");
+    expect(
+      already.lines.filter((l) => l.state === "green-on-base").map((l) => l.line),
+    ).toEqual([first, second]);
+  });
+
+  it("a base tree is laid over the union of the files the entries' lines name", async () => {
+    const { runner, asked } = fakeRunner(MERGED, { passing: [] });
+
+    const verdict = await judgeNamedLines(runner, {
+      spans: [span([first]), span([second], { footprint: ["src/gauge.ts"] })],
+      cwd: CWD,
+    });
+
+    // Vacuity: each line really was carried in a file of its own on the
+    // merged tree, so the union below is over two names and not one repeated.
+    expect(verdict.lines.map((l) => l.files)).toEqual([
+      ["tests/widget.test.ts"],
+      ["tests/gauge.test.ts"],
+    ]);
+
+    // The spans share a base, so one tree is built — over both files, since a
+    // tree missing one span's would read that span's line red for the wrong
+    // reason.
+    expect(asked.runAtBase).toEqual([
+      {
+        names: [first, second],
+        files: ["tests/widget.test.ts", "tests/gauge.test.ts"],
+        baseSha: BASE_SHA,
+        cwd: CWD,
+      },
+    ]);
+  });
+});
+
+describe("the named-lines gate over a batch", () => {
+  const line = "the widget refuses a negative count";
+  const other = "the gauge rounds half up";
+  /** A span that finished the entry it was handed (`harness/putDown.ts`). */
+  const finished = (): undefined => undefined;
+
+  /** One span of a batched merge, as the dispatcher reports it. */
+  const picked = (
+    entry: PendingEntry,
+    touchedPaths: readonly string[],
+    baseSha = BASE_SHA,
+  ): GateBatchSpan => ({
+    entry,
+    commitSha: "c".repeat(40),
+    baseSha,
+    landedOnSha: "b".repeat(40),
+    touchedPaths,
+  });
+
+  it("the package's judge gate declares batches", () => {
+    const { runner } = fakeRunner({ passing: [] });
+    const gate = namedLinesGate(runner, finished);
+
+    expect(gate.batches).toBe(true);
+    // Vacuity: the declaration is only read off an `afterMerge` gate, so a
+    // judge hung anywhere else would satisfy the assertion above and buy the
+    // phase nothing.
+    expect(gate.when).toBe("afterMerge");
+
+    // And the engine reading it: a phase batches only where every one of its
+    // `afterMerge` gates says it reads a batch, so this declaration is what
+    // lets a batched merge reach the judge at all.
+    const phase: Phase = {
+      name: "build",
+      description: "",
+      promptPath: "prompt.md",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      gates: [gate],
+      handoff: () => [],
+    };
+    const chain: Chain = {
+      phases: [phase],
+      humanOnly: [],
+      supervisorPolicy: { mergeBatch: 3 },
+    };
+    expect(mergeBatchWidth(chain, phase)).toBe(3);
+  });
+
+  it("the judge gate rules on every entry of a batch and leaves a parked span's lines unattempted", async () => {
+    const { runner } = fakeRunner(
+      {
+        passing: [
+          { fullName: `widget > ${line}`, file: "tests/widget.test.ts" },
+          { fullName: `gauge > ${other}`, file: "tests/gauge.test.ts" },
+        ],
+      },
+      { passing: [] },
+    );
+    const parked: PendingEntry = { ...entryNaming(other), tag: "PARKED-ENTRY" };
+    const ctx = batchGateContext(SITE, [
+      picked(entryNaming(line), ["src/widget.ts"]),
+      picked(parked, [".flume/plan/notes/parked/PARKED-ENTRY.md"]),
+    ]);
+
+    const result = await namedLinesGate(runner, (entry) =>
+      entry.tag === parked.tag ? "parked" : undefined,
+    ).run(ctx);
+
+    // The finished span's line is judged; the parked one's is not, and the
+    // gate says which beside the ruling rather than passing over it.
+    expect(result.ok).toBe(true);
+    expect(result.skipped).toBeUndefined();
+    expect(result.message).toContain("1 tests[] line(s) green");
+    expect(result.message).toContain(`${parked.tag}: parked`);
+
+    // Non-vacuous: both lines were in the suite all along, and the same batch
+    // with neither span putting its work down judges both.
+    const judged = await namedLinesGate(runner, finished).run(ctx);
+    expect(judged.ok).toBe(true);
+    expect(judged.message).toContain("2 tests[] line(s) green");
+
+    // And a batch whose every span put its work down skips exactly as a
+    // single such span does, under the kind the spans declared.
+    const down = await namedLinesGate(runner, () => "parked").run(ctx);
+    expect(down.ok).toBe(true);
+    expect(down.skipped).toBe("a park attempts none of the entry's named lines");
   });
 });

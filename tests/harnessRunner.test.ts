@@ -500,11 +500,15 @@ describe("the vitest runner", () => {
 
     const verdict = await inGateScope(() =>
       judgeNamedLines(runner, {
-        tests: [test],
-        pins: [pin],
-        laneTests: [],
-        baseSha,
-        footprint,
+        spans: [
+          {
+            tests: [test],
+            pins: [pin],
+            laneTests: [],
+            baseSha,
+            footprint,
+          },
+        ],
         cwd: fixture,
       }),
     );
@@ -542,11 +546,15 @@ describe("the vitest runner", () => {
 
     const verdict = await inGateScope(() =>
       judgeNamedLines(runner, {
-        tests: [line],
-        pins: [],
-        laneTests: [],
-        baseSha,
-        footprint,
+        spans: [
+          {
+            tests: [line],
+            pins: [],
+            laneTests: [],
+            baseSha,
+            footprint,
+          },
+        ],
         cwd: fixture,
       }),
     );
@@ -1373,11 +1381,15 @@ describe("the vitest runner over a span that inherited a red suite", () => {
 
     const verdict = await inGateScope(() =>
       judgeNamedLines(runner, {
-        tests: [line],
-        pins: [],
-        laneTests: [],
-        baseSha,
-        footprint,
+        spans: [
+          {
+            tests: [line],
+            pins: [],
+            laneTests: [],
+            baseSha,
+            footprint,
+          },
+        ],
         cwd: fixture,
       }),
     );
