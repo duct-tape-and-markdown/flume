@@ -1510,3 +1510,47 @@ it("the inbox slice's rendered prompt names the report band and the build-note b
   expect(bandsNamed(report[0] as string)).toEqual(["30"]);
   expect(bandsNamed(note[0] as string)).toEqual(["20"]);
 }, SPAWN_BUDGET_MS);
+
+/**
+ * The intended interface's hint, reaching a plan tick through the whole
+ * chain the package ships it down: the field's own declaration, the engine's
+ * schema renderer, the block `sharedPromptArgs` wraps it in, and the engine's
+ * real renderer over the shipped markdown — the same renderer as every other
+ * field's, which is the claim (`spec/harness.md`, *The entry extension*).
+ *
+ * Read as the one rendered line that names the field, rather than as a
+ * substring of the whole render: a prompt also carries the queue, the state
+ * block and every other artifact, and a phrase asserted over all of it turns
+ * on whatever those happen to quote (`.claude/rules/posture-sweep.md`,
+ * *Standing lenses*).
+ */
+it("the plan prompt renders the interface field's hint", async () => {
+  const field = entryExtension()["interface"];
+  if (field === undefined) {
+    throw new Error("the package declares no entry-extension interface field");
+  }
+
+  // Non-vacuity on the roster: a slice list that collapsed to zero would
+  // pass the loop below over nothing.
+  expect(PLAN_SLICES.length).toBeGreaterThan(0);
+
+  for (const name of PLAN_SLICES) {
+    const rendered = await render(name);
+    const lines = rendered
+      .split("\n")
+      .filter((line) => line.startsWith('  "interface": '));
+
+    // One line, not two: a field rendered twice would satisfy the hint
+    // compare below while handing the tick two schemas for one field.
+    expect({ name, lines: lines.length }).toEqual({ name, lines: 1 });
+
+    // The hint the declaration holds, verbatim and whole — never a phrase
+    // this file restates, which is the second copy the declaration owns. The
+    // separator the renderer puts between list members falls out first, since
+    // which field renders last is the declaration's order and not this claim.
+    expect({ name, line: lines[0]!.replace(/,$/, "") }).toEqual({
+      name,
+      line: `  "interface": ${field.hint}`,
+    });
+  }
+}, SPAWN_BUDGET_MS);

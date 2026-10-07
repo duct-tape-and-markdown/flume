@@ -39,6 +39,23 @@ import { bulletOf, sectionOf } from "./helpers/docSections.ts";
 const SPEC_FIELDS = ["summary", "per", "acceptance", "tests", "pins", "notes"];
 
 /**
+ * The key the package declares the intended interface under, and the three
+ * parts a present one carries. Spelled here because this is the side a parse
+ * is driven from — an entry's author types these keys by hand — and because
+ * every case below is about which of the three is missing, which no reader of
+ * the declaration can say.
+ */
+const INTERFACE_FIELD = "interface";
+const INTERFACE_PARTS = ["changes", "hides", "rejected"] as const;
+
+/** One complete interface, as an entry carrying all three parts states it. */
+const wholeInterface: Record<string, string> = {
+  changes: "entryExtension() declares one more optional field",
+  hides: "which part of a present interface the schema refused on",
+  rejected: "three optional strings — a two-part interface would reach build",
+};
+
+/**
  * The fields the running lane's exclusions ride: the two the spec section
  * lists and the host-gated one declared beside them, which shares their bar
  * on where a line's test may land.
@@ -53,6 +70,7 @@ const NAMED_LINE_FIELDS = ["tests", "pins", "laneTests"];
 const PACKAGE_FIELDS = [
   ...SPEC_FIELDS.flatMap((field) => (field === "notes" ? ["laneTests", field] : [field])),
   CONTRACT_TOUCHING_FIELD,
+  INTERFACE_FIELD,
 ];
 
 /**
@@ -113,6 +131,7 @@ const everyPackageField: Record<string, unknown> = {
   laneTests: [{ lane: DECLARED_LANE, title: "a behavior only that lane's host runs" }],
   notes: "context the spec does not carry",
   [CONTRACT_TOUCHING_FIELD]: true,
+  [INTERFACE_FIELD]: wholeInterface,
 };
 
 /** A Standard Schema that accepts anything — this file judges wiring, not validation. */
@@ -511,4 +530,83 @@ it("a running lane with no exclusions renders the hint without a lane clause", (
   for (const field of PACKAGE_FIELDS.filter((f) => !NAMED_LINE_FIELDS.includes(f))) {
     expect(hintOf(entryExtension(undefined, { lanes: SPLIT }), field)).toBe(hintOf(laneless, field));
   }
+});
+
+it("an entry whose interface carries all three parts parses", () => {
+  const extension = entryExtension();
+
+  // Non-vacuity: the field is really declared, so what follows is a
+  // statement about the package's own schema rather than about a key a
+  // strict parse would have refused outright.
+  expect(Object.keys(extension)).toContain(INTERFACE_FIELD);
+
+  // The whole fixture's keys are the three parts, read off the parts list
+  // rather than trusted: a fixture short of one would make the parse below
+  // the refusal case wearing this case's title.
+  expect(Object.keys(wholeInterface).sort()).toEqual([...INTERFACE_PARTS].sort());
+
+  // Through the real parser, with every part surviving to the entry build
+  // reads: a part the schema dropped would leave build two-thirds of a design
+  // while this case still read green.
+  const parsed = parsePendingQueue(
+    entryQueue({ [INTERFACE_FIELD]: wholeInterface }),
+    extension,
+  );
+  expect(parsed.errors).toEqual([]);
+  expect(parsed.entries[0]).toMatchObject({ [INTERFACE_FIELD]: wholeInterface });
+});
+
+it("an interface missing one of its three parts is refused at parse", () => {
+  const extension = entryExtension();
+
+  // Each part dropped in turn, so the refusal is about completeness rather
+  // than about one part the schema happens to require.
+  for (const missing of INTERFACE_PARTS) {
+    const partial = { ...wholeInterface };
+    delete partial[missing];
+    const refused = parsePendingQueue(
+      entryQueue({ [INTERFACE_FIELD]: partial }),
+      extension,
+    );
+    expect({ missing, ok: refused.ok }).toEqual({ missing, ok: false });
+
+    // Naming the part, not merely the field: an entry refused for "interface"
+    // sends a plan tick back to a field it has to re-read in full.
+    expect(refused.errors.map((error) => error.path)).toContain(
+      `${INTERFACE_FIELD}.${missing}`,
+    );
+  }
+
+  // A part the declaration never named is refused too — a fourth key is
+  // shape nothing announced, and build would inherit it as design.
+  const extra = parsePendingQueue(
+    entryQueue({ [INTERFACE_FIELD]: { ...wholeInterface, why: "a fourth part" } }),
+    extension,
+  );
+  expect(extra.ok).toBe(false);
+
+  // And an empty part is as absent as a missing one: a field present and
+  // blank is the degraded input the three-part rule exists to refuse.
+  for (const blank of INTERFACE_PARTS) {
+    const emptied = parsePendingQueue(
+      entryQueue({ [INTERFACE_FIELD]: { ...wholeInterface, [blank]: "" } }),
+      extension,
+    );
+    expect({ blank, ok: emptied.ok }).toEqual({ blank, ok: false });
+  }
+});
+
+it("an entry that declares no interface parses", () => {
+  const extension = entryExtension();
+
+  // Non-vacuity: the field is declared, so this is a statement about an
+  // optional field rather than about a key the extension never had.
+  expect(Object.keys(extension)).toContain(INTERFACE_FIELD);
+
+  // Whether an entry needs one is plan's judgment, and no gate re-decides
+  // it: the ordinary entry — most of the queue — carries none and parses.
+  const omitted = parsePendingQueue(entryQueue({}), extension);
+  expect(omitted.errors).toEqual([]);
+  expect(omitted.entries).toHaveLength(1);
+  expect(omitted.entries[0]).not.toHaveProperty(INTERFACE_FIELD);
 });

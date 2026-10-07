@@ -60,7 +60,7 @@ the first of them is what this page documents:
   (`plan-inbox`, `plan-derive`, `plan-sweep`), a fanout `build` phase, their
   prompts and discipline, the entry extension (`summary`, `per`,
   `acceptance`, `tests[]`, `pins[]`, `laneTests[]`, `notes`,
-  `contractTouching`), the judge
+  `contractTouching`, `interface`), the judge
   that proves a `tests[]` line green on the merged tree and red on the base
   and reports a `laneTests[]` line owed to the CI lane that runs it,
   the discipline gates that run ahead of whatever a consumer declared

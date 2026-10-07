@@ -2,7 +2,9 @@
  * The entry extension the harness package declares (`spec/harness.md`, *The
  * entry extension*) — `summary`, `per`, `acceptance`, `tests[]`, `pins[]`,
  * `laneTests[]`, `notes`, with their caps and their hints, plus the optional
- * {@link CONTRACT_TOUCHING_FIELD} the package's default handoff acts on.
+ * {@link CONTRACT_TOUCHING_FIELD} the package's default handoff acts on and
+ * the optional interface an entry states when it changes what its callers
+ * call.
  *
  * Each field is declared **once**, as the engine's `EntryExtensionField`:
  * the `schema` side validates at parse and gate time, the `hint` side
@@ -236,8 +238,8 @@ function laneClause(lanes: readonly Lane[]): string {
 /**
  * The package's fields, in the order `spec/harness.md` lists them — which is
  * the order they render in, since `renderSchemaForPrompt` follows
- * declaration order — with {@link CONTRACT_TOUCHING_FIELD} last, after the
- * six that section names.
+ * declaration order — with {@link CONTRACT_TOUCHING_FIELD} and the intended
+ * interface last, after the six that section names.
  *
  * Built per composition rather than held as a constant, because three of the
  * hints carry {@link laneClause} and one field's schema is held to the
@@ -315,6 +317,36 @@ function packageFields(context: ExtensionContext) {
     [CONTRACT_TOUCHING_FIELD]: {
       schema: z.boolean().optional(),
       hint: `true when the work changes a contract a run already in flight cannot absorb — one a resident loop supervisor and a fresh tick child must agree on (the claim-inheritance env, the verdict paths, the exit-code map), or one two tick children share, since a wave that refills runs the code it started on beside siblings spawned after a merge changed it: every path two children read and write as one — the entry claims, the locks, the branch grammar — is the second kind. Shipping one ends the run; omit otherwise`,
+    },
+    /**
+     * The interface the work intends, for an entry that adds to or changes
+     * what code outside the modules it touches calls. Build reads it beside
+     * the acceptance criterion: acceptance says what turns green, this says
+     * what shape turns it.
+     *
+     * Three parts, and a present field carries all three or is **refused**
+     * naming the one it is missing. Two of them state the surface from both
+     * sides — what a caller gains and what it no longer has to know — and the
+     * third is the alternative that lost, with why. A design handed over
+     * without its rejected shape reads as the only one anyone considered, so
+     * build re-opens the choice it was supposed to inherit; a partial one is a
+     * degraded input, and nothing downstream can refuse on it later
+     * (`.claude/rules/engineering.md`, *Loud or nothing*).
+     *
+     * Optional, because most entries change no caller's view, and **whether
+     * an entry needs one is plan's judgment** — no gate re-decides it. The
+     * schema rules on completeness alone: a strict object, so a fourth part
+     * is refused rather than reaching build as shape nothing announced.
+     */
+    interface: {
+      schema: z
+        .strictObject({
+          changes: z.string().min(1),
+          hides: z.string().min(1),
+          rejected: z.string().min(1),
+        })
+        .optional(),
+      hint: `{ "changes": "what callers outside the touched modules gain or call differently", "hides": "what the shape stops asking a caller to know", "rejected": "the alternative shape this turns down, and why it lost" } — optional, for an entry that adds to or changes what code outside its own modules calls; all three parts or the entry is refused, and omitted entirely where no caller's view moves`,
     },
   } satisfies Record<string, EntryExtensionField>;
 }
