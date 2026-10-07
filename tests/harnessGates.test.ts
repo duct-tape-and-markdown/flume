@@ -2157,7 +2157,8 @@ it("the package's claim check covers a claimed entry's note, and build's own set
  *
  * The names come from the real factory over the real declaration, the same
  * calls every other case here runs — so a gate added to the set reds the
- * forward arm until the page names it, and a rename carries the page with it.
+ * forward arm until the roster names it, and a rename carries the page with
+ * it.
  * **Every phase's set, not build's:** a member wired to the queue's producers
  * alone is absent from build's, and a demand read off build would let the page
  * drop it with nothing red.
@@ -2175,13 +2176,28 @@ const disciplineGateNames = (): Set<string> => {
 };
 
 /**
- * The span both arms read, cut to the adoption section rather than the page
- * read whole: `docs/CHAIN-AUTHORING.md` documents `pending-gate` and the
- * records gates at length further down, so a whole-page read would report
- * every name found wherever it fell and pass over an inventory naming none of
- * them.
+ * The roster parenthetical the harness-package bullet spends on the gates —
+ * the introducing phrase, then the names it opens.
+ *
+ * Cut from the adoption section rather than the page read whole, because
+ * `docs/CHAIN-AUTHORING.md` documents `pending-gate` and the records gates at
+ * length further down; and narrowed from that section to the parenthetical,
+ * because the section at large backticks engine builtins the package's set
+ * never held (`chain-load`), the entry extension's fields and the slice
+ * names. A section-wide read reports every one of those as a gate the page
+ * claims, and lets a dropped member pass on a backtick that fell anywhere
+ * else in the section.
  */
-async function adoptionInventory(): Promise<string> {
+const ROSTER = /discipline gates[^(]*\(([^)]*)\)/;
+
+/** A name the page backticks, wherever a span is read for the ones it holds. */
+const BACKTICKED = /`([^`]+)`/g;
+
+/**
+ * The names the roster carries, in page order — the one span both arms read,
+ * so neither direction can hold the page to a width the other does not.
+ */
+async function rosteredGateNames(): Promise<string[]> {
   const page = await readFile(
     new URL("../docs/CHAIN-AUTHORING.md", import.meta.url),
     "utf8",
@@ -2189,34 +2205,33 @@ async function adoptionInventory(): Promise<string> {
   const inventory = sectionOf(page, "## First: do you need to write one?");
 
   // The cut landed on the inventory: without this a renamed heading reports
-  // no missing gate over no text at all.
+  // neither a missing gate nor a stale one, over no text at all.
   expect(inventory).toContain("**The harness package**");
-  return inventory;
+
+  // Loud or nothing: a reworded introduction cuts no roster at all, and an
+  // empty span names no gate the set lacks for the same reason a blank page
+  // names none — so the cut is asserted before it is read.
+  const roster = ROSTER.exec(inventory)?.[1] ?? "";
+  expect(roster, "the inventory spends no parenthetical on the gates").not.toBe(
+    "",
+  );
+
+  const rostered = [...roster.matchAll(BACKTICKED)].map((found) => found[1]!);
+  // Vacuity pin: the cut landed on names, not on a parenthetical of prose.
+  expect(rostered.length).toBeGreaterThan(0);
+  return rostered;
 }
 
-it("docs/CHAIN-AUTHORING.md names every gate the package's discipline set holds", async () => {
+it("docs/CHAIN-AUTHORING.md's gate roster names every gate the package's discipline set holds", async () => {
   const names = disciplineGateNames();
-  const inventory = await adoptionInventory();
+  const rostered = new Set(await rosteredGateNames());
 
   expectNoFindings(
     [...names]
-      .filter((name) => !inventory.includes(`\`${name}\``))
-      .map((name) => `the set holds \`${name}\`, which the inventory never names`),
+      .filter((name) => !rostered.has(name))
+      .map((name) => `the set holds \`${name}\`, which the roster never names`),
   );
 });
-
-/**
- * The roster parenthetical the harness-package bullet spends on the gates —
- * the introducing phrase, then the names it opens. The span narrows from the
- * inventory because the inventory at large backticks engine builtins the
- * package's set never held (`chain-load`), the entry extension's fields and
- * the slice names: read back whole it would report every one of them as a
- * gate the page claims.
- */
-const ROSTER = /discipline gates[^(]*\(([^)]*)\)/;
-
-/** A name the page backticks, wherever a span is read for the ones it holds. */
-const BACKTICKED = /`([^`]+)`/g;
 
 /**
  * And back the other way. A name the roster carries that the set does not
@@ -2226,20 +2241,9 @@ const BACKTICKED = /`([^`]+)`/g;
  */
 it("docs/CHAIN-AUTHORING.md names no discipline gate the package's set lacks", async () => {
   const names = disciplineGateNames();
-  const roster = ROSTER.exec(await adoptionInventory())?.[1] ?? "";
-
-  // Loud or nothing: a reworded introduction cuts no roster at all, and an
-  // empty span names no gate the set lacks for the same reason a blank page
-  // names none — so the cut is asserted before it is read.
-  expect(roster, "the inventory spends no parenthetical on the gates").not.toBe(
-    "",
-  );
-  const rostered = [...roster.matchAll(BACKTICKED)].map((found) => found[1]!);
-  // Vacuity pin: the cut landed on names, not on a parenthetical of prose.
-  expect(rostered.length).toBeGreaterThan(0);
 
   expectNoFindings(
-    rostered
+    (await rosteredGateNames())
       .filter((name) => !names.has(name))
       .map((name) => `the roster names \`${name}\`, which the set does not hold`),
   );
