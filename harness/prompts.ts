@@ -278,7 +278,16 @@ export function sharedPromptArgs(
      * it on ({@link protocolLine}) — the one span all four spelled alike.
      */
     PROTOCOL_LINE: protocolLine(stateRoot),
-    /** The schema, inside the block the prompts carrying it wrap it in. */
+    /**
+     * The schema, inside the block the prompts carrying it wrap it in.
+     *
+     * No depth cap passed, which is the same omission every queue read this
+     * package makes (`gates.ts`): the declaration carries no cap, so both
+     * sides take the engine's default and neither restates it. A package
+     * that declares one passes it here *and* to those reads — the rendered
+     * forest rules state the cap a producer will be refused by, so one side
+     * moving alone tells a producer a bound its own queue read does not keep.
+     */
     PENDING_SCHEMA: block("schema", renderSchemaForPrompt(extension)),
     TESTS_HINT: hintOf(extension, "tests"),
     PINS_HINT: hintOf(extension, "pins"),

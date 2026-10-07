@@ -118,6 +118,17 @@ export const TAG_MAX_LENGTH = NAME_MAX - 39;
 const TAG_PATTERN = new RegExp(`^[A-Za-z0-9._()-]{1,${TAG_MAX_LENGTH}}$`);
 
 /**
+ * What an entry can be in the queue's forest, in the order the `kind` field's
+ * own hint names them.
+ *
+ * One list: the field's enum below reads it, and so do the parent pairings
+ * {@link renderSchemaForPrompt} states, so a kind added here reaches the
+ * producer's instructions and {@link PARENT_KINDS} (whose row the typecheck
+ * then demands) together.
+ */
+const ENTRY_KINDS = ["work", "step", "group"] as const;
+
+/**
  * The engine-core entry shape: one unit of build work, reduced to what the
  * dispatcher mechanically consumes. Strict — a field that is neither core
  * nor declared in the chain's extension fails validation loudly (silent
@@ -151,7 +162,7 @@ const PendingEntryCore = z.strictObject({
      * Declared, never read off whether an entry has children: a group not yet
      * decomposed has none and is still not work.
      */
-    kind: z.enum(["work", "step", "group"]).default("work"),
+    kind: z.enum(ENTRY_KINDS).default("work"),
     /**
      * The entry this one is part of, by tag — one parent, so the queue is a
      * forest. Absent is a root.
@@ -819,13 +830,35 @@ const PARENT_KINDS: Record<
   EntryKind,
   { readonly kinds: readonly EntryKind[]; readonly phrase: string }
 > = {
-  group: { kinds: ["group"], phrase: "a group" },
   work: { kinds: ["group"], phrase: "a group" },
   step: {
     kinds: ["work", "step"],
     phrase: "its work entry or another of its steps",
   },
+  group: { kinds: ["group"], phrase: "a group" },
 };
+
+/**
+ * One pairing as both the refusal that enforces it ({@link
+ * queueForestErrors}) and the rendered schema that states it ({@link
+ * renderSchemaForPrompt}) spell it — one phrase, so a producer is told the
+ * rule in the words it will be refused by (`.claude/rules/engineering.md`,
+ * *A seam gate reads what the real writer wrote*).
+ */
+function parentRule(kind: EntryKind): string {
+  return `a ${kind} entry's parent is ${PARENT_KINDS[kind].phrase}`;
+}
+
+/**
+ * The scope a step's `blockedBy` keeps, and where a dependency wider than
+ * that is declared instead — the same two halves the refusal below states
+ * with the offending tag between them, for the reason {@link parentRule}
+ * is one function.
+ */
+const STEP_BLOCKED_BY_SCOPE =
+  "a step's blockedBy names only steps of the same work entry";
+const STEP_BLOCKED_BY_ESCAPE =
+  "a dependency reaching outside it is declared on the work entry";
 
 /**
  * The rules a whole queue must keep for its `parent` links to be the forest
@@ -887,13 +920,13 @@ function queueForestErrors(
       );
       continue;
     }
-    const { kinds, phrase } = PARENT_KINDS[entry.kind];
+    const { kinds } = PARENT_KINDS[entry.kind];
     if (!kinds.includes(parent.kind)) {
       refuse(
         entry,
         "parent",
-        `a ${entry.kind} entry's parent is ${phrase}, and "${parent.tag}" ` +
-          `is a ${parent.kind} entry`,
+        `${parentRule(entry.kind)}, and "${parent.tag}" is a ` +
+          `${parent.kind} entry`,
       );
     }
   }
@@ -939,9 +972,8 @@ function queueForestErrors(
         refuse(
           entry,
           `gate.tags.${index}`,
-          `a step's blockedBy names only steps of the same work entry, and ` +
-            `"${tag}" ${what}; a dependency reaching outside it is declared ` +
-            `on the work entry`,
+          `${STEP_BLOCKED_BY_SCOPE}, and "${tag}" ${what}; ` +
+            `${STEP_BLOCKED_BY_ESCAPE}`,
         );
       const blocker = byTag.get(tag);
       if (blocker === undefined) {
@@ -1107,15 +1139,43 @@ function withListSeparator(block: string): string {
  * engine-core field the composed validator accepts is named in the rendered
  * schema".
  *
+ * The `parent` hint carries the rules the *queue-wide* read enforces
+ * ({@link queueForestErrors}) — the kind pairings, the depth cap, a step's
+ * blocker scope — in that read's own words. They sit on no per-entry
+ * validator, so nothing else in this block could state them, and a producer
+ * judged by a rule it was never shown is judged by a schema it never read.
+ *
+ * `maxEntryDepth` is the cap those rules state: the chain's declared
+ * `Chain.maxEntryDepth` (`src/Phase.ts`) where it declared one, and
+ * otherwise the same {@link DEFAULT_MAX_ENTRY_DEPTH} every undeclared queue
+ * read takes ({@link parsePendingQueue}) — so a caller passing neither has
+ * one cap on both sides, and a caller declaring one passes it here as well
+ * as to the parse or it states a bound its own read will not keep.
+ *
  * We don't use zod-to-json-schema here — the rendered form is human/LLM
  * facing, not a JSON Schema document. Brevity matters more than completeness.
  */
-export function renderSchemaForPrompt(extension?: EntryExtension): string {
+export function renderSchemaForPrompt(
+  extension?: EntryExtension,
+  maxEntryDepth: number = DEFAULT_MAX_ENTRY_DEPTH,
+): string {
   const tagRefinement = extension?.tag;
   const coreTagHint = `"<letters/digits/._()- only, no whitespace, ≤${TAG_MAX_LENGTH} chars>"`;
   const tagHint = tagRefinement
     ? `${coreTagHint} AND ${tagRefinement.hint}`
     : coreTagHint;
+
+  /**
+   * The rules the queue-wide read refuses a whole listing over
+   * ({@link queueForestErrors}), in that read's own words and with the cap
+   * this render was handed: a pairing, a depth, and a step's blocker scope
+   * are each a rule nothing on the per-entry shape states, so a block
+   * without them hands a producer a `parent` it can only guess at.
+   */
+  const forestRules = [
+    ...ENTRY_KINDS.map(parentRule),
+    `a chain of parents is at most ${maxEntryDepth} deep, counted from a root`,
+  ].join("; ");
 
   const extensionEntries = Object.entries(extension ?? {}).filter(
     ([name]) => name !== "tag",
@@ -1129,13 +1189,13 @@ export function renderSchemaForPrompt(extension?: EntryExtension): string {
 
   const coreLines = `  "tag": ${tagHint},   // unique; appears in commit msg; mechanical safety is the floor, a chain-declared refinement (if any) narrows further
   "gate": { "kind": "open" }                                  // ready to ship
-        | { "kind": "blockedBy", "tags": ["OTHER-TAG", ...] }   // upstream blocks; non-empty, name every parent
+        | { "kind": "blockedBy", "tags": ["OTHER-TAG", ...] }   // upstream blocks; non-empty, name every parent. Over the queue: ${STEP_BLOCKED_BY_SCOPE}; ${STEP_BLOCKED_BY_ESCAPE}.
         | { "kind": "parked",    "reason": "decision on ..." }  // human action needed
         | { "kind": "deferred",  "reason": "no consumer yet" }  // carried indefinitely
         | { "kind": "requiresCapability", "capability": "some-env-fact" },  // env gate; pickable iff the chain asserts this capability
   "dependsOnForks": [ "fork-slug", ... ],               // optional; foundational forks this rests on — not picked until the chain resolves every one. Omit if none.
   "kind": "work" | "step" | "group",                    // optional, default "work"; "work" is the dispatch unit and the only kind selection picks, "step" is part of a work entry and ships in its session, "group" organizes and leaves the queue with its last descendant. Omit for work.
-  "parent": "OTHER-TAG",                                // optional; the entry this one is part of, by tag — one parent, so the queue is a forest. Omit for a root.
+  "parent": "OTHER-TAG",                                // optional; the entry this one is part of, by tag — one parent, so the queue is a forest. Omit for a root. Judged over the whole queue: a parent names an entry in it; ${forestRules} — a listing breaking any of these is refused whole.
   "files": {                                            // EVERY path the work legitimately touches — tests and incidentals included. Enforced on fanout: a scoped tick may write ONLY these paths ∪ the phase's channel paths; an under-declared entry trips the write guard.
     "new":  [ { "path": "...", "description": "..." } ],
     "edit": [ { "path": "...", "description": "..." } ],

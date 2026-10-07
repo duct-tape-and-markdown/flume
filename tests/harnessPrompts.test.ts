@@ -56,7 +56,11 @@ import {
   type SharedPromptArg,
 } from "../harness/prompts.ts";
 import { planSliceWindows } from "../harness/windows.ts";
-import { composePendingEntry, entryFileName } from "../src/PendingSchema.ts";
+import {
+  composePendingEntry,
+  entryFileName,
+  parsePendingQueue,
+} from "../src/PendingSchema.ts";
 import { resolvePendingDir } from "../src/paths.ts";
 import type { Phase } from "../src/Phase.ts";
 import {
@@ -1540,6 +1544,65 @@ it("the plan prompt renders the interface field's hint", async () => {
     expect({ name, line: lines[0]!.replace(/,$/, "") }).toEqual({
       name,
       line: `  "interface": ${field.hint}`,
+    });
+  }
+}, SPAWN_BUDGET_MS);
+
+/**
+ * The forest rules a plan tick is shown against the read that enforces them
+ * for *this package* (`.claude/rules/engineering.md`, *A seam gate reads what
+ * the real writer wrote*). The engine renders the cap it is handed and the
+ * package hands it none, which is the same omission its own queue reads make
+ * (`harness/gates.ts`) — so the number a plan tick reads in its prompt is
+ * read back here and handed to a parse spelled the way those gates spell it.
+ * A package that grew a declared cap on one side alone reds.
+ */
+it("the plan prompt states the depth cap the package's own queue read enforces", async () => {
+  // Non-vacuity on the roster: a slice list that collapsed to zero would pass
+  // the loop below over nothing.
+  expect(PLAN_SLICES.length).toBeGreaterThan(0);
+
+  /** A chain of `depth` group entries, each the parent of the next. */
+  const chainOfParents = (depth: number): string[] =>
+    Array.from({ length: depth }, (_unused, index) =>
+      JSON.stringify({
+        tag: `GEN-${index + 1}`,
+        gate: { kind: "open" },
+        kind: "group",
+        ...(index === 0 ? {} : { parent: `GEN-${index}` }),
+        files: { new: [], edit: [], retire: [] },
+        summary: "one line",
+        per: { path: "spec/harness.md", section: "The phases" },
+        acceptance: "it turns green",
+      }),
+    );
+  const read = (depth: number): boolean =>
+    parsePendingQueue(
+      chainOfParents(depth).map((raw, index) => ({
+        file: entryFileName(`GEN-${index + 1}`),
+        raw,
+      })),
+      entryExtension(),
+    ).ok;
+
+  for (const name of PLAN_SLICES) {
+    const rendered = await render(name);
+    const hint = rendered
+      .split("\n")
+      .find((line) => line.startsWith('  "parent":'));
+    expect({ name, hint: hint !== undefined }).toEqual({ name, hint: true });
+    const stated = /at most (\d+) deep/.exec(hint as string);
+    expect({ name, cap: stated !== null }).toEqual({ name, cap: true });
+
+    const cap = Number((stated as RegExpExecArray)[1]);
+    // Exactly where the prompt said: at the cap the queue reads, one deeper
+    // it does not. A prompt naming a looser bound would send a plan tick to
+    // write a queue its own pending gate refuses whole.
+    expect({ name, cap, at: read(cap), past: read(cap + 1) }).toEqual({
+      name,
+      cap,
+      at: true,
+      past: false,
     });
   }
 }, SPAWN_BUDGET_MS);

@@ -1082,6 +1082,50 @@ describe("kind and parent — the queue's forest (spec/pending.md § The entry c
 });
 
 /**
+ * One candidate entry of `kind`, optionally under `parent`, with a gate
+ * beside it — unparsed, since every forest rule is judged on the way in.
+ *
+ * `kind` is a bare string rather than the enum: a case deriving the kinds
+ * from a real surface rather than listing them holds strings, and the value
+ * is the parse's to judge anyway.
+ */
+function forestEntry(
+  tag: string,
+  kind: string,
+  parent?: string,
+  gate: unknown = { kind: "open" },
+): Record<string, unknown> {
+  return {
+    tag,
+    gate,
+    kind,
+    ...(parent === undefined ? {} : { parent }),
+    files: { new: [], edit: [], retire: [] },
+  };
+}
+
+/**
+ * The one refusal a queue carrying one forest defect produces, read off the
+ * real strict parse. Asserting the count is the vacuity pin for every case
+ * taking it: a queue refused for some *other* reason — a malformed entry, a
+ * second defect the fixture did not mean — would never reach the field
+ * assertions as the sole error.
+ */
+function soleForestError(
+  queue: readonly unknown[],
+  maxEntryDepth?: number,
+): ParseError {
+  const result = parsePendingQueue(queueOf(queue), undefined, maxEntryDepth);
+  expect(result.ok, "the queue parsed").toBe(false);
+  // All-or-nothing over the directory: a refused queue hands back nothing.
+  expect(result.entries).toEqual([]);
+  expect(
+    result.errors.map((e) => `[${e.file}] ${e.path}: ${e.message}`),
+  ).toHaveLength(1);
+  return result.errors[0]!;
+}
+
+/**
  * The queue-wide half of the forest (`spec/pending.md`, *The queue is a
  * forest*). Every rule here reads a second entry or a chain of them, so none
  * of them can live on the per-entry schema above — and each refusal is driven
@@ -1089,43 +1133,6 @@ describe("kind and parent — the queue's forest (spec/pending.md § The entry c
  * what a tick's own read does with a queue on disk.
  */
 describe("the queue's forest — the rules a whole listing keeps (spec/pending.md § The queue is a forest)", () => {
-  /** One entry of `kind`, optionally under `parent`, with a gate beside it. */
-  function forestEntry(
-    tag: string,
-    kind: "work" | "step" | "group",
-    parent?: string,
-    gate: unknown = { kind: "open" },
-  ): Record<string, unknown> {
-    return {
-      tag,
-      gate,
-      kind,
-      ...(parent === undefined ? {} : { parent }),
-      files: { new: [], edit: [], retire: [] },
-    };
-  }
-
-  /**
-   * The one refusal a queue carrying one forest defect produces, read off the
-   * real strict parse. Asserting the count is the vacuity pin for every case
-   * below: a queue refused for some *other* reason — a malformed entry, a
-   * second defect the fixture did not mean — would never reach the field
-   * assertions as the sole error.
-   */
-  function soleForestError(
-    queue: readonly unknown[],
-    maxEntryDepth?: number,
-  ): ParseError {
-    const result = parsePendingQueue(queueOf(queue), undefined, maxEntryDepth);
-    expect(result.ok, "the queue parsed").toBe(false);
-    // All-or-nothing over the directory: a refused queue hands back nothing.
-    expect(result.entries).toEqual([]);
-    expect(
-      result.errors.map((e) => `[${e.file}] ${e.path}: ${e.message}`),
-    ).toHaveLength(1);
-    return result.errors[0]!;
-  }
-
   it("a forest keeping every rule the section states parses", () => {
     // Every rule at once, in the shape the section names: a goal parenting an
     // epic, the epic a work entry, that entry's two steps with the second
@@ -1476,13 +1483,13 @@ describe("renderSchemaForPrompt", () => {
       {
         "tag": "<letters/digits/._()- only, no whitespace, ≤216 chars>",   // unique; appears in commit msg; mechanical safety is the floor, a chain-declared refinement (if any) narrows further
         "gate": { "kind": "open" }                                  // ready to ship
-              | { "kind": "blockedBy", "tags": ["OTHER-TAG", ...] }   // upstream blocks; non-empty, name every parent
+              | { "kind": "blockedBy", "tags": ["OTHER-TAG", ...] }   // upstream blocks; non-empty, name every parent. Over the queue: a step's blockedBy names only steps of the same work entry; a dependency reaching outside it is declared on the work entry.
               | { "kind": "parked",    "reason": "decision on ..." }  // human action needed
               | { "kind": "deferred",  "reason": "no consumer yet" }  // carried indefinitely
               | { "kind": "requiresCapability", "capability": "some-env-fact" },  // env gate; pickable iff the chain asserts this capability
         "dependsOnForks": [ "fork-slug", ... ],               // optional; foundational forks this rests on — not picked until the chain resolves every one. Omit if none.
         "kind": "work" | "step" | "group",                    // optional, default "work"; "work" is the dispatch unit and the only kind selection picks, "step" is part of a work entry and ships in its session, "group" organizes and leaves the queue with its last descendant. Omit for work.
-        "parent": "OTHER-TAG",                                // optional; the entry this one is part of, by tag — one parent, so the queue is a forest. Omit for a root.
+        "parent": "OTHER-TAG",                                // optional; the entry this one is part of, by tag — one parent, so the queue is a forest. Omit for a root. Judged over the whole queue: a parent names an entry in it; a work entry's parent is a group; a step entry's parent is its work entry or another of its steps; a group entry's parent is a group; a chain of parents is at most 4 deep, counted from a root — a listing breaking any of these is refused whole.
         "files": {                                            // EVERY path the work legitimately touches — tests and incidentals included. Enforced on fanout: a scoped tick may write ONLY these paths ∪ the phase's channel paths; an under-declared entry trips the write guard.
           "new":  [ { "path": "...", "description": "..." } ],
           "edit": [ { "path": "...", "description": "..." } ],
@@ -2092,5 +2099,274 @@ describe("declaredPaths over a forest (spec/pending.md § The queue is a forest)
     expect(entryIn(queue, "WORK.1").observedFiles).toEqual(["src/stray.ts"]);
     expect(declaredPaths(queue, work)).not.toContain("src/stray.ts");
     expect(touchedPaths(queue, work)).toContain("src/stray.ts");
+  });
+});
+
+/**
+ * The rendered schema against the read that enforces it
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*). The forest's rules sit on no per-entry validator — they read a
+ * second entry or a chain of them — so a block stating only "one parent, so
+ * the queue is a forest" left a producer refused a whole queue over pairings,
+ * a depth and a blocker scope it was never shown.
+ *
+ * Both sides are the real thing: every sentence is read out of
+ * `renderSchemaForPrompt`'s own text and every verdict off `parsePendingQueue`
+ * over a queue built to break exactly that sentence, so a rule one side gains
+ * alone reds.
+ */
+describe("the rendered schema states the forest the queue read enforces", () => {
+  /**
+   * The cap this file's renders and parses share — not the default, so what a
+   * case reads back is the value it passed and never a constant either side
+   * happens to hold.
+   */
+  const DECLARED_CAP = 3;
+
+  /** One rendered line, found by the field it hints. */
+  function renderedLine(rendered: string, lead: string): string {
+    const line = rendered.split("\n").find((c) => c.startsWith(lead));
+    expect(line, `no rendered line starting "${lead}"`).toBeDefined();
+    return line as string;
+  }
+
+  /**
+   * The rendered `parent` hint, which is where the queue-wide rules sit.
+   *
+   * Read as the one line rather than as a substring of the whole block: the
+   * render also quotes the kind enum and every other hint, and a phrase
+   * asserted over all of it turns on whatever those happen to say
+   * (`.claude/rules/posture-sweep.md`, *Standing lenses*).
+   */
+  const parentHint = (cap: number = DECLARED_CAP): string =>
+    renderedLine(renderSchemaForPrompt(undefined, cap), '  "parent":');
+
+  /**
+   * Every kind the rendered block offers, read off its own enum rather than
+   * listed here: the engine exports no kind roster, and a kind that reached
+   * the core without reaching the pairings is exactly the drift these cases
+   * are for.
+   */
+  function renderedKinds(): string[] {
+    const line = renderedLine(renderSchemaForPrompt(), '  "kind": ');
+    const offered = line.slice(line.indexOf(":") + 1, line.indexOf(" //"));
+    const kinds = [...offered.matchAll(/"([a-z]+)"/g)].map((m) => m[1] as string);
+    expect(
+      kinds.length,
+      "the rendered kind hint offered no kind — nothing to pair",
+    ).toBeGreaterThan(1);
+    return [...new Set(kinds)];
+  }
+
+  /**
+   * What the rendered hint says may parent a `kind` entry — the clause up to
+   * the separator between rules, never the whole hint, so a phrase naming one
+   * kind cannot answer for another.
+   */
+  function statedParentPhrase(hint: string, kind: string): string {
+    const lead = `a ${kind} entry's parent is `;
+    const at = hint.indexOf(lead);
+    expect(
+      at,
+      `the rendered parent hint states no rule for a ${kind} entry`,
+    ).toBeGreaterThan(-1);
+    const rest = hint.slice(at + lead.length);
+    const end = rest.indexOf(";");
+    return end === -1 ? rest : rest.slice(0, end);
+  }
+
+  /** A chain of `depth` entries, each the parent of the next. */
+  const chainOfParents = (depth: number): Record<string, unknown>[] =>
+    Array.from({ length: depth }, (_unused, index) =>
+      forestEntry(
+        `GEN-${index + 1}`,
+        "group",
+        index === 0 ? undefined : `GEN-${index}`,
+      ),
+    );
+
+  /** Whether the real read admits a `child` entry under a `parent` one. */
+  const pairParses = (child: string, parent: string): boolean =>
+    parsePendingQueue(
+      queueOf([
+        forestEntry("THE-PARENT", parent),
+        forestEntry("THE-CHILD", child, "THE-PARENT"),
+      ]),
+      undefined,
+      DECLARED_CAP,
+    ).ok;
+
+  /** A step blocked on a step belonging to a different work entry. */
+  const blockerAcrossEntries = (): Record<string, unknown>[] => [
+    forestEntry("WORK-A", "work"),
+    forestEntry("STEP-A", "step", "WORK-A"),
+    forestEntry("WORK-B", "work"),
+    forestEntry("STEP-B", "step", "WORK-B", {
+      kind: "blockedBy",
+      tags: ["STEP-A"],
+    }),
+  ];
+
+  it("the rendered schema names the parent kind each kind admits", () => {
+    const hint = parentHint();
+    const kinds = renderedKinds();
+    let admitted = 0;
+    let refused = 0;
+
+    for (const child of kinds) {
+      const phrase = statedParentPhrase(hint, child);
+      for (const parent of kinds) {
+        const parses = pairParses(child, parent);
+        // One compare, both directions: a pairing the read admits and the
+        // hint omits leaves a producer guessing, and one the hint names and
+        // the read refuses sends it to write a queue that cannot be read.
+        expect({
+          child,
+          parent,
+          named: phrase.includes(parent),
+        }).toEqual({ child, parent, named: parses });
+        if (parses) admitted += 1;
+        else refused += 1;
+      }
+    }
+
+    // Non-vacuity in both directions: a hint naming every kind, or none,
+    // would agree with a read that did the same and pin nothing.
+    expect({ admitted: admitted > 0, refused: refused > 0 }).toEqual({
+      admitted: true,
+      refused: true,
+    });
+  });
+
+  it("the rendered schema names the depth cap the chain declared", () => {
+    const statedCap = (hint: string): number => {
+      const match = /at most (\d+) deep/.exec(hint);
+      expect(match, "the rendered parent hint states no depth cap").not.toBeNull();
+      return Number((match as RegExpExecArray)[1]);
+    };
+
+    // The declared cap, and the engine's default where a chain declared none
+    // — the same default every undeclared queue read takes, so a render and a
+    // parse that were both handed nothing still state one bound.
+    expect(statedCap(parentHint())).toBe(DECLARED_CAP);
+    expect(statedCap(renderedLine(renderSchemaForPrompt(), '  "parent":'))).toBe(
+      DEFAULT_MAX_ENTRY_DEPTH,
+    );
+    // The two differ, so the first assert read the argument and not a
+    // constant the renderer holds.
+    expect(DECLARED_CAP).not.toBe(DEFAULT_MAX_ENTRY_DEPTH);
+
+    // And the real read bounds a chain exactly where the render said: the
+    // stated number is the one a producer is judged by.
+    const cap = statedCap(parentHint());
+    expect(
+      parsePendingQueue(queueOf(chainOfParents(cap)), undefined, DECLARED_CAP).ok,
+      `a chain of ${cap} was refused by the cap the render states`,
+    ).toBe(true);
+    expect(
+      parsePendingQueue(queueOf(chainOfParents(cap + 1)), undefined, DECLARED_CAP)
+        .ok,
+    ).toBe(false);
+  });
+
+  it("the rendered schema states that a step's blockedBy names only steps of its own work entry", () => {
+    const arm = renderedLine(
+      renderSchemaForPrompt(),
+      '        | { "kind": "blockedBy"',
+    );
+    const stated = /Over the queue: (.*)\.$/.exec(arm);
+    expect(stated, "the rendered blockedBy arm states no scope for a step").not.toBeNull();
+    const halves = (stated as RegExpExecArray)[1]!.split("; ");
+    // Both halves: the scope, and where a dependency wider than it is
+    // declared instead. A producer told only the first is told a rule with
+    // nowhere to put the dependency it has.
+    expect(halves).toHaveLength(2);
+
+    // The refusal the real read states over a step reaching outside its own
+    // work entry, in the words the block showed the producer.
+    const error = soleForestError(blockerAcrossEntries(), DECLARED_CAP);
+    expect(error.path).toBe("gate.tags.0");
+    for (const half of halves) {
+      expect(error.message).toContain(half);
+    }
+  });
+
+  it("every forest rule the rendered schema states is one a real queue read refuses", () => {
+    const hint = parentHint();
+    const kinds = renderedKinds();
+
+    /** Each pairing the hint states, broken by a parent kind it declines. */
+    const pairings = kinds.map((child) => {
+      const phrase = statedParentPhrase(hint, child);
+      const declined = kinds.find((parent) => !phrase.includes(parent));
+      expect(
+        declined,
+        `the rendered rule for a ${child} entry declines no parent kind`,
+      ).toBeDefined();
+      return {
+        stated: `a ${child} entry's parent is ${phrase}`,
+        violation: [
+          forestEntry("THE-PARENT", declined as string),
+          forestEntry("THE-CHILD", child, "THE-PARENT"),
+        ],
+      };
+    });
+
+    const rules = [
+      {
+        stated: "a parent names an entry in it",
+        violation: [forestEntry("THE-ORPHAN", "work", "NO-SUCH-ENTRY")],
+      },
+      ...pairings,
+      {
+        stated: `at most ${DECLARED_CAP} deep`,
+        violation: chainOfParents(DECLARED_CAP + 1),
+      },
+      {
+        stated: "names only steps of the same work entry",
+        violation: blockerAcrossEntries(),
+      },
+    ];
+
+    // Non-vacuity: one rule per kind plus the three the whole listing keeps,
+    // so the loop runs over the block's rules and not over an empty table.
+    expect(rules.length).toBe(kinds.length + 3);
+
+    for (const rule of rules) {
+      // Stated on the one line that carries the queue-wide rules, except the
+      // blocker scope, which rides the gate arm it bounds.
+      expect(renderSchemaForPrompt(undefined, DECLARED_CAP)).toContain(
+        rule.stated,
+      );
+      // Refused, once, by the real read at the same cap: a sentence the block
+      // states and the read lets through is a rule only the prompt believes.
+      soleForestError(rule.violation, DECLARED_CAP);
+    }
+  });
+
+  it("the rendered schema still states that a kind-less entry is work and a parent-less one a root", () => {
+    // The two defaults the forest rules sit beside: the pairings bound a
+    // *declared* parent, so an entry declaring neither field is a root work
+    // entry — what a producer writes before it groups anything.
+    expect(renderedLine(renderSchemaForPrompt(), '  "kind": ')).toContain(
+      'default "work"',
+    );
+    expect(parentHint()).toContain("Omit for a root");
+
+    const result = parsePendingQueue(
+      queueOf([
+        {
+          tag: "NEITHER-FIELD",
+          gate: { kind: "open" },
+          files: { new: [], edit: [], retire: [] },
+        },
+      ]),
+      undefined,
+      DECLARED_CAP,
+    );
+    expect(result.ok, JSON.stringify(result.errors)).toBe(true);
+    expect(result.entries.map((e) => [e.kind, e.parent])).toEqual([
+      ["work", undefined],
+    ]);
   });
 });

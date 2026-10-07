@@ -2938,7 +2938,16 @@ the parser cannot drift:
   is refused at first parse, naming the field.
 - **Rendering** — `renderSchemaForPrompt(entryExtension)` renders the core
   shape followed by each declared field as `"<name>": <hint>`, verbatim.
-  Pass it through your plan phase's `promptArgs` exactly as before.
+  Pass it through your plan phase's `promptArgs` exactly as before. The core
+  shape's `parent` hint carries the rules the *queue-wide* read enforces —
+  which kind may parent which, the depth cap, a step's blocker scope — since
+  those sit on no per-entry validator and a producer judged by a rule it was
+  never shown is judged by a schema it never read. A second argument states
+  the cap: `renderSchemaForPrompt(entryExtension, maxEntryDepth)`, the same
+  value you declare as `Chain.maxEntryDepth` and pass to `pendingGate`, so
+  the prompt names the bound your own queue reads apply. Omitted, the render
+  states the default `4` — which is the bound an omitted cap gives those
+  reads too, so a chain declaring none has one number on both sides.
 
 To read a declared field with types in your chain code, your own schema
 object is untouched — call `.parse()` on it exactly as you would outside
