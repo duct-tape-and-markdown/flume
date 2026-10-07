@@ -13,6 +13,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { BatchingGate, GateBatchSpan, GateSite, SingleSpanGate } from "../src/Gate.ts";
+import {
+  eslintGate,
+  shellGate,
+  tscGate,
+  vitestGate,
+} from "../src/builtinGates.ts";
 import { batchGateContext, mergeBatchWidth } from "../src/gateBatch.ts";
 import { runGate, type GateRunScope } from "../src/gateRun.ts";
 import type { Chain, Phase } from "../src/Phase.ts";
@@ -89,6 +95,36 @@ describe("mergeBatchWidth — the two declarations a batch needs", () => {
     ]);
 
     expect(mergeBatchWidth(chainWith(phase, 3), phase)).toBe(3);
+  });
+
+  it("a phase whose afterMerge gates are shell-backed builtins merges at the declared width", () => {
+    // The gates are the engine's own, built through the real factories and
+    // relocated to the merge the way a chain relocates them — not a fixture
+    // declaring `batches` by the tester's hand, which is what every other
+    // case in this describe does and what would pass over a builtin that
+    // never made the declaration (`.claude/rules/engineering.md`, *A seam
+    // gate reads what the real writer wrote*).
+    const phase = phaseWith([
+      tscGate({ when: "afterMerge" }),
+      vitestGate({ when: "afterMerge" }),
+      eslintGate({ when: "afterMerge" }),
+      // Named with a path rather than a package manager: nothing here runs
+      // the gate, and a bare `"pnpm"` literal would read as a spawn site to
+      // the lane's budget pin (`tests/helpers/spawnBudget.ts`) in a file
+      // that starts no process.
+      shellGate({
+        name: "smoke",
+        when: "afterMerge",
+        cmd: "./scripts/smoke.sh",
+        args: [],
+      }),
+    ]);
+    // Non-vacuity: four real `afterMerge` gates, so the width below is their
+    // declaration answering rather than an empty gate list's vacuous truth
+    // (the case below this one).
+    expect(phase.gates.filter((gate) => gate.when === "afterMerge")).toHaveLength(4);
+
+    expect(mergeBatchWidth(chainWith(phase, 4), phase)).toBe(4);
   });
 
   it("a phase with no afterMerge gate batches at the declared width", () => {

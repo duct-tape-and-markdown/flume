@@ -1026,6 +1026,15 @@ const cumulative: Gate = {
   the last pick's facts as the batch's. Adding an ordinary gate to a batching
   phase narrows it back to one, silently as far as correctness goes and
   visibly in how many merges a wave runs.
+- **The shell-backed built-ins declare it.** `shellGate` — and `tscGate`,
+  `vitestGate` and `eslintGate`, which are that gate under three commands —
+  says it reads a batch, because it reads no span fact to misread: the verdict
+  is one command's exit code, and the only thing it takes off `ctx` is `cwd`,
+  the tree the merge left behind. So a phase whose `afterMerge` gates are
+  those builtins reaches the width you declared with nothing further to say.
+  `chainLoadGate` and `pendingGate` do not declare it — each judges the gated
+  commit as one span's — so hanging either at `afterMerge` narrows the phase
+  back to a span per merge.
 - **A batch withholds rather than approximates.** `entry`, `baseSha` and
   `landedOnSha` are absent under a batch — the type says so — because no
   single value of any of them is true of the merge. `commitSha` is the
@@ -1070,7 +1079,9 @@ const factory: ChainFactory = (flume) => {
 - `shellGate` — `shellGate({ name, when, cmd, args, failHint? })`, the escape
   hatch for "run a command, fail on non-zero". `tscGate`, `vitestGate` and
   `eslintGate` are `shellGate` instances, built through one shared
-  package-manager factory — which is why each carries a `command` string.
+  package-manager factory — which is why each carries a `command` string, and
+  why all four declare `batches: true`
+  ([*Reading a batched merge*](#reading-a-batched-merge)).
   `chainLoadGate`, `writablePathsGate` and `pendingGate` run their own checks.
 
 ### `pendingGate`: composed validation + fence pre-check + claim check

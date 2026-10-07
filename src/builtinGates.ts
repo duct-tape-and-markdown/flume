@@ -9,9 +9,11 @@
 import { relative } from "node:path";
 
 import type {
+  BatchingGate,
   GateContext,
   GateResult,
   GatePhase,
+  GateSite,
   SingleSpanGate,
 } from "./Gate.js";
 import type { Phase } from "./Phase.js";
@@ -66,13 +68,27 @@ export interface ShellGateOptions {
  * Captures stdout+stderr up to `maxBuffer` (default 16 MiB) and surfaces
  * them as `GateResult.details` so the dispatcher can route them to the
  * logger or back to the agent as context on the next tick.
+ *
+ * **It declares `batches: true`** (spec/worktrees.md, *Batched merges*). The
+ * declaration is withheld from a gate that would read a batch's facts as one
+ * entry's, and this gate reads no span fact at all: the verdict is one
+ * command's exit code, and the only thing it takes off its context is `cwd` —
+ * the tree the merge left behind, which is one tree however many spans were
+ * picked into it. Hence `run`'s parameter is {@link GateSite}, the half of a
+ * gate's input that holds at either width, so the absence of a span read is
+ * the signature rather than a claim in prose. Without the declaration a chain
+ * raising `supervisorPolicy.mergeBatch` over a phase gated by `tscGate` or
+ * `vitestGate` — the ordinary case, and the one where a per-merge suite run
+ * is the whole saving — would silently stay at a span per merge
+ * (`mergeBatchWidth`, `src/gateBatch.ts`).
  */
-export function shellGate(opts: ShellGateOptions): SingleSpanGate {
+export function shellGate(opts: ShellGateOptions): BatchingGate {
   return {
     name: opts.name,
     when: opts.when,
     command: [opts.cmd, ...opts.args].join(" "),
-    async run(ctx: GateContext): Promise<GateResult> {
+    batches: true,
+    async run(ctx: GateSite): Promise<GateResult> {
       try {
         // A gate's cmd is whatever binary the chain named, so the spawn
         // takes the shared shim retry (`src/spawnShim.ts`). What that retry
@@ -142,8 +158,8 @@ export interface PkgManagerOverride {
  * point a non-pnpm chain (or one gating the merged tree) needs without
  * hand-rolling `shellGate` from scratch.
  */
-export interface PkgManagerGate extends SingleSpanGate {
-  (override?: PkgManagerOverride): SingleSpanGate;
+export interface PkgManagerGate extends BatchingGate {
+  (override?: PkgManagerOverride): BatchingGate;
 }
 
 function pkgManagerGate(
@@ -151,7 +167,7 @@ function pkgManagerGate(
   args: string[],
   failHint: string,
 ): PkgManagerGate {
-  const build = (cmd: string, gateArgs: string[], when: GatePhase): SingleSpanGate =>
+  const build = (cmd: string, gateArgs: string[], when: GatePhase): BatchingGate =>
     shellGate({ name, when, cmd, args: gateArgs, failHint });
   const defaultGate = build("pnpm", args, "afterCommit");
   const fn = ((override) =>
@@ -165,6 +181,12 @@ function pkgManagerGate(
     configurable: true,
   });
   fn.when = defaultGate.when;
+  // Taken off the construction rather than respelled, for the same reason
+  // `name`, `when` and `command` are: the dual identity is one gate's
+  // declaration seen twice, and a `batches` spelled here could disagree with
+  // what `shellGate` built (`.claude/rules/engineering.md`, *Derived state is
+  // computed, never restated beside its source*).
+  fn.batches = defaultGate.batches;
   fn.run = defaultGate.run;
   fn.command = defaultGate.command!;
   return fn;

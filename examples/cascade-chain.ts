@@ -32,6 +32,7 @@ import type {
   EntryExtension,
   FlumeApi,
   Gate,
+  GateContext,
   GateResult,
   Phase,
   SingleSpanGate,
@@ -154,14 +155,23 @@ function isDeclaredFile(
  * vitest JSON report composes, and the wrapper is drivable over a report the
  * caller supplies — and the engine's path rule alongside it, for matching
  * the reporter's absolute filenames against the entry's declaration.
+ *
+ * The wrapper reads `ctx.entry`, which is a **per-span** fact a batched merge
+ * withholds, so it declares `batches: false` whatever the gate it wraps
+ * declares — `shellGate` and the package-manager builtins each say they read a
+ * batch, since a bare command reads only its `cwd`. A phase hanging this
+ * wrapper is therefore held to one span per merge (`mergeBatchWidth`,
+ * `src/gateBatch.ts`), which is what a per-entry judgment wants: the contract
+ * being judged is one entry's.
  */
 export function judgedByEntryTests(
-  suite: SingleSpanGate,
+  suite: Gate,
   gitPath: FlumeApi["gitPath"],
 ): SingleSpanGate {
   return {
     ...suite,
-    async run(ctx): Promise<GateResult> {
+    batches: false,
+    async run(ctx: GateContext): Promise<GateResult> {
       // `tests[]` is this chain's declared extension field — narrow it through
       // the same schema the parse gate validated it with. Absent parses to the
       // schema's `[]` default: an entry naming no behavior has none to judge.

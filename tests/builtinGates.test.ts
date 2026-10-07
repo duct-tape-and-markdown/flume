@@ -51,7 +51,14 @@ import { entryClaimPath, entryClaimSlug } from "../src/entryClaims.ts";
 import { checkoutAddress } from "../src/git.ts";
 import { renderPidClaim } from "../src/pidClaim.ts";
 import { deadPid } from "./helpers/deadPid.ts";
-import type { Gate, GateContext } from "../src/Gate.ts";
+import type {
+  Gate,
+  GateBatchSpan,
+  GateContext,
+  GateSite,
+} from "../src/Gate.ts";
+import { batchGateContext } from "../src/gateBatch.ts";
+import { runGate, type GateRunScope } from "../src/gateRun.ts";
 // Barrel-export pin (.claude/rules/engineering.md "An export earns its
 // consumer", CHAIN-EXPORT-GATE-OPTION-TYPES): a consumer can call
 // shellGate/tscGate/ vitestGate/eslintGate but, pre-fix, could not name the
@@ -1095,6 +1102,127 @@ describe("tscGate / vitestGate / eslintGate — gate-placement override (BUILTIN
     expect(explicit.command).toBe(tscGate.command);
     expect(explicit.name).toBe(tscGate.name);
   });
+});
+
+/**
+ * The shell-backed builtins' own declaration about a batched merge
+ * (spec/worktrees.md, *Batched merges*), and what a batch handed to one
+ * actually runs.
+ *
+ * The declaration is the whole subject of the first two cases: a phase
+ * batches only where every one of its `afterMerge` gates says it reads a
+ * batch (`mergeBatchWidth`, `src/gateBatch.ts`), so the builtins withholding
+ * it would silently hold every chain that raised `mergeBatch` over them to a
+ * span per merge. The third case is why they may say it — the command runs
+ * once, in the tree the merge left behind, and reads no span fact to misread.
+ */
+describe("the shell-backed builtins read a batch (spec/worktrees.md 'Batched merges')", () => {
+  it("shellGate declares that it reads a batch", () => {
+    const gate = shellGate({
+      name: "smoke",
+      when: "afterMerge",
+      cmd: "pnpm",
+      args: ["run", "smoke"],
+    });
+
+    // Non-vacuity: the subject is a real gate built by the real factory, with
+    // the command line it will run, not an object that happens to carry the
+    // flag.
+    expect({ name: gate.name, when: gate.when, command: gate.command }).toEqual({
+      name: "smoke",
+      when: "afterMerge",
+      command: "pnpm run smoke",
+    });
+
+    expect(gate.batches).toBe(true);
+  });
+
+  it("tsc, vitest and eslint gates declare that they read a batch", () => {
+    const builtins = [tscGate, vitestGate, eslintGate];
+
+    // Non-vacuity: the three real builtins, named by the command each runs —
+    // a list that drifted to something else would still satisfy the
+    // declaration assertions below.
+    expect(builtins.map((gate) => gate.command)).toEqual([
+      "pnpm tsc --noEmit",
+      "pnpm test --run",
+      "pnpm lint",
+    ]);
+
+    // Both identities declare it: the bare gate a chain drops into `gates: []`,
+    // and the gate the factory returns for an override — which is the form a
+    // chain relocating the check to the merge actually hangs, and so the one
+    // `mergeBatchWidth` reads.
+    expect(builtins.map((gate) => gate.batches)).toEqual([true, true, true]);
+    expect(
+      builtins.map((gate) => gate({ when: "afterMerge" }).batches),
+    ).toEqual([true, true, true]);
+  });
+
+  it("a batch handed to a shell-backed builtin runs one command over the merged tree", async () => {
+    const tree = await mkTempDir("flume-builtin-batch-");
+    try {
+      // The command appends its own cwd per run, so how many times it ran is
+      // read off the tree rather than inferred from a green verdict: a gate
+      // that looped the command per span would pass too.
+      const gate = shellGate({
+        name: "count-the-runs",
+        when: "afterMerge",
+        cmd: process.execPath,
+        args: [
+          "-e",
+          'require("fs").appendFileSync("runs", process.cwd() + ";")',
+        ],
+      });
+      const spans: GateBatchSpan[] = [
+        { commitSha: "c1", baseSha: "b1", landedOnSha: "t0", touchedPaths: ["src/a.ts"] },
+        { commitSha: "c2", baseSha: "b2", landedOnSha: "c1", touchedPaths: ["src/b.ts"] },
+        { commitSha: "c3", baseSha: "b3", landedOnSha: "c2", touchedPaths: ["src/c.ts"] },
+      ];
+      // The placement half alone, spelled as a `GateSite`: handing
+      // `batchGateContext` a single-span context would spread that context's
+      // own `baseSha` through, and the withholding pin below would read the
+      // fixture's value rather than the batch's absence.
+      const at: GateSite = {
+        cwd: tree,
+        repoRoot: tree,
+        flumeDir: join(tree, ".flume"),
+        stateRootRel: ".flume",
+        configDir: join(tree, ".flume"),
+        pendingDir: join(tree, ".flume", "plan", "pending"),
+        phaseName: "test-phase",
+        log: () => {},
+      };
+      const batch = batchGateContext(at, spans);
+
+      // The context really is the batch shape — three spans, and the
+      // single-span facts withheld — so the green below is the builtin
+      // reading a merge of three and not one span wearing a batch's name.
+      expect(batch.batch).toHaveLength(3);
+      expect({ entry: batch.entry, baseSha: batch.baseSha }).toEqual({
+        entry: undefined,
+        baseSha: undefined,
+      });
+
+      const scope: GateRunScope = {
+        worktreeCtx: {
+          repoRoot: tree,
+          flumeDir: join(tree, ".flume"),
+          stateRootRel: ".flume",
+          log: silent,
+        },
+        log: silent,
+      };
+      const { result } = await runGate(gate, batch, scope);
+
+      expect(result.ok, result.details).toBe(true);
+      // One command, in the tree the merge left behind — `runGate` would have
+      // recorded the undeclared-batch refusal as this gate's failure instead.
+      expect(await readFile(join(tree, "runs"), "utf8")).toBe(`${tree};`);
+    } finally {
+      await rm(tree, { recursive: true, force: true });
+    }
+  }, SPAWN_BUDGET_MS);
 });
 
 // win32-only: proves the *default* (omitted cmd) invocation is literally

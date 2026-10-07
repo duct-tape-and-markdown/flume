@@ -65,6 +65,7 @@ import type { RunnerContext, RunnerFactory } from "../harness/runner.ts";
 import { planSliceWindows } from "../harness/windows.ts";
 import type { ClaudeCodeOptions } from "../src/claudeCode.ts";
 import { entryDeclaredKey } from "../src/entryKey.ts";
+import { mergeBatchWidth } from "../src/gateBatch.ts";
 import { computeStateRootRel } from "../src/paths.ts";
 import { buildFlumeApi, type FlumeApi } from "../src/flumeApi.ts";
 import type { Gate, GateContext } from "../src/Gate.ts";
@@ -1833,6 +1834,50 @@ it("a declared script gate hangs the committed path at the declared when, named 
   } finally {
     await rm(tree, { recursive: true, force: true });
   }
+});
+
+/**
+ * The build phase a declaration produces at a merge width of four, with
+ * `gates.build` as the case declares it.
+ *
+ * The width is read off the chain the factory returned, never off a `Chain`
+ * composed here: the two halves of a batched merge are the consumer's
+ * `supervisor.mergeBatch` and every `afterMerge` gate's own declaration
+ * (`mergeBatchWidth`, `src/gateBatch.ts`), and both reach the merge through
+ * this factory.
+ */
+function buildAtWidthFour(gates: unknown[]): { chain: Chain; build: Phase } {
+  const chain = chainFor({
+    ...DECLARATION,
+    runner: recordingRunner([]),
+    supervisor: { ...DECLARATION.supervisor, mergeBatch: 4 },
+    gates: { build: gates },
+  });
+  return { chain, build: phaseNamed(chain, BUILD_PHASE) };
+}
+
+it("a declared command gate holds its phase to one span per merge", () => {
+  // Control: with the registry builtin alone beside the package's own
+  // `afterMerge` gates, every reader of the merge declares it reads a batch
+  // and the declared width reaches it. Without this leg a green below would
+  // be "nothing batches here", not "the command gate is what narrowed it".
+  const batching = buildAtWidthFour([
+    { kind: "registry", name: "tsc", when: "afterMerge" },
+  ]);
+  const readers = batching.build.gates.filter((gate) => gate.when === "afterMerge");
+  expect(readers.map((gate) => gate.name).sort()).toEqual(["named lines", "tsc"]);
+  expect(mergeBatchWidth(batching.chain, batching.build)).toBe(4);
+
+  // And the same phase with a command line hung beside them: its child reads
+  // `FLUME_BASE_SHA` and friends off one span, which a batch withholds, so
+  // the gate declares one span and the phase merges at one.
+  const line = "node -e 0";
+  const held = buildAtWidthFour([
+    { kind: "registry", name: "tsc", when: "afterMerge" },
+    { kind: "shell", command: line, when: "afterMerge" },
+  ]);
+  expect(held.build.gates.find((gate) => gate.name === line)?.batches).toBe(false);
+  expect(mergeBatchWidth(held.chain, held.build)).toBe(1);
 });
 
 /**

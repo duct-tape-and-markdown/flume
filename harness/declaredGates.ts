@@ -154,6 +154,18 @@ function gateFacts(ctx: GateContext): Record<string, string> {
  * and is taken from one construction rather than respelled here
  * (`.claude/rules/engineering.md`, *Derived state is computed, never
  * restated beside its source*).
+ *
+ * **It overrides `shellGate`'s `batches: true` back to one span.** The
+ * engine's gate declares it because a bare command reads nothing but its
+ * `cwd`; this one wraps that command in {@link gateFacts}, which reports
+ * `FLUME_BASE_SHA`, `FLUME_LANDED_ON_SHA` and `FLUME_TOUCHED_PATHS` off a
+ * single-span context — exactly the facts a batch withholds, and ones this
+ * channel has no batch spelling for, since one variable cannot carry N
+ * spans' shas. So a phase hanging a declared command gate is held to one
+ * span per merge whatever the consumer's `supervisor.mergeBatch` says
+ * (`mergeBatchWidth`, `src/gateBatch.ts`), rather than handing a consumer's
+ * command one span's base as the batch's (spec/worktrees.md, *Batched
+ * merges*).
  */
 function shellCommand(
   api: FlumeApi,
@@ -162,7 +174,7 @@ function shellCommand(
   when: GatePhase,
 ): SingleSpanGate {
   const under = runnableShell(api, shell, `gate "${command}"`);
-  const spawning = (env: Record<string, string>): SingleSpanGate =>
+  const spawning = (env: Record<string, string>): Gate =>
     api.shellGate({
       name: command,
       when,
@@ -172,6 +184,7 @@ function shellCommand(
     });
   return {
     ...spawning({}),
-    run: (ctx) => spawning(gateFacts(ctx)).run(ctx),
+    batches: false,
+    run: (ctx: GateContext) => spawning(gateFacts(ctx)).run(ctx),
   };
 }
