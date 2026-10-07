@@ -3,6 +3,7 @@
  *
  * Boundary rule: the engine owns only what its mechanics consume — `tag`
  * (identity), `files` (the fence), `gate`/`dependsOnForks` (pickability),
+ * `kind`/`parent` (the forest the queue is, and the one kind it picks),
  * `observedFiles` (dispatcher-maintained collision record). Everything else a
  * project wants on an entry is a **chain-declared extension**: each field is
  * declared once with both its Standard Schema validator and its prompt hint,
@@ -138,17 +139,33 @@ const PendingEntryCore = z.strictObject({
      */
     dependsOnForks: z.array(z.string().min(1)).default([]),
     /**
-     * The queue's one ordering: higher is picked first, ties broken on tag
-     * ascending (`spec/pending.md`, *The entry core*). Applied wherever the
-     * engine selects, by `pickableSelection` (`src/selection.ts`).
+     * What this entry is in the queue's forest, defaulting to `work`:
      *
-     * Defaults to `0`, so an entry declaring nothing sorts among its
-     * undeclared siblings rather than behind them. The engine consumes the
-     * number and nothing about what it means — what earns a raise is the
-     * producing phase's to decide (`.claude/rules/engine-boundary.md`,
-     * *Capability vs convention*).
+     * - `work` — the dispatch unit, one build session's job, and the only
+     *   kind selection offers (`gateEligible`, `src/selection.ts`).
+     * - `step` — part of a `work` entry, done and shipped in that entry's
+     *   session, never dispatched on its own.
+     * - `group` — organizes (a goal, an epic); never picked, and leaves the
+     *   queue with its last descendant.
+     *
+     * Declared, never read off whether an entry has children: a group not yet
+     * decomposed has none and is still not work.
      */
-    priority: z.int().default(0),
+    kind: z.enum(["work", "step", "group"]).default("work"),
+    /**
+     * The entry this one is part of, by tag — one parent, so the queue is a
+     * forest. Absent is a root.
+     *
+     * Containment only: precedence is `gate`, and the forest rules a queue
+     * must satisfy (which kind may parent which, the depth bound, a step's
+     * blockers) are the queue-wide read's, not this field's — all this field
+     * holds is that the value is a tag the grammar admits, since a parent
+     * that could not be a tag names no entry any queue could hold.
+     */
+    parent: z
+      .string()
+      .regex(TAG_PATTERN, "parent must match TAG_PATTERN")
+      .optional(),
     /**
      * File-level work breakdown. The parallelism partition reads `edit[].path`.
      *
@@ -413,8 +430,9 @@ export function composePendingEntry(
 
 /**
  * A producer's full pending queue, as a reader hands it on. Position carries
- * nothing: the order every selection takes is `priority` descending, then tag
- * ascending. Empty is valid and means nothing pending.
+ * nothing: the order every selection takes is computed at selection time
+ * (`byQueueOrder`, `src/selection.ts`). Empty is valid and means nothing
+ * pending.
  */
 export type PendingList = PendingEntry[];
 
@@ -732,9 +750,8 @@ export function parsePendingQueueLoose(
  * Fold per-file outcomes into the one queue verdict both parses answer with.
  *
  * Entries come back in the order the listing handed them, which carries
- * nothing: the order a selection picks in is `priority` descending then tag
- * ascending, applied at the one home that owns it (`byQueueOrder`,
- * `src/selection.ts`).
+ * nothing: the order a selection picks in is computed at the one home that
+ * owns it (`byQueueOrder`, `src/selection.ts`).
  */
 function collectQueue(results: readonly EntryParseResult[]): ParseResult {
   const errors = results.flatMap((r) => r.errors);
@@ -805,7 +822,8 @@ export function renderSchemaForPrompt(extension?: EntryExtension): string {
         | { "kind": "deferred",  "reason": "no consumer yet" }  // carried indefinitely
         | { "kind": "requiresCapability", "capability": "some-env-fact" },  // env gate; pickable iff the chain asserts this capability
   "dependsOnForks": [ "fork-slug", ... ],               // optional; foundational forks this rests on — not picked until the chain resolves every one. Omit if none.
-  "priority": 0,                                        // optional integer, default 0; the queue's one ordering — higher is picked first, ties break on tag ascending. The engine consumes the number, never what it means.
+  "kind": "work" | "step" | "group",                    // optional, default "work"; "work" is the dispatch unit and the only kind selection picks, "step" is part of a work entry and ships in its session, "group" organizes and leaves the queue with its last descendant. Omit for work.
+  "parent": "OTHER-TAG",                                // optional; the entry this one is part of, by tag — one parent, so the queue is a forest. Omit for a root.
   "files": {                                            // EVERY path the work legitimately touches — tests and incidentals included. Enforced on fanout: a scoped tick may write ONLY these paths ∪ the phase's channel paths; an under-declared entry trips the write guard.
     "new":  [ { "path": "...", "description": "..." } ],
     "edit": [ { "path": "...", "description": "..." } ],
@@ -823,7 +841,7 @@ export function renderSchemaForPrompt(extension?: EntryExtension): string {
 ${fields}
 }
 
-One entry per file, named "<tag>.json" directly under the queue directory — the filename and the "tag" field must agree. The "priority" field orders the queue, never any position or filename. An empty directory is valid (means nothing pending).`;
+One entry per file, named "<tag>.json" directly under the queue directory — the filename and the "tag" field must agree. The queue's order is computed at every selection, never carried by a position or a filename. An empty directory is valid (means nothing pending).`;
 }
 
 // ---------- pickability ----------

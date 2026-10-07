@@ -185,13 +185,12 @@ const queueEntry = (
   over: {
     per?: { path: string; section: string };
     edit?: string;
-    priority?: number;
   } = {},
 ): PendingEntry => ({
   tag,
   gate: { kind: "open" },
   dependsOnForks: [],
-  priority: over.priority ?? 0,
+  kind: "work",
   files: {
     new: [],
     edit: [{ path: over.edit ?? "src/widget.ts", description: "the work" }],
@@ -427,25 +426,23 @@ it("the per gate reports a drained queue as skipped, not as a judged green", asy
  * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
  * wrote*).
  */
-it("a plan slice's commit adding an entry at a rank its old band excluded passes its gates", async () => {
-  // Three ranks the retired provenance bands kept apart — the sweep's, a
-  // build note's, and a downstream report's. The derive slice admitted
-  // exactly one of them, so two of these three rows were a refusal before.
-  const RANKED = [
-    { tag: "RANKED-AT-THE-SWEEPS-OLD-BAND", priority: 0 },
-    { tag: "RANKED-AT-A-BUILD-NOTES-OLD-BAND", priority: 20 },
-    { tag: "RANKED-AT-A-DOWNSTREAM-REPORTS-OLD-BAND", priority: 30 },
+it("a plan slice's commit filing an entry from each of the three old bands' provenances passes its gates", async () => {
+  // The three provenances the retired bands kept apart — the sweep's, a build
+  // note's, and a downstream report's. The derive slice admitted exactly one
+  // of them, so two of these three rows were a refusal before; and the rank
+  // that separated them is no longer a field an entry may carry at all
+  // (`spec/pending.md`, *The entry core*).
+  const FILED = [
+    "FILED-FROM-THE-SWEEPS-OLD-BAND",
+    "FILED-FROM-A-BUILD-NOTES-OLD-BAND",
+    "FILED-FROM-A-DOWNSTREAM-REPORTS-OLD-BAND",
   ];
-  await writeQueue(
-    RANKED.map(({ tag, priority }) => queueEntry(tag, { priority })),
-  );
-  const span = commitAll("plan: derive three entries at three ranks");
+  await writeQueue(FILED.map((tag) => queueEntry(tag)));
+  const span = commitAll("plan: derive three entries from three sources");
   // Non-vacuity: git named every entry file, so the verdicts below are read
   // over a span that really filed each of them.
   expect(span.touchedPaths).toEqual(
-    RANKED.map(
-      ({ tag }) => `${STATE_ROOT}/plan/pending/${entryFileName(tag)}`,
-    ).sort(),
+    FILED.map((tag) => `${STATE_ROOT}/plan/pending/${entryFileName(tag)}`).sort(),
   );
 
   const set = sliceGates("plan-derive").filter((g) => g.when === "afterCommit");

@@ -2793,7 +2793,9 @@ what filled the host.
 
 The engine's pending-entry schema is deliberately small: `tag` (identity),
 `files` (the fence declaration), `gate` + `blockedBy` + `dependsOnForks`
-(pickability), and the dispatcher-maintained `observedFiles`. That is
+(pickability), `kind` + `parent` (what the entry is in the queue's forest —
+`work` is the dispatch unit and the only kind selection picks, `step` and
+`group` are not), and the dispatcher-maintained `observedFiles`. That is
 everything the engine mechanically consumes; it validates nothing else and
 it renders nothing else. Whatever additional fields your workflow wants on
 an entry — a summary, a spec citation, acceptance criteria — are yours to

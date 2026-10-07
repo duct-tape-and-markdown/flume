@@ -9,7 +9,8 @@
  *
  * Greedy partitioner: walk pending in order, place each entry in the first
  * batch where its paths don't overlap any existing batch entry. This isn't
- * optimal-by-count but it's stable and respects pending order (priority).
+ * optimal-by-count but it's stable and respects the order the caller handed
+ * the queue in (`byQueueOrder`, `src/selection.ts`).
  */
 
 import { matchesAny } from "./paths.js";

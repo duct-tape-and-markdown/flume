@@ -91,11 +91,11 @@ function isPickable(
 }
 
 /**
- * The queue's one ordering (`spec/pending.md`, *The entry core*): `priority`
- * descending, then tag ascending. A file listing, a producer's array, a
- * directory walk — whatever order a queue is read in, every selection below
- * takes this one, so the order a tick picks in is the entry's declaration and
- * never the order its file happened to arrive in.
+ * The queue's one ordering (`spec/pending.md`, *The entry core*): tag
+ * ascending. A file listing, a producer's array, a directory walk — whatever
+ * order a queue is read in, every selection below takes this one, so the order
+ * a tick picks in is the queue's own and never the order its files happened to
+ * arrive in.
  *
  * Tags compare by code unit rather than `localeCompare`, so the ordering is
  * the same on every host: `TAG_PATTERN` (`src/PendingSchema.ts`) admits ASCII
@@ -103,8 +103,22 @@ function isPickable(
  * would make the queue's order a property of the machine reading it.
  */
 export function byQueueOrder(a: PendingEntry, b: PendingEntry): number {
-  if (a.priority !== b.priority) return b.priority - a.priority;
   return a.tag < b.tag ? -1 : a.tag > b.tag ? 1 : 0;
+}
+
+/**
+ * Whether this entry is the dispatch unit — the `work` kind, which is the only
+ * one selection offers (`spec/pending.md`, *The entry core*). A `step` is done
+ * in its `work` entry's own session and a `group` organizes, so neither is a
+ * tick's job however open its gate reads.
+ *
+ * Not folded into the gate switch (`isPickableNow`, `src/PendingSchema.ts`):
+ * the gate is why an entry is held back and clears when its reason does, while
+ * the kind is what the entry *is* — a group's gate being open is not a claim
+ * that a session should take it.
+ */
+function isDispatchUnit(entry: PendingEntry): boolean {
+  return entry.kind === "work";
 }
 
 /** The entries `isPickable` clears, before this run's live quarantine is applied. */
@@ -113,8 +127,9 @@ function gateEligible(
   isForkResolved: (slug: string) => boolean,
   capabilities: ReadonlySet<string>,
 ): PendingEntry[] {
-  return pending.filter((e) =>
-    isPickable(e, pending, isForkResolved, capabilities),
+  return pending.filter(
+    (e) =>
+      isDispatchUnit(e) && isPickable(e, pending, isForkResolved, capabilities),
   );
 }
 

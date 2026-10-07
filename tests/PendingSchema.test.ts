@@ -15,6 +15,7 @@ import {
   parsePendingQueue,
   parsePendingQueueLoose,
   renderSchemaForPrompt,
+  TAG_MAX_LENGTH,
   touchedPaths,
   type EntryExtension,
   type ParseResult,
@@ -993,36 +994,74 @@ describe("dependsOnForks — foundations governor", () => {
   });
 });
 
-describe("priority — the queue's one ordering (spec/pending.md § The entry core)", () => {
-  it("priority defaults to 0 when omitted", () => {
+describe("kind and parent — the queue's forest (spec/pending.md § The entry core)", () => {
+  it("an entry declaring no kind parses as work", () => {
     const parsed = roundTrip({ ...baseEntry, gate: { kind: "open" } });
-    expect(parsed.priority).toBe(0);
+    expect(parsed.kind).toBe("work");
+    // And nothing stood in for a parent: a root is the absence of one, never a
+    // placeholder a reader would have to recognize.
+    expect(parsed.parent).toBeUndefined();
   });
 
-  it("round-trips a declared priority, above and below the default", () => {
-    expect(
-      roundTrip({ ...baseEntry, gate: { kind: "open" }, priority: 7 }).priority,
-    ).toBe(7);
-    expect(
-      roundTrip({ ...baseEntry, gate: { kind: "open" }, priority: -2 }).priority,
-    ).toBe(-2);
-  });
-
-  it("a non-integer priority fails validation", () => {
-    // The engine consumes the number as a sort key alone, so a fraction would
-    // order perfectly well — and that is exactly why it is refused rather
-    // than accepted and rounded: a producer writing 1.5 meant something the
-    // field cannot carry, and a silent read of it would be the degradation
-    // `.claude/rules/engineering.md`, *Loud or nothing* fences.
-    for (const priority of [1.5, "3", null]) {
-      const result = parseQueue(
-        [{ ...baseEntry, gate: { kind: "open" }, priority }],
-      );
-      expect(result.ok, `priority ${JSON.stringify(priority)} parsed`).toBe(
-        false,
-      );
-      expect(result.errors.map((e) => e.path)).toContain("priority");
+  it("round-trips each kind the core names, and a parent beside it", () => {
+    for (const kind of ["work", "step", "group"] as const) {
+      const parsed = roundTrip({
+        ...baseEntry,
+        gate: { kind: "open" },
+        kind,
+        parent: "OWNING-TAG",
+      });
+      expect(parsed.kind).toBe(kind);
+      expect(parsed.parent).toBe("OWNING-TAG");
     }
+  });
+
+  it("an entry declaring a kind the core does not name is refused", () => {
+    // The dispatch unit is the one kind selection offers, so a kind the core
+    // cannot place is a queue that must not be dispatched over at all
+    // (`.claude/rules/engineering.md`, *Loud or nothing*) — never read as the
+    // default.
+    for (const kind of ["epic", "WORK", "", null, 3]) {
+      const result = parseQueue([
+        { ...baseEntry, gate: { kind: "open" }, kind },
+      ]);
+      expect(result.ok, `kind ${JSON.stringify(kind)} parsed`).toBe(false);
+      expect(result.errors.map((e) => e.path)).toContain("kind");
+    }
+  });
+
+  it("a parent that is not a tag the grammar admits is refused", () => {
+    // A parent names an entry, and an entry's name is its tag: a value no tag
+    // could be names nothing any queue holds, so it is refused at the one
+    // place the grammar lives rather than at whatever later read follows the
+    // pointer.
+    for (const parent of [
+      "has whitespace",
+      "has/separator",
+      "",
+      "A".repeat(TAG_MAX_LENGTH + 1),
+      7,
+    ]) {
+      const result = parseQueue([
+        { ...baseEntry, gate: { kind: "open" }, parent },
+      ]);
+      expect(result.ok, `parent ${JSON.stringify(parent)} parsed`).toBe(false);
+      expect(result.errors.map((e) => e.path)).toContain("parent");
+    }
+  });
+
+  it("an entry carrying a priority is refused as an undeclared field", () => {
+    // The rank left the core, and the core is strict: a producer still filing
+    // one is told so at the parse rather than having it silently carried — or
+    // silently stripped, which the dispatcher's own rewrite would then destroy
+    // on disk.
+    const result = parseQueue([
+      { ...baseEntry, gate: { kind: "open" }, priority: 10 },
+    ]);
+    expect(result.ok).toBe(false);
+    expect(result.errors.map((e) => e.message).join("\n")).toContain(
+      "priority",
+    );
   });
 });
 
@@ -1093,7 +1132,8 @@ describe("renderSchemaForPrompt", () => {
               | { "kind": "deferred",  "reason": "no consumer yet" }  // carried indefinitely
               | { "kind": "requiresCapability", "capability": "some-env-fact" },  // env gate; pickable iff the chain asserts this capability
         "dependsOnForks": [ "fork-slug", ... ],               // optional; foundational forks this rests on — not picked until the chain resolves every one. Omit if none.
-        "priority": 0,                                        // optional integer, default 0; the queue's one ordering — higher is picked first, ties break on tag ascending. The engine consumes the number, never what it means.
+        "kind": "work" | "step" | "group",                    // optional, default "work"; "work" is the dispatch unit and the only kind selection picks, "step" is part of a work entry and ships in its session, "group" organizes and leaves the queue with its last descendant. Omit for work.
+        "parent": "OTHER-TAG",                                // optional; the entry this one is part of, by tag — one parent, so the queue is a forest. Omit for a root.
         "files": {                                            // EVERY path the work legitimately touches — tests and incidentals included. Enforced on fanout: a scoped tick may write ONLY these paths ∪ the phase's channel paths; an under-declared entry trips the write guard.
           "new":  [ { "path": "...", "description": "..." } ],
           "edit": [ { "path": "...", "description": "..." } ],
@@ -1102,7 +1142,7 @@ describe("renderSchemaForPrompt", () => {
         "observedFiles": [ "path", ... ]                      // engine-maintained, never authored here: the dispatcher records the real footprint of an attempt that did not ship, so a retry partitions away from whatever it collided with. Carry it through unchanged when an entry already has one; omit it otherwise.
       }
 
-      One entry per file, named "<tag>.json" directly under the queue directory — the filename and the "tag" field must agree. The "priority" field orders the queue, never any position or filename. An empty directory is valid (means nothing pending)."
+      One entry per file, named "<tag>.json" directly under the queue directory — the filename and the "tag" field must agree. The queue's order is computed at every selection, never carried by a position or a filename. An empty directory is valid (means nothing pending)."
     `);
   });
 
@@ -1147,18 +1187,20 @@ describe("renderSchemaForPrompt", () => {
     expect(line).not.toMatch(/\bRESOLVED\b/);
   });
 
-  // The hint is the engine speaking in a prompt the package also writes to:
-  // it states the ordering the selection consumes and stops, so a chain whose
-  // own discipline ranks every entry is not told to omit the field by the
-  // engine in the same render (.claude/rules/engine-boundary.md § Surface,
-  // not prescription). Scoped to the one hint line, never the whole render.
-  it("the rendered schema's priority hint names the ordering it decides and no rule about when to set it", () => {
-    const line = hintLineFor(renderSchemaForPrompt(), "priority");
-    expect(line).toContain("default 0");
-    expect(line).toContain("higher is picked first");
-    expect(line).toContain("ties break on tag ascending");
-    expect(line).not.toMatch(/\bomit\b/i);
-    expect(line).not.toMatch(/\bunless\b/i);
+  // The entry's own `kind` shares its spelling with the gate's discriminant, so
+  // this hint is found by the value it renders rather than by the field name —
+  // `hintLineFor` would hand back the gate's first arm. Scoped to the one hint
+  // line, never the whole render.
+  it("the rendered schema's kind hint names every kind the core accepts and which one is picked", () => {
+    const line = renderSchemaForPrompt()
+      .split("\n")
+      .find((candidate) => candidate.includes(`"kind": "work"`));
+    expect(line, `no rendered hint line for the entry's own "kind"`).toBeDefined();
+    for (const kind of ["work", "step", "group"]) {
+      expect(line).toContain(`"${kind}"`);
+    }
+    expect(line).toContain("default");
+    expect(line).toContain("the only kind selection picks");
   });
 
   it("the retire hint advertises a path only, never a non-path alternative (.claude/rules/engineering.md § A seam gate reads what the real writer wrote)", () => {
@@ -1341,7 +1383,8 @@ describe("renderSchemaForPrompt", () => {
       tag: "EVERY-RENDERED-FIELD",
       gate: { kind: "open" },
       dependsOnForks: ["some-fork"],
-      priority: 3,
+      kind: "step",
+      parent: "EVERY-RENDERED-PARENT",
       files: {
         new: [{ path: "src/new.ts", description: "the new" }],
         edit: [{ path: "src/edit.ts", description: "the edit" }],

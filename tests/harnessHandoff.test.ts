@@ -90,7 +90,7 @@ const entry = (tag: string): PendingEntry => ({
   tag,
   gate: { kind: "open" },
   dependsOnForks: [],
-  priority: 0,
+  kind: "work",
   files: { new: [], edit: [], retire: [] },
 });
 

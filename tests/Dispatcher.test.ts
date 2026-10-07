@@ -511,7 +511,7 @@ function makeEntry(tag: string, editPaths: string[]): PendingEntry {
     tag,
     gate: { kind: "open" },
     dependsOnForks: [],
-    priority: 0,
+    kind: "work",
     files: {
       new: [],
       edit: editPaths.map((p) => ({ path: p, description: "edit" })),
@@ -3141,7 +3141,7 @@ describe("Dispatcher fanout — supervisorPolicy.maxParallel overrides the batch
  */
 describe("Dispatcher fanout — a freed slot pulls the next disjoint entry (WAVE-REFILLS-A-FREED-SLOT)", () => {
   it("a slot freed by a merged entry pulls the next pickable entry disjoint from what is still in flight", async () => {
-    // Queue order (equal priority, tag ascending): RF-A, RF-B, RF-C, RF-D.
+    // Queue order (tag ascending): RF-A, RF-B, RF-C, RF-D.
     // RF-C collides with RF-B and with nothing else, so it is the entry the
     // freed slot must *skip*: the pick is disjointness against what is still
     // in flight, not "the next entry in the queue".
@@ -3447,7 +3447,7 @@ describe("Dispatcher fanout — a freed slot pulls the next disjoint entry (WAVE
 /**
  * THE-REFILL-READS-THE-LIVE-QUEUE-AND-THE-STOP-FLAG — `spec/worktrees.md`,
  * *Fanout and worktrees — provisioning, isolation, teardown*: a freed slot
- * reads the queue **as it stands**, in priority order, skipping every entry
+ * reads the queue **as it stands**, in the queue's own order, skipping every entry
  * this wave has already attempted, and the wave ends when nothing it has not
  * attempted is pickable or the run is torn down.
  *
@@ -3458,12 +3458,15 @@ describe("Dispatcher fanout — a freed slot pulls the next disjoint entry (WAVE
  * merges never reaches.
  */
 describe("Dispatcher fanout — a freed slot reads the live queue and the stop flag", () => {
-  it("a wave pulls an entry filed mid-wave at a higher priority before a lower-ranked one it started with", async () => {
+  it("a wave pulls an entry filed mid-wave ahead of one it started with", async () => {
     // One slot wide, so every entry past the first is a refill and the
-    // invocation order *is* the pick order.
+    // invocation order *is* the pick order. The tags carry the order, since
+    // that is what the queue's order is (`byQueueOrder`, `src/selection.ts`):
+    // MW-A-HEAD leads, and MW-C-TAIL is the only entry the wave opens beside
+    // it.
     const entries = [
-      { ...makeEntry("MW-FIRST", ["src/mw-first.ts"]), priority: 10 },
-      { ...makeEntry("MW-LOW", ["src/mw-low.ts"]), priority: 0 },
+      makeEntry("MW-A-HEAD", ["src/mw-a-head.ts"]),
+      makeEntry("MW-C-TAIL", ["src/mw-c-tail.ts"]),
     ];
     await writePending(fx.repo, entries);
     new Baton(join(fx.repo, ".flume")).wake("build");
@@ -3475,30 +3478,29 @@ describe("Dispatcher fanout — a freed slot reads the live queue and the stop f
       supervisorPolicy: { maxParallel: 1 },
     };
 
-    // Filed onto trunk while MW-FIRST's agent runs, outranking the entry the
+    // Filed onto trunk while MW-A-HEAD's agent runs, ahead of the entry the
     // wave opened beside it. Committed, not merely written: every dispatch
     // read resolves the committed tip (spec/pending.md, "Dispatch reads come
     // from the tip, not the tree").
-    const filedMidWave: PendingEntry = {
-      ...makeEntry("MW-HIGH", ["src/mw-high.ts"]),
-      priority: 20,
-    };
+    const filedMidWave: PendingEntry = makeEntry("MW-B-MIDWAVE", [
+      "src/mw-b-midwave.ts",
+    ]);
 
     const order: string[] = [];
     const fileBySlug: Record<string, string> = {
-      "mw-first": "src/mw-first.ts",
-      "mw-high": "src/mw-high.ts",
-      "mw-low": "src/mw-low.ts",
+      "mw-a-head": "src/mw-a-head.ts",
+      "mw-b-midwave": "src/mw-b-midwave.ts",
+      "mw-c-tail": "src/mw-c-tail.ts",
     };
     const agent: Agent = {
       name: "live-queue-probe",
       async invoke(inv) {
         const slug = basename(inv.cwd);
         order.push(slug);
-        if (slug === "mw-first") {
+        if (slug === "mw-a-head") {
           await commitEntryFile(
             fx.repo,
-            entryFileName("MW-HIGH"),
+            entryFileName("MW-B-MIDWAVE"),
             JSON.stringify(filedMidWave, null, 2) + "\n",
           );
         }
@@ -3522,14 +3524,14 @@ describe("Dispatcher fanout — a freed slot reads the live queue and the stop f
 
     const outcome = await dispatcher.tick();
 
-    // The freed slot re-read the queue and took its head: MW-HIGH did not
-    // exist when the wave selected, and MW-LOW — the only entry the wave
+    // The freed slot re-read the queue and took its head: MW-B-MIDWAVE did not
+    // exist when the wave selected, and MW-C-TAIL — the only entry the wave
     // started with that it had not attempted — waited behind it.
-    expect(order).toEqual(["mw-first", "mw-high", "mw-low"]);
+    expect(order).toEqual(["mw-a-head", "mw-b-midwave", "mw-c-tail"]);
     expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
-      "MW-FIRST",
-      "MW-HIGH",
-      "MW-LOW",
+      "MW-A-HEAD",
+      "MW-B-MIDWAVE",
+      "MW-C-TAIL",
     ]);
     expect(outcome.result?.pendingAfter).toEqual([]);
     expect(readPendingFromDisk(fx.repo)).toEqual([]);
@@ -3537,9 +3539,9 @@ describe("Dispatcher fanout — a freed slot reads the live queue and the stop f
 
   it("a wave pulls nothing more once the stop flag is written while a slot's agent runs", async () => {
     const entries = [
-      { ...makeEntry("SF-A", ["src/sf-a.ts"]), priority: 30 },
-      { ...makeEntry("SF-B", ["src/sf-b.ts"]), priority: 20 },
-      { ...makeEntry("SF-C", ["src/sf-c.ts"]), priority: 10 },
+      makeEntry("SF-A", ["src/sf-a.ts"]),
+      makeEntry("SF-B", ["src/sf-b.ts"]),
+      makeEntry("SF-C", ["src/sf-c.ts"]),
     ];
     await writePending(fx.repo, entries);
     new Baton(join(fx.repo, ".flume")).wake("build");
@@ -3621,8 +3623,8 @@ describe("Dispatcher fanout — a freed slot reads the live queue and the stop f
     // explicit action, and it is the command they use to test a staged fix
     // before acking the stop (spec/loop.md, *Graceful stop — the stop flag*).
     const entries = [
-      { ...makeEntry("BT-A", ["src/bt-a.ts"]), priority: 20 },
-      { ...makeEntry("BT-B", ["src/bt-b.ts"]), priority: 10 },
+      makeEntry("BT-A", ["src/bt-a.ts"]),
+      makeEntry("BT-B", ["src/bt-b.ts"]),
     ];
     await writePending(fx.repo, entries);
     new Baton(join(fx.repo, ".flume")).wake("build");
@@ -3670,8 +3672,8 @@ describe("Dispatcher fanout — a freed slot reads the live queue and the stop f
     // still pickable — at every refill after it. A wave re-reading the queue
     // is offered it each time; the attempted set is what declines it.
     const entries = [
-      { ...makeEntry("NP-A", ["src/np-a.ts"]), priority: 20 },
-      { ...makeEntry("NP-B", ["src/np-b.ts"]), priority: 10 },
+      makeEntry("NP-A", ["src/np-a.ts"]),
+      makeEntry("NP-B", ["src/np-b.ts"]),
     ];
     await writePending(fx.repo, entries);
     new Baton(join(fx.repo, ".flume")).wake("build");
@@ -3723,14 +3725,8 @@ describe("Dispatcher fanout — a freed slot reads the live queue and the stop f
     // refill re-selects over the store as it then stands; the context it
     // hands the entry it pulled is that same store, never the wave's opening
     // read (`spec/chain.md`, *What a hook receives*).
-    const first = {
-      ...makeEntry("RP-FIRST", ["src/rp-first.ts"]),
-      priority: 20,
-    };
-    const second = {
-      ...makeEntry("RP-SECOND", ["src/rp-second.ts"]),
-      priority: 10,
-    };
+    const first = makeEntry("RP-FIRST", ["src/rp-first.ts"]);
+    const second = makeEntry("RP-SECOND", ["src/rp-second.ts"]);
     await writePending(fx.repo, [first, second]);
     new Baton(join(fx.repo, ".flume")).wake("build");
 
@@ -3822,8 +3818,8 @@ describe("Dispatcher fanout — a freed slot reads the live queue and the stop f
     invocations: string[];
   }> {
     await writePending(fx.repo, [
-      { ...makeEntry("QR-A", ["src/qr-a.ts"]), priority: 20 },
-      { ...makeEntry("QR-B", ["src/qr-b.ts"]), priority: 10 },
+      makeEntry("QR-A", ["src/qr-a.ts"]),
+      makeEntry("QR-B", ["src/qr-b.ts"]),
     ]);
     new Baton(join(fx.repo, ".flume")).wake("build");
 
@@ -10839,14 +10835,14 @@ describe("Dispatcher fanout — quarantine visibility on TickResult (dispatcher-
  */
 describe("Dispatcher fanout — the pickable set carries a chain-declared per-entry refusal", () => {
   /**
-   * Two open entries, disjoint by files. `PICKED` declares the higher
-   * `priority`, because the assertions below name the reported sets in
-   * order and the queue's order is that field, never the position an
-   * entry was written at (`spec/pending.md`, *The entry core*).
+   * Two open entries, disjoint by files. `CHOSEN` leads on the tag, because
+   * the assertions below name the reported sets in order and the queue's
+   * order is computed from the entry, never the position its file was
+   * written at (`spec/pending.md`, *The entry core*).
    */
   const twoOpen = (): PendingEntry[] => [
-    { ...makeEntry("PICKED", ["src/picked.ts"]), priority: 1 },
-    makeEntry("HELD", ["src/held.ts"]),
+    makeEntry("DECLINED", ["src/declined.ts"]),
+    makeEntry("CHOSEN", ["src/chosen.ts"]),
   ];
 
   /** A fanout `build` phase and the baton woken for it. */
@@ -10862,17 +10858,17 @@ describe("Dispatcher fanout — the pickable set carries a chain-declared per-en
     const chain: Chain = {
       phases: [phase],
       humanOnly: [],
-      refusesEntry: (ctx) => ctx.entry.tag === "HELD",
+      refusesEntry: (ctx) => ctx.entry.tag === "DECLINED",
     };
 
-    // Registered for `PICKED` alone: the wave throwing "no action registered
-    // for slug 'held'" is this case's loudest possible failure, so the
+    // Registered for `CHOSEN` alone: the wave throwing "no action registered
+    // for slug 'declined'" is this case's loudest possible failure, so the
     // refusal is proven at dispatch as well as in the reported set.
     const outcome = await new Dispatcher({
       chainLoader: staticLoader(chain),
       repoRoot: fx.repo,
       configDir: fx.configDir,
-      agent: fanoutAgent({ picked: async () => {} }),
+      agent: fanoutAgent({ chosen: async () => {} }),
       log: silent,
     }).tick();
 
@@ -10881,41 +10877,41 @@ describe("Dispatcher fanout — the pickable set carries a chain-declared per-en
     // directory's listing, which carries no order of its own; the queue's
     // order is what `pickableAfter` is reported in.
     expect(outcome.result?.pendingAfter.map((e) => e.tag).sort()).toEqual([
-      "HELD",
-      "PICKED",
+      "CHOSEN",
+      "DECLINED",
     ]);
-    expect(outcome.result?.pickableAfter.map((e) => e.tag)).toEqual(["PICKED"]);
+    expect(outcome.result?.pickableAfter.map((e) => e.tag)).toEqual(["CHOSEN"]);
     // Held back at selection, so it never reached an agent at all.
-    expect(outcome.result?.entries?.map((e) => e.tag)).toEqual(["PICKED"]);
+    expect(outcome.result?.entries?.map((e) => e.tag)).toEqual(["CHOSEN"]);
   });
 
   it("the engine reports each entry a chain-declared refusal held back", async () => {
     await writePending(fx.repo, [
-      makeEntry("PICKED", ["src/picked.ts"]),
-      makeEntry("HELD-ONE", ["src/one.ts"]),
-      makeEntry("HELD-TWO", ["src/two.ts"]),
+      makeEntry("CHOSEN", ["src/chosen.ts"]),
+      makeEntry("DECLINED-ONE", ["src/one.ts"]),
+      makeEntry("DECLINED-TWO", ["src/two.ts"]),
     ]);
     const phase = wakeBuild();
 
     const chain: Chain = {
       phases: [phase],
       humanOnly: [],
-      refusesEntry: (ctx) => ctx.entry.tag.startsWith("HELD-"),
+      refusesEntry: (ctx) => ctx.entry.tag.startsWith("DECLINED-"),
     };
 
     const outcome = await new Dispatcher({
       chainLoader: staticLoader(chain),
       repoRoot: fx.repo,
       configDir: fx.configDir,
-      agent: fanoutAgent({ picked: async () => {} }),
+      agent: fanoutAgent({ chosen: async () => {} }),
       log: silent,
     }).tick();
 
     // Non-vacuity: three entries were judged, and the two named below are
     // the ones missing from the pickable set the same tick reported.
     expect(outcome.result?.pendingAfter).toHaveLength(3);
-    expect(outcome.result?.pickableAfter.map((e) => e.tag)).toEqual(["PICKED"]);
-    expect(outcome.result?.refusedTags).toEqual(["HELD-ONE", "HELD-TWO"]);
+    expect(outcome.result?.pickableAfter.map((e) => e.tag)).toEqual(["CHOSEN"]);
+    expect(outcome.result?.refusedTags).toEqual(["DECLINED-ONE", "DECLINED-TWO"]);
     // The engine's own hold is a separate fact and is not borrowed for this
     // one: nothing quarantined this run.
     expect(outcome.result?.quarantinedTags).toBeUndefined();
@@ -10934,23 +10930,23 @@ describe("Dispatcher fanout — the pickable set carries a chain-declared per-en
       chainLoader: staticLoader(chain),
       repoRoot: fx.repo,
       configDir: fx.configDir,
-      agent: fanoutAgent({ picked: async () => {}, held: async () => {} }),
+      agent: fanoutAgent({ chosen: async () => {}, declined: async () => {} }),
       log: silent,
     }).tick();
 
     // `pendingAfter` is the directory's listing, which carries no order;
     // `pickableAfter` is the queue's own order, which is the claim here.
     expect(outcome.result?.pendingAfter.map((e) => e.tag).sort()).toEqual([
-      "HELD",
-      "PICKED",
+      "CHOSEN",
+      "DECLINED",
     ]);
     expect(outcome.result?.pickableAfter.map((e) => e.tag)).toEqual([
-      "PICKED",
-      "HELD",
+      "CHOSEN",
+      "DECLINED",
     ]);
     expect(outcome.result?.entries?.map((e) => e.tag).sort()).toEqual([
-      "HELD",
-      "PICKED",
+      "CHOSEN",
+      "DECLINED",
     ]);
     expect(outcome.result?.refusedTags).toEqual([]);
   });
@@ -10959,20 +10955,21 @@ describe("Dispatcher fanout — the pickable set carries a chain-declared per-en
     await writePending(fx.repo, twoOpen());
     const flumeDir = join(fx.repo, ".flume");
     await mkdir(join(flumeDir, "prior-attempts", "entry"), { recursive: true });
-    const held = twoOpen().find((e) => e.tag === "HELD")!;
+    const chosen = twoOpen().find((e) => e.tag === "CHOSEN")!;
+    const declined = twoOpen().find((e) => e.tag === "DECLINED")!;
     const record: PriorAttempt = {
       mode: "clean-exit",
       spanBase: "1".repeat(40),
       spanHead: "1".repeat(40),
       finalMessage: "nothing to do here",
       key: "entry",
-      keyedAs: slugify("HELD"),
-      declaredAs: entryDeclaredKey(held),
+      keyedAs: slugify("DECLINED"),
+      declaredAs: entryDeclaredKey(declined),
       headSha: "0".repeat(40),
       at: "2024-01-01T00:00:00.000Z",
     };
     await writeFile(
-      join(flumeDir, "prior-attempts", "entry", `${slugify("HELD")}.json`),
+      join(flumeDir, "prior-attempts", "entry", `${slugify("DECLINED")}.json`),
       JSON.stringify(record),
     );
 
@@ -10983,7 +10980,7 @@ describe("Dispatcher fanout — the pickable set carries a chain-declared per-en
       humanOnly: [],
       refusesEntry: (ctx) => {
         seen.push(ctx);
-        return ctx.entry.tag === "HELD";
+        return ctx.entry.tag === "DECLINED";
       },
     };
 
@@ -10992,7 +10989,7 @@ describe("Dispatcher fanout — the pickable set carries a chain-declared per-en
       chainLoader: staticLoader(chain),
       repoRoot: fx.repo,
       configDir: fx.configDir,
-      agent: fanoutAgent({ picked: async () => {} }),
+      agent: fanoutAgent({ chosen: async () => {} }),
       log: silent,
     }).tick();
 
@@ -11000,9 +10997,9 @@ describe("Dispatcher fanout — the pickable set carries a chain-declared per-en
     // its own consults: one per entry the gate switch cleared, in queue
     // order, each carrying the entry as read.
     const opening = seen.slice(0, 2);
-    expect(opening.map((ctx) => ctx.entry.tag)).toEqual(["PICKED", "HELD"]);
-    expect(opening[0]!.entry).toEqual(twoOpen()[0]);
-    // The record standing for `HELD` reaches the predicate; `PICKED` has
+    expect(opening.map((ctx) => ctx.entry.tag)).toEqual(["CHOSEN", "DECLINED"]);
+    expect(opening[0]!.entry).toEqual(chosen);
+    // The record standing for `DECLINED` reaches the predicate; `CHOSEN` has
     // none, and absent is absent rather than a record that failed to decode.
     expect(opening[0]!.priorAttempt).toBeUndefined();
     expect(opening[1]!.priorAttempt).toEqual(record);
@@ -11013,9 +11010,9 @@ describe("Dispatcher fanout — the pickable set carries a chain-declared per-en
     // …and each entry's own declaration key beside it, so a predicate asking
     // "is that record still about this entry" compares two values the engine
     // derived rather than respelling either (`EntryRefusalContext.declaredAs`,
-    // `src/Phase.ts`). For `HELD` it is the key the standing record carries.
+    // `src/Phase.ts`). For `DECLINED` it is the key the standing record carries.
     expect(opening.map((ctx) => ctx.declaredAs)).toEqual(
-      twoOpen().map((e) => entryDeclaredKey(e)),
+      [chosen, declined].map((e) => entryDeclaredKey(e)),
     );
     expect(opening[1]!.declaredAs).toBe(record.declaredAs);
   });
@@ -11037,7 +11034,7 @@ describe("Dispatcher fanout — the pickable set carries a chain-declared per-en
     const chain: Chain = {
       phases: [planPhase],
       humanOnly: [],
-      refusesEntry: (ctx) => ctx.entry.tag === "HELD",
+      refusesEntry: (ctx) => ctx.entry.tag === "DECLINED",
     };
 
     new Baton(join(fx.repo, ".flume")).wake("plan");
@@ -11053,11 +11050,11 @@ describe("Dispatcher fanout — the pickable set carries a chain-declared per-en
     // still carries both entries.
     expect(captured).toBeDefined();
     expect(outcome.result?.pendingAfter.map((e) => e.tag).sort()).toEqual([
-      "HELD",
-      "PICKED",
+      "CHOSEN",
+      "DECLINED",
     ]);
-    expect(captured!.map((e) => e.tag)).toEqual(["PICKED"]);
-    expect(outcome.result?.refusedTags).toEqual(["HELD"]);
+    expect(captured!.map((e) => e.tag)).toEqual(["CHOSEN"]);
+    expect(outcome.result?.refusedTags).toEqual(["DECLINED"]);
   });
 });
 
@@ -25576,35 +25573,39 @@ describe("Dispatcher — the queue's declared writer runs over an unparseable qu
 });
 
 /**
- * ENTRY-PRIORITY-ORDERS-THE-QUEUE (`spec/pending.md`, *The entry core*): the
- * queue's order is a field, never a position — `priority` descending, then
- * tag ascending, at every surface that selects.
+ * THE-ENTRY-CORE-CARRIES-KIND-AND-PARENT-AND-NO-RANK (`spec/pending.md`, *The
+ * entry core*): the queue's order is computed at every selection — tag
+ * ascending — and no number an entry carries and no position its file sits at
+ * is part of it; and `work` is the one kind a selection offers, so a `group`
+ * and a `step` are passed over however open their gates read.
  *
- * Each case writes a queue whose own order agrees with the queue's ordering
- * on neither axis, then reads the order back off the engine's *reported*
- * surfaces — the wave's batch, `TickResult.pickableAfter`, and `render`'s
- * preview — rather than off the comparator beside them: a sort asserted at
- * its own producer proves self-agreement and nothing about what a tick picks
- * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
- * wrote*).
+ * Each case reads the order and the offered set back off the engine's
+ * *reported* surfaces — the wave's batch, `TickResult.pickableAfter`, and
+ * `render`'s preview — rather than off the comparator beside them: a sort
+ * asserted at its own producer proves self-agreement and nothing about what a
+ * tick picks (`.claude/rules/engineering.md`, *A seam gate reads what the real
+ * writer wrote*).
  *
  * The agents here commit nothing, so every entry stays queued and the
  * post-tick sets are read over the queue the pre-tick selection saw.
  */
-describe("Dispatcher — `priority` is the order every selection takes", () => {
+describe("Dispatcher — the queue's order is computed, and `work` is the one kind picked", () => {
   /**
-   * Three open entries, disjoint by files, in an order no ordering would
-   * produce: the top priority is written last, and the two that tie on
-   * priority are written in descending tag order.
+   * Three open entries, disjoint by files, whose tags put the queue's order at
+   * odds with the directory's own: an entry file is `<tag>.json`, and `-` sorts
+   * below `.`, so the listing hands `ORDER-LAST` and `ORDER-MID` ahead of
+   * `ORDER` while the queue's order is the tag's.
    */
   const scrambled = (): PendingEntry[] => [
-    { ...makeEntry("BETA", ["src/beta.ts"]), priority: 1 },
-    { ...makeEntry("ALPHA", ["src/alpha.ts"]), priority: 1 },
-    { ...makeEntry("GAMMA", ["src/gamma.ts"]), priority: 5 },
+    makeEntry("ORDER-MID", ["src/order-mid.ts"]),
+    makeEntry("ORDER-LAST", ["src/order-last.ts"]),
+    makeEntry("ORDER", ["src/order.ts"]),
   ];
 
-  /** The order those three sort into: 5 first, then the tie broken on tag. */
-  const ordered = ["GAMMA", "ALPHA", "BETA"];
+  /** The order those three sort into: the tag, ascending. */
+  const ordered = ["ORDER", "ORDER-LAST", "ORDER-MID"];
+  /** And the order the queue directory's own listing hands them in. */
+  const listed = ["ORDER-LAST", "ORDER-MID", "ORDER"];
 
   /** A fanout `build` phase, the baton woken for it, and a chain carrying it. */
   const wakeBuild = (): Chain => {
@@ -25618,12 +25619,12 @@ describe("Dispatcher — `priority` is the order every selection takes", () => {
   /** An agent that runs for each of the three slugs and commits nothing. */
   const noopWave = (): Agent =>
     fanoutAgent({
-      alpha: async () => {},
-      beta: async () => {},
-      gamma: async () => {},
+      order: async () => {},
+      "order-last": async () => {},
+      "order-mid": async () => {},
     });
 
-  it("selection orders entries by priority descending, then tag ascending", async () => {
+  it("selection orders entries on the tag, never on the listing the queue was read in", async () => {
     await writePending(fx.repo, scrambled());
     const chain = wakeBuild();
     const dispatcher = new Dispatcher({
@@ -25638,40 +25639,34 @@ describe("Dispatcher — `priority` is the order every selection takes", () => {
     // selection, one call short of invoking an agent.
     const preview = await dispatcher.render({ phase: "build" });
     expect(preview.pickable.map((e) => e.tag)).toEqual(ordered);
-    expect(preview.entry?.tag).toBe("GAMMA");
+    expect(preview.entry?.tag).toBe("ORDER");
 
     const outcome = await dispatcher.tick();
 
-    // Non-vacuity: the directory's own listing order is alphabetical and all
-    // three entries are still in it — so the order above is the selection's,
-    // and not the order the queue was read in.
-    expect(readPendingFromDisk(fx.repo).map((e) => e.tag)).toEqual([
-      "ALPHA",
-      "BETA",
-      "GAMMA",
-    ]);
-    expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual([
-      "ALPHA",
-      "BETA",
-      "GAMMA",
-    ]);
+    // Non-vacuity, and the whole reason these three tags: all three are still
+    // queued, and the listing really does hand them in an order the selection
+    // above is not — so what the reported sets carry is the comparator's
+    // answer and not the order the queue was read in.
+    expect(readPendingFromDisk(fx.repo).map((e) => e.tag)).toEqual(listed);
+    expect(outcome.result?.pendingAfter.map((e) => e.tag)).toEqual(listed);
     // The wave's batch, in the order the wave carried it.
     expect(outcome.result?.entries?.map((e) => e.tag)).toEqual(ordered);
     // The post-tick re-derivation the handoff routes on.
     expect(outcome.result?.pickableAfter.map((e) => e.tag)).toEqual(ordered);
   });
 
-  it("an entry declaring no priority sorts as zero", async () => {
-    // One entry above the default, one below, and one declaring nothing at
-    // all: the undeclared entry lands between them, which it can only do by
-    // being read as 0 rather than as absent.
-    const { priority: _default, ...declaresNone } = makeEntry("BETA", [
-      "src/beta.ts",
-    ]);
+  it("a group entry is never picked", async () => {
+    // A group and the work entry it parents, the group leading on the tag so
+    // that the kind is the only thing keeping it out of the batch. The agent
+    // is registered for the work slug alone: a pick of the group arrives at
+    // "no action registered for slug 'group-goal'", which is this case's
+    // loudest possible failure.
     await writePending(fx.repo, [
-      { ...makeEntry("ALPHA", ["src/alpha.ts"]), priority: -1 },
-      declaresNone as PendingEntry,
-      { ...makeEntry("GAMMA", ["src/gamma.ts"]), priority: 1 },
+      { ...makeEntry("GROUP-GOAL", []), kind: "group" },
+      {
+        ...makeEntry("GROUP-WORK", ["src/group-work.ts"]),
+        parent: "GROUP-GOAL",
+      },
     ]);
     const chain = wakeBuild();
 
@@ -25679,31 +25674,53 @@ describe("Dispatcher — `priority` is the order every selection takes", () => {
       chainLoader: staticLoader(chain),
       repoRoot: fx.repo,
       configDir: fx.configDir,
-      agent: noopWave(),
+      agent: fanoutAgent({ "group-work": async () => {} }),
       log: silent,
     }).tick();
 
-    // Non-vacuity: the entry that declares nothing really is on the queue,
-    // and really declares no priority on disk.
-    const onDisk = readPendingFromDisk(fx.repo);
-    expect(onDisk.map((e) => e.tag)).toContain("BETA");
-    const raw = JSON.parse(
-      await readFile(
-        join(queueDirOf(fx.repo), entryFileName("BETA")),
-        "utf8",
-      ),
-    ) as Record<string, unknown>;
-    expect(raw).not.toHaveProperty("priority");
-
+    // The work entry was carried — the vacuity pin, since a wave that picked
+    // nothing would satisfy the group's absence by itself.
+    expect(outcome.result?.entries?.map((e) => e.tag)).toEqual(["GROUP-WORK"]);
     expect(outcome.result?.pickableAfter.map((e) => e.tag)).toEqual([
-      "GAMMA",
-      "BETA",
-      "ALPHA",
+      "GROUP-WORK",
     ]);
-    expect(outcome.result?.entries?.map((e) => e.tag)).toEqual([
-      "GAMMA",
-      "BETA",
-      "ALPHA",
+    // And the group's absence from those sets is a selection verdict, not a
+    // ship: it is still in the queue, still `open`.
+    expect(readPendingFromDisk(fx.repo).map((e) => e.tag)).toEqual([
+      "GROUP-GOAL",
+      "GROUP-WORK",
+    ]);
+  });
+
+  it("a step entry is never picked", async () => {
+    // The step leads its own work entry on the tag, and is that entry's
+    // session's job rather than a tick of its own, so the wave carries the
+    // work entry alone.
+    await writePending(fx.repo, [
+      {
+        ...makeEntry("STEP-ONE", ["src/step-one.ts"]),
+        kind: "step",
+        parent: "STEP-WORK",
+      },
+      makeEntry("STEP-WORK", ["src/step-work.ts"]),
+    ]);
+    const chain = wakeBuild();
+
+    const outcome = await new Dispatcher({
+      chainLoader: staticLoader(chain),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({ "step-work": async () => {} }),
+      log: silent,
+    }).tick();
+
+    expect(outcome.result?.entries?.map((e) => e.tag)).toEqual(["STEP-WORK"]);
+    expect(outcome.result?.pickableAfter.map((e) => e.tag)).toEqual([
+      "STEP-WORK",
+    ]);
+    expect(readPendingFromDisk(fx.repo).map((e) => e.tag)).toEqual([
+      "STEP-ONE",
+      "STEP-WORK",
     ]);
   });
 });
@@ -25875,7 +25892,7 @@ describe("Dispatcher fanout — the per-entry claim", () => {
     await plantClaim("HELD-TWO", process.pid);
 
     await writePending(fx.repo, [
-      { ...makeEntry("FREE", ["src/free.ts"]), priority: 1 },
+      makeEntry("FREE", ["src/free.ts"]),
       makeEntry("HELD-ONE", ["src/one.ts"]),
       makeEntry("HELD-TWO", ["src/two.ts"]),
     ]);
@@ -25905,7 +25922,7 @@ describe("Dispatcher fanout — the per-entry claim", () => {
   it("the claimed set the engine reports is the one it hands the tick's own context", async () => {
     await plantClaim("HELD", process.pid);
     await writePending(fx.repo, [
-      { ...makeEntry("FREE", ["src/free.ts"]), priority: 1 },
+      makeEntry("FREE", ["src/free.ts"]),
       makeEntry("HELD", ["src/held.ts"]),
     ]);
     const seen: (readonly string[] | undefined)[] = [];
@@ -25941,7 +25958,7 @@ describe("Dispatcher fanout — the per-entry claim", () => {
     await mkdir(dirname(takenClaim), { recursive: true });
 
     await writePending(fx.repo, [
-      { ...makeEntry("MINE", ["src/mine.ts"]), priority: 1 },
+      makeEntry("MINE", ["src/mine.ts"]),
       makeEntry("TAKEN", ["src/taken.ts"]),
     ]);
     // Every entry the chain's predicate was offered, in consult order. An
@@ -26011,7 +26028,7 @@ describe("Dispatcher fanout — the per-entry claim", () => {
     await mkdir(dirname(takenClaim), { recursive: true });
 
     await writePending(fx.repo, [
-      { ...makeEntry("MINE", ["src/mine.ts"]), priority: 1 },
+      makeEntry("MINE", ["src/mine.ts"]),
       makeEntry("TAKEN", ["src/taken.ts"]),
     ]);
     const offered: string[] = [];
@@ -26109,8 +26126,8 @@ describe("Dispatcher fanout — the per-entry claim", () => {
     // and the read below is taken while the wave is still running. A wave
     // that drops its claims together at wave end is still holding PARKED's.
     await writePending(fx.repo, [
-      { ...makeEntry("PARKED", ["src/parked.ts"]), priority: 10 },
-      { ...makeEntry("REFILL", ["src/refill.ts"]), priority: 0 },
+      makeEntry("PARKED", ["src/parked.ts"]),
+      makeEntry("REFILL", ["src/refill.ts"]),
     ]);
     const chain: Chain = {
       phases: [wakeBuild()],
@@ -26254,8 +26271,8 @@ describe("Dispatcher fanout — the per-entry claim", () => {
     standing: SlotResidue;
   }> => {
     await writePending(fx.repo, [
-      { ...makeEntry("SETTLED-FIRST", ["src/settled-first.ts"]), priority: 20 },
-      { ...makeEntry("WALL-STANDS", ["src/wall-stands.ts"]), priority: 10 },
+      makeEntry("SETTLED-FIRST", ["src/settled-first.ts"]),
+      makeEntry("WALL-STANDS", ["src/wall-stands.ts"]),
     ]);
     const chain: Chain = {
       phases: [wakeBuild()],
@@ -26377,7 +26394,7 @@ describe("Dispatcher fanout — the per-entry claim", () => {
  * optional fact either site forgot.
  */
 describe("Dispatcher fanout — one wave through both verdict producers", () => {
-  /** The span that will not resolve: RENDER-WALL's prompt refuses on it. */
+  /** The span that will not resolve: C-RENDER-WALL's prompt refuses on it. */
   const FAILING_SPAN = "echo span-detail 1>&2; exit 3";
   /** What a writer outside this wave lands on the queue mid-wave. */
   const CORRUPT_BYTES = "{ corrupted mid-wave, not json";
@@ -26425,7 +26442,7 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
   ): Promise<WaveLeg> {
     const flumeDir = join(target.repo, ".flume");
 
-    // The file CONFLICT-TRUNK's span rewrites, and a writer outside the wave
+    // The file H-CONFLICT-TRUNK's span rewrites, and a writer outside the wave
     // moves under it (`mergeFailures`).
     await writeAndCommit(
       target.repo,
@@ -26434,7 +26451,7 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
       "test: seed shared",
     );
 
-    // One inline span, one arg: RENDER-WALL is the only entry whose prompt
+    // One inline span, one arg: C-RENDER-WALL is the only entry whose prompt
     // refuses (`renderFailures`).
     await writeFile(
       join(target.configDir, "prompt.md"),
@@ -26442,13 +26459,13 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
       "utf8",
     );
 
-    // The claim a sibling tick takes on TAKEN, at the engine's own address and
+    // The claim a sibling tick takes on A-TAKEN, at the engine's own address and
     // in the engine's own statement.
     const { commonDir, segment } = await git.checkoutAddress(target.repo);
     const takenClaim = entryClaimPath(
       commonDir,
       segment,
-      entryClaimSlug("TAKEN"),
+      entryClaimSlug("A-TAKEN"),
     );
     await mkdir(dirname(takenClaim), { recursive: true });
 
@@ -26462,23 +26479,23 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
       // wall the wave with a throw of its own. Declared, it walls the refill
       // and nothing else, and the refusal under judgement stays the rewrite's.
       writablePaths: ["src/**", ".flume/plan/pending/**"],
-      shouldRun: (ctx) => ctx.assignedEntry?.tag !== "DECLINE-ME",
+      shouldRun: (ctx) => ctx.assignedEntry?.tag !== "E-DECLINE-ME",
       setupWorktree: async (ctx) => {
-        if (ctx.worktreeKey === "SETUP-BOOM") {
-          throw new Error("setupWorktree boom for SETUP-BOOM");
+        if (ctx.worktreeKey === "B-SETUP-BOOM") {
+          throw new Error("setupWorktree boom for B-SETUP-BOOM");
         }
         return undefined;
       },
       promptArgs: (ctx) => ({
-        CMD: ctx.assignedEntry?.tag === "RENDER-WALL" ? FAILING_SPAN : "exit 0",
+        CMD: ctx.assignedEntry?.tag === "C-RENDER-WALL" ? FAILING_SPAN : "exit 0",
       }),
       // The chain's own ship consult, broken for exactly one entry: its span
       // lands on trunk and the predicate throws instead of ruling on it
       // (`shipFailures`). Every other merged span is ruled on normally, so
-      // SHIP-ONE still ships.
+      // F-SHIP-ONE still ships.
       shipped: (ctx) => {
-        if (ctx.entry.tag === "SHIP-THREW") {
-          throw new Error("shipped hook boom for SHIP-THREW");
+        if (ctx.entry.tag === "G-SHIP-THREW") {
+          throw new Error("shipped hook boom for G-SHIP-THREW");
         }
         return true;
       },
@@ -26487,13 +26504,13 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
     const chain: Chain = {
       phases: [phase],
       humanOnly: [],
-      // A sibling takes TAKEN between this wave's selection and its stake: the
+      // A sibling takes A-TAKEN between this wave's selection and its stake: the
       // claim is planted as the batch is consulted, so the entry was pickable
       // when the batch was drawn and held by the time the wave staked it
-      // (`stakeLosses`). TAKEN leads the queue for that reason — a later slot
+      // (`stakeLosses`). A-TAKEN leads the queue for that reason — a later slot
       // re-reads the live claims and would skip it at selection instead.
       refusesEntry: (ctx: EntryRefusalContext) => {
-        if (ctx.entry.tag === "TAKEN") {
+        if (ctx.entry.tag === "A-TAKEN") {
           writeFileSync(
             takenClaim,
             renderPidClaim(process.pid, new Date()),
@@ -26541,15 +26558,15 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
     // when its rewrite runs — the span that walls on the fence and carries the
     // corruption.
     await writePending(target.repo, [
-      { ...makeEntry("TAKEN", ["src/taken.ts"]), priority: 9 },
-      { ...makeEntry("SETUP-BOOM", ["src/setup-boom.ts"]), priority: 8 },
-      { ...makeEntry("RENDER-WALL", ["src/render-wall.ts"]), priority: 7 },
-      { ...makeEntry("PREEMPT-WALL", ["src/preempt-wall.ts"]), priority: 6 },
-      { ...makeEntry("DECLINE-ME", ["src/decline-me.ts"]), priority: 5 },
-      { ...makeEntry("SHIP-ONE", ["src/ship-one.ts"]), priority: 4 },
-      { ...makeEntry("SHIP-THREW", ["src/ship-threw.ts"]), priority: 3 },
-      { ...makeEntry("CONFLICT-TRUNK", ["src/conflict-trunk.ts"]), priority: 2 },
-      { ...makeEntry("GATE-OUT", ["src/gate-out.ts"]), priority: 1 },
+      makeEntry("A-TAKEN", ["src/a-taken.ts"]),
+      makeEntry("B-SETUP-BOOM", ["src/b-setup-boom.ts"]),
+      makeEntry("C-RENDER-WALL", ["src/c-render-wall.ts"]),
+      makeEntry("D-PREEMPT-WALL", ["src/d-preempt-wall.ts"]),
+      makeEntry("E-DECLINE-ME", ["src/e-decline-me.ts"]),
+      makeEntry("F-SHIP-ONE", ["src/f-ship-one.ts"]),
+      makeEntry("G-SHIP-THREW", ["src/g-ship-threw.ts"]),
+      makeEntry("H-CONFLICT-TRUNK", ["src/h-conflict-trunk.ts"]),
+      makeEntry("I-GATE-OUT", ["src/i-gate-out.ts"]),
     ]);
     // The operator's own unstaged edit, which the wave checkpoints before its
     // first pick (`bystanderCheckpointSha`).
@@ -26557,19 +26574,19 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
     new Baton(flumeDir).wake("build");
 
     const outcome = await dispatcherWith(
-      // Registered for the four entries that reach an agent: DECLINE-ME,
-      // RENDER-WALL, SETUP-BOOM or TAKEN arriving at one throws, which is the
+      // Registered for the four entries that reach an agent: E-DECLINE-ME,
+      // C-RENDER-WALL, B-SETUP-BOOM or A-TAKEN arriving at one throws, which is the
       // loudest failure this fixture can take.
       fanoutAgent({
         // The host wall, not the work: a non-zero exit with no commit, which
         // the attempt classes a platform-preempt (`platformFailures`).
-        "preempt-wall": async () => 137,
-        "ship-one": (cwd) =>
-          writeAndCommit(cwd, "src/ship-one.ts", "ok\n", "build: SHIP-ONE"),
+        "d-preempt-wall": async () => 137,
+        "f-ship-one": (cwd) =>
+          writeAndCommit(cwd, "src/f-ship-one.ts", "ok\n", "build: F-SHIP-ONE"),
         // Lands cleanly; the chain's `shipped` consult is what refuses it.
-        "ship-threw": (cwd) =>
-          writeAndCommit(cwd, "src/ship-threw.ts", "ok\n", "build: SHIP-THREW"),
-        "conflict-trunk": async (cwd) => {
+        "g-ship-threw": (cwd) =>
+          writeAndCommit(cwd, "src/g-ship-threw.ts", "ok\n", "build: G-SHIP-THREW"),
+        "h-conflict-trunk": async (cwd) => {
           // The trunk moves under this span after its worktree was cut from
           // it, so the pick below carries a diff whose context is gone and git
           // refuses it. The wave is one slot wide, so nothing of the engine's
@@ -26584,10 +26601,10 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
             cwd,
             "src/shared.ts",
             "from-span\n",
-            "build: CONFLICT-TRUNK",
+            "build: H-CONFLICT-TRUNK",
           );
         },
-        "gate-out": async (cwd) => {
+        "i-gate-out": async (cwd) => {
           if (corruptMidWave) {
             await commitEntryFile(
               target.repo,
@@ -26595,7 +26612,7 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
               CORRUPT_BYTES,
             );
           }
-          await writeAndCommit(cwd, "outside.txt", "no\n", "build: GATE-OUT");
+          await writeAndCommit(cwd, "outside.txt", "no\n", "build: I-GATE-OUT");
         },
       }),
     ).tick();
@@ -26644,14 +26661,14 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
     );
     expect(completing.ledgerRefusal).toBeUndefined();
     expect([...completing.queueAfter.keys()]).not.toContain(
-      entryFileName("SHIP-ONE"),
+      entryFileName("F-SHIP-ONE"),
     );
     // …and both legs carried the same wave the same distance: the span that
     // ships is on trunk, and the span the trunk moved under is not.
     for (const leg of [completing, refused]) {
-      expect(leg.verdict.shippedTags).toEqual(["SHIP-ONE"]);
+      expect(leg.verdict.shippedTags).toEqual(["F-SHIP-ONE"]);
       expect(leg.verdict.mergeFailures?.map((f) => f.tag)).toEqual([
-        "CONFLICT-TRUNK",
+        "H-CONFLICT-TRUNK",
       ]);
     }
 
@@ -26698,7 +26715,7 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
       unclassedWalls: "unreachable",
       clearedPriorAttempts: "populated",
       declinedWakes: "unreachable",
-      // Populated on both legs, and at the same point: SHIP-ONE's pick is
+      // Populated on both legs, and at the same point: F-SHIP-ONE's pick is
       // the only ship either leg makes, and the corruption the refused leg
       // carries lands in the *last* entry's agent — so the tip that ship
       // left was read under its own hold, well before the rewrite that
@@ -26743,14 +26760,14 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
     for (const [name, leg] of legs) {
       // Non-vacuity, and what makes the blame a choice rather than the only
       // candidate on the wave: two spans reached this wave's ship consult and
-      // the other one returned, so a record naming SHIP-THREW is the engine
+      // the other one returned, so a record naming G-SHIP-THREW is the engine
       // discriminating between them and not a set with one member.
       const consulted = leg.verdict.mergeOutcomes.filter(
         (o) => o.outcome === "merged" || o.outcome === "not-shipped",
       );
       expect(consulted.map((o) => o.entryTag).sort(), name).toEqual([
-        "SHIP-ONE",
-        "SHIP-THREW",
+        "F-SHIP-ONE",
+        "G-SHIP-THREW",
       ]);
 
       // The claim, read off the verdict the real wave wrote: one record,
@@ -26763,9 +26780,9 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
       expect(
         failures.map((f) => f.tag),
         name,
-      ).toEqual(["SHIP-THREW"]);
+      ).toEqual(["G-SHIP-THREW"]);
       expect(failures[0]?.message, name).toContain(
-        "shipped hook boom for SHIP-THREW",
+        "shipped hook boom for G-SHIP-THREW",
       );
       // Both halves of the pairing or neither (`StageFailureEntry`,
       // `src/tickVerdict.ts`): the supervisor's quarantine leg holds the
@@ -27377,8 +27394,8 @@ async function gatedTipWave(opts: {
 async function waveShippingThenWalling(): Promise<TickOutcome> {
   return gatedTipWave({
     entries: [
-      { ...makeEntry("SHIP-FIRST", ["src/ship-first.ts"]), priority: 2 },
-      { ...makeEntry("WALL-AFTER", ["src/wall-after.ts"]), priority: 1 },
+      makeEntry("SHIP-FIRST", ["src/ship-first.ts"]),
+      makeEntry("WALL-AFTER", ["src/wall-after.ts"]),
     ],
     agent: {
       "ship-first": (cwd) =>
@@ -27486,8 +27503,8 @@ it("gatedTip is absent on a tick that shipped nothing", async () => {
 it("gatedTip names the tip after the last ledger commit of a multi-ship tick", async () => {
   const outcome = await gatedTipWave({
     entries: [
-      { ...makeEntry("SHIP-EARLY", ["src/ship-early.ts"]), priority: 2 },
-      { ...makeEntry("SHIP-LATE", ["src/ship-late.ts"]), priority: 1 },
+      makeEntry("SHIP-EARLY", ["src/ship-early.ts"]),
+      makeEntry("SHIP-LATE", ["src/ship-late.ts"]),
     ],
     agent: {
       "ship-early": (cwd) =>

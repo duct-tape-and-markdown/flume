@@ -620,7 +620,7 @@ describe("priorAttempts — an unreachable record is not an absent one", () => {
       tag: "SHOUTY-TAG",
       gate: { kind: "open" },
       dependsOnForks: [],
-      priority: 0,
+      kind: "work",
       files: { new: [], edit: [], retire: [] },
     };
     // A raw phase name the fold rewrites, a phase name it does not, and an
@@ -1504,7 +1504,7 @@ describe("priorAttempts — a record is keyed by the identity it was written und
       tag,
       gate: { kind: "open" },
       dependsOnForks: [],
-      priority: 0,
+      kind: "work",
       files: { new: [], edit: [], retire: [] },
     };
 
@@ -1655,7 +1655,7 @@ describe("priorAttempts — a record is keyed by the identity it was written und
       tag: "DROPPED-TAG",
       gate: { kind: "open" },
       dependsOnForks: [],
-      priority: 0,
+      kind: "work",
       files: { new: [], edit: [], retire: [] },
     };
     const droppedRef = priorAttemptRef({ name: "build" } as Phase, dropped);
@@ -1702,7 +1702,7 @@ describe("priorAttempts — a record is keyed by the identity it was written und
       tag: "NEEDS-A-WIDER-FENCE",
       gate: { kind: "open" },
       dependsOnForks: [],
-      priority: 0,
+      kind: "work",
       files: { new: [], edit: [], retire: [] },
       summary: "as a producer first declared it",
     };
@@ -1837,7 +1837,7 @@ const collidingEntry: PendingEntry = {
   tag: COLLIDING_TAG,
   gate: { kind: "open" },
   dependsOnForks: [],
-  priority: 0,
+  kind: "work",
   files: { new: [], edit: [], retire: [] },
 };
 

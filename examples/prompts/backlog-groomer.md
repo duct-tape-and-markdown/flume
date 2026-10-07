@@ -4,10 +4,11 @@ Read `{{BACKLOG_PATH}}` at the repo root — a JSON array of items shaped like:
 
 {{BACKLOG_SCHEMA}}
 
-Items are priority-ordered; the top **pickable** one is next: `gate.kind`
-must be `"open"`, or `"requiresCapability"` naming a capability this repo
-has asserted. Everything else (`blockedBy` on an unshipped tag, `parked`,
-`deferred`, an unasserted capability) stays in the backlog untouched.
+Items are in the order this file lists them; the first **pickable** one is
+next: `gate.kind` must be `"open"`, or `"requiresCapability"` naming a
+capability this repo has asserted. Everything else (`blockedBy` on an
+unshipped tag, `parked`, `deferred`, an unasserted capability) stays in the
+backlog untouched.
 
 # TASK
 

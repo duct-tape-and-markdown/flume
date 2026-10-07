@@ -1031,7 +1031,7 @@ describe("cascade-chain.ts — plan decides from the TickContext", () => {
     tag,
     gate: { kind: "open" },
     dependsOnForks: [],
-    priority: 0,
+    kind: "work",
     files: { new: [], edit: [], retire: [] },
   });
 
@@ -1212,7 +1212,7 @@ describe("cascade-chain.ts — the plan ladder", () => {
     tag: "PICKABLE",
     gate: { kind: "open" },
     dependsOnForks: [],
-    priority: 0,
+    kind: "work",
     files: { new: [], edit: [], retire: [] },
   };
 
@@ -1766,7 +1766,7 @@ describe("cascade-chain.ts — the entry's tests[] is judged on the trunk", () =
       tag: "NAMED-BEHAVIOR",
       gate: { kind: "open" },
       dependsOnForks: [],
-      priority: 0,
+      kind: "work",
       files: { new: [], edit: [], retire: [] },
       tests,
     } satisfies PendingEntry,
@@ -1881,7 +1881,7 @@ describe("cascade-chain.ts — the entry's file classes are judged against the s
     tag: TAG,
     gate: { kind: "open" },
     dependsOnForks: [],
-    priority: 0,
+    kind: "work",
     files: { new: [], edit: [], retire: [], ...files },
   });
 
@@ -2071,7 +2071,7 @@ describe("cascade-chain.ts — build's prompt quotes the declaration it is judge
           tag: "BUILD-PROMPT-FIXTURE",
           gate: { kind: "open" },
           dependsOnForks: [],
-          priority: 0,
+          kind: "work",
           files: { new: [], edit: [], retire: [] },
           per: {
             path: "spec/pending.md",

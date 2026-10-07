@@ -178,7 +178,7 @@ function entry(
     tag: over.tag ?? "HARNESS-BUILD-PROMPT-ARGS",
     gate: { kind: "open" },
     dependsOnForks: [],
-    priority: 0,
+    kind: "work",
     files: {
       new: [],
       edit: [{ path: "harness/prompts.ts", description: "the work" }],
