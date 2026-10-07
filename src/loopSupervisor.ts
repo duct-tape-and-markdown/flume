@@ -9,10 +9,11 @@
  */
 
 import { Baton } from "./Baton.js";
-import { diskChainLoader } from "./chainLoad.js";
+import { diskChainLoader, type LoadedChain } from "./chainLoad.js";
 import { type TerminalMisconfiguration } from "./Dispatcher.js";
 import { EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG } from "./exitCodes.js";
 import { consoleLogger, type Logger } from "./log.js";
+import { readPhaseTemplate } from "./Prompt.js";
 import { totalAgentUsageByPhase, type PhaseAgentUsage } from "./agentSpend.js";
 import {
   readTickVerdict,
@@ -21,7 +22,12 @@ import {
 } from "./tickVerdict.js";
 import { frictionCountLine } from "./friction.js";
 import { existsLoudUnder } from "./fsProbe.js";
-import { defaultStateRoot, stopFlagPath } from "./paths.js";
+import {
+  defaultStateRoot,
+  resolvePendingDir,
+  stopFlagPath,
+} from "./paths.js";
+import { readPending } from "./pendingLedger.js";
 import { signalOfStop, writeRunEnd, type RunEndCause } from "./runEnd.js";
 import { signalProcessTree, spawnProcessTree } from "./processTree.js";
 import { thrownMessage } from "./thrown.js";
@@ -278,9 +284,13 @@ export interface SuperviseResult {
   /**
    * Set when the loop fail-fasted on a child exiting {@link EX_MOUNT_DEAD}
    * the mount-dead failure class (chain cannot load, state root
-   * missing, declaration invalid). Distinct from `terminal` — a
-   * mount-dead run never resolved a chain at all, so there is no phase list
-   * to name in the summary, only the fact of the abort.
+   * missing, declaration invalid, queue will not parse) **and the
+   * supervisor's own re-read at the tip found one of those walls still
+   * standing** (spec/loop.md, *Exit codes — the run never lies to CI*). A 69
+   * whose cause was repaired in the gap leaves this unset: that child is an
+   * errored tick in `erroredTicks` and nothing more. Distinct from
+   * `terminal` — a mount-dead run has no runnable chain, so there is no
+   * phase list to name in the summary, only the fact of the abort.
    */
   mountDead?: boolean;
   /**
@@ -458,11 +468,14 @@ interface SettledChild {
  *
  * A child that exits a plain tick failure (agent-level, per-entry) is logged
  * and the run proceeds — the supervisor never crashes — except
- * {@link EX_TERMINAL_MISCONFIG} (Axis-C terminal misconfiguration) and
- * {@link EX_MOUNT_DEAD} (mount-dead: the chain never resolved), either of
- * which ends the run: both defeat the hibernation check (nothing on disk
- * changed to reflect them), so proceeding would hot-spin to the budget while
- * masquerading each iteration as routine. Every such stop drains the children
+ * {@link EX_TERMINAL_MISCONFIG} (Axis-C terminal misconfiguration), which
+ * ends the run outright, and {@link EX_MOUNT_DEAD} (mount-dead: the child
+ * had no runnable chain), which ends it once the supervisor's own re-read at
+ * the tip finds the wall still standing. Both classes defeat the hibernation
+ * check (nothing on disk changed to reflect them), so proceeding over a
+ * standing wall would hot-spin to the budget while masquerading each
+ * iteration as routine; a 69 whose cause a sibling or an operator repaired
+ * in the gap is that tick's error alone. Every such stop drains the children
  * already in flight before it resolves; it starts no further one. Bounded in
  * total by `tickBudget` (the `--max N` cap).
  */
@@ -480,20 +493,96 @@ export async function superviseLoop(
   // whether a signal was supplied.
   const stopSignal = opts.stopSignal ?? new AbortController().signal;
 
-  // Best-effort — a missing or broken chain must never fail
-  // the loop-end summary, only silently withhold the friction line.
-  const logFrictionSummary = async (): Promise<void> => {
+  // The supervisor's own chain resolve, answering with the failure rather
+  // than throwing it: both callers below need the *verdict* and only one of
+  // them needs the message, so the load is spelled once and each reads what
+  // it needs (`.claude/rules/engineering.md`, *The fix lands at the
+  // mechanism*). This is the resolve a child would make — the same
+  // `diskChainLoader` over the same roots — which is what makes it a usable
+  // re-read of the mount below.
+  const resolveChain = async (): Promise<
+    { ok: true; loaded: LoadedChain } | { ok: false; why: string }
+  > => {
     try {
-      const { chain } = await diskChainLoader({
+      const loaded = await diskChainLoader({
         repoRoot: opts.repoRoot,
         configDir,
         flumeDir,
       })();
-      const line = await frictionCountLine(flumeDir, chain);
+      return { ok: true, loaded };
+    } catch (err) {
+      return { ok: false, why: thrownMessage(err) };
+    }
+  };
+
+  // Best-effort — a missing or broken chain must never fail
+  // the loop-end summary, only silently withhold the friction line.
+  const logFrictionSummary = async (): Promise<void> => {
+    const resolved = await resolveChain();
+    // no chain, or a chain that fails to load — nothing to summarize
+    if (!resolved.ok) return;
+    try {
+      const line = await frictionCountLine(flumeDir, resolved.loaded.chain);
       if (line) log.info(`[flume] ${line}`);
     } catch {
-      // no chain, or a chain that fails to load — nothing to summarize
+      // a declared friction dir that will not read — the summary withholds
+      // the line rather than failing the run over a report
     }
+  };
+
+  // spec/loop.md, *Exit codes — the run never lies to CI*: what a child's 69
+  // claimed, re-read at the tip the next child would read it from. Answers
+  // the still-failing leg's own message, or `undefined` where every leg reads
+  // clean — a sibling's repair (the queue's declared writer running over a
+  // failed parse) or an operator's fix landed in the gap, and the cause the
+  // child named is gone.
+  //
+  // One leg per mount-dead producer a re-read can decide, each through the
+  // reader the next child would run rather than a copy spelled here: the
+  // chain's resolution (`diskChainLoader`, which also decides a missing state
+  // root and an invalid declaration), the named phase's declared prompt
+  // template (`readPhaseTemplate`, `src/Prompt.ts`), and the queue's parse
+  // through the strict reader every dispatch read takes (`readPending`,
+  // `src/pendingLedger.ts`). The prompt leg is keyed by the exiting child's
+  // own phase: whichever wall it hit, that phase is the one the next fill
+  // starts again.
+  const stillMountDead = async (
+    phase: string,
+  ): Promise<string | undefined> => {
+    const resolved = await resolveChain();
+    if (!resolved.ok) {
+      return `the chain still will not load (${resolved.why})`;
+    }
+    const { chain } = resolved.loaded;
+    // Absent from the loaded chain's roster is an orphaned flag, which is the
+    // terminal-misconfiguration class and not this one — there is no declared
+    // prompt to re-read, so this leg answers nothing rather than guessing.
+    const declared = chain.phases.find((p) => p.name === phase);
+    if (declared) {
+      try {
+        await readPhaseTemplate(configDir, declared.promptPath);
+      } catch (err) {
+        return `${phase}'s declared prompt file still will not read (${thrownMessage(err)})`;
+      }
+    }
+    try {
+      await readPending({
+        repoRoot: opts.repoRoot,
+        flumeDir,
+        // Resolved from this load's own declaration, like a tick's
+        // (`Dispatcher.tick`, `src/Dispatcher.ts`) — a relocated ledger is
+        // read where the chain says it sits, never at the default.
+        pendingDir: resolvePendingDir(flumeDir, chain.pendingDir),
+        entryExtension: chain.entryExtension,
+        ...(chain.maxEntryDepth !== undefined
+          ? { maxEntryDepth: chain.maxEntryDepth }
+          : {}),
+        log,
+      });
+    } catch (err) {
+      return `the queue still will not read at the tip (${thrownMessage(err)})`;
+    }
+    return undefined;
   };
 
   // Engine defaults, overridable per opts above.
@@ -947,29 +1036,47 @@ export async function superviseLoop(
       continue;
     }
     if (exitCode === EX_MOUNT_DEAD) {
-      // Mount-dead fail-fast: the child never got a runnable chain up — it
-      // would not load, its queue would not parse, the phase's declared
-      // prompt file would not read. No agent ran, and nothing in that class
-      // is retryable by waiting: an input that resolved that way once
-      // resolves the same way next tick, so continuing would only burn the
-      // remaining budget re-hitting the same wall instead of surfacing the
-      // failure to CI. Which wall it was is the child's to say and it already
-      // said it — restating a cause this process never read would be a guess
-      // (`.claude/rules/engineering.md`, *Derived state is computed, never
-      // restated beside its source*).
-      ending ??= {
-        stop: { hibernated: false, mountDead: true },
-        cause: { reason: "mount-dead", tickExitCode: exitCode },
-        finish: async () => {
-          log.error(
-            `[flume] tick exited ${exitCode} (mount-dead): the child named ` +
-              `its cause above; aborting after ${ticks} tick(s) instead of ` +
-              `burning the remaining ticks against the same failure. ` +
-              `Restore what it named, then re-run.`,
-          );
-        },
-      };
-      continue;
+      // Mount-dead fail-fast — once the mount is still dead (spec/loop.md,
+      // *Exit codes — the run never lies to CI*). The child never got a
+      // runnable chain up: it would not load, its queue would not parse, the
+      // phase's declared prompt file would not read. Most of that class is
+      // not retryable by waiting, and burning the remaining budget against
+      // the same wall is what this arm exists to prevent — but a sibling in
+      // the same wave can repair the queue the child tripped on (the
+      // declared writer running over a failed parse, `spec/pending.md`,
+      // *Queue reads are strict*), and so can an operator, so the wall is
+      // re-read here before the run ends on it.
+      //
+      // The re-read is the next child's own two resolves, not a restatement
+      // of the cause: which wall the *child* hit is the child's to say and it
+      // already said it (`.claude/rules/engineering.md`, *Derived state is
+      // computed, never restated beside its source*). What this process adds
+      // is whether a wall still stands now.
+      const stillDead = await stillMountDead(child.phase);
+      if (stillDead !== undefined) {
+        ending ??= {
+          stop: { hibernated: false, mountDead: true },
+          cause: { reason: "mount-dead", tickExitCode: exitCode },
+          finish: async () => {
+            log.error(
+              `[flume] tick exited ${exitCode} (mount-dead) and ` +
+                `${stillDead}; aborting after ${ticks} tick(s) instead of ` +
+                `burning the remaining ticks against the same failure. ` +
+                `Restore what the child named above, then re-run.`,
+            );
+          },
+        };
+        continue;
+      }
+      // Both legs read clean at the tip, so the cause the child named is
+      // already gone — a sibling's repair or an operator's fix landed in the
+      // gap. The tick is still an error (it did no work), which the
+      // non-zero-exit leg below counts; the run is not.
+      log.warn(
+        `[flume] tick exited ${exitCode} (mount-dead), but the chain ` +
+          `resolves and the queue reads at the tip now — the cause it named ` +
+          `has been repaired since, so the run is not aborted on it`,
+      );
     }
     if (exitCode !== 0) {
       log.warn(

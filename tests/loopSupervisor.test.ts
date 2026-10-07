@@ -9,8 +9,8 @@
  */
 
 import { existsSync } from "node:fs";
-import { mkdir, symlink, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -21,6 +21,7 @@ import type {
   TickChildRequest,
 } from "../src/loopSupervisor.ts";
 import { EX_MOUNT_DEAD, EX_TERMINAL_MISCONFIG } from "../src/exitCodes.ts";
+import { entryFileName } from "../src/PendingSchema.ts";
 import type { Logger } from "../src/log.ts";
 import type {
   TickVerdict,
@@ -43,7 +44,7 @@ import {
   writeMinimalChain,
   type Fixture,
 } from "./helpers/dispatcherFixture.ts";
-import { SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
+import { exec, SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 import { waitFor } from "./helpers/waitFor.ts";
 
 // `makeFixture` seeds a temp repository through real `git` plumbing, so every
@@ -109,7 +110,13 @@ describe("superviseLoop — the run's teardown reaches the in-flight tick", () =
     const seen: AbortSignal[] = [];
     let abortedInsideRunner = false;
     let inFlightSettled = false;
-    const runTick = async ({
+    // Named apart from the `runTick` every other stub here is called, because
+    // the lane's spawn scan is scopeless (`scanSpawns`,
+    // `tests/helpers/spawnBudget.ts`): a stub that yields on a timer makes
+    // *every* declaration of its name timer-reaching file-wide, and any case
+    // that both spawns and names it then reads as a spawn-then-sleep it is
+    // not.
+    const runTickYieldingOnce = async ({
       stopSignal,
     }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       seen.push(stopSignal);
@@ -126,7 +133,7 @@ describe("superviseLoop — the run's teardown reaches the in-flight tick", () =
     const res = await superviseLoop({
       repoRoot: fx.repo,
       tickBudget: 5,
-      runTick,
+      runTick: runTickYieldingOnce,
       stopSignal: stop.signal,
       log: silent,
     });
@@ -3514,7 +3521,12 @@ describe("superviseLoop — the child table, one child per awake phase", () => {
     // No phase read here on purpose: the property is the width of the table,
     // and a stub that took its phase from the request would be asserting the
     // seam beside it.
-    const runTick = async (): Promise<{ exitCode: number | null }> => {
+    // Named apart from the sibling stubs' `runTick` for the reason the
+    // teardown suite's is (`runTickYieldingOnce` above): the timer this one
+    // yields on would otherwise reach every case that names a stub `runTick`.
+    const runTickHoldingTwo = async (): Promise<{
+      exitCode: number | null;
+    }> => {
       live++;
       mostAtOnce = Math.max(mostAtOnce, live);
       calls++;
@@ -3530,7 +3542,7 @@ describe("superviseLoop — the child table, one child per awake phase", () => {
     const res = await superviseLoop({
       repoRoot: fx.repo,
       tickBudget: 10,
-      runTick,
+      runTick: runTickHoldingTwo,
       log: silent,
     });
 
@@ -3715,5 +3727,189 @@ describe("superviseLoop — a run records how it ended", () => {
     // The fact this run holds is the child's exit code; the supervisor's own
     // exit is the CLI's to decide after this record is written.
     expect(record.tickExitCode).toBe(EX_MOUNT_DEAD);
+  });
+});
+
+/**
+ * A-MOUNT-DEAD-69-ABORTS-ONLY-WHILE-THE-MOUNT-IS-STILL-DEAD — spec/loop.md,
+ * *Exit codes — the run never lies to CI*: a child's 69 ends the run only
+ * where the supervisor's own re-read at the tip finds the chain still
+ * unresolvable or the queue still unparseable. A 69 whose cause a sibling's
+ * repair (`spec/pending.md`, *Queue reads are strict*) or an operator's fix
+ * cleared in the gap is that tick's error and nothing more.
+ *
+ * Every case here passes `configDir: fx.configDir` — a separate temp dir from
+ * `<repo>/.flume` — so whether the re-read's chain leg resolves is this
+ * fixture's to decide rather than the repo default's, exactly as the friction
+ * summary's suite above does.
+ */
+describe("superviseLoop — a mount-dead 69 aborts only while the mount is still dead", () => {
+  /** What a case corrupts the committed queue with. */
+  const CORRUPT = "{ this is not valid json";
+
+  /**
+   * Commit one entry file into the default queue at `<repo>/.flume/plan/pending`.
+   * The re-read resolves the tip, never the tree (`readPending`,
+   * `src/pendingLedger.ts`), so a case's queue has to be committed to be seen
+   * at all — a file left in the working tree would leave every case reading
+   * the same empty tip and passing for the wrong reason.
+   */
+  const commitEntry = async (tag: string, raw: string): Promise<void> => {
+    const rel = `.flume/plan/pending/${entryFileName(tag)}`;
+    const path = join(fx.repo, rel);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, raw, "utf8");
+    await exec("git", ["add", "--", rel], { cwd: fx.repo });
+    await exec("git", ["commit", "-q", "-m", `test: queue ${tag}`], {
+      cwd: fx.repo,
+    });
+  };
+
+  /** A parseable entry, so the clean case's re-read judges a file rather than an absent directory. */
+  const GOOD = JSON.stringify(
+    {
+      tag: "GOOD",
+      gate: { kind: "open" },
+      dependsOnForks: [],
+      kind: "work",
+      files: { new: [], edit: [], retire: [] },
+    },
+    null,
+    2,
+  );
+
+  /** One run whose every child exits 69, over whatever the case left on disk. */
+  const runOver69 = async (
+    tickBudget: number,
+  ): Promise<{
+    res: SuperviseResult;
+    calls: number;
+    errors: string[];
+    warns: string[];
+  }> => {
+    new Baton(join(fx.repo, ".flume")).wake("build"); // never slept → only an abort ends this
+    const errors: string[] = [];
+    const warns: string[] = [];
+    let calls = 0;
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      tickBudget,
+      runTick: () => {
+        calls++;
+        return Promise.resolve({ exitCode: EX_MOUNT_DEAD });
+      },
+      log: {
+        info: () => {},
+        warn: (l) => warns.push(l),
+        error: (l) => errors.push(l),
+      },
+    });
+    return { res, calls, errors, warns };
+  };
+
+  it("a child's 69 whose chain and queue both read clean at the tip does not end the run", async () => {
+    await writeMinimalChain(fx.configDir);
+    await commitEntry("GOOD", GOOD);
+
+    const { res, calls, warns } = await runOver69(3);
+
+    // The run burned its budget rather than ending on the first 69: the wall
+    // the child named is gone, so there is nothing left for the abort to be
+    // about.
+    expect(calls).toBe(3);
+    expect(res.ticks).toBe(3);
+    expect(res.mountDead).toBeUndefined();
+    expect(loopExitCode(res)).not.toBe(EX_MOUNT_DEAD);
+    // And the supervisor said why it declined the abort, rather than letting
+    // a 69 pass as a routine non-zero exit.
+    expect(
+      warns.filter((l) => l.includes("has been repaired since")),
+    ).toHaveLength(3);
+  });
+
+  it("a child's 69 whose chain still fails to load ends the run and propagates 69", async () => {
+    // Present and unloadable, which is a chain-resolution refusal
+    // (`loadChainModule`, `src/chainLoad.ts`) rather than an absent file.
+    await mkdir(fx.configDir, { recursive: true });
+    await writeFile(
+      join(fx.configDir, "chain.ts"),
+      "export default {};\n",
+      "utf8",
+    );
+    await commitEntry("GOOD", GOOD);
+
+    const { res, calls, errors } = await runOver69(4);
+
+    expect(calls).toBe(1);
+    expect(res.ticks).toBe(1);
+    expect(res.mountDead).toBe(true);
+    expect(loopExitCode(res)).toBe(EX_MOUNT_DEAD);
+    // Which leg still failed is named, so the operator is not left to re-run
+    // the re-read by hand.
+    expect(
+      errors.some((e) => e.includes("the chain still will not load")),
+    ).toBe(true);
+  });
+
+  it("a child's 69 whose queue still fails to parse ends the run and propagates 69", async () => {
+    // The chain resolves, so the queue leg is the only one that can decide
+    // this abort.
+    await writeMinimalChain(fx.configDir);
+    await commitEntry("CORRUPT", CORRUPT);
+
+    const { res, calls, errors } = await runOver69(4);
+
+    expect(calls).toBe(1);
+    expect(res.ticks).toBe(1);
+    expect(res.mountDead).toBe(true);
+    expect(loopExitCode(res)).toBe(EX_MOUNT_DEAD);
+    const named = errors.filter((e) =>
+      e.includes("the queue still will not read at the tip"),
+    );
+    expect(named).toHaveLength(1);
+    // The corrupt file's own name rides the refusal the re-read took, never a
+    // bare "the queue is broken".
+    expect(named[0]).toContain("plan/pending");
+  });
+
+  it("a child's 69 whose declared prompt file still will not read ends the run", async () => {
+    // The third mount-dead producer `src/` carries past the two spec/loop.md's
+    // table names: `readPhaseTemplate` (`src/Prompt.ts`) refuses a phase whose
+    // declared prompt is absent, and `tickExitCode` (`src/cliVerdict.ts`)
+    // classifies that refusal 69. A re-read blind to it would turn the loop's
+    // halt on an absent prompt — pinned end-to-end in `tests/cli.test.ts` —
+    // into three children spent on one unreadable file.
+    await writeMinimalChain(fx.configDir);
+    await rm(join(fx.configDir, "prompt.md"));
+    await commitEntry("GOOD", GOOD);
+
+    const { res, calls, errors } = await runOver69(4);
+
+    expect(calls).toBe(1);
+    expect(res.mountDead).toBe(true);
+    expect(loopExitCode(res)).toBe(EX_MOUNT_DEAD);
+    expect(
+      errors.some((e) =>
+        e.includes("build's declared prompt file still will not read"),
+      ),
+    ).toBe(true);
+  });
+
+  it("a 69 the supervisor did not abort on counts as an errored tick", async () => {
+    await writeMinimalChain(fx.configDir);
+    await commitEntry("GOOD", GOOD);
+
+    const { res } = await runOver69(2);
+
+    // Nothing shipped and both ticks errored, so the run exits non-zero —
+    // a repaired cause spares the run the mount-dead abort, never the
+    // accounting (spec/loop.md: a run of refused ticks cannot exit green).
+    expect(res.erroredTicks).toHaveLength(2);
+    for (const line of res.erroredTicks) {
+      expect(line).toContain(`exited ${EX_MOUNT_DEAD}`);
+    }
+    expect(res.shippedTags).toEqual([]);
+    expect(loopExitCode(res)).toBe(1);
   });
 });

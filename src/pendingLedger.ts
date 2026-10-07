@@ -482,11 +482,18 @@ export async function readLedgerFilingTimes(
  * {@link readPendingTolerant} below is the one declared exception, for the
  * two report-only reads.
  *
+ * Exported for one caller past the tick: `superviseLoop`
+ * (`src/loopSupervisor.ts`) re-reads the queue through this same strict parse
+ * when a child exits mount-dead, so "the queue still will not parse" is
+ * decided by the reader the next child would run rather than by a second
+ * parse spelled beside it (`.claude/rules/engineering.md`, *The fix lands at
+ * the mechanism*).
+ *
  * An absent directory reads as nothing pending, which is what it is: a tree
  * holds no empty directory, so a queue drained to nothing and a queue never
  * created are one state and neither is an error.
  */
-async function readPending(
+export async function readPending(
   ctx: PendingLedgerContext,
 ): Promise<PendingEntry[]> {
   const files = await readQueueFiles(ctx);
