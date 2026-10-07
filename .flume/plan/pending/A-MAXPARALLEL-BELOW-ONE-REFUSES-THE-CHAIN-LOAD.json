@@ -1,0 +1,33 @@
+{
+  "tag": "A-MAXPARALLEL-BELOW-ONE-REFUSES-THE-CHAIN-LOAD",
+  "gate": { "kind": "open" },
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/chainLoad.ts",
+        "description": "the counted-declaration roster, one knob short of the silent case, and the paragraph declaring the others degrade readably"
+      },
+      {
+        "path": "tests/chain.test.ts",
+        "description": "the counted refusals' home, beside mergeBatch's and maxEntryDepth's"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "a chain declaring supervisorPolicy.maxParallel below one is refused at load, rather than every wave opening no slot and reporting an untouched queue as a quiet no-op",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Loud or nothing"
+  },
+  "acceptance": "a declared `supervisorPolicy.maxParallel` below one — zero, negative or fractional — refuses the chain load naming the field, beside the two counted knobs already refused there, and the knobs that roster deliberately admits still load unrefused",
+  "tests": [
+    "a maxParallel below one refuses the chain load rather than leaving every wave with no slot"
+  ],
+  "pins": [
+    "a declared tickTimeoutMs of zero loads unrefused"
+  ],
+  "laneTests": [],
+  "notes": "`maxParallel: 0` opens no slot (`src/waveTick.ts:695`) over a non-empty pickable set, so the run spins to its budget with nothing on any surface saying why; `src/chainLoad.ts:176` declares the unchecked knobs degrade readably — true of the others, not this one. `harness/declaration.ts:295` already types it positive, so only a chain that does not adopt the package is exposed, and `src/loopSupervisor.ts:1137` is the loud twin. Re-filed off a reverted sweep commit; every cite re-read on this tip."
+}

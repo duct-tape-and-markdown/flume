@@ -1,0 +1,57 @@
+{
+  "tag": "THE-ENGINE-WALKS-A-SUBTREE-AND-THE-CALLER-ORDERS-IT",
+  "gate": { "kind": "open" },
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/PendingSchema.ts",
+        "description": "the subtree walk, answering each entry with its depth in the sibling order a caller's comparator gives, with `descendantsOf` as one call of it; and the root-group predicate the two core fields already decide"
+      },
+      {
+        "path": "src/queueGoals.ts",
+        "description": "the local `isGoal`, onto the engine's export"
+      },
+      {
+        "path": "harness/goals.ts",
+        "description": "the second walk (`descend`, with its own children map, visited set and tag sort) and the second predicate, both onto the engine's"
+      },
+      {
+        "path": "harness/gates.ts",
+        "description": "the goal-rank gate's third spelling of the predicate"
+      },
+      {
+        "path": "tests/PendingSchema.test.ts",
+        "description": "the walk's depth, order and termination cases, and the predicate's"
+      },
+      {
+        "path": "tests/harnessWindows.test.ts",
+        "description": "the goals block, whose nesting now reads the engine's depths"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "the engine exports one subtree walk answering each entry with its depth in a caller-supplied sibling order, and one goal predicate, so the package walks no forest of its own",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A fact the engine holds is reported, never rediscovered"
+  },
+  "acceptance": "the engine exports a subtree walk that answers each entry below a tag with its depth, in the sibling order the caller's comparator gives, and a goal predicate read off `kind` and `parent`; `descendantsOf` is one call of that walk, `harness/goals.ts` holds no walk and no predicate of its own, and `src/queueGoals.ts` and `harness/gates.ts` read the exported predicate — with the goals block, the served order and the goal-rank gate unchanged in what they print and refuse",
+  "tests": [
+    "the engine's subtree walk answers each entry below a tag with its depth",
+    "the engine's subtree walk orders siblings by the comparator its caller supplied",
+    "the engine answers whether an entry is a goal off its kind and parent"
+  ],
+  "pins": [
+    "the goals block nests a goal's remaining entries by their depth below it",
+    "the engine's subtree walk comes back empty for a tag no entry carries"
+  ],
+  "laneTests": [],
+  "interface": {
+    "changes": "the engine exports a subtree walk answering each entry below a tag with its depth, in the sibling order a caller's comparator gives, and the root-group predicate it already decides internally; `descendantsOf` stays, as one call of that walk",
+    "hides": "the children map, the visited set and the sibling sort each caller was building for itself — a consumer that wants a subtree in an order no longer rebuilds the descent to get one",
+    "rejected": "leaving the package its own depth walk and exporting nothing — two descents over one forest answer differently the first time either grows a leg, which is the shape the ruling turned down"
+  },
+  "notes": "Operator ruling, inbox 2026-10-07: engine walks, caller orders. Verified on this tip — the predicate is spelled at `src/queueGoals.ts:45`, `harness/goals.ts:69` and `harness/gates.ts:403`, and `harness/goals.ts`'s `descend` is the second walk; its tag sort is the comparator the export takes, and the served order leans on that totality (`harness/order.ts`). Collides with the standing `src/PendingSchema.ts` and `harness/gates.ts` entries by design."
+}
