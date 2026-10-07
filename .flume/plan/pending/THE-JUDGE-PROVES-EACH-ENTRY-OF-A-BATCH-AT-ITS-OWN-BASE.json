@@ -1,16 +1,33 @@
 {
   "tag": "THE-JUDGE-PROVES-EACH-ENTRY-OF-A-BATCH-AT-ITS-OWN-BASE",
-  "gate": { "kind": "blockedBy", "tags": ["A-MERGE-CARRIES-A-BATCH-OF-SPANS-GATED-ONCE"] },
+  "gate": {
+    "kind": "open"
+  },
+  "dependsOnForks": [],
   "priority": 10,
   "files": {
+    "new": [],
     "edit": [
-      { "path": "harness/judge.ts", "description": "the batch arm: one suite run, one base tree per distinct base" },
-      { "path": "harness/judgeGate.ts", "description": "the batch context reaching the judge, and the gate's batches declaration" },
-      { "path": "tests/harnessJudge.test.ts", "description": "the batch cases" }
-    ]
+      {
+        "path": "harness/judge.ts",
+        "description": "the batch arm: one suite run, one base tree per distinct base"
+      },
+      {
+        "path": "harness/judgeGate.ts",
+        "description": "the batch context reaching the judge, and the gate's batches declaration"
+      },
+      {
+        "path": "tests/harnessJudge.test.ts",
+        "description": "the batch cases"
+      }
+    ],
+    "retire": []
   },
   "summary": "over a batch the judge runs the suite once on the merged tree and proves each entry's tests[] red at that entry's own base, one base tree per distinct base",
-  "per": { "path": "spec/harness.md", "section": "The judges" },
+  "per": {
+    "path": "spec/harness.md",
+    "section": "The judges"
+  },
   "acceptance": "a batch of entries sharing a base builds one base tree; entries with different bases build one each; every entry's named lines are proved green on the merged tree and red at its own base, and the judge declares batches so a batched merge reaches it",
   "tests": [
     "the judge runs the suite once over a batch's merged tree",
@@ -19,5 +36,7 @@
     "a base tree is laid over the union of the files the entries' lines name",
     "the package's judge gate declares batches"
   ],
+  "pins": [],
+  "laneTests": [],
   "notes": "Without this the judge is the gate that holds every phase to one span per merge, so the batching it is blocked on buys nothing here. base-red still refuses rather than blaming a span."
 }
