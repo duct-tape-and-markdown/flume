@@ -1449,8 +1449,10 @@ export class Dispatcher {
       // home for the fact, so the handoff surface and the artifact beside it
       // cannot disagree about which tip this tick's last ship left
       // (`.claude/rules/engineering.md`, *Derived state is computed, never
-      // restated beside its source*). Absent on a singleton leg, which lands
-      // no ledger commit of its own, and on any tick that shipped nothing.
+      // restated beside its source*) — either leg's, since a singleton's ship
+      // is its merged span and a wave's is its ledger commit. Absent on any
+      // tick that shipped nothing, and on one whose ledger rewrite a foreign
+      // tip claim stopped.
       gatedTip: result.gatedTip,
       summary,
       headSha: await git.revParse(this.opts.repoRoot),

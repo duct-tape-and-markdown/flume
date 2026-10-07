@@ -435,7 +435,9 @@ interface WaveMerge {
    * exits write no commit, and the tip after one of those is the merged sha
    * the pick landed — a fact only git holds at that moment
    * (`.claude/rules/engineering.md`, *Derived state is computed, never
-   * restated beside its source*).
+   * restated beside its source*). The fourth, `tip-claimed`, takes no read at
+   * all: a foreign engine holds the tip, so the ref under this hold is not
+   * this tick's to report as gated.
    */
   gatedTip: string | undefined;
   /** A tip claim or a per-entry ancestry refusal stopped at least one span. */
@@ -663,7 +665,7 @@ export async function drainWaiting(w: WaveMerge): Promise<void> {
     ): Promise<void> => {
       const all = [...folded, ...rows];
       folded = [];
-      await commitAttemptLedger(w, shipped, all);
+      const exit = await commitAttemptLedger(w, shipped, all);
       // spec/loop.md "The tick verdict — one facts artifact": the gated tip
       // this ship left. Read here and nowhere else — inside the hold, after
       // the pick's `afterMerge` gates passed, its `shipped` consult said so
@@ -677,7 +679,18 @@ export async function drainWaiting(w: WaveMerge): Promise<void> {
       // failed merge's footprint alone lands a ledger commit over a tip
       // nothing shipped onto, and `headSha` is the field that reports that
       // one.
-      if (shipped.length > 0) w.gatedTip = await git.revParse(leg.repoRoot);
+      //
+      // And only a land whose rewrite was not stopped by a foreign tip claim.
+      // That exit is the one case where the ref under this hold is not ours:
+      // a concurrent engine instance has claimed the tip, so the sha a read
+      // here would return may name a commit no gate of this tick judged. The
+      // exit says so itself, off the call that took it rather than off a tip
+      // comparison around it — `w.tipMoved` is the wave-level fact and is set
+      // by the per-entry ancestry refusal too, which stops no rewrite
+      // (`.claude/rules/engineering.md`, *A fact the engine holds is
+      // reported, never rediscovered*).
+      if (shipped.length > 0 && exit !== "tip-claimed")
+        w.gatedTip = await git.revParse(leg.repoRoot);
     };
     // The attempts of this drain that left a span, with each range read where
     // `committed` narrows it ({@link BatchCandidate}).
@@ -1452,12 +1465,18 @@ function waveCommitted(w: WaveMerge): boolean {
  * it — built once the siblings the wave is still carrying have settled
  * ({@link waveWallThrow}), which is the wave leg's own throw site
  * (`src/waveTick.ts`).
+ *
+ * Returns the exit the rewrite reported, so the caller's own tip read turns
+ * on the rewrite's statement rather than on a second reading of the ref
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported, never
+ * rediscovered*). `undefined` is no rewrite at all: this pick shipped nothing
+ * and recorded no footprint, so there was nothing for one to write.
  */
 async function commitAttemptLedger(
   w: WaveMerge,
   shippedNow: readonly PendingEntry[],
   outcomesNow: readonly TickVerdictMergeOutcome[],
-): Promise<void> {
+): Promise<PendingRewriteResult["exit"] | undefined> {
   const { leg, phase, partitionIgnore } = w.setup;
   // `commitPendingUpdate` derives the footprints straight off these merge
   // outcomes, the same records this wave's TickVerdict carries — no separate
@@ -1465,7 +1484,7 @@ async function commitAttemptLedger(
   const footprintTags = outcomesNow.flatMap((m) =>
     m.entryTag && m.footprint && m.footprint.length > 0 ? [m.entryTag] : [],
   );
-  if (shippedNow.length === 0 && footprintTags.length === 0) return;
+  if (shippedNow.length === 0 && footprintTags.length === 0) return undefined;
   // A shipped entry committed clean *and* passed its afterMerge gate — clear
   // any stale prior-attempt slot so its next plan/build cycle starts with no
   // false signal.
@@ -1528,7 +1547,7 @@ async function commitAttemptLedger(
         `${update.path} is unchanged on disk, no rewrite written — ` +
         `shipped entries already on trunk stay shipped`,
     );
-    return;
+    return update.exit;
   }
   // Same fact again, so the line an operator reads and the sha the handoff
   // carries can never disagree: a no-commit exit says so in words, and a sha
@@ -1547,6 +1566,7 @@ async function commitAttemptLedger(
         : `[flume] footprint commit ${update.commitSha.slice(0, 8)}: ${footprintTags.join(", ")}`
       : noCommitLine(update.exit, shippedTags, footprintTags),
   );
+  return update.exit;
 }
 
 /**

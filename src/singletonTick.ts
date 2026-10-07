@@ -264,6 +264,11 @@ export async function runSingleton(
 
   let committed = false;
   let commitSha: string | undefined;
+  // spec/loop.md "The tick verdict — one facts artifact": the gated trunk tip
+  // this tick's ship left. A singleton's ship is its merged span — it lands no
+  // ledger commit of its own — so the fate the merge stage below reports is
+  // what sets this, and every other fate leaves it unset.
+  let gatedTip: string | undefined;
   // spec/loop.md "Crash equals stop": staked the one time this tick's merge
   // stage actually begins a pick range, by the carry that begins it
   // ({@link BystanderCheckpoint}, `src/mergeSpan.ts`). A singleton carries one
@@ -484,6 +489,22 @@ export async function runSingleton(
           committed = true;
           commitSha = carried.mergedSha;
         }
+        // spec/loop.md "The tick verdict — one facts artifact": the gated tip
+        // this ship left — inside the hold that landed it, after the
+        // `afterMerge` gates passed over the merged tree, which is the only
+        // instant at which trunk is a tip every gate of this tick has judged
+        // *and* no sibling can have moved it.
+        //
+        // The carry's own merged sha rather than a second read of the ref: it
+        // was read off trunk after the pick (`carryMergeSpan`,
+        // `src/mergeSpan.ts`), and a singleton lands no ledger commit behind
+        // it, so nothing has moved the tip since
+        // (`.claude/rules/engineering.md`, *Derived state is computed, never
+        // restated beside its source*). Set on the absorbed span too, where
+        // the two shas are equal and `committed` stays false: the span is on
+        // trunk and the gates judged that tip, which is the whole claim this
+        // field makes.
+        gatedTip = carried.mergedSha;
         mergeOutcomes.push({
           outcome: carried.fate,
           baseSha: carried.landedOnSha,
@@ -538,6 +559,13 @@ export async function runSingleton(
       phaseName: phase.name,
       committed,
       ...(commitSha ? { commitSha } : {}),
+      // The tip this tick's ship left, gated, read under the hold that landed
+      // it. Beside `commitSha` rather than folded into it: that names what
+      // this tick *contributed* to the tip, this names the tip the
+      // contribution left standing — and over a span trunk already held the
+      // two part, since an absorbed merge adds no commit and still leaves a
+      // gated tip.
+      ...(gatedTip ? { gatedTip } : {}),
       gateResults,
       pendingAfter: pendingAfterSingleton,
       pickableAfter: postSelection.pickable,

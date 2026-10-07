@@ -968,16 +968,20 @@ export interface TickVerdict {
   /**
    * spec/loop.md "The tick verdict — one facts artifact": the trunk sha this
    * tick's **last ship** left — read under the ship lock, once that ship's
-   * `afterMerge` gates passed and its ledger commit landed. A tip every gate
-   * has judged, so a step that delivers trunk anywhere (a release cut, a
-   * mirror push, a deploy) reads this rather than inferring a shipped tip
-   * from commit subjects.
+   * `afterMerge` gates passed and its bookkeeping landed: a fanout ship's
+   * ledger commit, and a singleton's merged span, which lands no ledger
+   * commit of its own. A tip every gate has judged, so a step that delivers
+   * trunk anywhere (a release cut, a mirror push, a deploy) reads this rather
+   * than inferring a shipped tip from commit subjects.
    *
    * Absent on a tick that shipped nothing — a quiet tick, a wave whose every
-   * pick was reverted or parked, and a singleton, which lands no ledger
-   * commit of its own ({@link TickVerdict.headSha} is still there for the
-   * anchor). A pick that landed on trunk and then had its ledger rewrite
-   * refuse leaves none either: that tip is gated but unrecorded, and the
+   * pick was reverted or parked, a singleton whose span was reverted, refused
+   * or never picked ({@link TickVerdict.headSha} is still there for the
+   * anchor). Absent too on a tick whose ledger rewrite a foreign tip claim
+   * stopped: the tip may then name a commit no gate of this tick judged, and
+   * {@link TickVerdict.tipMoved} says which of the two absences this is. A
+   * pick that landed on trunk and then had its ledger rewrite *refuse* leaves
+   * none either: that tip is gated but unrecorded, and the
    * {@link TickVerdictMergeOutcome} row is its recovery handle.
    *
    * A sibling fact to {@link TickVerdict.headSha}, never folded into it:
