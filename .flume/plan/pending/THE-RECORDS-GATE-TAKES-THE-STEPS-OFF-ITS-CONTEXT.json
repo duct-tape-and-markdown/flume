@@ -1,0 +1,33 @@
+{
+  "tag": "THE-RECORDS-GATE-TAKES-THE-STEPS-OFF-ITS-CONTEXT",
+  "gate": {
+    "kind": "blockedBy",
+    "tags": ["A-GATE-READS-THE-STEPS-ITS-SPANS-ENTRY-CARRIES"]
+  },
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "harness/gates.ts",
+        "description": "the records gate's step read, and the entry-extension parameter that read is the only consumer of"
+      },
+      {
+        "path": "tests/harnessGates.test.ts",
+        "description": "the records gate over a gated commit whose queue cannot be read"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "the records gate holds a record's named steps to the steps on its context, rather than re-reading the queue at the gated commit to rediscover them",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A fact the engine holds is reported, never rediscovered"
+  },
+  "acceptance": "the records gate takes the entry's step tags off its context, `stepTagsAt` and the records gate's extension parameter are gone, and a record naming a tag the entry does not carry is still refused by name — at a gated commit whose queue is missing or unparseable included",
+  "tests": [
+    "the records gate holds a record's named steps to the entry's steps with no queue at the gated commit"
+  ],
+  "pins": [],
+  "laneTests": [],
+  "notes": "Build note: the gate reads `readGatedQueue` + `descendantsOf` for the gated entry's own tag alone, so the reported field deletes the read and both its refusal arms. The extension reaches this gate for that one call; the goal-rank gate keeps its own. Blocked on the field landing — the adopting commit is where the chain's copy goes (per cite)."
+}

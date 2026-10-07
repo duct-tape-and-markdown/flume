@@ -1,0 +1,31 @@
+{
+  "tag": "THE-PHASE-DECLARATION-TABLES-NAME-EVERY-FIELD-THEY-CLAIM",
+  "gate": { "kind": "open" },
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "docs/CHAIN-AUTHORING.md",
+        "description": "the phase-declaration section's two rosters and the four rows they skip"
+      },
+      {
+        "path": "tests/examples.test.ts",
+        "description": "a walk over each interface, beside the three doc walks already armed there"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "the authoring page's two phase-declaration tables name every field their interfaces declare, and a walk reds on the next field either table skips",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Narration is the ladder's bottom rung"
+  },
+  "acceptance": "the Phase table names `promptDataKeys` and the TickContext table names `claimed`, `stateRootRel` and `queueParseFailure`, each row in its interface's declaration order as the tables claim, and a walk over each interface reds on a declared field no row names",
+  "tests": [
+    "docs/CHAIN-AUTHORING.md's phase-declaration section names every field Phase declares",
+    "docs/CHAIN-AUTHORING.md's phase-declaration section names every field TickContext declares"
+  ],
+  "pins": [],
+  "laneTests": [],
+  "notes": "Measured on disk: both tables claim \"every field it declares is below, in declaration order\" and four declared fields have no row; `promptDataKeys` appears nowhere on the page, so an author cannot find it at all and rebuilds what it would have given. `docWalk` (`tests/helpers/docWalk.ts`) arms the sibling walks; both tables sit under one `##`, so each cut needs its own anchor."
+}
