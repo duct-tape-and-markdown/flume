@@ -11,6 +11,175 @@ Pre-1.0: minor versions may introduce breaking changes to the public API surface
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-10-07
+
+The queue release. The queue is now a forest: every entry says what it is —
+a `group` that organizes, a `work` entry that one session takes, or a `step`
+inside that session — and may name the `parent` it belongs to. The
+number-per-entry rank is gone. In its place the order is computed: a chain
+declares it through a new `Chain.order` hook, and the harness package declares
+one that serves the operator's goals first, with everything they are blocked
+by, then the longest dependency chain, then the oldest filing. An operator
+states a goal by dropping a record into the inbox with a rank; that rank is the
+only one the queue carries. Beside the queue, operators get `flume hold` and
+`flume exclusive`, a record of how every run ended, and a hangup that tears a
+run down cleanly. A wave can now merge several finished entries behind one
+gate run. Ticks stop loading the operator's own Claude Code settings.
+`docs/MIGRATING-0.22.md` walks the breaks; **strip `priority` from your queue
+files before you upgrade** (section 1), or the first run refuses the queue.
+
+### Breaking
+
+- **`priority` is gone from the entry core.** The core is strict, so a queue
+  file that still carries the key is refused at the next queue read (exit 69).
+  `PendingEntry` gains `kind` (`group`, `work` or `step`, default `work`) and
+  an optional `parent`. Strip the key before upgrading
+  ([`docs/MIGRATING-0.22.md`](docs/MIGRATING-0.22.md), section 1).
+- **Harness package: a `laneTests[]` line must name a lane the declaration's
+  `ci` carries.** A line naming any other lane — or any lane, where no `ci` is
+  declared — is refused at the queue read (section 2).
+- **`Phase.shipped` returns the tags a span ships** (`readonly string[]`)
+  instead of a boolean. `[]` is the old `false`; undeclared still ships the
+  entry and its steps (section 3).
+- **Ticks load only the repository's Claude Code settings.** The `claudeCode`
+  adapter passes `--setting-sources project`, so the operator's own
+  instructions, rules, hooks and settings no longer reach a tick.
+  `ClaudeCodeOptions.inheritUserSettings` (and the harness declaration's
+  `agents` row) restores the old behavior (section 4).
+- **A glob that opens with `!` or holds a `{a,b}` set is refused at load.**
+  flume's matcher reads both as literal characters, so such a glob matched
+  nothing its author meant. Refused in `writablePaths`, `entryChannelPaths`
+  and `supervisorPolicy.partitionIgnore`, and in every glob list of the harness
+  declaration (section 5).
+- **`touchedPaths` takes `(listing, entry)`, and `PartitionOptions` requires
+  `listing`.** A `work` entry's footprint now includes its steps' files, which
+  only the whole queue can say (section 6).
+- **Harness package: `entryExtension`'s second argument is a context object**
+  (`{ lanes, ci }`, typed `ExtensionContext`) instead of the lanes array, and
+  `rank` and `interface` are now the package's own entry fields, so a consumer
+  `entryFields` declaring either name is refused (section 7).
+- **`Gate` is a union of `SingleSpanGate` and `BatchingGate`, and `AgentResult`
+  is a union type.** Existing gates and agents keep working; two type-level
+  patterns no longer compile — a wrapper that spreads a built-in shell gate
+  and replaces `run`, and an `interface` that `extends AgentResult` (section 8).
+- **Harness package: filing bands are gone.** Entries are no longer ranked by
+  where they came from, the `filing band` gate is removed from the plan
+  slices, and the package now declares the queue's order (section 9).
+
+### Added
+
+- **The queue is a forest.** Entries carry `kind` and `parent`; a group sits
+  under a group, work under a group, a step under its work entry. A queue that
+  breaks those pairings, names a missing parent, nests deeper than
+  `Chain.maxEntryDepth` (default 4: goal, epic, work, step), or lets a step
+  block on another work entry's step is refused, naming the file to fix. A
+  `blockedBy` cycle is refused the same way, and so is a work entry waiting on
+  a group above it or on one of its own steps, which could never be picked. The rendered entry schema states
+  every one of these rules, so a producer is told them before it is refused.
+- **`Chain.order` sets the order ready entries are served in.** The hook is
+  handed the whole queue, the resolved `blockedBy` graph, each entry's filing
+  time and the entries in flight, at every selection. It orders and never
+  admits: a return that drops, adds or repeats an entry refuses the tick.
+- **Harness package: the order is computed from goals.** Work under an
+  operator's goal comes first, in the goals' rank order, together with
+  everything that work is `blockedBy`; then the work with the longest chain
+  waiting behind it; then oldest filing; then tag.
+- **Harness package: goals arrive as inbox records.** An operator writes a
+  record stating the goal and its rank; `plan-inbox` files it as a root
+  `group`, shows every standing goal and its remaining work in its window, and
+  re-ranks only on a record that says so. The new `goal rank` gate refuses a
+  rank anywhere but a root group, and a rank set or moved by any commit but the
+  inbox slice's. `plan-derive` files work, and steps, beneath goals.
+- **A session names the steps it finished.** A build session on an entry with
+  steps lists the ones it completed on a `Finished:` line in its note; exactly
+  those leave the queue, and the work entry leaves with its last step. A group
+  leaves the queue in the same commit as its last descendant.
+- **Gates see the steps of the entry they judge** (`GateContext.steps`, and per
+  span in a batch).
+- **`flume status` shows Goals and Flow rows**: one row per standing goal, in
+  the order the queue will serve them, with its remaining work and how long it
+  has stood; then the median time from filing to shipping, the longest current
+  wait of a ready entry, and failed merges per ship.
+- **`flume hold <phase>`** keeps a phase down until `flume wake` lifts it: a
+  handoff's wake of a held phase is declined, and neither the supervisor nor a
+  bare `flume tick` runs it. `flume tick --phase` still does. `status` lists
+  held phases. Every declined wake is a row on the tick verdict
+  (`declinedWakes`), with its reason.
+- **`flume exclusive -- <command>`** runs an operator command holding the ship
+  lock — so a hand fix or a merged remote change can land on trunk mid-run
+  without a concurrent merge moving the tip under it — and exits with the
+  command's own code.
+- **Every supervised run records how it ended** in `<state root>/run-end.json`
+  (hibernation, stop flag, tick budget, abort threshold, signal, all phases
+  held, and the other walls), and `flume status` prints it as `last run end`.
+- **Batched merges.** `supervisorPolicy.mergeBatch` (and the harness
+  declaration's `supervisor.mergeBatch`) lets one merge carry several finished
+  entries, gated once. A phase batches only where every `afterMerge` gate
+  declares `batches: true`; the built-in `tscGate`, `vitestGate`, `eslintGate`
+  and `shellGate` do, and so does the harness judge, which proves each entry
+  against the base it branched from. A command gate declared in the harness
+  declaration does not, so a phase hanging one stays at one entry per merge.
+  A red batch is re-merged one entry at a time, so blame and revert stay per
+  entry.
+- **`gatedTip` on the tick verdict and `TickResult`**: the trunk tip the last
+  ship left, after every gate passed — the sha a release cut, mirror push or
+  deploy step should take.
+- **A preempt records how the agent process ended**: its exit code, or the
+  signal that killed it, on `PlatformFailure.ending` and in the retry's
+  prior-attempt record.
+- **Harness package: an `interface` entry field.** An entry that changes what
+  callers outside its own modules see states the interface it intends — what
+  callers gain, what it hides, and the alternative it rejected. All three parts
+  or the entry is refused.
+- **Harness package: the sweep procedure ships in the package.** A consumer
+  declares the sweep domain and its posture pages; how the sweep applies them
+  is now stated by `plan-sweep`'s prompt, not something a consumer page has to
+  author.
+
+### Changed
+
+- **The engine's default order is oldest filing first, then tag**, replacing
+  `priority` then tag. An entry's filing time is the first commit that added
+  its file, read from git, so renaming a tag no longer moves it in the queue.
+- **`SIGHUP` and `SIGBREAK` end a run through the teardown**, like `SIGINT` and
+  `SIGTERM`: a closed terminal releases the loop lock and tip claim and records
+  the run's end, instead of killing the supervisor outright.
+- **Salvaged files carry a `.reverted` suffix on each file name**, not only on
+  the snapshot directory, so test runners and compilers no longer collect a
+  reverted file out of the state root. Recover by dropping the suffix.
+- **A run whose every awake phase is held ends cleanly** with `all-held`.
+- **`Chain.maxEntryDepth` and `supervisorPolicy.mergeBatch` below 1 are refused
+  at chain load** rather than clamped.
+- **`held/` and `run-end.json` join the state root's runtime ignore set**, which
+  `flume loop` merges into the state root's `.gitignore` at start.
+
+### Fixed
+
+- **`flume status | head` no longer crashes with a `write EPIPE` stack.** A
+  reader closing the pipe ends the verb's output quietly, keeping its own exit
+  code.
+- **A tick's exit 69 no longer ends the run when its cause is already
+  repaired.** The supervisor re-reads the chain, the phase's prompt template
+  and the queue at the tip, and aborts only while one of them still fails,
+  naming it; otherwise the tick counts as errored and the run goes on. A build
+  tick that hit a queue file a concurrent plan tick had just fixed used to take
+  the whole run down.
+- **A signal-killed agent is no longer reported as "exited with code -1".**
+- **A blank or malformed process ending from a chain's adapter is treated as no
+  ending**, rather than rendered into the retry prompt as "killed by signal ."
+- **A `!`-negation or brace set in `partitionIgnore` or a harness sweep list no
+  longer silently matches nothing** — it is refused (see Breaking). Before, an
+  ignored lockfile could serialize every wave, and a sweep domain like
+  `{src,harness}/**` closed its rotation over an empty frontier.
+
+### Internal
+
+- The merge's pick and gate loop has one home for both serial and batched
+  carries. The harness order cases run over the engine's own queue read and
+  selection. The adoption page's gate list is checked in both directions
+  against the gates the package declares. Harness doc comments cite the
+  package's own spec for sweep procedure, not a page only this repo carries.
+
 ## [0.21.0] - 2026-09-30
 
 The supervisor release. A wave now merges each entry as its agent finishes
