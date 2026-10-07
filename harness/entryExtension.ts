@@ -26,6 +26,7 @@
 import { z } from "zod";
 
 import type { EntryExtension, EntryExtensionField } from "../src/PendingSchema.js";
+import type { Declaration } from "./declaration.js";
 import type { Lane } from "./runner.js";
 
 /**
@@ -81,9 +82,11 @@ export const NamedLinesSchema = z.array(z.string().min(1)).default([]);
  * is the CI lane: the line is owed there, so the lane's own red closes or
  * files it.
  *
- * Shape only. Whether the named lane is one the consumer declared, and
- * whether a case carrying the title is skipped on this host, belong to the
- * declaration and to the judge that read this.
+ * Shape alone, which is what a reader narrowing a value that already parsed
+ * takes (`judgeGate.ts`). The composed field below holds `lane` to the lanes
+ * the declaration carries — {@link laneTestsSchema}, since that set is the
+ * consumer's and this constant is the package's. Whether a case carrying the
+ * title is skipped on this host stays the judge's.
  *
  * Defaulted rather than optional, for the reason {@link NamedLinesSchema}
  * is.
@@ -96,6 +99,82 @@ export const LaneTestsSchema = z
     }),
   )
   .default([]);
+
+/**
+ * The declared CI lane names — the one derivation the schema below refuses
+ * against and the hint beside it announces, so the set a line is judged on
+ * and the set a plan tick is told cannot drift apart.
+ *
+ * An absent `ci` reads as the empty set: a consumer who declared no lane and a
+ * composition handed none have the same lanes available, which is none.
+ */
+const ciLaneNames = (ci: Declaration["ci"]): readonly string[] =>
+  (ci ?? []).map((lane) => lane.name);
+
+/**
+ * {@link LaneTestsSchema} with every line's `lane` held to the CI lanes the
+ * declaration carries — the field as {@link packageFields} composes it, and
+ * the only place the two declared senses of a lane name are checked against
+ * each other.
+ *
+ * A lane no declaration names is **refused**, not parsed: the line is owed to
+ * that lane and nothing else can close it, because the judge reports the lane
+ * verbatim and the inbox slice reads findings per declared lane
+ * (`spec/harness.md`, *CI lanes as a findings source*). A typo'd or retired
+ * name is therefore a line owed forever — never green, never filed — which is
+ * a degraded input the queue carries indefinitely unless something refuses on
+ * it (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * A declaration carrying no `ci` refuses every line, which is the same rule
+ * over an empty set rather than a case beside it. The cost is stated rather
+ * than hidden: a consumer whose second host is a human at a keyboard cannot
+ * file a `laneTests[]` line, because there is no lane whose run could ever
+ * close one — that case is a question for that human.
+ */
+function laneTestsSchema(ci: Declaration["ci"]) {
+  const declared = ciLaneNames(ci);
+  return LaneTestsSchema.superRefine((lines, ctx) => {
+    lines.forEach((line, index) => {
+      if (declared.includes(line.lane)) return;
+      ctx.addIssue({
+        code: "custom",
+        path: [index, "lane"],
+        message:
+          `\`${line.lane}\` is not a declared CI lane — ` +
+          (declared.length === 0
+            ? "the declaration carries no `ci` at all"
+            : `the declaration carries ${declared.map((name) => `\`${name}\``).join(", ")}`) +
+          `. A laneTests[] line is owed to its lane until that lane's own run ` +
+          `reports the title green, so a lane nothing reports is a line owed ` +
+          `forever (spec/harness.md, The judges).`,
+      });
+    });
+  });
+}
+
+/**
+ * The lanes a `laneTests[]` line may name, as the hint announces them: the
+ * declared names, or the sentence that says there are none.
+ *
+ * Rendered from the same list {@link laneTestsSchema} refuses on, because a
+ * refusal whose valid values a plan tick cannot read is a gate that reverts a
+ * tick for a fact nothing told it — and only `plan-inbox`'s prompt carries
+ * the lanes otherwise (`inboxWindow.ts`).
+ */
+function ciLaneClause(ci: Declaration["ci"]): string {
+  const declared = ciLaneNames(ci).map((name) => `\`${name}\``);
+  if (declared.length === 0) {
+    return (
+      "; this declaration carries no CI lane, so no laneTests[] line can be " +
+      "filed — a host-gated case with no lane to be owed to is a question " +
+      "for a human"
+    );
+  }
+  return (
+    `; the declared lanes are ${declared.join(", ")}, and a line naming ` +
+    `anything else is refused`
+  );
+}
 
 /**
  * One `laneTests[]` line as the judge rules on it — the shape
@@ -160,16 +239,18 @@ function laneClause(lanes: readonly Lane[]): string {
  * declaration order — with {@link CONTRACT_TOUCHING_FIELD} last, after the
  * six that section names.
  *
- * Built per composition rather than held as a constant, because two of the
- * hints carry {@link laneClause} and the lanes are the consumer's runner's.
+ * Built per composition rather than held as a constant, because three of the
+ * hints carry {@link laneClause} and one field's schema is held to the
+ * declared CI lanes ({@link laneTestsSchema}) — both the consumer's, neither
+ * the package's to hold as a constant.
  *
  * No hint here names a test tool. The judge speaks to whatever runner the
  * consumer declared (`spec/harness.md`, *The runner interface*), so a hint
  * that said "vitest" would be the package teaching every consumer's plan
  * phase a tool half of them do not run.
  */
-function packageFields(lanes: readonly Lane[]) {
-  const lane = laneClause(lanes);
+function packageFields(context: ExtensionContext) {
+  const lane = laneClause(context.lanes ?? []);
   return {
     summary: {
       schema: z.string().min(1).max(ENTRY_CAPS.summary),
@@ -212,8 +293,8 @@ function packageFields(lanes: readonly Lane[]) {
      * what files or closes it.
      */
     laneTests: {
-      schema: LaneTestsSchema,
-      hint: `[ { "lane": "a declared CI lane's name", "title": "behavior only that lane's host can run" } ] — for a case this host cannot run at all: same title discipline as tests[], written skipped on every other host so the suite reports it skipped and never failed. The judge reports each owed to its lane and never green, so the lane is the proof: a red title files as that lane's finding and a run on the tip reporting it green closes it. A behavior this host can run belongs in tests[]${lane}`,
+      schema: laneTestsSchema(context.ci),
+      hint: `[ { "lane": "a declared CI lane's name", "title": "behavior only that lane's host can run" } ] — for a case this host cannot run at all: same title discipline as tests[], written skipped on every other host so the suite reports it skipped and never failed. The judge reports each owed to its lane and never green, so the lane is the proof: a red title files as that lane's finding and a run on the tip reporting it green closes it. A behavior this host can run belongs in tests[]${ciLaneClause(context.ci)}${lane}`,
     },
     notes: {
       schema: z.string().max(ENTRY_CAPS.notes).optional(),
@@ -251,6 +332,35 @@ export class EntryFieldRemovalError extends Error {
 }
 
 /**
+ * The consumer's own values the package's fields are composed against — the
+ * two senses of a lane this package carries, each reaching a different half
+ * of the composition.
+ *
+ * Both are optional, and an omitted one is a composition that was handed
+ * nothing rather than a consumer who declared nothing: the two coincide,
+ * because what a field does with an empty set is what it does with a set the
+ * declaration left empty.
+ */
+export interface ExtensionContext {
+  /**
+   * The consumer's runner's lanes (`spec/harness.md`, *The runner interface*):
+   * the running lane's exclusions ride the `tests[]`, `pins[]` and
+   * `laneTests[]` hints, so plan is told at authorship which globs no judge
+   * will reach. Informs alone — omitted where no runner is in hand, and a
+   * hint is not something a parse can refuse on.
+   */
+  readonly lanes?: readonly Lane[] | undefined;
+  /**
+   * The CI lanes the declaration carries (`spec/harness.md`, *CI lanes as a
+   * findings source*) — the names a `laneTests[]` line's `lane` is held to,
+   * so every composition that parses a queue is handed these. Read off
+   * {@link Declaration} rather than respelled, so a lane field the schema
+   * gains arrives here without a second edit.
+   */
+  readonly ci?: Declaration["ci"];
+}
+
+/**
  * The package's entry extension, with the consumer's own fields merged in
  * beside it.
  *
@@ -266,17 +376,17 @@ export class EntryFieldRemovalError extends Error {
  * consumer refining `tag` is passed through untouched — the engine composes
  * a refinement there as an intersection over its own mechanical floor.
  *
- * `lanes` is the consumer's runner's own (`spec/harness.md`, *The runner
- * interface*): the running lane's exclusions ride the `tests[]`, `pins[]` and
- * `laneTests[]` hints, so plan is told at authorship which globs no judge will reach.
- * Omitted where no runner is in hand — the pending gate composes this for
- * its schemas alone (`gates.ts`), and a schema does not vary by lane.
+ * Both halves of {@link ExtensionContext} reach a different half of the
+ * composition: `lanes` informs three hints, `ci` is what the `laneTests[]`
+ * schema refuses against ({@link laneTestsSchema}). Every composition that
+ * parses a queue is handed `ci` — the chain's and the pending gate's alike —
+ * or one field is held to two rules by the two readers of it.
  */
 export function entryExtension(
   consumer?: EntryExtension,
-  lanes: readonly Lane[] = [],
+  context: ExtensionContext = {},
 ): EntryExtension {
-  const fields = packageFields(lanes);
+  const fields = packageFields(context);
   for (const field of Object.keys(consumer ?? {})) {
     if (field in fields) throw new EntryFieldRemovalError(field);
   }

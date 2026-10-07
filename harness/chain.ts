@@ -150,8 +150,17 @@ export function harnessChain(options: HarnessChainOptions): Chain {
    * which globs the judge will not reach (`spec/harness.md`, *The runner
    * interface*). Told once, at authorship — nothing downstream refuses an
    * entry over where its `files` predicted the work would land.
+   *
+   * The declared CI lanes ride it too, and those a parse *does* refuse on: a
+   * `laneTests[]` line is owed to its lane, so a lane this declaration never
+   * named is a line no run can close (`entryExtension.ts`). Handed here as
+   * well as at the pending gate, because this is the extension every ledger
+   * read and `flume check` parse through.
    */
-  const extension = entryExtension(options.entryFields, runner.lanes);
+  const extension = entryExtension(options.entryFields, {
+    lanes: runner.lanes,
+    ci: declaration.ci,
+  });
 
   /**
    * The engine values the package's gates run through, taken off `api` —

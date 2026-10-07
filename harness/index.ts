@@ -82,6 +82,7 @@ export {
   ENTRY_CAPS,
   EntryFieldRemovalError,
   entryExtension,
+  type ExtensionContext,
   type LaneTest,
 } from "./entryExtension.js";
 

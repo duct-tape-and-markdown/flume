@@ -857,7 +857,12 @@ export function harnessGates(options: HarnessGatesOptions): Gate[] {
   /** The slice this set is for, or `undefined` on build (`queueProducer`). */
   const slice = queueProducer(phase.name);
   const queue = {
-    extension: entryExtension(entryFields),
+    // The declared CI lanes ride the composition: a `laneTests[]` line naming
+    // a lane this declaration never carried is owed to a lane nothing reports,
+    // so the schema refuses it here rather than leaving the queue to carry it
+    // (`entryExtension.ts`, `laneTestsSchema`). The runner's own lanes are not
+    // handed in — those inform three hints, and a gate renders none.
+    extension: entryExtension(entryFields, { ci: declaration.ci }),
     targetFence: buildFence(declaration),
     // What the package calls an entry's records: its note homes, off the one
     // roster that already names them (`notePaths`, `layout.ts`), so a fourth

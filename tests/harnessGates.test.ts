@@ -120,12 +120,23 @@ const BUILD_FENCE = ["src/**", "tests/**", ...noteGlobs(STATE_ROOT)];
  * A declaration a consumer could have written, through the package's own
  * schema — the gates are wired from this and from nothing beside it.
  */
-const declaration: Declaration = parseDeclaration({
+const DECLARED = {
   specLocus: ["spec/**"],
   fence: { build: BUILD_FENCE, "plan-derive": [`${STATE_ROOT}/plan/**`] },
   runner: runnerFactory,
   slices: { enabled: ["plan-derive"] },
-});
+};
+
+const declaration: Declaration = parseDeclaration(DECLARED);
+
+/** One CI lane, as a consumer with a second host declares one. */
+const CI_LANE = { name: "windows", workflow: "ci.yml", job: "windows" };
+
+/**
+ * The same declaration carrying that lane — composed from the literal above
+ * rather than beside it, so a case that varies the lanes varies nothing else.
+ */
+const withCiLane: Declaration = parseDeclaration({ ...DECLARED, ci: [CI_LANE] });
 
 /** The phase the set is built for — build's name and fence, as declared. */
 const phase = { name: BUILD_PHASE, writablePaths: [...BUILD_FENCE] };
@@ -269,9 +280,15 @@ const assigned = (tag: string): PendingEntry => queueEntry(tag);
  */
 const putDown = putDownPredicate(STATE_ROOT);
 
-/** The package's set for this phase, plus whatever the case declares. */
-const gates = (declared: readonly Gate[] = []): Gate[] =>
-  harnessGates({ phase, declaration, engine, putDown, declared });
+/**
+ * The package's set for this phase, plus whatever the case declares — under
+ * the shared declaration unless a case hands its own, which is how a gate
+ * composed from a declared value is driven over two declarations.
+ */
+const gates = (
+  declared: readonly Gate[] = [],
+  decl: Declaration = declaration,
+): Gate[] => harnessGates({ phase, declaration: decl, engine, putDown, declared });
 
 /**
  * The package's set for one plan slice — the phase a filed entry's band is a
@@ -294,8 +311,12 @@ function bandGate(name: PlanSlice): Gate {
 }
 
 /** The gate this set names `name` — by name, never by index. */
-function named(name: string, declared: readonly Gate[] = []): Gate {
-  const gate = gates(declared).find((g) => g.name === name);
+function named(
+  name: string,
+  declared: readonly Gate[] = [],
+  decl: Declaration = declaration,
+): Gate {
+  const gate = gates(declared, decl).find((g) => g.name === name);
   if (!gate) throw new Error(`the package's set has no gate named "${name}"`);
   return gate;
 }
@@ -1788,6 +1809,86 @@ it("the package's gates precede a consumer's declared gates for the same phase",
   expect(refused.ok).toBe(false);
   expect(refused.details).toContain("OUT-OF-FENCE");
   expect(refused.details).toContain("docs/design.md");
+});
+
+/** One queued entry owed to the lane a case names. */
+const laneEntry = (tag: string, lane: string): PendingEntry => ({
+  ...queueEntry(tag),
+  laneTests: [{ lane, title: "walls a path only that host refuses" }],
+});
+
+/** The lane names a declaration carries, as the gate's composition reads them. */
+const laneNames = (decl: Declaration): string[] =>
+  (decl.ci ?? []).map((lane) => lane.name);
+
+/**
+ * `laneTests[]` against the declared CI lanes (`spec/harness.md`, *The
+ * judges*). The line is **owed** to its lane and closed by nothing else — the
+ * judge reports the lane verbatim and the inbox slice reads findings per
+ * declared lane — so a lane the declaration never carried is a line owed
+ * forever: never green, never filed.
+ *
+ * The three cases are driven at the gate rather than at the schema, because
+ * the claim is that two declared values meet: a declaration a consumer could
+ * have written goes through the package's own schema, the factory composes the
+ * extension from it, and the real pending gate parses a real queue file at a
+ * real commit (`.claude/rules/engineering.md`, *A seam gate reads what the
+ * real writer wrote*).
+ */
+it("a laneTests[] line naming a lane the declaration's ci does not carry is refused", async () => {
+  // Vacuity pin: the declaration carries a lane, so the refusal below is about
+  // this name and not about an empty set — that case is the next one.
+  expect(laneNames(withCiLane)).toEqual([CI_LANE.name]);
+
+  await writeQueue([laneEntry("OWED-TO-NOBODY", "macos")]);
+  const refused = await named("pending-gate", [], withCiLane).run(
+    ctxFor(commitAll("plan: file a line owed to a lane nobody declared"), {
+      phaseName: "plan-derive",
+    }),
+  );
+
+  expect(refused.ok).toBe(false);
+  expect(refused.details).toContain("laneTests");
+  expect(refused.details).toContain("macos");
+  // And the operator is told which lanes there are, so the next tick does not
+  // guess at the same refusal.
+  expect(refused.details).toContain(CI_LANE.name);
+});
+
+it("a laneTests[] line is refused when the declaration carries no ci at all", async () => {
+  // The lane named below is one another declaration does carry, so what this
+  // case judges is the declaration rather than the spelling.
+  expect(laneNames(declaration)).toEqual([]);
+  expect(laneNames(withCiLane)).toContain(CI_LANE.name);
+
+  await writeQueue([laneEntry("NO-LANE-AT-ALL", CI_LANE.name)]);
+  const refused = await named("pending-gate").run(
+    ctxFor(commitAll("plan: file a line under a declaration with no ci"), {
+      phaseName: "plan-derive",
+    }),
+  );
+
+  expect(refused.ok).toBe(false);
+  expect(refused.details).toContain("laneTests");
+  expect(refused.details).toContain("no `ci`");
+});
+
+it("a laneTests[] line naming a declared CI lane parses", async () => {
+  expect(laneNames(withCiLane)).toContain(CI_LANE.name);
+
+  // Vacuity pin: the entry really carries a line, so the green below is a
+  // verdict over a parsed `laneTests[]` rather than over an entry without one.
+  const entry = laneEntry("OWED-TO-A-LANE", CI_LANE.name);
+  expect(entry.laneTests).toHaveLength(1);
+
+  await writeQueue([entry]);
+  const passed = await named("pending-gate", [], withCiLane).run(
+    ctxFor(commitAll("plan: file a line owed to a declared lane"), {
+      phaseName: "plan-derive",
+    }),
+  );
+
+  expect(passed).toMatchObject({ ok: true });
 });
 
 /**

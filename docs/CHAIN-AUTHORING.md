@@ -170,7 +170,11 @@ each a `workflow` file, a `job` name, the lane `name` its findings carry, and
 optionally `titles`: a pattern or a function over the failing job's log
 answering the titles that log states, which the slice stamps beside the run
 so a red that persists unchanged stops re-waking it; a lane declaring none
-wakes the slice once per failing run), and `friction` (the state-root-relative
+wakes the slice once per failing run. Those lane names are also the set a
+queue entry's `laneTests[]` may name: such a line is owed to its lane until
+that lane's own run reports the title green, so a lane this field never
+carried is refused at the pending gate, and a declaration with no `ci` can
+file no `laneTests[]` line at all), and `friction` (the state-root-relative
 directory naming the engine's friction channel, passed through whole to
 `Chain.friction`; declared here rather than left to the engine because it is
 a findings source — the inbox slice reads its files as it reads the inbox,
