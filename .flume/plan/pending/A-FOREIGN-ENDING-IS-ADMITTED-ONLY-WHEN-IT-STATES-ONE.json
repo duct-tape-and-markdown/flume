@@ -1,0 +1,19 @@
+{
+  "tag": "A-FOREIGN-ENDING-IS-ADMITTED-ONLY-WHEN-IT-STATES-ONE",
+  "gate": { "kind": "open" },
+  "priority": 0,
+  "files": {
+    "edit": [
+      { "path": "src/Agent.ts", "description": "readAgentEnding's two arms admit only an ending that states one" },
+      { "path": "tests/Dispatcher.test.ts", "description": "the blank and non-integer cases beside the abort-ending case" }
+    ]
+  },
+  "summary": "readAgentEnding admits an ending only when it states one — an integer code or a named signal — so a blank reads as no ending reported",
+  "per": { "path": ".claude/rules/engineering.md", "section": "Loud or nothing" },
+  "acceptance": "a foreign ending whose signal names nothing, or whose code is not an integer, yields undefined, so the preempt record states no ending was reported instead of rendering \"killed by signal .\" into the retry's block",
+  "tests": [
+    "an abort whose ending names no signal records no ending rather than a blank one",
+    "an abort whose ending carries a code that is not an integer records no ending"
+  ],
+  "notes": "Measured this tick: readAgentEnding (src/Agent.ts:154) admits { exitCode: null, signal: \"\" }, and agentEndingWords renders it \"was killed by signal .\". The guard's own doc already says it never assembles an ending out of whatever was there. The resolve path's typed signal stays trusted — a declared field is told, not guessed."
+}
