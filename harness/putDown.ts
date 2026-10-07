@@ -17,15 +17,26 @@
  * the seam re-authored by the tester's hand (*A seam gate reads what the real
  * writer wrote*).
  *
+ * The third reading is the one *inside* a record rather than at its path: the
+ * step tags a session names as finished (`spec/harness.md`, *A tick puts work
+ * down*). Two surfaces ask it — the `shipped` predicate, which ships exactly
+ * those tags, and the records gate, which refuses a tag the entry does not
+ * carry — and a second parse beside either is the copy that stops matching
+ * the day the line's spelling moves, in the direction that ships nothing and
+ * says nothing.
+ *
  * The paths themselves stay `layout.ts`'s; what lives here is only what each
- * location *means* to a commit that touched it.
+ * location *means* to a commit that touched it, and what a record *says* about
+ * which of the entry's steps are done.
  */
 
-import { existsLoud } from "../src/fsProbe.js";
+import { join } from "node:path";
+
+import { existsLoud, readFileLoudUnder } from "../src/fsProbe.js";
 import { namespacedJoin } from "../src/paths.js";
 import type { PendingEntry } from "../src/PendingSchema.js";
 
-import { continuingNotePath, parkedNotePath } from "./layout.js";
+import { continuingNotePath, notePath, parkedNotePath } from "./layout.js";
 
 /**
  * Which note a build tick put its work down with — the two kinds whose
@@ -124,3 +135,87 @@ export function declaredPutDown(
     return "continuing";
   return undefined;
 }
+
+/**
+ * The lead a record's step line opens with — the one spelling the build prompt
+ * tells a session to write and both readers below look for.
+ *
+ * One constant, because the prompt's paragraph and the parse are two sides of
+ * one seam: a lead spelled twice is a prompt asking for a line nothing reads.
+ */
+export const FINISHED_STEPS_LEAD = "Finished";
+
+/**
+ * The step tags a record names as finished — every token on a line whose lead
+ * is {@link FINISHED_STEPS_LEAD}, in the order the record names them, each
+ * token once.
+ *
+ * **Every token, never only the ones that look like tags.** A line carrying
+ * prose or a misspelling yields tags the entry does not carry, which the
+ * records gate refuses by name; a parse that kept only well-formed-looking
+ * tokens would drop a typo silently and ship nothing, which is the one outcome
+ * the spec names as the failure to avoid (`.claude/rules/engineering.md`,
+ * *Loud or nothing*). So the tolerance here is in the *decoration* an agent
+ * writes around a list and nowhere else: a leading bullet or blockquote mark,
+ * bold around the lead, backticks around a tag, a trailing sentence stop.
+ *
+ * `null` — no such record at all — names nothing, which is the same answer as
+ * a record with no such line: a commit that did not say which steps it
+ * finished finished none it can be held to.
+ */
+export function namedSteps(text: string | null): string[] {
+  if (text === null) return [];
+  const named: string[] = [];
+  for (const raw of text.split("\n")) {
+    const line = raw.replace(/^[\s>#*+-]+/, "").replaceAll("**", "");
+    const lead = `${FINISHED_STEPS_LEAD}:`;
+    if (line.slice(0, lead.length).toLowerCase() !== lead.toLowerCase())
+      continue;
+    for (const token of line.slice(lead.length).split(/[,\s]+/)) {
+      const tag = token.replaceAll("`", "").replace(/[.;:]+$/, "");
+      if (tag.length > 0 && !named.includes(tag)) named.push(tag);
+    }
+  }
+  return named;
+}
+
+/**
+ * The step tags the record a span wrote names as finished, read off the span's
+ * own tree.
+ *
+ * **Which record is the kind the span declared** ({@link putDownPredicate}),
+ * and the kinds are not interchangeable: a session that put the rest of the
+ * entry down says what it finished in its continuation, and one that finished
+ * the entry says it in its note to plan, so reading the wrong one of the two
+ * would read an absent file and ship nothing. A **park** names none — nothing
+ * of a refused entry leaves the queue, whatever its note lists — so the park
+ * is answered here rather than left to a caller's own branch beside the
+ * ship.
+ *
+ * The tree is the span's, for the reason {@link putDownPredicate} reads one:
+ * the record this asks about is the one *that commit* left, and trunk by
+ * classification time carries every sibling in the wave.
+ */
+export function finishedSteps(
+  stateRoot: string,
+  entry: PendingEntry,
+  span: PutDownSpan,
+  kind: PutDownKind | undefined,
+): string[] {
+  if (kind === "parked") return [];
+  const rel =
+    kind === "continuing"
+      ? continuingNotePath(stateRoot, entry.tag)
+      : notePath(stateRoot, entry.tag);
+  // Joined with `node:path` and namespaced by the reader at the syscall, not
+  // here: the descent the reader runs measures `path` against `root`, and a
+  // namespaced path measured against a plain root sits under nothing
+  // (`readFileLoudUnder`, `src/fsProbe.ts`).
+  return namedSteps(readFileLoudUnder(RECORD_SUBJECT, span.tree, join(span.tree, rel)));
+}
+
+/**
+ * The subject a refused read of a record reports — the span's own tree, which
+ * is what an obstructed ancestor under it means.
+ */
+const RECORD_SUBJECT = "the span's record";

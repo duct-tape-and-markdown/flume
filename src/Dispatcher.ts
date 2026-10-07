@@ -59,7 +59,7 @@ import {
 } from "./pendingLedger.js";
 import { DEFAULT_KILL_GRACE_MS } from "./processTree.js";
 import { PriorAttemptStore } from "./priorAttempts.js";
-import { PendingParseFailure } from "./PendingSchema.js";
+import { PendingParseFailure, descendantsOf } from "./PendingSchema.js";
 import type { EntryExtension, PendingEntry } from "./PendingSchema.js";
 import type { Chain, TickContext, TickResult } from "./Phase.js";
 import {
@@ -1596,10 +1596,15 @@ export class Dispatcher {
       }
     }
 
+    // The steps a fanout slot's span would ship, off the queue this preview
+    // already read — the engine's own walk over `parent` links, the one a
+    // wave's selection hands its slot (`ShipContext.steps`, `src/Phase.ts`),
+    // so a preview and the tick that follows it name one listing.
+    const steps = entry === undefined ? [] : descendantsOf(pending, entry.tag);
     // Each concurrency's own context, field for field — a singleton reads the
     // whole queue and carries no assignment, a fanout entry carries its
-    // assignment and no queue. A preview that widened either would show the
-    // chain a `promptArgs` input the tick never gets.
+    // assignment and its steps and no queue. A preview that widened either
+    // would show the chain a `promptArgs` input the tick never gets.
     const ctx: TickContext = {
       cwd: this.opts.repoRoot,
       flumeDir: this.flumeDir,
@@ -1607,7 +1612,9 @@ export class Dispatcher {
       pickable,
       claimed: claimedTags,
       priorAttempts,
-      ...(entry !== undefined ? { assignedEntry: entry } : { pending }),
+      ...(entry !== undefined
+        ? { assignedEntry: entry, assignedSteps: steps }
+        : { pending }),
       ...(queueParseFailure ? { queueParseFailure } : {}),
     };
 
@@ -1629,7 +1636,13 @@ export class Dispatcher {
       template: await readPhaseTemplate(this.opts.configDir, phase.promptPath),
       cwd: this.opts.repoRoot,
       args,
-      ...(entry !== undefined ? { assignedEntry: entry } : {}),
+      // The steps ride the render too, because the `<harness>` block states
+      // the effective fence — the entry's files and its steps' together — and
+      // a preview naming the entry alone would show a scope narrower than the
+      // guard the tick enforces.
+      ...(entry !== undefined
+        ? { assignedEntry: entry, assignedSteps: steps }
+        : {}),
     });
 
     return {

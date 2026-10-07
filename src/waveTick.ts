@@ -985,6 +985,11 @@ async function runFanoutEntry(
     flumeDir: leg.flumeDir,
     stateRootRel: leg.stateRootRel,
     assignedEntry: entry,
+    // The listing this slot's span may ship, reported to the hooks as well as
+    // to the render and the write guard: a `promptArgs` naming the steps a
+    // session may finish reads them here rather than off the ledger the
+    // selection already parsed.
+    assignedSteps: steps,
     // The bundle through, not unpacked: these are the three fields
     // {@link OfferedFacts} is named off, so a spread is the whole hand-over.
     ...offered,

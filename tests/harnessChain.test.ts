@@ -777,41 +777,218 @@ it("a note beside the parked directory ships its entry", () => {
 });
 
 /**
- * The package's `shipped` answers in tags now, and its answer is all-or-
- * nothing over the span: the build prompt tells a session how to put the
- * whole entry down and gives it no way to say which steps it finished, so a
- * partial list would be the engine's surface read for a declaration no prompt
- * here asks for (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ * The steps a span's record names, planted on the span's own tree at the path
+ * the build prompt tells the agent to write — the tree `shipped` reads, since
+ * a tick's worktree is still on disk while the merge loop classifies it.
+ *
+ * Written as the agent writes it: a titled record whose body carries the
+ * `Finished:` line, so what the predicate reads back is the shape the prompt
+ * asks for rather than a tag list by the tester's hand.
+ */
+async function plantRecord(
+  assigned: PendingEntry,
+  rel: string,
+  finished: readonly string[],
+): Promise<string> {
+  const at = join(shipContext(assigned, []).worktreePath, rel);
+  await mkdir(join(at, ".."), { recursive: true });
+  await writeFile(
+    at,
+    ["# what landed", "", `Finished: ${finished.join(", ")}`, ""].join("\n"),
+  );
+  return at;
+}
+
+/** The two steps a decomposed `work` entry carries in the cases below. */
+const stepsOf = (assigned: PendingEntry): PendingEntry[] => [
+  { ...entry("A-STEP"), kind: "step" as const, parent: assigned.tag },
+  { ...entry("ANOTHER-STEP"), kind: "step" as const, parent: assigned.tag },
+];
+
+/**
+ * The package's `shipped` answers in tags, and over an entry with steps those
+ * tags are the ones the session named (`spec/harness.md`, *A tick puts work
+ * down*). A put-down's own answer is unchanged by that: a park ships nothing,
+ * and a continuation ships no `work` entry.
  */
 it("the package's shipped returns no tag for a commit that put its work down", async () => {
   const build = phaseNamed(chainFor(), BUILD_PHASE);
   const assigned = entry("SOME-ENTRY");
-  const steps = [
-    { ...entry("A-STEP"), kind: "step" as const, parent: assigned.tag },
-    { ...entry("ANOTHER-STEP"), kind: "step" as const, parent: assigned.tag },
-  ];
+  const steps = stepsOf(assigned);
   const park = parkedNotePath(STATE_ROOT, assigned.tag);
   const continuing = continuingNotePath(STATE_ROOT, assigned.tag);
 
-  // Non-vacuity: the same span with neither note ships, and ships the whole
-  // session — the entry and every step it was decomposed into — so the empty
-  // answers below are the notes' doing over a populated set.
+  // Non-vacuity: the same span whose note to plan names every step ships the
+  // whole session — the entry and each step it was decomposed into — so the
+  // empty answers below are the put-down's doing over a populated set.
+  const finishing = await plantRecord(
+    assigned,
+    notePath(STATE_ROOT, assigned.tag),
+    ["A-STEP", "ANOTHER-STEP"],
+  );
   expect(
-    build.shipped?.(shipContext(assigned, ["src/index.ts"], steps)),
+    build.shipped?.(
+      shipContext(
+        assigned,
+        ["src/index.ts", notePath(STATE_ROOT, assigned.tag)],
+        steps,
+      ),
+    ),
   ).toEqual([assigned.tag, "A-STEP", "ANOTHER-STEP"]);
+  await rm(finishing);
 
   // A park: nothing of the session leaves the queue, steps included.
   expect(build.shipped?.(shipContext(assigned, [park], steps))).toEqual([]);
 
   // And a continuation that stands, which is the kind read off the tree
   // rather than the touch (`putDownPredicate`, `harness/putDown.ts`).
-  const onDisk = join(shipContext(assigned, []).worktreePath, continuing);
-  await mkdir(join(onDisk, ".."), { recursive: true });
-  await writeFile(onDisk, "# what landed\n\nWhat is next.\n");
+  const onDisk = await plantRecord(assigned, continuing, []);
   expect(
     build.shipped?.(shipContext(assigned, [continuing], steps)),
   ).toEqual([]);
   await rm(onDisk);
+});
+
+it("a continuing note naming finished steps ships exactly those and leaves the work entry in the queue", async () => {
+  const build = phaseNamed(chainFor(), BUILD_PHASE);
+  const assigned = entry("SOME-ENTRY");
+  const steps = stepsOf(assigned);
+  const continuing = continuingNotePath(STATE_ROOT, assigned.tag);
+
+  // The segment this session landed: one of the two steps, named in the note
+  // that says the rest is another tick's.
+  const onDisk = await plantRecord(assigned, continuing, ["A-STEP"]);
+  // Non-vacuity: the note really is on the span's own tree, at the path the
+  // prompt names — so the verdict below is read from a populated record.
+  expect(await readFile(onDisk, "utf8")).toContain("Finished: A-STEP");
+
+  const shipped = build.shipped?.(
+    shipContext(assigned, ["src/index.ts", continuing], steps),
+  );
+  // Exactly the step it named: the sibling step stays queued, and so does the
+  // `work` entry whose rest this tick put down.
+  expect(shipped).toEqual(["A-STEP"]);
+
+  // And the same span whose note names the other step ships that one instead,
+  // so the answer follows the record rather than the queue's own order.
+  await rm(onDisk);
+  await plantRecord(assigned, continuing, ["ANOTHER-STEP"]);
+  expect(
+    build.shipped?.(shipContext(assigned, ["src/index.ts", continuing], steps)),
+  ).toEqual(["ANOTHER-STEP"]);
+  await rm(onDisk);
+});
+
+it("a note to plan naming the entry's last remaining step ships that step and the work entry with it", async () => {
+  const build = phaseNamed(chainFor(), BUILD_PHASE);
+  const assigned = entry("SOME-ENTRY");
+  // The queue as a later tick finds it: one step left, the siblings already
+  // shipped by the ticks that named them.
+  const steps = [stepsOf(assigned)[1]!];
+  const note = notePath(STATE_ROOT, assigned.tag);
+
+  // Non-vacuity, and the whole mechanism in one pair: the same span over the
+  // same queue, with the record naming nothing, ships nothing at all — so the
+  // tags below are the naming's doing and not a predicate that ships whatever
+  // it is handed.
+  const silent = await plantRecord(assigned, note, []);
+  expect(await readFile(silent, "utf8")).not.toContain("ANOTHER-STEP");
+  expect(build.shipped?.(shipContext(assigned, ["src/index.ts", note], steps))).toEqual(
+    [],
+  );
+  await rm(silent);
+
+  const onDisk = await plantRecord(assigned, note, ["ANOTHER-STEP"]);
+  expect(
+    build.shipped?.(shipContext(assigned, ["src/index.ts", note], steps)),
+  ).toEqual([assigned.tag, "ANOTHER-STEP"]);
+  await rm(onDisk);
+});
+
+it("a commit on a step-bearing entry that names no step ships nothing", async () => {
+  const build = phaseNamed(chainFor(), BUILD_PHASE);
+  const assigned = entry("SOME-ENTRY");
+  const steps = stepsOf(assigned);
+  const note = notePath(STATE_ROOT, assigned.tag);
+
+  // Non-vacuity: the same span whose note names both steps ships the session
+  // whole, so the empty answers below are the silence's doing.
+  const named = await plantRecord(assigned, note, ["A-STEP", "ANOTHER-STEP"]);
+  expect(
+    build.shipped?.(shipContext(assigned, ["src/index.ts", note], steps)),
+  ).toEqual([assigned.tag, "A-STEP", "ANOTHER-STEP"]);
+  await rm(named);
+
+  // A commit with no record at all — the shape that shipped the whole session
+  // before a step could be named one at a time.
+  expect(
+    build.shipped?.(shipContext(assigned, ["src/index.ts"], steps)),
+  ).toEqual([]);
+
+  // And a record that says plenty and names no step: shipping by default here
+  // would delete steps nobody did.
+  const at = join(shipContext(assigned, []).worktreePath, note);
+  await mkdir(join(at, ".."), { recursive: true });
+  await writeFile(at, "# what I saw\n\nThe gate reads the queue twice.\n");
+  expect(
+    build.shipped?.(shipContext(assigned, ["src/index.ts", note], steps)),
+  ).toEqual([]);
+  await rm(at);
+});
+
+it("a park on a step-bearing entry ships nothing, whatever steps its note names", async () => {
+  const build = phaseNamed(chainFor(), BUILD_PHASE);
+  const assigned = entry("SOME-ENTRY");
+  const steps = stepsOf(assigned);
+  const park = parkedNotePath(STATE_ROOT, assigned.tag);
+
+  // Non-vacuity: the entry really carries steps, and the same two tags ship
+  // when a finishing commit names them — so the empty answer below is the
+  // park's doing over a set that can be shipped.
+  expect(steps.length).toBeGreaterThan(0);
+  const finishing = await plantRecord(
+    assigned,
+    notePath(STATE_ROOT, assigned.tag),
+    ["A-STEP", "ANOTHER-STEP"],
+  );
+  expect(
+    build.shipped?.(
+      shipContext(assigned, [notePath(STATE_ROOT, assigned.tag)], steps),
+    ),
+  ).toEqual([assigned.tag, "A-STEP", "ANOTHER-STEP"]);
+  await rm(finishing);
+
+  // The refusal, with its note listing every step the entry has: nothing of a
+  // refused entry leaves the queue, and a park is not a channel for shipping
+  // part of it.
+  const onDisk = await plantRecord(assigned, park, ["A-STEP", "ANOTHER-STEP"]);
+  expect(await readFile(onDisk, "utf8")).toContain("Finished: A-STEP");
+  expect(build.shipped?.(shipContext(assigned, [park], steps))).toEqual([]);
+  await rm(onDisk);
+});
+
+it("a finishing commit on a work entry with no steps ships that entry", () => {
+  const build = phaseNamed(chainFor(), BUILD_PHASE);
+  const assigned = entry("SOME-ENTRY");
+
+  // The entry a producer never decomposed, which every flat queue's is: there
+  // is nothing finer to name, so the commit's own landing is the declaration.
+  const steps: PendingEntry[] = [];
+  expect(steps).toEqual([]);
+  expect(build.shipped?.(shipContext(assigned, ["src/index.ts"], steps))).toEqual(
+    [assigned.tag],
+  );
+  // And with its note to plan beside the work, which names no step because the
+  // entry carries none.
+  expect(
+    build.shipped?.(
+      shipContext(
+        assigned,
+        ["src/index.ts", notePath(STATE_ROOT, assigned.tag)],
+        steps,
+      ),
+    ),
+  ).toEqual([assigned.tag]);
 });
 
 it("a commit carrying a continuing note keeps its entry in the queue", async () => {

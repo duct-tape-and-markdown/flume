@@ -70,7 +70,11 @@ import {
   promptPath,
   sharedPromptArgs,
 } from "./prompts.js";
-import { putDownPredicate, type PutDownPredicate } from "./putDown.js";
+import {
+  finishedSteps,
+  putDownPredicate,
+  type PutDownPredicate,
+} from "./putDown.js";
 import type { PlanSliceWindow } from "./sliceWindow.js";
 import { planSliceWindows } from "./windows.js";
 
@@ -378,21 +382,40 @@ export function harnessChain(options: HarnessChainOptions): Chain {
     // entry in the queue with its span on the trunk; everything else finished
     // the entry it was handed.
     //
-    // All-or-nothing over the span: a finishing tick ships the entry and every
-    // step of it, and a put-down ships none. The package tells its build
-    // session how to say it put the whole thing down and gives it no way to
-    // say which steps it finished, so a partial list would be the engine's
-    // surface read for a declaration no prompt here asks for
+    // **An entry with no steps is all-or-nothing**, which is every entry a
+    // producer never decomposed: there is nothing finer for a session to
+    // finish, so a finishing commit ships it and a put-down ships nothing.
+    //
+    // **An entry with steps is told which of them are done**, never assumed
+    // (`spec/harness.md`, *A tick puts work down*). The session names them in
+    // the record it writes, this ships exactly those, and the `work` entry
+    // goes with its last one. A commit naming none ships nothing: shipping by
+    // default would delete steps nobody did, and the step the session
+    // genuinely finished and did not declare costs one tick, where a step
+    // deleted undone costs the work itself
     // (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
-    shipped: ({ entry, steps, touchedPaths, worktreePath }) =>
+    //
+    // The entry rides only a *finishing* commit's list. A continuation that
+    // named every step said two things — the steps are done, the entry is not
+    // — and the reading that keeps the work in front of the next tick is the
+    // safe one, as it is for a tick that wrote two notes (`putDown.ts`).
+    shipped: ({ entry, steps, touchedPaths, worktreePath }) => {
       // The tick's own worktree, still on disk while the merge loop
       // classifies the entry and standing at the commit that was
       // cherry-picked (`ShipContext`, `src/Phase.ts`) — so what the span's
       // tree holds is read there rather than out of trunk, which by then
       // carries every sibling in the wave as well.
-      putDown(entry, { touched: touchedPaths, tree: worktreePath }) === undefined
-        ? [entry.tag, ...steps.map((step) => step.tag)]
-        : [],
+      const span = { touched: touchedPaths, tree: worktreePath };
+      const kind = putDown(entry, span);
+      if (steps.length === 0) return kind === undefined ? [entry.tag] : [];
+      const named = new Set(finishedSteps(stateRoot, entry, span, kind));
+      const finished = steps
+        .filter((step) => named.has(step.tag))
+        .map((step) => step.tag);
+      return kind === undefined && finished.length === steps.length
+        ? [entry.tag, ...finished]
+        : finished;
+    },
     handoff: handoffFor(BUILD_PHASE),
     ...(setup ? { setupWorktree: setup } : {}),
   };

@@ -863,6 +863,71 @@ it("the records gate admits a build commit writing its entry's continuing note",
   expect(refused.details).toContain(notePath(STATE_ROOT, "MINE"));
 });
 
+it("the records gate refuses a note naming a step tag the entry does not carry", async () => {
+  const work = queueEntry("MINE");
+  const step = queueEntry("MINE-STEP", { kind: "step", parent: "MINE" });
+  await writeQueue([work, step]);
+
+  // Non-vacuity: a note naming the step the queue really holds beneath this
+  // entry is admitted, and the gate says so — so the refusal below is the tag's
+  // doing and not a gate that reds on any `Finished:` line at all.
+  await write(notePath(STATE_ROOT, "MINE"), "# done\n\nFinished: MINE-STEP\n");
+  const admitted = await records(commitAll("build: finish the step"), {
+    phaseName: "build",
+    entry: work,
+  });
+  expect(admitted).toMatchObject({ ok: true });
+  expect(admitted.message).toContain("MINE-STEP");
+
+  // The misspelling: one character off the step the entry carries, which the
+  // ship predicate would answer by shipping nothing at all.
+  await write(notePath(STATE_ROOT, "MINE"), "# done\n\nFinished: MINE-STEPS\n");
+  const refused = await records(commitAll("build: name a step that is not one"), {
+    phaseName: "build",
+    entry: work,
+  });
+
+  expect(refused.ok).toBe(false);
+  // Naming the record, the tag it named, and the steps the entry has — the
+  // three facts a tick needs to fix the line.
+  expect(refused.details).toContain(notePath(STATE_ROOT, "MINE"));
+  expect(refused.details).toContain("MINE-STEPS");
+  expect(refused.details).toContain("MINE-STEP");
+});
+
+it("the records gate refuses a continuing note naming a step of another entry", async () => {
+  const work = queueEntry("MINE");
+  const step = queueEntry("MINE-STEP", { kind: "step", parent: "MINE" });
+  const sibling = queueEntry("YOURS");
+  const theirs = queueEntry("YOURS-STEP", { kind: "step", parent: "YOURS" });
+  await writeQueue([work, step, sibling, theirs]);
+
+  // Non-vacuity: the queue genuinely holds the sibling's step, so the refusal
+  // below is "not this entry's" and not "no such entry anywhere".
+  await write(
+    continuingNotePath(STATE_ROOT, "MINE"),
+    "# a segment\n\nFinished: MINE-STEP\n",
+  );
+  const admitted = await records(commitAll("build: put the rest down"), {
+    phaseName: "build",
+    entry: work,
+  });
+  expect(admitted).toMatchObject({ ok: true });
+
+  await write(
+    continuingNotePath(STATE_ROOT, "MINE"),
+    "# a segment\n\nFinished: YOURS-STEP\n",
+  );
+  const refused = await records(commitAll("build: claim a sibling's step"), {
+    phaseName: "build",
+    entry: work,
+  });
+
+  expect(refused.ok).toBe(false);
+  expect(refused.details).toContain("YOURS-STEP");
+  expect(refused.details).toContain("no step of MINE");
+});
+
 it("the records gate refuses a record whose first line is not a title", async () => {
   await write(notePath(STATE_ROOT, "MINE"), "what I saw, untitled\n");
   const refused = await records(commitAll("build: an untitled note"), {

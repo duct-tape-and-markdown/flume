@@ -63,6 +63,7 @@ import type { Gate, GateContext, GateResult } from "../src/Gate.js";
 import type { GitStatusRecord } from "../src/git.js";
 import { matchesAny } from "../src/paths.js";
 import type { GatedQueue, GatedQueueContext } from "../src/pendingLedger.js";
+import { descendantsOf } from "../src/PendingSchema.js";
 import type {
   EntryExtension,
   ParseResult,
@@ -90,7 +91,7 @@ import {
   recordOrNoteGlobs,
 } from "./layout.js";
 import { JUDGED_SLICES, judgeSliceState } from "./planState.js";
-import type { PutDownPredicate } from "./putDown.js";
+import { namedSteps, type PutDownPredicate } from "./putDown.js";
 
 /**
  * The engine values the package's gates run through, named by the shape they
@@ -513,8 +514,30 @@ function goalRankGate(
  * refusal reaches is the chain's put-down predicate's to say and not a rule
  * re-spelled here: a tick that wrote a continuation, or parked, said so, and
  * the note it left is addressed to the tick that comes after it.
+ *
+ * **A record names only steps its own entry carries.** A session on a
+ * step-bearing entry says which steps it finished in the record it writes, and
+ * the ship predicate removes exactly those (`chain.ts`); a tag the entry does
+ * not carry is a misspelling, and the predicate's answer to one is to ship
+ * nothing — silently, and read from the outside as a session that finished
+ * nothing. So it is refused here instead, naming the tag and the steps the
+ * entry has (`spec/harness.md`, *A tick puts work down*). Read through the
+ * same parse the predicate reads (`namedSteps`, `putDown.ts`): a second
+ * spelling beside this gate would admit exactly the lines the ship cannot see.
+ *
+ * The steps themselves come off the queue at the gated commit, through the
+ * engine's own listing read and its own walk over `parent` links — build's
+ * fence admits no entry file, so that listing is the one the wave selected
+ * over. A queue that will not read is refused rather than judged as an entry
+ * with no steps, which would pass every misspelling (*Loud or nothing*). The
+ * read is taken only when a record names something, so the ordinary build
+ * commit pays nothing for it.
  */
-function recordsGate(engine: GateEngine, putDown: PutDownPredicate): Gate {
+function recordsGate(
+  engine: GateEngine,
+  putDown: PutDownPredicate,
+  extension: EntryExtension,
+): Gate {
   return {
     name: "records",
     when: "afterCommit",
@@ -572,6 +595,8 @@ function recordsGate(engine: GateEngine, putDown: PutDownPredicate): Gate {
       const own =
         isBuild && entry ? notePaths(stateRoot, entry.tag) : undefined;
       const problems: string[] = [];
+      /** Each step tag a record this commit wrote names, with the record. */
+      const named: { path: string; tag: string }[] = [];
       let written = 0;
       for (const path of touched) {
         if (isBuild && !own?.includes(path)) {
@@ -596,6 +621,10 @@ function recordsGate(engine: GateEngine, putDown: PutDownPredicate): Gate {
         if (!/^# \S/.test(text)) {
           problems.push(`${path}: first line is not a "# title"`);
         }
+        // Every kind, the park included: a park ships nothing whatever its
+        // note lists, but a tag no entry carries is a misspelling wherever it
+        // is written, and the tick that wrote it is the one that can fix it.
+        for (const tag of namedSteps(text)) named.push({ path, tag });
       }
       // Read at the commit like every other record here: standing means the
       // commit carries the note, never that the worktree happens to.
@@ -612,6 +641,20 @@ function recordsGate(engine: GateEngine, putDown: PutDownPredicate): Gate {
         );
       }
 
+      if (named.length > 0 && entry !== undefined) {
+        const carries = await stepTagsAt(ctx, engine, extension, entry.tag);
+        if (typeof carries === "string") return refuse(carries, []);
+        for (const { path, tag } of named) {
+          if (carries.includes(tag)) continue;
+          problems.push(
+            `${path}: names \`${tag}\` as finished, which is no step of ${entry.tag}` +
+              (carries.length === 0
+                ? ` — the entry carries no steps, so it names none`
+                : ` — it carries ${carries.join(", ")}`),
+          );
+        }
+      }
+
       if (problems.length > 0) {
         return refuse(`${problems.length} record problem(s)`, problems);
       }
@@ -619,12 +662,47 @@ function recordsGate(engine: GateEngine, putDown: PutDownPredicate): Gate {
         finishing === undefined
           ? ""
           : `, no continuing note standing at ${short(ctx.commitSha)}`;
+      const steps =
+        named.length === 0
+          ? ""
+          : `, ${named.length} step(s) named finished: ${named.map((n) => n.tag).join(", ")}`;
       return {
         ok: true,
-        message: `${touched.length} record(s) touched, ${written} written${carried}`,
+        message: `${touched.length} record(s) touched, ${written} written${carried}${steps}`,
       };
     },
   };
+}
+
+/**
+ * The tags of every step one entry carries, as the queue at the gated commit
+ * holds it — or a refusal naming why the queue could not be read.
+ *
+ * The listing read and the descent are both the engine's: `readGatedQueue` is
+ * the one offset a gate reads the ledger through, and `descendantsOf` is the
+ * same walk the dispatcher resolves a slot's steps with, so what this gate
+ * holds a record to is the set the ship predicate is handed
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported, never
+ * rediscovered*).
+ *
+ * The consumer's extension rides the parse for the reason every other queue
+ * read here takes it: a queue carrying a declared field is validated against
+ * it rather than refused as unknown, and an entry refused is an entry whose
+ * steps go missing from this set.
+ */
+async function stepTagsAt(
+  ctx: GateContext,
+  engine: GateEngine,
+  extension: EntryExtension,
+  tag: string,
+): Promise<string[] | string> {
+  const queue = await engine.readGatedQueue(ctx);
+  if (queue.files === null)
+    return `${queue.rel} missing at ${short(ctx.commitSha)}, so the steps a record names cannot be checked against the entry`;
+  const parsed = engine.parsePendingQueue(queue.files, extension);
+  if (!parsed.ok)
+    return `${queue.rel} does not parse at ${short(ctx.commitSha)}, so the steps a record names cannot be checked against the entry`;
+  return descendantsOf(parsed.entries, tag).map((step) => step.tag);
 }
 
 /**
@@ -940,7 +1018,7 @@ export function harnessGates(options: HarnessGatesOptions): Gate[] {
       : {}),
   };
   return [
-    recordsGate(engine, putDown),
+    recordsGate(engine, putDown, queue.extension),
     cleanTreeGate(phase.writablePaths, engine),
     engine.pendingGate(queue),
     perGate(declaration, engine),

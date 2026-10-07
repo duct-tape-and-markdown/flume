@@ -667,6 +667,73 @@ it("a build prompt for an entry with no standing continuing note renders no note
 }, SPAWN_BUDGET_MS);
 
 /**
+ * The rendered prompt's own region for the steps — what sits between the entry
+ * block and the cited section.
+ *
+ * Read as its own region for the reason the continuation is: the artifact
+ * entire quotes a spec section and five commit subjects, so a negative over it
+ * turns on whatever those happen to say
+ * (`.claude/rules/posture-sweep.md`, *Standing lenses*).
+ */
+function stepsRegion(rendered: string): string {
+  const entryEnd = rendered.indexOf("</entry>");
+  const why = rendered.indexOf("# THE WHY");
+  expect(entryEnd, "the render carries no <entry> block").toBeGreaterThanOrEqual(0);
+  expect(why, "the render carries no why section").toBeGreaterThan(entryEnd);
+  return rendered.slice(entryEnd + "</entry>".length, why);
+}
+
+/** A step of `parent`, as a producer files one beneath a `work` entry. */
+const step = (tag: string, parent: string): PendingEntry => ({
+  ...entry({ tag }),
+  kind: "step",
+  parent,
+});
+
+it("the rendered build prompt names the step tags the assigned entry carries", async () => {
+  const assigned = entry({ tag: "HARNESS-BUILD-STEP-TAGS" });
+  const steps = [
+    step("HARNESS-BUILD-STEP-ONE", assigned.tag),
+    step("HARNESS-BUILD-STEP-TWO", assigned.tag),
+  ];
+  const ctx = { ...(await seedTick(assigned)), assignedSteps: steps };
+
+  // Non-vacuity: the entry's own JSON carries none of these tags, so what the
+  // render names below came from the steps the engine reported and nowhere else.
+  const entryJson = buildPromptArgs({ declaration: declare(), ctx }).ENTRY_JSON!;
+  for (const carried of steps) expect(entryJson).not.toContain(carried.tag);
+
+  const region = stepsRegion(await renderOver(ctx));
+
+  // Every tag, in the block the prompt tells the agent to read them from...
+  expect(region).toContain("<steps>");
+  for (const carried of steps) expect(region).toContain(carried.tag);
+  // ...and the line it tells the agent to write them back on, naming both
+  // records a session may name them in.
+  expect(region).toContain(
+    `Finished: ${steps.map((carried) => carried.tag).join(", ")}`,
+  );
+  expect(region).toContain(notePath(".flume", assigned.tag));
+  expect(region).toContain(continuingNotePath(".flume", assigned.tag));
+}, SPAWN_BUDGET_MS);
+
+it("a build prompt for an entry with no steps renders no steps block", async () => {
+  const assigned = entry({ tag: "HARNESS-BUILD-NO-STEPS" });
+  // The entry a producer never decomposed, which every flat queue's is — the
+  // engine reports the empty listing, and there is nothing to declare.
+  const ctx = { ...(await seedTick(assigned)), assignedSteps: [] };
+
+  const rendered = await renderOver(ctx);
+
+  // Not an empty block: no bytes at all where one would sit, for the reason an
+  // absent continuation renders none.
+  expect(stepsRegion(rendered).trim()).toBe("");
+  // And the prompt around it rendered — the region is empty, the artifact is
+  // not.
+  expect(rendered).toContain(`"tag": "${assigned.tag}"`);
+}, SPAWN_BUDGET_MS);
+
+/**
  * A phase the renderer can read, carrying the prompt under test and the data
  * keys the package's own build phase declares (`harness/chain.ts`). Declared
  * from the producers' own lists rather than spelled here: a phase configured

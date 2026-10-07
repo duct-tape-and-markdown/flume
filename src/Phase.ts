@@ -246,6 +246,23 @@ export interface TickContext {
   flumeDir: string;
   /** Pending entry assigned to this tick (fanout phases only). */
   assignedEntry?: PendingEntry;
+  /**
+   * {@link assignedEntry}'s steps — every descendant of it in the queue the
+   * selection that pulled it read (`spec/pending.md`, *The queue is a
+   * forest*), the same listing {@link ShipContext.steps} carries for the span
+   * this tick lands and the same one the write guard scopes the fence from.
+   *
+   * Reported rather than left to a hook, because a `promptArgs` naming the
+   * steps a session may finish has no other source: a fanout tick carries its
+   * assignment and no queue, so a chain that wanted them would be reading the
+   * ledger directory the engine already read
+   * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+   * never rediscovered*).
+   *
+   * Travels with `assignedEntry`: absent on a singleton tick, and `[]` for an
+   * entry no producer decomposed, which every queue of flat entries is.
+   */
+  assignedSteps?: readonly PendingEntry[];
   /** All pending entries (singleton phases that read the plan). */
   pending?: readonly PendingEntry[];
   /**

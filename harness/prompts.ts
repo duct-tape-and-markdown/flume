@@ -50,8 +50,7 @@
  * of it, which is `sliceWindow.ts`'s subject and its windows'.
  */
 
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -59,8 +58,8 @@ import {
   type EntryExtension,
   type PendingEntry,
 } from "../src/PendingSchema.js";
-import { isDirectoryOrAbsentUnder } from "../src/fsProbe.js";
-import { namespacedJoin, resolvePendingDir } from "../src/paths.js";
+import { readFileLoudUnder } from "../src/fsProbe.js";
+import { resolvePendingDir } from "../src/paths.js";
 import { NO_COMMIT_MODES } from "../src/Prompt.js";
 
 import { resolveCiteSync } from "./citeResolver.js";
@@ -81,6 +80,7 @@ import {
   recordDirs,
 } from "./layout.js";
 import { PLAN_STATE_SHAPES } from "./planState.js";
+import { FINISHED_STEPS_LEAD } from "./putDown.js";
 import { renderQuestions } from "./questions.js";
 import { RECORD_MAX_BYTES } from "./records.js";
 
@@ -627,12 +627,27 @@ export interface BuildTickContext {
   readonly stateRootRel?: string | undefined;
   /** The entry this tick was handed — `TickContext.assignedEntry`. */
   readonly assignedEntry?: PendingEntry | undefined;
+  /**
+   * That entry's steps as the engine resolved them — `TickContext.assignedSteps`,
+   * the same listing the span's ship is handed. Read rather than walked: a
+   * fanout tick carries its assignment and no queue, so the steps a session may
+   * finish are knowable here only because the engine reports them
+   * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+   * never rediscovered*).
+   *
+   * Absent and empty mean the same thing to the block below — an entry with no
+   * steps, which every flat queue's entry is — because that is what each
+   * truthfully says: a hand-built context that named none, and an entry no
+   * producer decomposed.
+   */
+  readonly assignedSteps?: readonly PendingEntry[] | undefined;
 }
 
 /**
  * Every key {@link buildPromptArgs} returns — the entry as the queue holds
  * it, its cite's path, section and section text, the note paths, one per
- * kind (`layout.ts`), and the continuing note standing at one of them.
+ * kind (`layout.ts`), the continuing note standing at one of them, and the
+ * steps the entry carries.
  *
  * Data, every one of them, and the three that most need saying so: an entry's
  * own prose, a prior tick's note and a cited spec section are content the
@@ -650,6 +665,7 @@ export const BUILD_PROMPT_DATA_KEYS = [
   "PARK_NOTE_PATH",
   "CONTINUING_NOTE_PATH",
   "CONTINUING_NOTE",
+  "STEPS",
 ] as const;
 
 /** One argument build's prompt is rendered with for a tick. */
@@ -731,7 +747,55 @@ export function buildPromptArgs(
     PARK_NOTE_PATH: parkedNotePath(noteRoot(ctx), entry.tag),
     CONTINUING_NOTE_PATH: continuing,
     CONTINUING_NOTE: continuingBlock(continuing, read(continuing)),
+    STEPS: stepsBlock(ctx.assignedSteps ?? [], {
+      note: notePath(noteRoot(ctx), entry.tag),
+      continuing,
+    }),
   };
+}
+
+/**
+ * The steps the assigned entry carries, as the block build's prompt carries
+ * them — and no bytes at all for an entry with none.
+ *
+ * **A step is told finished, never assumed** (`spec/harness.md`, *A tick puts
+ * work down*), so the block does two things at once: it names the tags, which
+ * the entry's own JSON does not carry, and it states the line the session
+ * writes to claim them. Both or neither — a prompt naming the tags without the
+ * line leaves the session to invent a spelling nothing reads, and the line
+ * without the tags leaves it guessing at names the records gate refuses.
+ *
+ * Nothing renders for a flat entry, for the reason {@link continuingBlock}
+ * renders nothing for an absent note: a session with no steps has no
+ * declaration to make, and a block saying so is a section it has to read and
+ * rule out.
+ */
+function stepsBlock(
+  steps: readonly PendingEntry[],
+  records: { note: string; continuing: string },
+): string {
+  if (steps.length === 0) return "";
+  const tags = steps.map((step) => step.tag);
+  return [
+    `# THE STEPS THIS ENTRY CARRIES`,
+    "",
+    `<steps>`,
+    ...tags,
+    `</steps>`,
+    "",
+    `This entry was decomposed, and a step is **told finished, never assumed**:`,
+    `name the ones you finished on a line of its own in the record you write —`,
+    `\`${records.continuing}\` while steps remain, \`${records.note}\` when none`,
+    `do:`,
+    "",
+    `    ${FINISHED_STEPS_LEAD}: ${tags.join(", ")}`,
+    "",
+    `Nothing else on that line: every token on it is read as a step tag, and a`,
+    `tag this entry does not carry reverts the commit naming it. The steps you`,
+    `name leave the queue, and the entry leaves with its last one. A commit`,
+    `naming none ships nothing — so a step you finished and did not name is a`,
+    `step the next tick does again.`,
+  ].join("\n");
 }
 
 /**
@@ -771,9 +835,8 @@ function continuingBlock(path: string, text: string | null): string {
 }
 
 /**
- * The subject the descent below names when it refuses — one spelling for
- * both artifacts read through this reader, since what is obstructed is the
- * tick's tree and the refusal already carries the rung itself.
+ * The subject a refused read names — one spelling for both artifacts read
+ * through this reader, since what is obstructed is the tick's tree.
  */
 const TREE_SUBJECT = "the tick's working tree";
 
@@ -783,38 +846,13 @@ const TREE_SUBJECT = "the tick's working tree";
  * gives a gate, so one resolver serves both the cite and the standing
  * continuation.
  *
- * Every other read failure travels out: a cited path that is a directory, or
- * one this process may not read, is a fault at the reader rather than a cite
- * to be refused for a reason it did not commit (*Loud or nothing*).
- *
- * `null` is proven from the **path**, never read off the errno the read
- * raised. A plain file anywhere above the artifact makes the artifact
- * beneath it `ENOENT` on win32 while posix raises `ENOTDIR`
- * (`.claude/rules/platform-facts.md`, *win32 reports a path through a
- * non-directory as not found*), so an errno-keyed silent arm reads an
- * obstructed tree as a tree holding nothing on exactly one host — which
- * renders a continuation the prior tick did leave as no block at all, and
- * hands the next tick an entry whose landed segment is described nowhere.
- * Hence the descent from `cwd` down to the directory the artifact sits in,
- * every rung asserted a directory before the next is probed
- * ({@link isDirectoryOrAbsentUnder}, `src/fsProbe.ts`, which composes those
- * rungs for every reader running this walk), so both hosts answer alike.
- * `cwd` is where the descent starts: the dispatcher provisioned it, and what
- * stands above it is not this reader's to answer for. The read past it keeps
- * the one ENOENT arm the leaf still needs — its directory is proven by then,
- * so that errno is the artifact's own.
+ * What the `null` is proven from, and why a bare errno cannot prove it, is the
+ * reader's (`readFileLoudUnder`, `src/fsProbe.ts`). What rides here is the
+ * `cwd`: the dispatcher provisioned it, so it is where the descent starts and
+ * what stands above it is not this reader's to answer for.
  */
 function inTree(cwd: string): (path: string) => string | null {
-  return (path) => {
-    const full = join(cwd, path);
-    if (!isDirectoryOrAbsentUnder(TREE_SUBJECT, cwd, dirname(full))) return null;
-    try {
-      return readFileSync(namespacedJoin(full), "utf8");
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-      throw error;
-    }
-  };
+  return (path) => readFileLoudUnder(TREE_SUBJECT, cwd, join(cwd, path));
 }
 
 /**

@@ -8,7 +8,7 @@
  * cycle.
  */
 
-import { statSync, type Stats } from "node:fs";
+import { readFileSync, statSync, type Stats } from "node:fs";
 import {
   dirname,
   isAbsolute,
@@ -209,4 +209,46 @@ export function existsLoudUnder(
 ): boolean {
   if (!isDirectoryOrAbsentUnder(what, root, dirname(path))) return false;
   return statLoud(toNamespacedPath(path)) !== undefined;
+}
+
+/**
+ * `path`'s bytes as `utf8`, over a proven descent from `root` down to the
+ * directory holding it: the text when the file is there, `null` only when it
+ * — or one of the directories between `root` and it — is absent, and a throw
+ * for everything else, the refusal {@link isDirectoryOrAbsent} names.
+ *
+ * {@link existsLoudUnder}'s reading face, for a reader whose silent arm is
+ * "nothing written yet": a prior tick's note, a record a predicate classifies
+ * by its contents. The two answers are the two an at-ref reader gives a gate
+ * (`GateEngine.git.readFileAtRef`, `src/Gate.ts`), so a reader that must agree
+ * with one over a worktree instead of a commit asks this and compares like for
+ * like.
+ *
+ * The descent is why the `null` is provable rather than guessed: a plain file
+ * at any ancestor answers the leaf's own read `ENOENT` on win32
+ * (`.claude/rules/platform-facts.md`, *win32 reports a path through a
+ * non-directory as not found*), so a reader keyed off the errno alone reads an
+ * obstructed tree as a tree holding nothing on exactly one host. Composed here
+ * rather than at each reader, which is one forgotten rung from reading an
+ * unproven ancestor as silence again (`.claude/rules/engineering.md`, *The fix
+ * lands at the mechanism*). Past the descent the leaf's own `ENOENT` is its
+ * own, since its directory is proven by then.
+ *
+ * Bounds and arguments are {@link existsLoudUnder}'s, whole: `what` names the
+ * subject a refusal reports, `path` is a file beneath `root`, and a `path`
+ * that does not sit under `root` — `root` itself included — is refused rather
+ * than answered.
+ */
+export function readFileLoudUnder(
+  what: string,
+  root: string,
+  path: string,
+): string | null {
+  if (!isDirectoryOrAbsentUnder(what, root, dirname(path))) return null;
+  try {
+    return readFileSync(toNamespacedPath(path), "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
+  }
 }
