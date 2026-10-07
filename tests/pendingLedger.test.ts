@@ -933,3 +933,244 @@ it("a queue read whose tip moves between the listing and the file reads returns 
     await repo.cleanup();
   }
 });
+
+/**
+ * And the removal the forest owes beside a ship: a `group` leaves the queue in
+ * the ledger commit that ships its last descendant (`spec/pending.md`, *The
+ * queue is a forest*). A goal is not a thing a build session picks, so no
+ * build commit ever retires one — the rewrite that retires what shipped is the
+ * only writer that can, and it is the same rewrite, in the same commit, or an
+ * organizer outlives the work it was organizing.
+ *
+ * Driven over a real repository on a declared `queue/ledger`, like every other
+ * rewrite case in this file: "in the same commit" is a claim about a sha, and a
+ * fixture that never commits cannot make it. Each case asserts the **whole**
+ * queue the rewrite left behind rather than the one file its title is about —
+ * a removal that also took a sibling's file would pass a narrower read
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ */
+
+/** One queued entry in the shape the rewrite's strict read admits. */
+function forestEntry(
+  tag: string,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    tag,
+    gate: { kind: "open" },
+    files: { new: [], edit: [], retire: [] },
+    ...extra,
+  };
+}
+
+/** Entry file names out of git's listing of the declared ledger directory. */
+function ledgerNames(raw: string): string[] {
+  return raw
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith(FOREST_LEDGER))
+    .map((line) => line.slice(FOREST_LEDGER.length + 1))
+    .sort();
+}
+
+const FOREST_LEDGER = "queue/ledger";
+
+/**
+ * A real repository carrying a committed forest under a declared
+ * `queue/ledger`, the context the rewrite reads it through, and the two git
+ * reads every case below judges by: the queue as the tip holds it now, and the
+ * entry files one commit touched.
+ */
+async function seedForest(
+  prefix: string,
+  entries: readonly Record<string, unknown>[],
+): Promise<{
+  repo: { dir: string; cleanup: () => Promise<void> };
+  ctx: PendingLedgerContext;
+  queued: () => Promise<string[]>;
+  touched: (sha: string) => Promise<string[]>;
+  head: () => Promise<string>;
+}> {
+  const repo = await makeScratchRepo(prefix, "main");
+  const pendingDir = join(repo.dir, ...FOREST_LEDGER.split("/"));
+  await mkdir(pendingDir, { recursive: true });
+  for (const entry of entries) {
+    await writeFile(
+      join(pendingDir, entryFileName(entry.tag as string)),
+      JSON.stringify(entry, null, 2) + "\n",
+      "utf8",
+    );
+  }
+  await exec("git", ["add", "."], { cwd: repo.dir });
+  await exec("git", ["commit", "-q", "-m", "a queued forest"], {
+    cwd: repo.dir,
+  });
+  return {
+    repo,
+    ctx: {
+      repoRoot: repo.dir,
+      flumeDir: repo.dir,
+      pendingDir,
+      entryExtension: undefined,
+      log: silent,
+    },
+    queued: async () =>
+      ledgerNames(
+        await gitOut(repo.dir, [
+          "ls-tree",
+          "--name-only",
+          "HEAD",
+          `${FOREST_LEDGER}/`,
+        ]),
+      ),
+    touched: async (sha: string) =>
+      ledgerNames(
+        await gitOut(repo.dir, ["show", "--name-only", "--format=", sha]),
+      ),
+    head: async () => (await gitOut(repo.dir, ["rev-parse", "HEAD"])).trim(),
+  };
+}
+
+it("the ledger commit that ships a group's last descendant removes the group's file", async () => {
+  const forest = await seedForest("flume-ledger-group-last-", [
+    forestEntry("THE-GOAL", { kind: "group" }),
+    forestEntry("ITS-LAST-WORK", { parent: "THE-GOAL" }),
+  ]);
+  try {
+    // Non-vacuity: the group and its descendant are both in the queue this
+    // rewrite reads, so what the assertions below read is a removal rather
+    // than a file that was never there.
+    expect(await forest.queued()).toEqual([
+      entryFileName("ITS-LAST-WORK"),
+      entryFileName("THE-GOAL"),
+    ]);
+    const before = await forest.head();
+
+    const landed = await commitPendingUpdate(
+      forest.ctx,
+      ["ITS-LAST-WORK"],
+      [],
+      [],
+    );
+
+    expect(landed.exit).toBe("committed");
+    // Both files leave in the commit the rewrite reported — the shipped work
+    // entry's and the goal it emptied, named by one sha.
+    expect(await forest.touched(landed.commitSha!)).toEqual([
+      entryFileName("ITS-LAST-WORK"),
+      entryFileName("THE-GOAL"),
+    ]);
+    expect(await forest.queued()).toEqual([]);
+    // …and that sha is the only commit this rewrite landed: the group's
+    // removal rides the ship commit, never a second one behind it.
+    expect(
+      (
+        await gitOut(forest.repo.dir, ["rev-list", "--count", `${before}..HEAD`])
+      ).trim(),
+    ).toBe("1");
+  } finally {
+    await forest.repo.cleanup();
+  }
+});
+
+it("a group with a descendant still queued stays in the queue", async () => {
+  const forest = await seedForest("flume-ledger-group-stays-", [
+    forestEntry("THE-GOAL", { kind: "group" }),
+    forestEntry("WORK-SHIPPED", { parent: "THE-GOAL" }),
+    forestEntry("WORK-WAITING", { parent: "THE-GOAL" }),
+    forestEntry("EMPTIED-GOAL", { kind: "group" }),
+    forestEntry("WORK-LAST-OF-ITS-GOAL", { parent: "EMPTIED-GOAL" }),
+  ]);
+  try {
+    const seeded = await forest.queued();
+    expect(seeded).toHaveLength(5);
+
+    // Two goals, one ship: the second goal's last descendant goes with it, and
+    // the first goal's does not. The retirement beside it is this case's
+    // non-vacuity — a green here is the rewrite keeping a goal it judged, not
+    // a rewrite that retires no goal at all.
+    const landed = await commitPendingUpdate(
+      forest.ctx,
+      ["WORK-SHIPPED", "WORK-LAST-OF-ITS-GOAL"],
+      [],
+      [],
+    );
+
+    expect(landed.exit).toBe("committed");
+    expect(await forest.queued()).toEqual([
+      entryFileName("THE-GOAL"),
+      entryFileName("WORK-WAITING"),
+    ]);
+  } finally {
+    await forest.repo.cleanup();
+  }
+});
+
+it("a group whose last descendant is itself a group leaves in the same commit", async () => {
+  const forest = await seedForest("flume-ledger-group-cascade-", [
+    forestEntry("THE-GOAL", { kind: "group" }),
+    forestEntry("THE-EPIC", { kind: "group", parent: "THE-GOAL" }),
+    forestEntry("THE-WORK", { parent: "THE-EPIC" }),
+  ]);
+  try {
+    expect(await forest.queued()).toHaveLength(3);
+    const before = await forest.head();
+
+    const landed = await commitPendingUpdate(forest.ctx, ["THE-WORK"], [], []);
+
+    expect(landed.exit).toBe("committed");
+    // The epic empties, and the goal the epic was the last of empties with it:
+    // one commit takes the whole chain, so no organizer is left standing over
+    // nothing and nothing is left orphaned under a parent that is gone.
+    expect(await forest.touched(landed.commitSha!)).toEqual([
+      entryFileName("THE-EPIC"),
+      entryFileName("THE-GOAL"),
+      entryFileName("THE-WORK"),
+    ]);
+    expect(await forest.queued()).toEqual([]);
+    expect(
+      (
+        await gitOut(forest.repo.dir, ["rev-list", "--count", `${before}..HEAD`])
+      ).trim(),
+    ).toBe("1");
+  } finally {
+    await forest.repo.cleanup();
+  }
+});
+
+it("a group left empty by a partial ship of its descendants stays in the queue", async () => {
+  const forest = await seedForest("flume-ledger-group-partial-", [
+    forestEntry("THE-GOAL", { kind: "group" }),
+    forestEntry("THE-WORK", { parent: "THE-GOAL" }),
+    forestEntry("A-STEP-LEFT-BEHIND", { kind: "step", parent: "THE-WORK" }),
+    forestEntry("EMPTIED-GOAL", { kind: "group" }),
+    forestEntry("WORK-LAST-OF-ITS-GOAL", { parent: "EMPTIED-GOAL" }),
+  ]);
+  try {
+    expect(await forest.queued()).toHaveLength(5);
+
+    // The shipped set names the work entry and not its step, so the goal's
+    // only child leaves while a descendant of the goal stays queued. The set
+    // is the caller's to compose — which tags a span ships is the phase's
+    // account — and whatever it names, this rewrite is not the writer that
+    // removes a goal from over an entry still in the queue.
+    const landed = await commitPendingUpdate(
+      forest.ctx,
+      ["THE-WORK", "WORK-LAST-OF-ITS-GOAL"],
+      [],
+      [],
+    );
+
+    expect(landed.exit).toBe("committed");
+    // No child left, a descendant left: the goal stays, and the goal beside it
+    // whose subtree really is gone leaves in the same call — so the stay is a
+    // verdict over the subtree and not a child count.
+    expect(await forest.queued()).toEqual([
+      entryFileName("A-STEP-LEFT-BEHIND"),
+      entryFileName("THE-GOAL"),
+    ]);
+  } finally {
+    await forest.repo.cleanup();
+  }
+});

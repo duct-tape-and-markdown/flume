@@ -2821,6 +2821,16 @@ entry lives in — and your `pendingGate` takes the same cap as
 `maxEntryDepth` so the gate and the dispatcher cannot disagree about which
 queues are readable.
 
+A `group` is also the one kind the engine retires on its own. No session picks
+one, so no build commit can ship it: the ledger commit that ships a `group`'s
+last descendant removes the `group`'s file too, and cascades as far up as the
+emptying reaches — a goal whose last epic just emptied goes out in that same
+commit. A `group` with any descendant still queued stays, and the read is over
+the whole subtree rather than the children: a `group` whose `work` entry
+shipped while a `step` of that entry did not is a `group` with a descendant in
+the queue. So is a `group` nothing has been filed under yet — the kind is
+declared, not read off whether an entry has children, and no ship emptied it.
+
 Each field's declared type is a [Standard Schema](https://standardschema.dev)
 validator (`~standard`) — zod ≥3.24, valibot, and arktype all publish one, and
 a hand-written object works too. The engine never imports or merges your

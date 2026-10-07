@@ -34,6 +34,7 @@ import * as git from "./git.js";
 import type { Logger } from "./log.js";
 import { escapesRoot, gitPath, matchesAny, namespacedJoin } from "./paths.js";
 import {
+  descendantsOf,
   ENTRY_FILE_EXT,
   entryFileName,
   parsePendingQueue,
@@ -578,9 +579,10 @@ export type PendingRewriteResult = {
 );
 
 /**
- * One merge's ledger rewrite: retire what shipped, drain the `blockedBy`
- * gates those tags were holding, record the footprints a failed merge
- * observed, and commit the result.
+ * One merge's ledger rewrite: retire what shipped and every group that set
+ * leaves with nothing below it, drain the `blockedBy` gates those tags were
+ * holding, record the footprints a failed merge observed, and commit the
+ * result.
  *
  * The scope is a **single shipped set** — under fanout, the one entry whose
  * pick is holding the ship lock right now (`drainWaiting`, `src/waveMerge.ts`),
@@ -660,15 +662,20 @@ export async function commitPendingUpdate(
   }
   const rawByFile = new Map(files.map((f) => [f.file, f.raw]));
 
-  // Exactly the shipped entries' files are removed and exactly the entries
-  // this wave changed are rewritten; every other file in the directory is
-  // left byte-identical, which is what makes two producers' commits merge
-  // (`spec/pending.md`, *The ledger is a directory — one entry per file*).
+  // Exactly the shipped entries' files, plus the groups that set empties, are
+  // removed and exactly the entries this wave changed are rewritten; every
+  // other file in the directory is left byte-identical, which is what makes
+  // two producers' commits merge (`spec/pending.md`, *The ledger is a
+  // directory — one entry per file*).
   const removals: string[] = [];
   const writes: { file: string; content: string }[] = [];
+  // A second pass over the same shipped set, never a second commit: a group
+  // leaves in the commit that ships its last descendant, so the removals are
+  // decided together and staged together (`groupsRetiredBy`).
+  const retired = groupsRetiredBy(parsed.entries, shipped);
   for (const entry of parsed.entries) {
     const file = entryFileName(entry.tag);
-    if (shipped.has(entry.tag)) {
+    if (shipped.has(entry.tag) || retired.has(entry.tag)) {
       removals.push(file);
       continue;
     }
@@ -785,6 +792,55 @@ export async function commitPendingUpdate(
     commitSha: sha,
     path: reportedPendingDir(ctx),
   };
+}
+
+/**
+ * The groups this shipped set retires: a `group` leaves the queue in the
+ * ledger commit that ships its last descendant (`spec/pending.md`, *The queue
+ * is a forest*).
+ *
+ * Read over each group's whole subtree ({@link descendantsOf}) rather than its
+ * children, and the two arms that split are the reason. A group is retired
+ * only by **this** set: one with nothing below it is a group a producer has
+ * not decomposed yet, and no ship emptied it, so it stays — the kind is
+ * declared, never read off whether an entry has children (*The entry core*).
+ * And a group whose children are gone while a step of one of them is still
+ * queued has a descendant in the queue, so it stays too: the walk is what
+ * tells that apart from an empty subtree, and taking the children alone would
+ * retire a group out from over its own descendant.
+ *
+ * A retiring group counts as gone for the group above it, so a goal whose last
+ * descendant is an epic leaves in the same commit as the epic. Shallowest-last
+ * is what settles that without a second pass: a descendant group's subtree is
+ * a strict subset of its ancestor's, so ordering by subtree size decides every
+ * group below one before the one above it. The order holds over the acyclic
+ * forest the strict read already proved ({@link parsePendingQueue}) — the only
+ * queue this rewrite derives from.
+ *
+ * Nothing retires over an empty shipped set: the deepest group in any chain
+ * has no descendant to have shipped, so no group above it can read a retired
+ * one. Which is also why no commit here can orphan an entry — a group leaves
+ * only once everything below it is leaving with it.
+ */
+function groupsRetiredBy(
+  entries: readonly PendingEntry[],
+  shipped: ReadonlySet<string>,
+): ReadonlySet<string> {
+  const subtrees = entries
+    .flatMap((entry) =>
+      entry.kind === "group"
+        ? [{ entry, below: descendantsOf(entries, entry.tag) }]
+        : [],
+    )
+    .sort((a, b) => a.below.length - b.below.length);
+  const retired = new Set<string>();
+  for (const { entry, below } of subtrees) {
+    if (below.length === 0) continue;
+    if (below.every((d) => shipped.has(d.tag) || retired.has(d.tag))) {
+      retired.add(entry.tag);
+    }
+  }
+  return retired;
 }
 
 /**

@@ -966,6 +966,52 @@ function queueForestErrors(
   return errors;
 }
 
+/**
+ * Every entry below `tag` in the queue's forest — the whole subtree, not the
+ * direct children: a goal's epics, their work entries, and those entries'
+ * steps all come back from one call.
+ *
+ * The depth is the point. A group leaves the queue with its *last descendant*
+ * and a work entry's footprint is its steps' too (`spec/pending.md`, *The
+ * queue is a forest*), and both read a subtree a child lookup cannot see: a
+ * group whose only child shipped while that child's own step did not is a
+ * group with a descendant still queued, and a child lookup calls it empty.
+ * So the walk is one function with two callers rather than two spellings of
+ * the same descent (`.claude/rules/engineering.md`, *A module is one job*).
+ *
+ * The order the subtree comes back in carries nothing — both callers read it
+ * as a set. What the walk does owe is termination, and the visited set is
+ * what makes that a guarantee rather than an assumption about the caller's
+ * listing: a chain of parents that closes on itself is refused by the
+ * queue-wide read ({@link queueForestErrors}), but this function is handed a
+ * list, not that verdict. A tag naming no entry has no subtree and comes back
+ * empty.
+ */
+export function descendantsOf(
+  entries: readonly PendingEntry[],
+  tag: string,
+): PendingEntry[] {
+  const children = new Map<string, PendingEntry[]>();
+  for (const entry of entries) {
+    if (entry.parent === undefined) continue;
+    const siblings = children.get(entry.parent);
+    if (siblings === undefined) children.set(entry.parent, [entry]);
+    else siblings.push(entry);
+  }
+  const below: PendingEntry[] = [];
+  const seen = new Set<string>([tag]);
+  const frontier = [tag];
+  while (frontier.length > 0) {
+    for (const child of children.get(frontier.pop()!) ?? []) {
+      if (seen.has(child.tag)) continue;
+      seen.add(child.tag);
+      below.push(child);
+      frontier.push(child.tag);
+    }
+  }
+  return below;
+}
+
 // ---------- prompt rendering ----------
 
 /**
