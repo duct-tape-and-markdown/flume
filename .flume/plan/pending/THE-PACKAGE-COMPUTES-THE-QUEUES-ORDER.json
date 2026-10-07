@@ -1,19 +1,41 @@
 {
   "tag": "THE-PACKAGE-COMPUTES-THE-QUEUES-ORDER",
-  "gate": { "kind": "blockedBy", "tags": ["CHAIN-ORDER-IS-THE-QUEUES-SEQUENCING-POLICY", "THE-GOAL-RANK-IS-THE-ONLY-RANK-AND-ONLY-INBOX-SETS-IT"] },
+  "gate": {
+    "kind": "blockedBy",
+    "tags": [
+      "CHAIN-ORDER-IS-THE-QUEUES-SEQUENCING-POLICY"
+    ]
+  },
+  "dependsOnForks": [],
   "priority": 10,
   "files": {
     "new": [
-      { "path": "harness/order.ts", "description": "the package's order over the context the engine hands it" },
-      { "path": "tests/harnessOrder.test.ts", "description": "each key of the order, and the permutation pin" }
+      {
+        "path": "harness/order.ts",
+        "description": "the package's order over the context the engine hands it"
+      },
+      {
+        "path": "tests/harnessOrder.test.ts",
+        "description": "each key of the order, and the permutation pin"
+      }
     ],
     "edit": [
-      { "path": "harness/chain.ts", "description": "the order declared on the chain" },
-      { "path": "docs/CHAIN-AUTHORING.md", "description": "the order the package declares" }
-    ]
+      {
+        "path": "harness/chain.ts",
+        "description": "the order declared on the chain"
+      },
+      {
+        "path": "docs/CHAIN-AUTHORING.md",
+        "description": "the order the package declares"
+      }
+    ],
+    "retire": []
   },
   "summary": "the package declares order: goal work first in the goals' order with everything it is blockedBy, then the longest dependent chain, then oldest filing, then tag",
-  "per": { "path": "spec/harness.md", "section": "The phases" },
+  "per": {
+    "path": "spec/harness.md",
+    "section": "The phases"
+  },
   "acceptance": "the package's order serves work under the first-ranked goal before work under the second, carries each goal's blockedBy upstream with it, then ranks the rest by the longest chain of work waiting behind each, then by filing, then by tag — and returns a permutation of what it was handed",
   "tests": [
     "work under the first-ranked goal is served before work under the second",
@@ -26,5 +48,6 @@
   "pins": [
     "the package's order returns a permutation of the entries it was handed"
   ],
+  "laneTests": [],
   "notes": "The longest-dependent-chain key is critical-path list scheduling over the blockedBy graph the context carries; the graph is the engine's, so the order walks it rather than re-resolving it."
 }
