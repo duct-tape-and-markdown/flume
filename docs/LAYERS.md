@@ -75,6 +75,10 @@ the entry fields the chain factory takes:
 - `worktreesBase` — where this repository's worktrees are planted, a
   function of the roots the engine resolved rather than a path a committed
   declaration could hold;
+- `maxEntryDepth` — how deep a chain of entry parents the queue may carry,
+  one value reaching the prompt that states the bound and the gate that
+  refuses by it, so a producer is never shown a cap its own queue read does
+  not keep;
 - `setup`, `agents`, `supervisor`, and the findings sources the inbox slice
   drains — `ci`, the lanes it reads off the forge, and `friction`, the
   engine's loop-to-owner channel, whose files it routes as it routes the

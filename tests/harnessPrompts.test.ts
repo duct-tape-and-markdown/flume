@@ -150,10 +150,11 @@ function args(
   name: HarnessPhase,
   root: string = stateRoot,
   claimed: readonly string[] = [],
+  decl: Declaration = declaration,
 ): Record<string, string> {
   return {
     ...sharedPromptArgs({
-      declaration,
+      declaration: decl,
       extension: entryExtension(),
       phase: name,
       stateRoot: root,
@@ -187,10 +188,11 @@ async function render(
   root: string = stateRoot,
   claimed: readonly string[] = [],
   perTickArgs: Record<string, string> = {},
+  decl: Declaration = declaration,
 ): Promise<string> {
   const promptFile = promptPath(name);
   const raw = await readFile(promptFile, "utf8");
-  const shared = { ...args(name, root, claimed), ...perTickArgs };
+  const shared = { ...args(name, root, claimed, decl), ...perTickArgs };
   const perTick = Object.fromEntries(
     [...raw.matchAll(PLACEHOLDER)]
       .map((match) => match[1]!)
@@ -1551,58 +1553,113 @@ it("the plan prompt renders the interface field's hint", async () => {
 /**
  * The forest rules a plan tick is shown against the read that enforces them
  * for *this package* (`.claude/rules/engineering.md`, *A seam gate reads what
- * the real writer wrote*). The engine renders the cap it is handed and the
- * package hands it none, which is the same omission its own queue reads make
- * (`harness/gates.ts`) — so the number a plan tick reads in its prompt is
- * read back here and handed to a parse spelled the way those gates spell it.
- * A package that grew a declared cap on one side alone reds.
+ * the real writer wrote*). The engine renders the cap it is handed, and what
+ * the package hands it is whatever the declaration named — none here, so this
+ * case reads the engine's default off the prompt and hands it to a parse
+ * spelled the way the package's own queue reads spell it (`harness/gates.ts`).
+ * The number is read back rather than written down: a cap that moved on one
+ * side alone reds whichever side moved.
  */
+/** A chain of `depth` group entries, each the parent of the next. */
+const chainOfParents = (depth: number): string[] =>
+  Array.from({ length: depth }, (_unused, index) =>
+    JSON.stringify({
+      tag: `GEN-${index + 1}`,
+      gate: { kind: "open" },
+      kind: "group",
+      ...(index === 0 ? {} : { parent: `GEN-${index}` }),
+      files: { new: [], edit: [], retire: [] },
+      summary: "one line",
+      per: { path: "spec/harness.md", section: "The phases" },
+      acceptance: "it turns green",
+    }),
+  );
+
+/**
+ * Whether a forest `depth` parents deep survives a queue read at `cap` —
+ * spelled the way the package's own gates spell theirs, which is the
+ * agreement both cases below are about (`harness/gates.ts`).
+ */
+const readsAtCap = (depth: number, cap?: number): boolean =>
+  parsePendingQueue(
+    chainOfParents(depth).map((raw, index) => ({
+      file: entryFileName(`GEN-${index + 1}`),
+      raw,
+    })),
+    entryExtension(),
+    cap,
+  ).ok;
+
+/** The cap one rendered prompt's `parent` hint states, or a failure naming why. */
+const renderedCap = (rendered: string, name: string): number => {
+  const hint = rendered
+    .split("\n")
+    .find((line) => line.startsWith('  "parent":'));
+  expect({ name, hint: hint !== undefined }).toEqual({ name, hint: true });
+  const stated = /at most (\d+) deep/.exec(hint as string);
+  expect({ name, cap: stated !== null }).toEqual({ name, cap: true });
+  return Number((stated as RegExpExecArray)[1]);
+};
+
 it("the plan prompt states the depth cap the package's own queue read enforces", async () => {
   // Non-vacuity on the roster: a slice list that collapsed to zero would pass
   // the loop below over nothing.
   expect(PLAN_SLICES.length).toBeGreaterThan(0);
 
-  /** A chain of `depth` group entries, each the parent of the next. */
-  const chainOfParents = (depth: number): string[] =>
-    Array.from({ length: depth }, (_unused, index) =>
-      JSON.stringify({
-        tag: `GEN-${index + 1}`,
-        gate: { kind: "open" },
-        kind: "group",
-        ...(index === 0 ? {} : { parent: `GEN-${index}` }),
-        files: { new: [], edit: [], retire: [] },
-        summary: "one line",
-        per: { path: "spec/harness.md", section: "The phases" },
-        acceptance: "it turns green",
-      }),
-    );
-  const read = (depth: number): boolean =>
-    parsePendingQueue(
-      chainOfParents(depth).map((raw, index) => ({
-        file: entryFileName(`GEN-${index + 1}`),
-        raw,
-      })),
-      entryExtension(),
-    ).ok;
-
   for (const name of PLAN_SLICES) {
-    const rendered = await render(name);
-    const hint = rendered
-      .split("\n")
-      .find((line) => line.startsWith('  "parent":'));
-    expect({ name, hint: hint !== undefined }).toEqual({ name, hint: true });
-    const stated = /at most (\d+) deep/.exec(hint as string);
-    expect({ name, cap: stated !== null }).toEqual({ name, cap: true });
-
-    const cap = Number((stated as RegExpExecArray)[1]);
+    const cap = renderedCap(await render(name), name);
     // Exactly where the prompt said: at the cap the queue reads, one deeper
     // it does not. A prompt naming a looser bound would send a plan tick to
     // write a queue its own pending gate refuses whole.
-    expect({ name, cap, at: read(cap), past: read(cap + 1) }).toEqual({
+    expect({
       name,
       cap,
-      at: true,
-      past: false,
-    });
+      at: readsAtCap(cap, undefined),
+      past: readsAtCap(cap + 1, undefined),
+    }).toEqual({ name, cap, at: true, past: false });
+  }
+}, SPAWN_BUDGET_MS);
+
+/**
+ * And the same seam under a declaration that names a cap of its own
+ * (`spec/harness.md`, *What a consumer declares*). The prompt is the side a
+ * producer reads, so what this case proves is that the declared number is
+ * what reaches it — through the real schema render, the real shared args and
+ * the engine's own renderer over the shipped markdown, never a block spelled
+ * here.
+ *
+ * Read against the same prompt under the file's undeclared declaration, so
+ * the number below cannot be the engine's default wearing a declared cap's
+ * name.
+ */
+it("the rendered entry schema states the declared depth cap", async () => {
+  const DECLARED_CAP = 2;
+  const declared = parseDeclaration({
+    specLocus: ["spec/**", "rules/**"],
+    fence: { build: ["src/**"] },
+    runner: () => ({ run: async () => [], runAtBase: async () => [], lanes: [] }),
+    slices: { enabled: [] },
+    maxEntryDepth: DECLARED_CAP,
+  });
+  expect(PLAN_SLICES.length).toBeGreaterThan(0);
+
+  for (const name of PLAN_SLICES) {
+    const rendered = await render(name, stateRoot, [], {}, declared);
+    const cap = renderedCap(rendered, name);
+
+    // The declared number, and not the one the same prompt states when no
+    // declaration carried one.
+    expect({ name, cap }).toEqual({ name, cap: DECLARED_CAP });
+    expect({ name, undeclared: renderedCap(await render(name), name) }).not.toEqual(
+      { name, undeclared: DECLARED_CAP },
+    );
+
+    // And the bound it states is the bound a read at that cap keeps, which is
+    // what the package's own gates were handed off the same field.
+    expect({
+      name,
+      at: readsAtCap(cap, cap),
+      past: readsAtCap(cap + 1, cap),
+    }).toEqual({ name, at: true, past: false });
   }
 }, SPAWN_BUDGET_MS);

@@ -509,6 +509,29 @@ export const DeclarationSchema = strict({
     }),
   ).optional(),
   /**
+   * How deep a chain of `parent` links the queue may carry
+   * (`spec/pending.md`, *The queue is a forest*) — passed through to
+   * `Chain.maxEntryDepth`, and read by the package on its own account: the
+   * schema block every plan prompt renders states this cap, and the queue
+   * parses behind the package's own gates refuse past it.
+   *
+   * Declared here rather than left to the engine field because a package
+   * consumer authors no chain — this module is their whole surface — and
+   * because one value has to reach every side at once. A cap that moved a
+   * gate's parse without moving the rendered forest rules would hand a
+   * producer a bound its own queue read does not keep.
+   *
+   * A positive integer, for the engine's reason at this same load
+   * (`validateCountedDeclarations`, `src/chainLoad.ts`): every entry is at
+   * least a root, so a cap below one admits no entry at all. Spelled here
+   * too, the way the supervisor's counted knobs are, so the refusal names
+   * the field a consumer typed rather than the engine field it became.
+   * Absent, every side takes the parse's own default
+   * (`DEFAULT_MAX_ENTRY_DEPTH`, `src/PendingSchema.ts`) — one value again,
+   * and not one this schema restates.
+   */
+  maxEntryDepth: z.number().int().positive().optional(),
+  /**
    * The engine's supervisor policy, declared here so one file holds the
    * environment. Omitted fields fall through to the engine's own defaults.
    */

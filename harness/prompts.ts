@@ -279,16 +279,20 @@ export function sharedPromptArgs(
      */
     PROTOCOL_LINE: protocolLine(stateRoot),
     /**
-     * The schema, inside the block the prompts carrying it wrap it in.
+     * The schema, inside the block the prompts carrying it wrap it in, under
+     * the forest's depth cap this consumer declared.
      *
-     * No depth cap passed, which is the same omission every queue read this
-     * package makes (`gates.ts`): the declaration carries no cap, so both
-     * sides take the engine's default and neither restates it. A package
-     * that declares one passes it here *and* to those reads — the rendered
-     * forest rules state the cap a producer will be refused by, so one side
-     * moving alone tells a producer a bound its own queue read does not keep.
+     * The cap rides the render because the rendered forest rules *state* it:
+     * a producer is shown the bound its own queue read will refuse it by, so
+     * this and the package's queue-reading gates (`gates.ts`) take the one
+     * declared value, and one side moving alone would tell a producer a
+     * bound nothing keeps. Undeclared passes nothing and the renderer takes
+     * the parse's own default, which is what those reads take too.
      */
-    PENDING_SCHEMA: block("schema", renderSchemaForPrompt(extension)),
+    PENDING_SCHEMA: block(
+      "schema",
+      renderSchemaForPrompt(extension, declaration.maxEntryDepth),
+    ),
     TESTS_HINT: hintOf(extension, "tests"),
     PINS_HINT: hintOf(extension, "pins"),
     LANE_TESTS_HINT: hintOf(extension, "laneTests"),

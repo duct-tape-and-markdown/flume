@@ -157,6 +157,12 @@ settings, instructions, rules and hooks beside the repository's — both off
 where the declaration is silent. Each is the `claudeCode`
 option of the same name, which §4 below spells in full; a phase naming none
 takes the package's default agent),
+`maxEntryDepth` (how deep a chain of `parent` links the queue may carry,
+passed through to `Chain.maxEntryDepth` and read by the package on its own
+account — the schema block every plan prompt renders states this cap, and the
+queue parses behind the package's own gates refuse past it, so the bound a
+producer is shown is the bound it is refused by; a positive integer, and
+absent leaves the parse's default of four),
 `supervisor` (the engine's policy passed through whole), `setup` (the
 `directories` to install and the `restore` command that installs them, run in
 every provisioned worktree; `serialize`, set where that restore's shared

@@ -474,6 +474,17 @@ export function harnessChain(options: HarnessChainOptions): Chain {
     ...(declaration.worktreesBase !== undefined
       ? { worktreesBase: declaration.worktreesBase }
       : {}),
+    // The forest's depth cap, as declared — the same value the prompt's
+    // schema render and the package's own queue-reading gates were handed
+    // off this declaration (`prompts.ts`, `gates.ts`), so the bound a
+    // producer is shown, the bound a gate refuses by, and the bound the
+    // dispatcher's own parses keep are one number. Absent stays absent: an
+    // undeclared cap is the parse's default on every side
+    // (`DEFAULT_MAX_ENTRY_DEPTH`, `src/PendingSchema.ts`), never one this
+    // factory picks.
+    ...(declaration.maxEntryDepth !== undefined
+      ? { maxEntryDepth: declaration.maxEntryDepth }
+      : {}),
     ...(policy ? { supervisorPolicy: policy } : {}),
   };
 }

@@ -101,6 +101,7 @@ const fullDeclaration = (): Record<string, unknown> => ({
     },
     "plan-sweep": { model: "claude-sonnet-5" },
   },
+  maxEntryDepth: 3,
   supervisor: {
     maxParallel: 4,
     mergeBatch: 2,
@@ -219,7 +220,7 @@ describe("the harness declaration schema", () => {
     expect(Object.keys(declared).sort()).toEqual(
       Object.keys(DeclarationSchema.shape).sort(),
     );
-    expect(Object.keys(declared)).toHaveLength(18);
+    expect(Object.keys(declared)).toHaveLength(19);
 
     const parsed: Declaration = parseDeclaration(declared);
 
@@ -252,6 +253,11 @@ describe("the harness declaration schema", () => {
     expect(parsed.agents?.build?.contextWindow).toBe(200_000);
     expect(parsed.agents?.["plan-sweep"]?.model).toBe("claude-sonnet-5");
     expect(parsed.agents?.["plan-sweep"]?.contextWindow).toBeUndefined();
+    // The forest's depth cap as a number, since the package reads it: the
+    // prompt's schema render states it and the gates' queue parses refuse
+    // past it (`sharedPromptArgs` and `harnessGates`, `harness/prompts.ts`
+    // and `harness/gates.ts`).
+    expect(parsed.maxEntryDepth).toBe(3);
     expect(parsed.supervisor?.maxParallel).toBe(4);
     expect(parsed.setup?.directories).toEqual(["."]);
     // The restore's concurrency claim rides with it: a consumer whose shared

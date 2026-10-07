@@ -76,6 +76,7 @@ import type {
   TickContext,
   TickResult,
 } from "../src/Phase.ts";
+import { DEFAULT_MAX_ENTRY_DEPTH } from "../src/PendingSchema.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import { renderPrompt, type PriorAttempt } from "../src/Prompt.ts";
 import { sectionOf } from "./helpers/docSections.ts";
@@ -1144,6 +1145,34 @@ it("a declaration naming no worktreesBase leaves Chain.worktreesBase absent", ()
   // that supplied one here would place a silent consumer's worktrees
   // somewhere they would have to discover to move.
   expect(chainFor().worktreesBase).toBeUndefined();
+});
+
+it("a declared maxEntryDepth reaches Chain.maxEntryDepth", () => {
+  // The shared fixture declares none, so this case states its own — and off
+  // the engine's default, so what the chain carries below is attributable to
+  // the declaration rather than to the parse's fallback.
+  const maxEntryDepth = 2;
+  expect(maxEntryDepth).not.toBe(DEFAULT_MAX_ENTRY_DEPTH);
+
+  // The number, handed over whole: the dispatcher's own queue parses read it
+  // off the chain, and the package's prompt render and gates read the same
+  // declared field, so one declaration is one cap on every side
+  // (`harness/prompts.ts`, `harness/gates.ts`).
+  expect(chainFor({ ...DECLARATION, maxEntryDepth }).maxEntryDepth).toBe(
+    maxEntryDepth,
+  );
+});
+
+it("a declaration naming no maxEntryDepth leaves Chain.maxEntryDepth absent", () => {
+  // Non-vacuity: the fixture is the declaration that names no cap, so a
+  // fixture that grew the field would make the assertion below hold for the
+  // wrong reason.
+  expect(DECLARATION).not.toHaveProperty("maxEntryDepth");
+
+  // Undeclared stays undeclared, which every queue parse reads as the
+  // engine's own default (`DEFAULT_MAX_ENTRY_DEPTH`, `src/PendingSchema.ts`)
+  // rather than as a depth this factory chose for a silent consumer.
+  expect(chainFor().maxEntryDepth).toBeUndefined();
 });
 
 it("a declared friction directory reaches Chain.friction", () => {

@@ -124,8 +124,8 @@ export interface GateEngine {
   readonly readGatedQueue: (ctx: GatedQueueContext) => Promise<GatedQueue>;
   /**
    * The engine's own queue parse (`FlumeApi.parsePendingQueue`) — core plus
-   * the chain's declared extension, with every default the schema states
-   * already folded in.
+   * the chain's declared extension and the declared forest depth, with every
+   * default the schema states already folded in.
    *
    * The goal-rank gate wants this rather than its own `JSON.parse` for one
    * default: `kind` is `work` unless an entry says otherwise, and that
@@ -137,6 +137,7 @@ export interface GateEngine {
   readonly parsePendingQueue: (
     files: readonly QueueFile[],
     extension?: EntryExtension,
+    maxEntryDepth?: number,
   ) => ParseResult;
   /** The read-only git helpers the gates read a commit through. */
   readonly git: {
@@ -168,6 +169,23 @@ export interface GateEngine {
      */
     readonly statusRecords: (cwd: string) => Promise<GitStatusRecord[]>;
   };
+}
+
+/**
+ * How this package reads a queue — the composed extension and the forest's
+ * declared depth cap, travelling together.
+ *
+ * One value rather than two parameters at each gate because the two are one
+ * decision: three reads of the queue happen behind this module (the pending
+ * gate's, the goal-rank gate's, and the records gate's step descent), and a
+ * read holding the extension while another also holds the cap is a gate
+ * judging the same listing by a schema its sibling does not use. `undefined`
+ * for either is the engine's own reading — the bare core, the parse's own
+ * default — never a value spelled here.
+ */
+interface QueueParse {
+  readonly extension: EntryExtension;
+  readonly maxEntryDepth?: number;
 }
 
 /** What {@link harnessGates} needs to build one phase's set. */
@@ -356,7 +374,7 @@ function perGate(declaration: Declaration, engine: GateEngine): Gate {
 function goalRankGate(
   phaseName: string,
   engine: GateEngine,
-  extension: EntryExtension,
+  parse: QueueParse,
 ): Gate {
   /** Whether this phase is the one commit a rank may move on. */
   const drain = phaseName === INBOX_PHASE;
@@ -374,7 +392,11 @@ function goalRankGate(
           message: `${queue.rel} missing at ${short(ctx.commitSha)}`,
         };
       }
-      const parsed = engine.parsePendingQueue(queue.files, extension);
+      const parsed = engine.parsePendingQueue(
+        queue.files,
+        parse.extension,
+        parse.maxEntryDepth,
+      );
       if (!parsed.ok) {
         // Normally the pending gate ahead of this one answers first. The arm
         // is still the refusal, not a pass-through: `entries` is empty on a
@@ -538,7 +560,7 @@ function goalRankGate(
 function recordsGate(
   engine: GateEngine,
   putDown: PutDownPredicate,
-  extension: EntryExtension,
+  parse: QueueParse,
 ): Gate {
   return {
     name: "records",
@@ -644,7 +666,7 @@ function recordsGate(
       }
 
       if (named.length > 0 && entry !== undefined) {
-        const carries = await stepTagsAt(ctx, engine, extension, entry.tag);
+        const carries = await stepTagsAt(ctx, engine, parse, entry.tag);
         if (typeof carries === "string") return refuse(carries, []);
         for (const { path, tag } of named) {
           if (carries.includes(tag)) continue;
@@ -695,13 +717,17 @@ function recordsGate(
 async function stepTagsAt(
   ctx: GateContext,
   engine: GateEngine,
-  extension: EntryExtension,
+  parse: QueueParse,
   tag: string,
 ): Promise<string[] | string> {
   const queue = await engine.readGatedQueue(ctx);
   if (queue.files === null)
     return `${queue.rel} missing at ${short(ctx.commitSha)}, so the steps a record names cannot be checked against the entry`;
-  const parsed = engine.parsePendingQueue(queue.files, extension);
+  const parsed = engine.parsePendingQueue(
+    queue.files,
+    parse.extension,
+    parse.maxEntryDepth,
+  );
   if (!parsed.ok)
     return `${queue.rel} does not parse at ${short(ctx.commitSha)}, so the steps a record names cannot be checked against the entry`;
   return descendantsOf(parsed.entries, tag).map((step) => step.tag);
@@ -995,13 +1021,29 @@ export function harnessGates(options: HarnessGatesOptions): Gate[] {
     options;
   /** Whether this set is a producer's, or build's (`isQueueProducer`). */
   const producer = isQueueProducer(phase.name);
-  const queue = {
-    // The declared CI lanes ride the composition: a `laneTests[]` line naming
-    // a lane this declaration never carried is owed to a lane nothing reports,
-    // so the schema refuses it here rather than leaving the queue to carry it
-    // (`entryExtension.ts`, `laneTestsSchema`). The runner's own lanes are not
-    // handed in — those inform three hints, and a gate renders none.
+  /**
+   * How every gate below reads the queue, composed once ({@link QueueParse}).
+   *
+   * The declared CI lanes ride the composition: a `laneTests[]` line naming
+   * a lane this declaration never carried is owed to a lane nothing reports,
+   * so the schema refuses it here rather than leaving the queue to carry it
+   * (`entryExtension.ts`, `laneTestsSchema`). The runner's own lanes are not
+   * handed in — those inform three hints, and a gate renders none.
+   *
+   * The forest's depth cap rides it for the reason it rides the prompt's
+   * schema render (`prompts.ts`): the rendered rules state the bound, so a
+   * gate refusing by another would refuse a queue whose producer was shown
+   * this one. Undeclared stays off the object, which is the parse's own
+   * default — the same value an undeclared cap reaches the dispatcher as.
+   */
+  const parse: QueueParse = {
     extension: entryExtension(entryFields, { ci: declaration.ci }),
+    ...(declaration.maxEntryDepth !== undefined
+      ? { maxEntryDepth: declaration.maxEntryDepth }
+      : {}),
+  };
+  const queue = {
+    ...parse,
     targetFence: buildFence(declaration),
     // What the package calls an entry's records: its note homes, off the one
     // roster that already names them (`notePaths`, `layout.ts`), so a fourth
@@ -1020,12 +1062,12 @@ export function harnessGates(options: HarnessGatesOptions): Gate[] {
       : {}),
   };
   return [
-    recordsGate(engine, putDown, queue.extension),
+    recordsGate(engine, putDown, parse),
     cleanTreeGate(phase.writablePaths, engine),
     engine.pendingGate(queue),
     perGate(declaration, engine),
     ...(producer
-      ? [goalRankGate(phase.name, engine, queue.extension)]
+      ? [goalRankGate(phase.name, engine, parse)]
       : []),
     sliceStateGate(engine),
     ...(producer

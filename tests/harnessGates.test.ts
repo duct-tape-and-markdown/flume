@@ -27,6 +27,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   RECORD_MAX_BYTES,
   continuingNotePath,
+  entryExtension,
+  harnessChain,
   harnessGates,
   noteGlobs,
   notePath,
@@ -35,13 +37,16 @@ import {
   parseDeclaration,
   planStatePath,
   recordDirs,
+  sharedPromptArgs,
   writePlanState,
   type Declaration,
   type PlanStateWriteOf,
   type GateEngine,
 } from "../harness/index.ts";
 import { pendingGate } from "../src/builtinGates.ts";
+import { buildFlumeApi } from "../src/flumeApi.ts";
 import type { Gate, GateContext, GateResult } from "../src/Gate.ts";
+import type { Chain } from "../src/Phase.ts";
 import {
   checkoutAddress,
   isAncestor,
@@ -51,7 +56,11 @@ import {
 import { entryClaimPath, entryClaimSlug } from "../src/entryClaims.ts";
 import { renderPidClaim } from "../src/pidClaim.ts";
 import { readGatedQueue, readQueueAtRef } from "../src/pendingLedger.ts";
-import { entryFileName, parsePendingQueue } from "../src/PendingSchema.ts";
+import {
+  DEFAULT_MAX_ENTRY_DEPTH,
+  entryFileName,
+  parsePendingQueue,
+} from "../src/PendingSchema.ts";
 import { computeStateRootRel, matchesAny } from "../src/paths.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import {
@@ -2056,6 +2065,134 @@ it("a laneTests[] line naming a declared CI lane parses", async () => {
   );
 
   expect(passed).toMatchObject({ ok: true });
+});
+
+/**
+ * The forest's depth cap, from the one place a package consumer can state it
+ * to the three reads that have to agree about it (`spec/harness.md`, *What a
+ * consumer declares*).
+ *
+ * A chain of parents, each pairing legal (`PARENT_KINDS`,
+ * `src/PendingSchema.ts`) so what a case judges is the depth and never a
+ * pairing the forest rules would have refused anyway: groups above a group,
+ * work above a group, steps above their work entry.
+ */
+const chainOfParents = (depth: number): PendingEntry[] => {
+  const entries: PendingEntry[] = [];
+  for (let level = 0; level < depth; level++) {
+    const kind =
+      level < depth - 2 ? "group" : level === depth - 2 ? "work" : "step";
+    entries.push(
+      queueEntry(`LEVEL-${level}`, {
+        kind: depth === 1 ? "work" : (kind as PendingEntry["kind"]),
+        ...(level === 0 ? {} : { parent: `LEVEL-${level - 1}` }),
+      }),
+    );
+  }
+  return entries;
+};
+
+/** The one rendered line the schema block states the cap on. */
+const renderedDepthRule = (decl: Declaration): string => {
+  const schema = sharedPromptArgs({
+    declaration: decl,
+    extension: entryExtension(),
+    phase: BUILD_PHASE,
+    stateRoot: join(repo, STATE_ROOT),
+  }).PENDING_SCHEMA;
+  const rule = schema
+    .split("\n")
+    .find((line) => line.includes("a chain of parents is at most"));
+  if (rule === undefined) {
+    throw new Error(
+      `the rendered schema block states no depth rule:\n${schema}`,
+    );
+  }
+  return rule;
+};
+
+/** The chain this declaration builds over the case's own repository. */
+const chainOf = (decl: Declaration): Chain =>
+  harnessChain({
+    api: buildFlumeApi({
+      repoRoot: repo,
+      configDir: join(repo, STATE_ROOT),
+      flumeDir: join(repo, STATE_ROOT),
+    }),
+    declaration: decl,
+  });
+
+it("a package gate's queue parse refuses a forest deeper than the declared cap", async () => {
+  // Two deep, so a three-link chain is past it and a two-link chain is not —
+  // and well off the engine's own default, which is what keeps the refusal
+  // below attributable to the declared value.
+  const shallow: Declaration = parseDeclaration({ ...DECLARED, maxEntryDepth: 2 });
+  expect(shallow.maxEntryDepth).toBe(2);
+  expect(DEFAULT_MAX_ENTRY_DEPTH).toBeGreaterThan(2);
+
+  // The three-link forest the cap puts out of reach, through the real writer:
+  // the queue is the directory a commit holds, and the gate reads it back out
+  // of that commit (`.claude/rules/engineering.md`, *A seam gate reads what
+  // the real writer wrote*).
+  const forest = chainOfParents(3);
+  expect(forest).toHaveLength(3);
+  await writeQueue(forest);
+  const deep = commitAll("plan: file a forest three parents deep");
+
+  const refused = await named("pending-gate", [], shallow).run(
+    ctxFor(deep, { phaseName: "plan-derive" }),
+  );
+
+  expect(refused.ok).toBe(false);
+  expect(refused.details).toContain("maxEntryDepth (2)");
+  expect(refused.details).toContain("LEVEL-2");
+
+  // The same gate over the same declaration admits the forest that fits, so
+  // the refusal above is the cap and not the fixture.
+  await writeQueue(chainOfParents(2));
+  const within = commitAll("plan: file a forest two parents deep");
+
+  expect(
+    await named("pending-gate", [], shallow).run(
+      ctxFor(within, { phaseName: "plan-derive" }),
+    ),
+  ).toMatchObject({ ok: true });
+});
+
+it("a declaration naming no maxEntryDepth leaves the engine's default on every side", async () => {
+  // Non-vacuity on the premise: the shared declaration is the one that names
+  // no cap, so each reading below is an undeclared field's and not a value
+  // this case supplied.
+  expect(DECLARED).not.toHaveProperty("maxEntryDepth");
+  expect(declaration.maxEntryDepth).toBeUndefined();
+
+  // The chain: absent stays absent, which is what the dispatcher's own parses
+  // read as the engine's default rather than as a cap the factory chose.
+  expect(chainOf(declaration).maxEntryDepth).toBeUndefined();
+
+  // The prompt: the rendered forest rules state that same default, so a
+  // producer is shown the bound the reads below keep.
+  expect(renderedDepthRule(declaration)).toContain(
+    `at most ${DEFAULT_MAX_ENTRY_DEPTH} deep`,
+  );
+
+  // And the gate: one link past the default is refused, naming it, while the
+  // forest at the default is admitted.
+  await writeQueue(chainOfParents(DEFAULT_MAX_ENTRY_DEPTH + 1));
+  const past = commitAll("plan: file a forest one link past the default");
+  const refused = await named("pending-gate").run(
+    ctxFor(past, { phaseName: "plan-derive" }),
+  );
+  expect(refused.ok).toBe(false);
+  expect(refused.details).toContain(
+    `maxEntryDepth (${DEFAULT_MAX_ENTRY_DEPTH})`,
+  );
+
+  await writeQueue(chainOfParents(DEFAULT_MAX_ENTRY_DEPTH));
+  const atCap = commitAll("plan: file a forest at the default");
+  expect(
+    await named("pending-gate").run(ctxFor(atCap, { phaseName: "plan-derive" })),
+  ).toMatchObject({ ok: true });
 });
 
 /**
