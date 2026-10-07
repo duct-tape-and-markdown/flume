@@ -259,9 +259,11 @@ function tickContext(phase: Phase): TickContext {
 function shipContext(
   assigned: PendingEntry,
   touchedPaths: readonly string[],
+  steps: readonly PendingEntry[] = [],
 ): ShipContext {
   return {
     entry: assigned,
+    steps,
     mergedSha: "0".repeat(40),
     baseSha: "1".repeat(40),
     touchedPaths,
@@ -698,12 +700,12 @@ it("the build fence and the park predicate name one note path under a nested sta
     });
   }
   // ...and the predicate that reads a park back, on the path git would name.
-  expect(build.shipped?.(shipContext(assigned, [park]))).toBe(false);
+  expect(build.shipped?.(shipContext(assigned, [park]))).toEqual([]);
   // The kind is the directory: an observation under the same nested root, one
   // segment up, ships.
   expect(
     build.shipped?.(shipContext(assigned, [notePath(rel, assigned.tag)])),
-  ).toBe(true);
+  ).toEqual([assigned.tag]);
 
   // And the queue the plan slices fence is under the same root, in the same
   // alphabet — composed with `node:path`, so it is the one path here that
@@ -731,7 +733,7 @@ it("a note under the parked directory parks its entry", () => {
   // could have written rather than one that would have reverted first.
   expect(build.writablePaths).toContain(`${parkedNotesDir(STATE_ROOT)}/*.md`);
 
-  expect(build.shipped?.(shipContext(assigned, [park]))).toBe(false);
+  expect(build.shipped?.(shipContext(assigned, [park]))).toEqual([]);
 });
 
 it("a note beside the parked directory ships its entry", () => {
@@ -746,10 +748,50 @@ it("a note beside the parked directory ships its entry", () => {
   expect(observation).not.toBe(parkedNotePath(STATE_ROOT, assigned.tag));
   expect(observation).not.toContain(`${parkedNotesDir(STATE_ROOT)}/`);
 
-  expect(build.shipped?.(shipContext(assigned, [observation]))).toBe(true);
+  expect(build.shipped?.(shipContext(assigned, [observation]))).toEqual([
+    assigned.tag,
+  ]);
   expect(
     build.shipped?.(shipContext(assigned, [observation, "src/index.ts"])),
-  ).toBe(true);
+  ).toEqual([assigned.tag]);
+});
+
+/**
+ * The package's `shipped` answers in tags now, and its answer is all-or-
+ * nothing over the span: the build prompt tells a session how to put the
+ * whole entry down and gives it no way to say which steps it finished, so a
+ * partial list would be the engine's surface read for a declaration no prompt
+ * here asks for (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ */
+it("the package's shipped returns no tag for a commit that put its work down", async () => {
+  const build = phaseNamed(chainFor(), BUILD_PHASE);
+  const assigned = entry("SOME-ENTRY");
+  const steps = [
+    { ...entry("A-STEP"), kind: "step" as const, parent: assigned.tag },
+    { ...entry("ANOTHER-STEP"), kind: "step" as const, parent: assigned.tag },
+  ];
+  const park = parkedNotePath(STATE_ROOT, assigned.tag);
+  const continuing = continuingNotePath(STATE_ROOT, assigned.tag);
+
+  // Non-vacuity: the same span with neither note ships, and ships the whole
+  // session — the entry and every step it was decomposed into — so the empty
+  // answers below are the notes' doing over a populated set.
+  expect(
+    build.shipped?.(shipContext(assigned, ["src/index.ts"], steps)),
+  ).toEqual([assigned.tag, "A-STEP", "ANOTHER-STEP"]);
+
+  // A park: nothing of the session leaves the queue, steps included.
+  expect(build.shipped?.(shipContext(assigned, [park], steps))).toEqual([]);
+
+  // And a continuation that stands, which is the kind read off the tree
+  // rather than the touch (`putDownPredicate`, `harness/putDown.ts`).
+  const onDisk = join(shipContext(assigned, []).worktreePath, continuing);
+  await mkdir(join(onDisk, ".."), { recursive: true });
+  await writeFile(onDisk, "# what landed\n\nWhat is next.\n");
+  expect(
+    build.shipped?.(shipContext(assigned, [continuing], steps)),
+  ).toEqual([]);
+  await rm(onDisk);
 });
 
 it("a commit carrying a continuing note keeps its entry in the queue", async () => {
@@ -768,7 +810,9 @@ it("a commit carrying a continuing note keeps its entry in the queue", async () 
   );
   // And the same commit without the note ships, so the verdict below is that
   // note's presence and not a predicate stuck on one answer.
-  expect(build.shipped?.(shipContext(assigned, ["src/index.ts"]))).toBe(true);
+  expect(build.shipped?.(shipContext(assigned, ["src/index.ts"]))).toEqual([
+    assigned.tag,
+  ]);
 
   // The note as the tick left it: the worktree is still on disk while the
   // merge loop classifies the entry, and that tree is the commit's.
@@ -779,10 +823,10 @@ it("a commit carrying a continuing note keeps its entry in the queue", async () 
   // A green segment of the entry, landed with the rest put down: the span
   // stays on the trunk and the entry stays in the queue for the next tick on
   // it, exactly as a park's does.
-  expect(build.shipped?.(shipContext(assigned, [continuing]))).toBe(false);
+  expect(build.shipped?.(shipContext(assigned, [continuing]))).toEqual([]);
   expect(
     build.shipped?.(shipContext(assigned, ["src/index.ts", continuing])),
-  ).toBe(false);
+  ).toEqual([]);
 
   // And the tick that completes the entry takes the note with it: the same
   // touched path, the file gone from the tree, so the removal is read as the
@@ -790,7 +834,7 @@ it("a commit carrying a continuing note keeps its entry in the queue", async () 
   await rm(onDisk);
   expect(
     build.shipped?.(shipContext(assigned, ["src/index.ts", continuing])),
-  ).toBe(true);
+  ).toEqual([assigned.tag]);
 });
 
 it("a commit writing a parked note and the entry's work is still a park", () => {
@@ -801,20 +845,22 @@ it("a commit writing a parked note and the entry's work is still a park", () => 
   // Vacuity guard: the same commit without the parked note ships, so the
   // verdicts below are that note's presence and not a predicate stuck on one
   // answer.
-  expect(build.shipped?.(shipContext(assigned, ["src/index.ts"]))).toBe(true);
+  expect(build.shipped?.(shipContext(assigned, ["src/index.ts"]))).toEqual([
+    assigned.tag,
+  ]);
 
   // A refusal that could not help leaving work behind — a half-finished edit,
   // a test it had to touch to reach the wall — is still a refusal: the
   // predicate reads where the tick wrote, never the shape of the path list
   // around it.
-  expect(build.shipped?.(shipContext(assigned, ["src/index.ts", park]))).toBe(
-    false,
-  );
+  expect(
+    build.shipped?.(shipContext(assigned, ["src/index.ts", park])),
+  ).toEqual([]);
   expect(
     build.shipped?.(
       shipContext(assigned, [park, notePath(STATE_ROOT, assigned.tag)]),
     ),
-  ).toBe(false);
+  ).toEqual([]);
 });
 
 it("each returned phase names its prompt by an absolute path the package ships", () => {

@@ -41,6 +41,7 @@ import {
   readPendingTolerant,
 } from "./pendingLedger.js";
 import {
+  descendantsOf,
   entryExtensionPayload,
   type PendingEntry,
   type QueueParseFailure,
@@ -327,6 +328,13 @@ export async function runFanout(
   // missing from that map (`spec/chain.md`, *What a hook receives*). The three
   // move together, which is the property {@link OfferedFacts} holds.
   let livePickable: readonly PendingEntry[] = pickable;
+  // The whole listing the live selection was taken over, not its pickable
+  // slice: a `step` is no dispatch unit, so it is absent from every set above
+  // and present only here — and the steps of the entry a slot pulls are what
+  // its span may ship (`ShipContext.steps`, `src/Phase.ts`). Moved with the
+  // triple below for the same reason they move together: an entry pulled
+  // after a refill is judged against the queue that refill read.
+  let liveQueue: readonly PendingEntry[] = pending;
   let liveClaimedTags: readonly string[] = claimedTags;
   let livePriorAttempts: ReadonlyMap<string, PriorAttempt> = priorAttempts;
   // The operator's graceful stop, as the last refill read it off disk
@@ -383,6 +391,7 @@ export async function runFanout(
    */
   const carrySlot = async (
     entry: PendingEntry,
+    steps: readonly PendingEntry[],
     baseRef: () => Promise<string>,
     offered: OfferedFacts,
   ): Promise<{ path: string; branch: string } | undefined> => {
@@ -443,6 +452,7 @@ export async function runFanout(
     const r = await runFanoutEntry(leg, {
       phase,
       entry,
+      steps,
       wt,
       agent,
       chain,
@@ -560,6 +570,7 @@ export async function runFanout(
    */
   const runSlot = async (
     entry: PendingEntry,
+    steps: readonly PendingEntry[],
     baseRef: () => Promise<string>,
     offered: OfferedFacts,
   ): Promise<void> => {
@@ -576,7 +587,7 @@ export async function runFanout(
       );
       return;
     }
-    const wt = await carrySlot(entry, baseRef, offered);
+    const wt = await carrySlot(entry, steps, baseRef, offered);
     await settleSlot(entry, claim.claim, wt);
   };
 
@@ -638,6 +649,7 @@ export async function runFanout(
     );
     candidates = selection.pickable.filter((e) => !attempted.has(e.tag));
     livePickable = selection.pickable;
+    liveQueue = live;
     liveClaimedTags = selection.claimedTags;
     livePriorAttempts = records;
   };
@@ -674,10 +686,15 @@ export async function runFanout(
         claimed: liveClaimedTags,
         priorAttempts: livePriorAttempts,
       };
+      // Read here, in the synchronous pull, off the same listing the triple
+      // above came from: the merge stage classifies this span against the
+      // steps the queue held when the slot took the entry, never against a
+      // listing a sibling's refill replaced while the agent ran.
+      const steps = descendantsOf(liveQueue, entry.tag);
       slots.push(
         (async () => {
           try {
-            await runSlot(entry, baseRef, offered);
+            await runSlot(entry, steps, baseRef, offered);
           } catch (err) {
             slotError ??= err;
           } finally {
@@ -904,6 +921,8 @@ async function runFanoutEntry(
   opts: {
     phase: Phase;
     entry: PendingEntry;
+    /** The entry's steps, as the listing this slot pulled from held them. */
+    steps: readonly PendingEntry[];
     /** The worktree this entry's slot provisioned and set up. */
     wt: { path: string; branch: string };
     agent: Agent;
@@ -914,12 +933,12 @@ async function runFanoutEntry(
     offered: OfferedFacts;
   },
 ): Promise<EntryAttempt> {
-  const { phase, entry, wt, agent, chain, extraEnv, offered } = opts;
+  const { phase, entry, steps, wt, agent, chain, extraEnv, offered } = opts;
   // The prior-attempt record lives at the repo root (not this fresh
   // worktree), keyed by the entry tag — so a reverted attempt's record
   // survives into the next tick's brand-new worktree.
   const ref = priorAttemptRef(phase, entry);
-  const site = { entry, worktreePath: wt.path, branch: wt.branch };
+  const site = { entry, steps, worktreePath: wt.path, branch: wt.branch };
 
   const ctx: TickContext = {
     cwd: wt.path,

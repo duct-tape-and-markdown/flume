@@ -1729,7 +1729,7 @@ describe("hook-side gate results — the reported row, not a narrowed copy", () 
       gates: [talkative],
       shipped: (ctx) => {
         seen = ctx.gateResults;
-        return true;
+        return [ctx.entry.tag];
       },
     });
     const dispatcher = new Dispatcher({
@@ -1797,7 +1797,7 @@ describe("ShipContext — the facts the engine hands the ship predicate, and no 
       concurrency: "fanout",
       shipped: (ctx) => {
         seenKeys = Object.keys(ctx).sort();
-        return true;
+        return [ctx.entry.tag];
       },
     });
     const dispatcher = new Dispatcher({
@@ -1825,6 +1825,7 @@ describe("ShipContext — the facts the engine hands the ship predicate, and no 
       "gateResults",
       "mergedSha",
       "repoRoot",
+      "steps",
       "touchedPaths",
       "worktreePath",
     ]);
@@ -7046,7 +7047,7 @@ describe("Dispatcher — a span trunk already holds is absorbed at the merge (AN
           mergedSha: ctx.mergedSha,
           touchedPaths: [...ctx.touchedPaths],
         });
-        return true;
+        return [ctx.entry.tag];
       },
       handoff: (r) => {
         handedToHandoff = r;
@@ -10493,11 +10494,11 @@ describe("Dispatcher fanout — ship classification is the chain's call, not the
       // The chain's convention, not the engine's: this one calls a commit
       // touching only the entry's note channel unfinished. The engine has no
       // such notion and never inspects the message below.
-      shipped: ({ touchedPaths }) =>
-        !(
-          touchedPaths.length > 0 &&
-          touchedPaths.every((p) => p === "notes/park.md")
-        ),
+      shipped: ({ entry, touchedPaths }) =>
+        touchedPaths.length > 0 &&
+        touchedPaths.every((p) => p === "notes/park.md")
+          ? []
+          : [entry.tag],
     });
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
@@ -10551,7 +10552,7 @@ describe("Dispatcher fanout — ship classification is the chain's call, not the
     ]);
     expect(
       warnings.some(
-        (w) => w.includes("STATED-PARK") && w.includes("shipped returned false"),
+        (w) => w.includes("STATED-PARK") && w.includes("shipped named no tag"),
       ),
     ).toBe(true);
   });
@@ -10585,7 +10586,7 @@ describe("Dispatcher fanout — ship classification is the chain's call, not the
       gates: [recordGate],
       shipped: (ctx) => {
         seenGateResults[ctx.entry.tag] = [...ctx.gateResults];
-        return true;
+        return [ctx.entry.tag];
       },
     });
     const chain: Chain = { phases: [phase], humanOnly: [] };
@@ -10638,6 +10639,268 @@ describe("Dispatcher fanout — ship classification is the chain's call, not the
       expect(gr!.filter((g) => g.gate === "record-gate")).toEqual([
         { gate: "record-gate", ok: true, message: "recorded" },
       ]);
+    }
+  });
+});
+
+// ---------- Phase.shipped names the tags a span ships
+// (SHIPPED-RETURNS-THE-TAGS-A-SPAN-SHIPS, spec/pending.md "Ship detection
+// trusts the agent's own account") ----------
+
+/**
+ * One session, several queue entries: a `work` entry is what a tick is handed
+ * and its steps are the rest of that one session's work, so what ships is a
+ * set of tags rather than a yes or no. Every case here drives the real wave —
+ * the selection that reads the forest, the agent, the cherry-pick, the
+ * consult, and the ledger rewrite that removes files — because "which files
+ * left the queue" is a claim about a commit, and a fixture calling the
+ * predicate by hand would pin only the chain's half of it
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ */
+describe("Phase.shipped — the tags a span ships out of its work entry and its steps", () => {
+  /** A step of `parent`, declaring its own file like any other entry. */
+  const step = (
+    tag: string,
+    parent: string,
+    editPaths: string[],
+  ): PendingEntry => ({
+    ...makeEntry(tag, editPaths),
+    kind: "step",
+    parent,
+  });
+
+  /** The queue every case below drives: one `work` entry with two steps. */
+  const decomposed = (): PendingEntry[] => [
+    makeEntry("THE-WORK", ["src/work.ts"]),
+    step("STEP-ONE", "THE-WORK", ["src/one.ts"]),
+    step("STEP-TWO", "THE-WORK", ["src/two.ts"]),
+  ];
+
+  /**
+   * The agent every case below runs: one commit on the work entry's own file.
+   * The content is the caller's, because a second wave in one case cuts its
+   * worktree from the trunk the first wave landed on — re-writing the same
+   * bytes there is a commit git refuses, and the case would read it as a span
+   * the chain declined.
+   */
+  const landsTheWork = (content = "landed") =>
+    fanoutAgent({
+      "the-work": (cwd) =>
+        writeAndCommit(
+          cwd,
+          "src/work.ts",
+          `${content}\n`,
+          "build(THE-WORK): land it",
+        ),
+    });
+
+  /** The tags still in the queue on disk, in the queue's own order. */
+  const queuedTags = (): string[] =>
+    readPendingFromDisk(fx.repo)
+      .map((e) => e.tag)
+      .sort();
+
+  /**
+   * One wave of `phase` over {@link decomposed}, with the queue seeded and
+   * the baton woken — the whole drive every case here judges by.
+   */
+  const waveOver = async (
+    shipped?: Phase["shipped"],
+  ): Promise<TickOutcome> => {
+    await writePending(fx.repo, decomposed());
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    const phase = makePhase({
+      name: "build",
+      concurrency: "fanout",
+      writablePaths: ["src/**"],
+      ...(shipped ? { shipped } : {}),
+    });
+    // The arm under test is the one the declaration says it is: a case
+    // driving the undeclared default must not be reading a predicate the
+    // helper supplied for it.
+    expect(phase.shipped === undefined).toBe(shipped === undefined);
+    return new Dispatcher({
+      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: landsTheWork(),
+      log: silent,
+    }).tick();
+  };
+
+  it("an undeclared shipped ships the work entry and every one of its steps", async () => {
+    const outcome = await waveOver();
+
+    // Non-vacuity: the span really landed, so the removals below are a ship
+    // rather than a wave that never committed.
+    expect(outcome.result?.committed).toBe(true);
+    // The set, in the queue's order rather than the order a directory walk
+    // happened to return: every tag of the one session left together.
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
+      "STEP-ONE",
+      "STEP-TWO",
+      "THE-WORK",
+    ]);
+    // And the files are gone — the whole queue, not just the entry's own
+    // file, which is the half a chain reads on the next tick.
+    expect(queuedTags()).toEqual([]);
+  });
+
+  it("a shipped naming some of an entry's steps removes those files and leaves the work entry queued", async () => {
+    const outcome = await waveOver(({ steps }) =>
+      steps.filter((s) => s.tag === "STEP-ONE").map((s) => s.tag),
+    );
+
+    // Non-vacuity: the predicate was handed both steps, so naming one of them
+    // is a partition of a populated set rather than a filter over nothing.
+    expect(outcome.result?.committed).toBe(true);
+    expect(outcome.result?.shippedTags).toEqual(["STEP-ONE"]);
+    // The named step's file left; the work entry and the step it did not name
+    // stayed, which is what the next session on it starts from.
+    expect(queuedTags()).toEqual(["STEP-TWO", "THE-WORK"]);
+    // And the pair that tells a partial ship from a park: the entry did not
+    // ship, and its span merged all the same.
+    expect(
+      outcome.result?.entries?.find((e) => e.tag === "THE-WORK"),
+    ).toEqual({
+      tag: "THE-WORK",
+      extension: {},
+      committed: true,
+      shipped: false,
+      reverted: false,
+      mergeOutcome: "merged",
+    });
+  });
+
+  it("ShipContext carries the entry's steps", async () => {
+    let seen: readonly PendingEntry[] | undefined;
+    const outcome = await waveOver((ctx) => {
+      seen = ctx.steps;
+      return [ctx.entry.tag, ...ctx.steps.map((s) => s.tag)];
+    });
+
+    // Non-vacuity: the consult really happened over a landed span.
+    expect(outcome.result?.shippedTags).toHaveLength(3);
+    expect(seen).toBeDefined();
+    // The steps as the queue declared them — entries, not tags, and with the
+    // forest fields the chain reads them by.
+    expect(
+      [...seen!]
+        .map((s) => ({ tag: s.tag, kind: s.kind, parent: s.parent }))
+        .sort((a, b) => (a.tag < b.tag ? -1 : 1)),
+    ).toEqual([
+      { tag: "STEP-ONE", kind: "step", parent: "THE-WORK" },
+      { tag: "STEP-TWO", kind: "step", parent: "THE-WORK" },
+    ]);
+  });
+
+  it("a shipped returning an empty list records the entry not-shipped", async () => {
+    const flumeDir = join(fx.repo, ".flume");
+    const outcome = await waveOver(() => []);
+    const trunkTip = await head(fx.repo);
+
+    // The commit landed and nothing left the queue: classification, never
+    // landing (spec/pending.md, *Ship detection trusts the agent's own
+    // account*).
+    expect(outcome.result?.shippedTags).toEqual([]);
+    expect(queuedTags()).toEqual(["STEP-ONE", "STEP-TWO", "THE-WORK"]);
+    const subject = await exec(
+      "git",
+      ["log", "-1", "--format=%s", trunkTip],
+      { cwd: fx.repo },
+    );
+    expect(subject.stdout.trim()).toBe("build(THE-WORK): land it");
+    expect(outcome.verdict?.mergeOutcomes).toEqual([
+      {
+        entryTag: "THE-WORK",
+        outcome: "not-shipped",
+        baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+        headSha: trunkTip,
+      },
+    ]);
+
+    // And the retry channel the boolean `false` already wrote: the same
+    // record, under the same key, with no reason on it — an empty list is the
+    // chain deciding, not a hook the engine could not read.
+    const record = JSON.parse(
+      await readFile(priorAttemptPath(flumeDir, entryRef("THE-WORK")), "utf8"),
+    ) as Record<string, unknown>;
+    expect(record.mode).toBe("not-shipped");
+    expect(record.mergedSha).toBe(trunkTip);
+    expect(record).not.toHaveProperty("threw");
+    expect(outcome.result?.shipFailures).toBeUndefined();
+  });
+
+  /**
+   * The engine consumes the list to *delete* entry files, so a tag outside the
+   * span is a removal nobody authorized and the entry's own tag without its
+   * steps is a queue no later read can parse (`spec/pending.md`, *The queue is
+   * a forest*). Both are read as a hook the engine could not read, on the seam
+   * a throwing predicate already has (`.claude/rules/engineering.md`, *Loud or
+   * nothing*).
+   */
+  it("a shipped naming a tag outside its span, or the entry without its steps, is refused like a throw", async () => {
+    for (const [what, list] of [
+      ["a foreign tag", ["SOMEONE-ELSES-ENTRY"]],
+      ["the entry without its steps", ["THE-WORK", "STEP-ONE"]],
+    ] as const) {
+      const warnings: string[] = [];
+      await writePending(fx.repo, decomposed());
+      new Baton(join(fx.repo, ".flume")).wake("build");
+      const phase = makePhase({
+        name: "build",
+        concurrency: "fanout",
+        writablePaths: ["src/**"],
+        shipped: () => list,
+      });
+      const outcome = await new Dispatcher({
+        chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent: landsTheWork(what),
+        log: { info: () => {}, warn: (l) => warnings.push(l), error: () => {} },
+      }).tick();
+
+      // Non-vacuity, per arm: this entry's own span really landed and was
+      // gated, so the refusal below is over a consult that happened. The
+      // wave-level `committed` cannot say it — it reads "anything shipped",
+      // which a refused ship makes false by construction.
+      expect({
+        what,
+        landed: outcome.result?.entries?.map((e) => ({
+          tag: e.tag,
+          committed: e.committed,
+        })),
+      }).toEqual({
+        what,
+        landed: [{ tag: "THE-WORK", committed: true }],
+      });
+      // Nothing left the queue, and the refusal is named rather than folded
+      // into the deliberate "named no tag".
+      expect({ what, shipped: outcome.result?.shippedTags }).toEqual({
+        what,
+        shipped: [],
+      });
+      expect({ what, queued: queuedTags() }).toEqual({
+        what,
+        queued: ["STEP-ONE", "STEP-TWO", "THE-WORK"],
+      });
+      expect({
+        what,
+        warned: warnings.some((w) =>
+          w.includes("answered with a list this span cannot ship"),
+        ),
+      }).toEqual({ what, warned: true });
+      // A broken hook, on the accounting a throwing one lands on.
+      expect({
+        what,
+        failures: outcome.result?.shipFailures?.map((f) => f.tag),
+      }).toEqual({ what, failures: ["THE-WORK"] });
+      expect({
+        what,
+        outcome: outcome.verdict?.mergeOutcomes.map((m) => m.outcome),
+      }).toEqual({ what, outcome: ["not-shipped"] });
     }
   });
 });
@@ -18456,7 +18719,7 @@ describe("TickResult.pickableAfter / entries — dispatcher-computed facts a han
       concurrency: "fanout",
       writablePaths: ["src/**"],
       gates: [],
-      shipped: () => false,
+      shipped: () => [],
     });
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
@@ -20566,7 +20829,7 @@ describe("Dispatcher — the span base is reported: GateContext.baseSha, TickRes
       concurrency: "fanout",
       shipped: (ctx) => {
         seen = { baseSha: ctx.baseSha, mergedSha: ctx.mergedSha };
-        return true;
+        return [ctx.entry.tag];
       },
     });
 
@@ -23665,16 +23928,16 @@ describe("GateContext.entry — the gated span's own entry (spec/chain.md 'What 
   });
 });
 
-describe("not-shipped PriorAttempt — the chain's `shipped: false` on the channel `TickContext.priorAttempts` already carries (spec/loop.md 'Prior-outcome feedback to the retrying tick')", () => {
+describe("not-shipped PriorAttempt — the chain's empty `shipped` list on the channel `TickContext.priorAttempts` already carries (spec/loop.md 'Prior-outcome feedback to the retrying tick')", () => {
   /**
    * A declined commit leaves the entry queued, so its next tick is a retry —
    * and before this, the only trace was the verdict log, which a chain could
    * reach only by re-deriving "was the last attempt declined" from history.
    * The record carries what the engine already held at the ship decision (the
-   * merged sha, the commit's paths) and no reason: the predicate returned a
-   * boolean, and the engine holds no vocabulary for why.
+   * merged sha, the commit's paths) and no reason: the predicate named no tag,
+   * and the engine holds no vocabulary for why.
    */
-  it("a `shipped: false` verdict leaves a `not-shipped` prior-attempt record under the entry's key, carrying the merged sha and touched paths", async () => {
+  it("an empty `shipped` list leaves a `not-shipped` prior-attempt record under the entry's key, carrying the merged sha and touched paths", async () => {
     await writePending(fx.repo, [
       makeEntry("DECLINED-ONCE", ["src/declined.ts"]),
     ]);
@@ -23685,7 +23948,7 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
       name: "build",
       concurrency: "fanout",
       writablePaths: ["src/**"],
-      shipped: () => false,
+      shipped: () => [],
     });
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
@@ -23770,7 +24033,7 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
         seen.push(ctx.priorAttempts);
         return {};
       },
-      shipped: () => !decline,
+      shipped: ({ entry }) => (decline ? [] : [entry.tag]),
     });
     const chain: Chain = { phases: [phase], humanOnly: [] };
 
@@ -23857,7 +24120,7 @@ describe("not-shipped PriorAttempt — the chain's `shipped: false` on the chann
       name: "build",
       concurrency: "fanout",
       writablePaths: ["src/**"],
-      shipped: () => false,
+      shipped: () => [],
     });
     const dispatcher = new Dispatcher({
       chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
@@ -24984,7 +25247,7 @@ describe("Dispatcher — a hook that throws is answered the way its sibling seam
       name: "build",
       concurrency: "fanout",
       writablePaths: ["src/**"],
-      shipped: () => false,
+      shipped: () => [],
     });
 
     const dispatcher = new Dispatcher({
@@ -26586,7 +26849,7 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
         if (ctx.entry.tag === "G-SHIP-THREW") {
           throw new Error("shipped hook boom for G-SHIP-THREW");
         }
-        return true;
+        return [ctx.entry.tag];
       },
     });
 

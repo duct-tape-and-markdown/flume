@@ -59,6 +59,20 @@ export type Concurrency = "singleton" | "fanout";
 export interface ShipContext {
   /** The entry being classified, as it appears in its queue file. */
   entry: PendingEntry;
+  /**
+   * The entry's steps — every descendant of it in the queue the selection
+   * that pulled it read (`spec/pending.md`, *The queue is a forest*), in that
+   * listing's own order. Empty for an entry a producer has not decomposed.
+   *
+   * Reported because the tags a predicate may ship are the `work` entry's and
+   * these, and a chain reaching for them itself would re-walk a `parent`
+   * chain the engine already walked (`.claude/rules/engineering.md`, *A fact
+   * the engine holds is reported, never rediscovered*). A step is no
+   * dispatch unit, so none of them was selected and none has a span of its
+   * own: what they are here is the rest of the work this one session was
+   * handed.
+   */
+  steps: readonly PendingEntry[];
   /** Sha of this entry's commit as cherry-picked onto trunk. */
   mergedSha: string;
   /**
@@ -286,7 +300,16 @@ export interface FanoutEntryOutcome {
   extension: Record<string, unknown>;
   /** This entry's own worktree tick produced a commit that passed every `afterCommit` gate. */
   committed: boolean;
-  /** `committed` reached trunk and `phase.shipped` (undeclared counts as shipped) agreed — the entry left the queue. */
+  /**
+   * `committed` reached trunk and `phase.shipped` (undeclared counts as
+   * shipped) named this entry's own tag — the entry left the queue.
+   *
+   * False with a `merged` {@link FanoutEntryOutcome.mergeOutcome} is the
+   * partial ship: the predicate named some of the entry's steps and not the
+   * entry, so those steps left and this entry is queued with what remains
+   * ({@link Phase.shipped}). Which steps left is `TickResult.shippedTags`,
+   * where a step's tag appears beside the entries' own.
+   */
   shipped: boolean;
   /** This entry's merged commit failed an `afterMerge` gate and was reset off trunk. */
   reverted: boolean;
@@ -625,7 +648,8 @@ export interface TickResult {
    * {@link ShipFailure} records the tick verdict persists. Each carries the
    * blamed entry's `tag`, the thrown `message`, and the `signature` the run's
    * consecutive-failure backstop compares repeats by. Absent when every
-   * consult this tick made returned, a `false` among them.
+   * consult this tick made answered with a list the span could ship, an
+   * empty one among them.
    *
    * What this adds beyond {@link FanoutEntryOutcome.mergeOutcome}: that field
    * reads `not-shipped` for a predicate that threw and for one that declined,
@@ -636,7 +660,12 @@ export interface TickResult {
    * interactive sessions)*).
    */
   shipFailures?: readonly ShipFailure[];
-  /** Set of pending tags shipped by this phase (build only; usually 0 or 1). */
+  /**
+   * Set of pending tags shipped by this phase (build only) — the entries that
+   * left the queue, each entry's own steps among them
+   * ({@link Phase.shipped}), so a wave's set is wider than its picks
+   * wherever a picked entry carried steps.
+   */
   shippedTags: readonly string[];
   /**
    * Tags whose commits were reverted at merge time (cherry-pick conflict or
@@ -878,14 +907,25 @@ export interface Phase {
   shouldRun?: (ctx: TickContext) => boolean;
 
   /**
-   * Optional predicate deciding whether a fanout entry whose commit landed
-   * and passed every gate counts as **shipped** — i.e. leaves the queue.
+   * Optional predicate naming which tags a fanout entry's landed, fully
+   * gated span **ships** — i.e. which of them leave the queue. The tags it
+   * may name are the entry's own and its steps' ({@link ShipContext.steps});
+   * a span ships no tag it was not handed, and a list naming one the engine
+   * did not offer is read as a broken hook rather than as a removal
+   * (`spec/pending.md`, *Ship detection trusts the agent's own account*).
    *
-   * Undeclared means shipped: a commit that landed on trunk with green
-   * gates removes its entry. That is the whole behavior for a chain with no
-   * notion of a commit that lands without finishing the work.
+   * Undeclared means shipped: a commit that landed on trunk with green gates
+   * ships the entry and every step. That is the whole behavior for a chain
+   * with no notion of a commit that lands without finishing the work, and it
+   * needs no ceremony to get it.
    *
-   * Returning `false` records the entry `not-shipped`: the commit stays on
+   * A **partial** list ships part of the work: the steps it names leave the
+   * queue, the entry stays queued with the steps that remain, and the next
+   * session on it starts from those. Such an entry reports
+   * `shipped: false` with a `merged` {@link FanoutEntryOutcome.mergeOutcome},
+   * which is the pair that tells a partial ship from a declined one.
+   *
+   * An **empty** list records the entry `not-shipped`: the commit stays on
    * trunk, the entry stays in the queue. The engine holds no vocabulary
    * for *why* — a park, a partial, a deliberate hand-off are one chain's
    * words for one chain's workflow (`.claude/rules/engine-boundary.md`,
@@ -896,7 +936,7 @@ export interface Phase {
    * entry, so a cheap `readFileSync` is fine and anything heavier is not.
    * Singleton phases never call it — they carry no entry to classify.
    */
-  shipped?: (ctx: ShipContext) => boolean;
+  shipped?: (ctx: ShipContext) => readonly string[];
 
   /**
    * Optional hook invoked after the tick's worktree is created, before the

@@ -275,14 +275,14 @@ describe("priorAttempts — the record builders (spec/loop.md 'Prior-outcome fee
 
   /**
    * spec/loop.md "Prior-outcome feedback to the retrying tick": `not-shipped`
-   * has two causes — the predicate returned `false`, or it threw — and the
-   * record says which. Driven the whole way for the same reason the round
+   * has two causes — the predicate named no tag, or the engine could not read
+   * what it answered with — and the record says which. Driven the whole way for the same reason the round
    * trip above is: the retry reaches this fact through the real `write` →
    * `readAll` → `renderPrompt` path, and a hand dropping it anywhere along it
    * serves a broken `shipped` hook to the next tick dressed as a deliberate
    * park.
    */
-  it("a not-shipped record distinguishes a thrown shipped hook from a returned false", async () => {
+  it("a not-shipped record distinguishes a broken shipped hook from one that named no tag", async () => {
     const flumeDir = join(fx.repo, ".flume");
     const store = new PriorAttemptStore(flumeDir, fx.repo, silent);
     // A span with something in it: `snapshotReverted` writes no directory at
@@ -320,12 +320,12 @@ describe("priorAttempts — the record builders (spec/loop.md 'Prior-outcome fee
     // quotes a throw only where there was one.
     const declinedBlock = await renderPriorBlock(fx.repo, backDeclined!);
     const threwBlock = await renderPriorBlock(fx.repo, backThrew!);
-    expect(declinedBlock).toContain("RETURNED FALSE");
-    expect(declinedBlock).not.toContain("THREW");
+    expect(declinedBlock).toContain("NAMED NO TAG");
+    expect(declinedBlock).not.toContain("BROKE");
     expect(declinedBlock).not.toContain(THREW);
-    expect(threwBlock).toContain("THREW");
+    expect(threwBlock).toContain("BROKE");
     expect(threwBlock).toContain(THREW);
-    expect(threwBlock).not.toContain("RETURNED FALSE");
+    expect(threwBlock).not.toContain("NAMED NO TAG");
   }, SPAWN_BUDGET_MS);
 
   it("a thrown shipped hook's message is bounded on the record like every other captured text", async () => {

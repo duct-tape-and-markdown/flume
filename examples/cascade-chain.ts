@@ -501,16 +501,17 @@ const factory: ChainFactory = (api) => {
     handoff(result) {
       // A refusal only plan can resolve wakes the re-derive whatever is
       // pickable: a clean exit with no commit, or a commit that landed and a
-      // `shipped` predicate *returned* false — otherwise the ladder hands
+      // `shipped` predicate that *named no tag* — otherwise the ladder hands
       // build the same entry into the same wall. The engine reports which
       // (`TickResult.noCommit`, `entries[].mergeOutcome`,
       // `TickResult.shipFailures`); what it means is this chain's reading. A
       // cherry-pick conflict is neither: the next wave retries it from the
       // new base.
       //
-      // `not-shipped` alone does not say which, because a predicate that
-      // *threw* wears the same fate as one that declined — and the engine has
-      // already split them, one tag-keyed `shipFailures` record per throw,
+      // `not-shipped` alone does not say which, because a predicate the
+      // engine could not read wears the same fate as one that declined — and
+      // the engine has already split them, one tag-keyed `shipFailures`
+      // record per broken consult,
       // always blamed on the span the consult was made for
       // (`.claude/rules/engineering.md`, *A fact the engine holds is
       // reported, never rediscovered*: the split is read off that field, not

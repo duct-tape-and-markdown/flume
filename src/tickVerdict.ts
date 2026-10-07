@@ -266,7 +266,7 @@ export function platformFailureFacts(
  * chain's own hook failing for one entry, as a thrown `promptArgs` is at the
  * render stage ({@link RenderFailure}).
  *
- * A `shipped` that *returned* `false` records nothing here: a declined ship
+ * A `shipped` that named no tag records nothing here: a declined ship
  * is the chain's verdict on a commit that landed, not a failure of the tick
  * that produced it. {@link TickVerdictMergeOutcome.threw} is where the two
  * causes of one `not-shipped` are already held apart; this record is the
@@ -582,7 +582,7 @@ export function startTiming(): () => number {
  *                            gate; never reached cherry-pick, so it never
  *                            touched trunk on its own.
  *  - `not-shipped`           landed and passed every gate, but the phase's
- *                            own `shipped` predicate returned false
+ *                            own `shipped` predicate retired none of it
  *                            (spec/pending.md "Ship detection trusts the
  *                            agent's own account") — commit stays on trunk,
  *                            entry stays pending. The engine records the
@@ -692,10 +692,12 @@ export interface TickVerdictMergeOutcome {
    */
   headSha?: string;
   /**
-   * The message a `shipped` predicate *threw* instead of returning
-   * (`spec/chain.md`, *What a hook receives*: a throw is not `false`). Only a
-   * `not-shipped` outcome carries it, and only when a throw produced that
-   * outcome — absent when the predicate deliberately returned `false`, so a
+   * What a `shipped` predicate the engine could not read did instead of
+   * answering — a throw's own message, or the engine's sentence naming the
+   * tags it would not remove (`spec/chain.md`, *What a hook receives*: a
+   * throw is not an answer). Only a
+   * `not-shipped` outcome carries it, and only when a broken predicate
+   * produced that outcome — absent when it deliberately named nothing, so a
    * chain reading the verdict tells a declined ship from a broken predicate
    * without the two collapsing into one record.
    */

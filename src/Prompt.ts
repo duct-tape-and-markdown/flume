@@ -373,10 +373,12 @@ export interface NotShippedAttempt extends PriorAttemptEnvelope {
   /** The cherry-picked commit on trunk the predicate declined — still reachable, so the next tick can read it. */
   mergedSha: string;
   /**
-   * The message the `shipped` predicate *threw* instead of returning
-   * (`spec/chain.md`, *What a hook receives*: a throw is not `false`),
+   * What a `shipped` predicate the engine could not read did instead of
+   * answering — a throw's own message, or the engine's sentence naming the
+   * tags it would not remove (`spec/chain.md`, *What a hook receives*: a
+   * throw is not an answer),
    * bounded like every other captured text on a record. Absent when the
-   * predicate deliberately returned `false`, so the retrying tick and every
+   * predicate deliberately named nothing, so the retrying tick and every
    * `shouldRun` reading `TickContext.priorAttempts` tells a declined ship
    * from a broken predicate instead of collapsing the two into one record —
    * the same split `TickResult`'s merge outcome already reports for the tick
@@ -1039,17 +1041,17 @@ function modeLines(prior: PriorAttempt): string[] {
         `reachable; do not reproduce what it already landed.`,
         ...(prior.threw === undefined
           ? [
-              `The predicate RETURNED FALSE — a deliberate decline. The`,
+              `The predicate NAMED NO TAG — a deliberate decline. The`,
               `harness records that the chain said no, never why — read the`,
               `landed change below and the chain's own rules for what`,
               `"shipped" means here before redoing anything.`,
             ]
           : [
-              `The predicate THREW rather than returning — the chain never`,
-              `reached a verdict, so this is a broken \`shipped\` hook, NOT a`,
-              `deliberate decline. Nothing about the landed work is`,
-              `discredited by it.`,
-              `Predicate threw:`,
+              `The predicate BROKE rather than answering — it threw, or it`,
+              `named tags this span cannot ship — so the chain never reached`,
+              `a verdict. This is a broken \`shipped\` hook, NOT a deliberate`,
+              `decline. Nothing about the landed work is discredited by it.`,
+              `What the predicate did:`,
               indentBlock(prior.threw),
             ]),
         `Landed commit: ${prior.mergedSha}`,

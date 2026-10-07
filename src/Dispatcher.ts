@@ -516,7 +516,7 @@ export interface TickOutcome {
   /**
    * See {@link TickVerdict.shipFailures}.
    * Present only when the tick hit at least one; absent on a tick whose every
-   * `shipped` consult returned.
+   * `shipped` consult answered with a list its span could ship.
    */
   shipFailures?: ShipFailure[];
   /**

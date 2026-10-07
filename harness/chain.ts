@@ -376,14 +376,22 @@ export function harnessChain(options: HarnessChainOptions): Chain {
     // A commit that put its work down — a park or a continuation — leaves its
     // entry in the queue with its span on the trunk; everything else finished
     // the entry it was handed.
-    shipped: ({ entry, touchedPaths, worktreePath }) =>
+    //
+    // All-or-nothing over the span: a finishing tick ships the entry and every
+    // step of it, and a put-down ships none. The package tells its build
+    // session how to say it put the whole thing down and gives it no way to
+    // say which steps it finished, so a partial list would be the engine's
+    // surface read for a declaration no prompt here asks for
+    // (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+    shipped: ({ entry, steps, touchedPaths, worktreePath }) =>
       // The tick's own worktree, still on disk while the merge loop
       // classifies the entry and standing at the commit that was
       // cherry-picked (`ShipContext`, `src/Phase.ts`) — so what the span's
       // tree holds is read there rather than out of trunk, which by then
       // carries every sibling in the wave as well.
-      putDown(entry, { touched: touchedPaths, tree: worktreePath }) ===
-      undefined,
+      putDown(entry, { touched: touchedPaths, tree: worktreePath }) === undefined
+        ? [entry.tag, ...steps.map((step) => step.tag)]
+        : [],
     handoff: handoffFor(BUILD_PHASE),
     ...(setup ? { setupWorktree: setup } : {}),
   };

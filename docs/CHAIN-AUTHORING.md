@@ -548,7 +548,7 @@ omitted; the rest are required.
 | `promptArgs`    | Optional builder for the `{{KEY}}` substitution map. Receives the per-tick `TickContext`.                                          |
 | `handoff`       | Returns sibling phases to wake based on the tick's `TickResult`.                                                                  |
 | `shouldRun`     | Optional predicate consulted before the agent is invoked. Returning `false` declines the tick — see below.                       |
-| `shipped`       | Optional predicate deciding whether a fanout entry whose commit landed and passed every gate leaves the queue. Reads the facts on `ShipContext`; returning `false` keeps the commit on trunk and the entry in the queue. Undeclared means shipped. |
+| `shipped`       | Optional predicate naming which tags a fanout entry's landed, fully gated span retires — the entry's own and its steps'. Reads the facts on `ShipContext`; an empty list keeps the commit on trunk and the whole entry in the queue. Undeclared ships the entry and every step. See below. |
 | `setupWorktree` | Optional hook to provision a fresh worktree's gitignored deps the gates need — runs `pnpm install`, copies `.env`. May return `{ extraEnv }`. Fires under either concurrency. See §3. |
 | `teardownWorktree` | Optional hook, `setupWorktree`'s cleanup mirror — best-effort, runs before the worktree is removed. Fires under either concurrency. See §3. |
 
@@ -754,6 +754,49 @@ should exist instead.
 - **A declined tick is a distinguishable fact**, not a silent no-op — it
   reports its own outcome, separate from a `clean-exit` (the agent ran and
   committed nothing usable) and from hibernation (nothing was awake).
+
+### `shipped`: which tags a landed span retires
+
+Landing on the trunk is not shipping. A commit that only writes a park note —
+the conflict recorded, no implementation — passes every check on that path,
+and classifying it as shipped would remove a never-built entry from the queue.
+Whether a landed commit is finished work or a park note is a question the
+engine cannot answer and does not try to: it reports facts on `ShipContext`,
+and the predicate answers with the tags that leave the queue.
+
+- **Undeclared means shipped.** A commit that landed on trunk with green gates
+  ships the entry and every step of it. That is the whole behavior for a chain
+  with no park concept, and it needs no ceremony to get it.
+- **The tags it may name are the entry's own and `ctx.steps`'.** A `work`
+  entry is what a tick is handed and its steps are the rest of that one
+  session's work (`spec/pending.md`, *The queue is a forest*), so both are
+  the predicate's to retire. A list naming anything else — some other
+  session's tag, or the entry's own tag while a step of it stays — is read as
+  a hook the engine could not read, exactly as a throw is: nothing leaves the
+  queue, the commit stays on trunk, and the refusal names the tags on
+  `shipFailures` and in the `not-shipped` record's `threw`.
+- **A partial list ships part of the work.** The steps it names leave the
+  queue; the entry stays queued, and the next session on it starts from the
+  steps that remain. Such an entry reports `shipped: false` with a `merged`
+  `entries[].mergeOutcome` — the pair that tells a partial ship from a
+  declined one.
+- **An empty list records the entry `not-shipped`.** It stays in the queue,
+  the commit stays on trunk, and a `not-shipped` record lands under the
+  entry's key for the retrying tick to read (§5 below). The engine holds no vocabulary for *why* — not "park", not
+  "channel-only"; those are one chain's words for one chain's workflow. It
+  records that the chain said no.
+- **Nothing is inferred.** Not from the paths the commit touched, not from the
+  agent's output stream. A chain that wants a park concept owns both halves of
+  it: the prompt telling its agent how to declare one, and the predicate
+  reading that declaration back (`.claude/rules/engine-boundary.md`, *Told,
+  not inferred*).
+- **Synchronous, like `shouldRun` and `handoff`.** It runs once per merged
+  entry, so one cheap synchronous file read is fine and anything heavier is
+  not. The
+  entry's worktree is still on disk at `ctx.worktreePath` — teardown runs
+  after the merge loop — so a chain reading something its own agent wrote
+  reads it there, where the tree *is* the commit being classified, rather
+  than out of a trunk that by then carries every sibling in the wave.
 
 ### Waking a phase, and ending the run, from outside a `handoff`
 
@@ -2241,13 +2284,15 @@ per record — and the block renders the variant that fired:
   tip reports `tipMoved` as a tick fact and writes nothing here, because nothing
   was discarded — the commit is still sitting on its worktree branch.
 - `not-shipped` — the commit landed, passed every gate, and your own `shipped`
-  predicate then did not ship it: it returned `false`, or it threw. Carries
+  predicate then retired none of it: it answered with an empty list, it threw,
+  or it answered with a list the span cannot ship. Carries
   `mergedSha`, the commit the predicate declined; `touchedPaths`, bounded to
   200 entries keeping the head — the paths that commit touched, with
   `omittedPaths` counting the ones past that bound and absent when the list is
   whole; and `threw`, bounded to 4 KiB keeping the head — the message a
-  throwing predicate raised, absent when it deliberately returned `false`, so a
-  broken hook never reads back as a park. No reason vocabulary beyond that: the
+  predicate the engine could not read produced, a throw's own or the engine's
+  sentence naming the tags it would not remove, and absent when the predicate
+  deliberately named nothing, so a broken hook never reads back as a park. No reason vocabulary beyond that: the
   engine records that the chain said no, never why. This is what a chain reads
   instead of rebuilding "was the last attempt a park" out of the verdict log.
 

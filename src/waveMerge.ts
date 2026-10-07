@@ -109,6 +109,15 @@ const WAVE_NO_COMMIT_RANK: Record<NoCommitMode, number> = {
  */
 export type EntryAttempt = AttemptOutcome & {
   entry: PendingEntry;
+  /**
+   * The entry's steps, as the queue listing its slot pulled from held them —
+   * `ShipContext.steps`, and with the entry itself the set of tags this span
+   * may ship (spec/pending.md "Ship detection trusts the agent's own
+   * account"). Carried out of the per-entry leg for the reason the branch
+   * below is: the merge stage is fed one finished attempt at a time and holds
+   * no listing of its own to walk.
+   */
+  steps: readonly PendingEntry[];
   /** This entry's worktree, still on disk when the merge stage classifies it — `ShipContext.worktreePath`. */
   worktreePath: string;
   /**
@@ -700,11 +709,8 @@ export async function drainWaiting(w: WaveMerge): Promise<void> {
         try {
           const span = await carrySpan(w, s.attempt);
           if (span.outcome) w.mergeOutcomes.push(span.outcome);
-          if (span.shipped) w.shipped.push(span.shipped);
-          await land(
-            span.shipped ? [span.shipped] : [],
-            span.outcome ? [span.outcome] : [],
-          );
+          w.shipped.push(...span.shipped);
+          await land(span.shipped, span.outcome ? [span.outcome] : []);
           // spec/loop.md "Crash equals stop": the queue on disk now accounts
           // for this span, so the marker staked for it has nothing left to warn
           // the next start about — retired with the rewrite that closed its
@@ -978,10 +984,8 @@ async function carryBatch(
   for (const [i, { attempt: r, base }] of spans.entries()) {
     const landed = batch.landed[i]!;
     const verdict = await consultShipped(w, r, base, landed, gateResults);
-    if (verdict.shipped) {
-      shipped.push(r.entry);
-      w.shipped.push(r.entry);
-    }
+    shipped.push(...verdict.shipped);
+    w.shipped.push(...verdict.shipped);
     rows.push(verdict.outcome);
   }
   w.mergeOutcomes.push(...rows);
@@ -1006,8 +1010,8 @@ async function carryBatch(
  * carries, and the consult that decides whether landing on trunk shipped.
  *
  * Answers with what this span leaves its drain to do: the merge-marker slug it
- * staked, if any; the one merge outcome it earned, if any; and the entry it
- * shipped, if it did. Returned rather than pushed onto the stage's arrays
+ * staked, if any; the one merge outcome it earned, if any; and the entries its
+ * span shipped, empty where it shipped none. Returned rather than pushed onto the stage's arrays
  * alone, because the drain's ledger commit needs exactly this span's own rows
  * and those arrays are wave-cumulative.
  */
@@ -1017,12 +1021,13 @@ async function carrySpan(
 ): Promise<{
   staked?: string;
   outcome?: TickVerdictMergeOutcome;
-  shipped?: PendingEntry;
+  /** The tags this span shipped, as entries — empty on every exit short of a ruled-on land. */
+  shipped: readonly PendingEntry[];
 }> {
   // Nothing to carry: the attempt left no span on its branch — declined,
   // render-refused, reverted in its worktree. What it observed is already
   // folded ({@link foldAttemptFacts}).
-  if (!r.committed) return {};
+  if (!r.committed) return { shipped: [] };
   const { leg, phase } = w.setup;
   const ref = priorAttemptRef(phase, r.entry);
   // `mergeGateResults` is wave-cumulative (never reset per entry —
@@ -1086,6 +1091,7 @@ async function carrySpan(
     w.tipMoved = true;
     return {
       ...(staked === undefined ? {} : { staked }),
+      shipped: [],
       outcome: {
         entryTag: r.entry.tag,
         outcome: carried.fate,
@@ -1101,6 +1107,7 @@ async function carrySpan(
     w.mergeFailures.push({ ...blamedOn(r.entry), ...carried.failure });
     return {
       ...(staked === undefined ? {} : { staked }),
+      shipped: [],
       outcome: {
         entryTag: r.entry.tag,
         outcome: carried.fate,
@@ -1145,6 +1152,7 @@ async function carrySpan(
     // prior-attempt block the carry wrote.
     return {
       ...(staked === undefined ? {} : { staked }),
+      shipped: [],
       outcome: {
         entryTag: r.entry.tag,
         outcome: carried.fate,
@@ -1165,7 +1173,7 @@ async function carrySpan(
   return {
     ...(staked === undefined ? {} : { staked }),
     outcome: verdict.outcome,
-    ...(verdict.shipped ? { shipped: r.entry } : {}),
+    shipped: verdict.shipped,
   };
 }
 
@@ -1198,33 +1206,62 @@ async function consultShipped(
   spanBase: string,
   landed: { mergedSha: string; landedOnSha: string; touchedPaths: string[] },
   mergeGateResults: readonly ReportedGateResult[],
-): Promise<{ shipped: boolean; outcome: TickVerdictMergeOutcome }> {
+): Promise<{
+  shipped: readonly PendingEntry[];
+  outcome: TickVerdictMergeOutcome;
+}> {
   const { leg, phase } = w.setup;
-  let shipVerdict: boolean;
-  // spec/chain.md "What a hook receives": a throwing `shipped` is not
-  // `false`. The outcome is the one the seam already has for a predicate
-  // that declines — entry stays pending, commit stays on trunk, merge
-  // bookkeeping below completes — but the verdict names the throw, so a
-  // broken predicate never reads back as a deliberate park.
-  let shipThrew: string | undefined;
+  // Everything this span may ship: the entry it was handed and that entry's
+  // steps, which are the work of the same one session (spec/pending.md "Ship
+  // detection trusts the agent's own account"). The entry leads, so the
+  // resolution below answers in the queue's own order whatever order the
+  // predicate named its tags in.
+  const shippable = [r.entry, ...r.steps];
+  let declared: readonly string[];
+  // spec/chain.md "What a hook receives": a `shipped` the engine cannot read
+  // is not an empty list. The outcome is the one the seam already has for a
+  // predicate that declines — entry stays pending, commit stays on trunk,
+  // merge bookkeeping below completes — but the verdict names what the hook
+  // did, so a broken predicate never reads back as a deliberate park. Two
+  // ways to be unreadable and one class: a throw, and a list the span cannot
+  // ship ({@link unshippableTags}). Held apart only for the line an operator
+  // reads, which says which of the two it was.
+  let threw: string | undefined;
   try {
-    shipVerdict =
+    declared =
       phase.shipped?.({
         entry: r.entry,
+        steps: r.steps,
         mergedSha: landed.mergedSha,
         baseSha: spanBase,
         touchedPaths: landed.touchedPaths,
         gateResults: [...r.gateResults, ...mergeGateResults],
         worktreePath: r.worktreePath,
         repoRoot: leg.repoRoot,
-      }) ?? true;
+      }) ?? shippable.map((e) => e.tag);
   } catch (err) {
-    shipThrew = thrownMessage(err);
-    shipVerdict = false;
+    threw = thrownMessage(err);
+    declared = [];
   }
-  if (!shipVerdict) {
+  const unshippable =
+    threw === undefined ? unshippableTags(r, declared) : undefined;
+  const broke = threw ?? unshippable;
+  // The entries behind the tags, filtered out of the offered set rather than
+  // looked up one by one: that dedupes a tag named twice and keeps the
+  // queue's order, and a set the engine refused ships nothing at all.
+  const shipped =
+    broke === undefined
+      ? shippable.filter((e) => declared.includes(e.tag))
+      : [];
+  if (shipped.length === 0) {
     leg.log.warn(
-      `[flume] ${r.entry.tag}: cherry-picked ${landed.mergedSha.slice(0, 8)} but ${phase.name}.shipped ${shipThrew === undefined ? "returned false" : `threw: ${shipThrew}`} — commit stays on trunk, entry stays pending`,
+      `[flume] ${r.entry.tag}: cherry-picked ${landed.mergedSha.slice(0, 8)} but ${phase.name}.shipped ${
+        threw !== undefined
+          ? `threw: ${threw}`
+          : unshippable !== undefined
+            ? `answered with a list this span cannot ship — ${unshippable}`
+            : "named no tag"
+      } — commit stays on trunk, entry stays pending`,
     );
     // spec/loop.md "Prior-outcome feedback to the retrying tick": the
     // entry stays queued, so its next tick is a retry and gets the same
@@ -1233,15 +1270,15 @@ async function consultShipped(
     // by re-deriving "was the last attempt declined" from history —
     // exactly the rebuild `TickContext.priorAttempts` exists to spare
     // it. Cleared by the existing shipped-entry sweep the ledger rewrite
-    // runs the moment a later attempt ships clean. `shipThrew` rides it for
+    // runs the moment a later attempt ships clean. `broke` rides it for
     // the same reason it rides the merge outcome below: the disk record is
     // what the *next* process reads, and a broken predicate collapsing into
     // "the chain parked this" is a wall the retry would invent.
     await leg.attempts.write(
       priorAttemptRef(phase, r.entry),
-      buildNotShipped(landed.mergedSha, landed.touchedPaths, shipThrew),
+      buildNotShipped(landed.mergedSha, landed.touchedPaths, broke),
     );
-    // A throw is a stage failure; a `false` is not. The run's accounting
+    // A broken hook is a stage failure; an empty list is not. The run's accounting
     // reads this list, never the `not-shipped` outcomes — the outcome
     // is the entry's fate, and re-filtering it for the throws would rebuild
     // beside the engine the split the engine already made
@@ -1250,24 +1287,29 @@ async function consultShipped(
     // only happens for a span this wave carried, so the entry is always
     // there, and a hook broken for one entry is exactly what the per-entry
     // leg exists to isolate.
-    if (shipThrew !== undefined)
+    if (broke !== undefined)
       w.shipFailures.push({
         ...blamedOn(r.entry),
-        ...stageFailureFacts(shipThrew),
+        ...stageFailureFacts(broke),
       });
     return {
-      shipped: false,
+      shipped: [],
       outcome: {
         entryTag: r.entry.tag,
         outcome: "not-shipped",
         baseSha: landed.landedOnSha,
         headSha: landed.mergedSha,
-        ...(shipThrew === undefined ? {} : { threw: shipThrew }),
+        ...(broke === undefined ? {} : { threw: broke }),
       },
     };
   }
+  // `merged` whether the list was the whole span or part of it: the commit
+  // landed and the chain did not decline it. Which tags left is the shipped
+  // set this answers with, and an entry whose own tag is not among them reads
+  // `shipped: false` beside this `merged` — the pair that tells a partial
+  // ship from a park (`FanoutEntryOutcome`, `src/Phase.ts`).
   return {
-    shipped: true,
+    shipped,
     outcome: {
       entryTag: r.entry.tag,
       outcome: "merged",
@@ -1275,6 +1317,45 @@ async function consultShipped(
       headSha: landed.mergedSha,
     },
   };
+}
+
+/**
+ * Why a `shipped` list is one the engine cannot read, or `undefined` for one
+ * this span can ship. Two refusals, both over what the rewrite behind this
+ * consult would otherwise *delete* (`commitPendingUpdate`,
+ * `src/pendingLedger.ts`) — the one thing the engine's own mechanics consume
+ * the list for (`.claude/rules/engine-boundary.md`, *Capability vs
+ * convention*):
+ *
+ * - a tag the span was never offered, which names an entry some other
+ *   session is carrying, or none at all;
+ * - the entry's own tag without every one of its steps, which would remove
+ *   the file each remaining step's `parent` names and leave a queue no later
+ *   read can parse (`spec/pending.md`, *The queue is a forest*).
+ *
+ * Refused rather than narrowed or completed: a list the engine quietly fixed
+ * up would ship a tag the chain did not name, and a queue written past this
+ * point is one an operator repairs by hand
+ * (`.claude/rules/engineering.md`, *Loud or nothing*). The engine's own
+ * undeclared default names the entry and every step, so nothing a chain gets
+ * for free lands here.
+ */
+function unshippableTags(
+  r: EntryAttempt,
+  declared: readonly string[],
+): string | undefined {
+  const offered = new Set([r.entry.tag, ...r.steps.map((s) => s.tag)]);
+  const foreign = declared.filter((tag) => !offered.has(tag));
+  if (foreign.length > 0) {
+    return `shipped named ${foreign.join(", ")}, which is neither ${r.entry.tag} nor a step of it`;
+  }
+  if (!declared.includes(r.entry.tag)) return undefined;
+  const left = r.steps.filter((s) => !declared.includes(s.tag));
+  return left.length === 0
+    ? undefined
+    : `shipped named ${r.entry.tag} without its step(s) ${left
+        .map((s) => s.tag)
+        .join(", ")}, which the queue cannot hold: a step's parent names an entry in the same queue`;
 }
 
 /**
