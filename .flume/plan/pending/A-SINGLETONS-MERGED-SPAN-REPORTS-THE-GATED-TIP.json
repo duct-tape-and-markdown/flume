@@ -1,0 +1,37 @@
+{
+  "tag": "A-SINGLETONS-MERGED-SPAN-REPORTS-THE-GATED-TIP",
+  "gate": { "kind": "open" },
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/singletonTick.ts",
+        "description": "the merged-fate arm inside the ship lock, which reports no gated tip at all"
+      },
+      {
+        "path": "src/waveMerge.ts",
+        "description": "the ledger land, which reads the tip even where the rewrite exited tip-claimed"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the field's cases under both concurrencies"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "a singleton's merged span reports `gatedTip`, and a ship whose ledger rewrite a foreign tip claim stopped reports none",
+  "per": {
+    "path": "spec/loop.md",
+    "section": "The tick verdict — one facts artifact"
+  },
+  "acceptance": "a singleton tick whose span merged and whose `afterMerge` gates passed carries `gatedTip`; one whose span was reverted, refused or never picked carries none; and a fanout ship whose ledger rewrite exited tip-claimed carries none with `tipMoved` set",
+  "tests": [
+    "a singleton tick whose span merged reports the gated tip it left",
+    "a singleton tick whose afterMerge gates reverted its span reports no gated tip",
+    "a fanout ship whose ledger rewrite a foreign tip claim stopped reports no gated tip"
+  ],
+  "pins": [],
+  "laneTests": [],
+  "notes": "`gatedTip` is set in `src/waveMerge.ts` alone, so every singleton verdict withholds it and a step delivering trunk infers one from commit subjects instead. The fanout half: `commitAttemptLedger` returns normally on a `tip-claimed` rewrite — it sets `tipMoved` and the caller still reads the tip, which may then name a commit no gate of this tick judged."
+}

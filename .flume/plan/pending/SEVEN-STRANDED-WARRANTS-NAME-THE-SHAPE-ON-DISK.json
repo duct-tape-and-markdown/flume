@@ -29,8 +29,8 @@
   },
   "summary": "seven comments warrant a gate name, a spec roster, a parse premise and a hold count the tree outgrew; third body since the family last filed, so it files",
   "per": {
-    "path": ".claude/rules/posture-sweep.md",
-    "section": "Routing"
+    "path": "spec/harness.md",
+    "section": "The sweep procedure"
   },
   "acceptance": "`grep -rn 'cursor gate' src/ harness/ tests/`, `grep -rn 'after the six that section' harness/`, `grep -rn 'cycle check at parse' harness/` and `grep -rn 'the two holds' src/ harness/` plus `grep -rn 'both hold lists' src/ harness/` all come back empty, and each site states the shape on disk instead: `harness/gates.ts:5` and `tests/harnessChain.test.ts:1439` name `slice-state` and what it judges — a whole slice state read at two refs against that slice's own rules, not every cursor; `harness/entryExtension.ts:257`-`:261` warrants the field order on something `spec/harness.md`, *The entry extension* still states, which is that the fields are held by the package's schema and by no roster there; `harness/order.ts:63` and `:95` warrant their two guards on what `src/PendingSchema.ts`'s blocker-cycle refusal leaves them for; `src/selection.ts:404` and `:518` count the three holds `PickableSelection` carries. Comment-only: `pnpm tsc --noEmit` and `pnpm test` green with no executable line changed.",
   "tests": [],

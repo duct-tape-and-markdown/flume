@@ -1,0 +1,56 @@
+{
+  "tag": "SELECTION-REPORTS-A-BLOCKER-NO-QUEUE-ENTRY-CARRIES",
+  "gate": { "kind": "open" },
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/selection.ts",
+        "description": "the membership read that already settles such a tag silently"
+      },
+      {
+        "path": "src/Phase.ts",
+        "description": "the result's reported facts, beside `quarantinedTags`"
+      },
+      {
+        "path": "src/singletonTick.ts",
+        "description": "the leg that carries its post-selection facts onto the result"
+      },
+      {
+        "path": "src/waveTick.ts",
+        "description": "the same carry under fanout"
+      },
+      {
+        "path": "docs/CHAIN-AUTHORING.md",
+        "description": "the reported facts a handoff may refuse on"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the field under both concurrencies"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "selection reports a blocker tag no queue entry carries on `TickResult.unresolvedBlockers`, so a misspelled blocker is visible rather than a silently open gate",
+  "per": {
+    "path": "spec/pending.md",
+    "section": "Pickability"
+  },
+  "acceptance": "a queue whose `blockedBy` names a tag no entry carries reports that tag on `TickResult.unresolvedBlockers` under both concurrencies, and the entry stays pickable",
+  "tests": [
+    "a blockedBy naming a tag no queue entry carries is reported as an unresolved blocker",
+    "a singleton tick's result carries the unresolved blockers its selection found",
+    "a fanout tick's result carries the unresolved blockers its selection found"
+  ],
+  "pins": [
+    "an entry whose blockedBy names a tag no queue entry carries stays pickable"
+  ],
+  "laneTests": [],
+  "interface": {
+    "changes": "`TickResult.unresolvedBlockers` names the blocker tags this tick's selection found no queue entry for; a chain's handoff or refusal may read it",
+    "hides": "the membership read itself — absence from the queue is how a ship reads, and a chain never re-walks the listing to tell a landed blocker from a misspelt one",
+    "rejected": "refusing such a tag at the queue parse, which would make a restored or relocated queue unrunnable — the engine reports the fact and the chain decides (`.claude/rules/engine-boundary.md`, *Routing rule*)"
+  },
+  "notes": "`settledBlockers` (`src/selection.ts`) already counts absence from the queue as landed, which is the section's other half and needs nothing; what no surface reports is *which* tags that was. Not a hold: the entry is pickable, so `PickableSelection`'s hold count stands at three."
+}

@@ -1,0 +1,68 @@
+{
+  "tag": "THE-DECLARATION-CARRIES-THE-FORESTS-DEPTH-CAP",
+  "gate": { "kind": "open" },
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "harness/declaration.ts",
+        "description": "the new declared field"
+      },
+      {
+        "path": "harness/chain.ts",
+        "description": "where a declared field reaches the chain"
+      },
+      {
+        "path": "harness/prompts.ts",
+        "description": "the schema render, whose comment already names the omission"
+      },
+      {
+        "path": "harness/gates.ts",
+        "description": "the package's queue parses, which take the engine default"
+      },
+      {
+        "path": "docs/CHAIN-AUTHORING.md",
+        "description": "the declaration roster the suite walks"
+      },
+      {
+        "path": "docs/LAYERS.md",
+        "description": "the same roster, walked both ways"
+      },
+      {
+        "path": "tests/harnessDeclaration.test.ts",
+        "description": "the field's own acceptance and the two doc walks"
+      },
+      {
+        "path": "tests/harnessPrompts.test.ts",
+        "description": "the rendered forest rules under a declared cap"
+      },
+      {
+        "path": "tests/harnessGates.test.ts",
+        "description": "a gate's queue parse under a declared cap"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "the harness declaration carries `maxEntryDepth`, passed to the chain and read by the package's prompt render and its queue-reading gates alike",
+  "per": {
+    "path": "spec/harness.md",
+    "section": "What a consumer declares"
+  },
+  "acceptance": "a declaration naming `maxEntryDepth` reaches `Chain.maxEntryDepth`, the rendered forest rules state that cap, and a package gate's queue parse refuses past it; a declaration naming none leaves every side on the engine's default of four",
+  "tests": [
+    "a declared maxEntryDepth reaches Chain.maxEntryDepth",
+    "the rendered entry schema states the declared depth cap",
+    "a package gate's queue parse refuses a forest deeper than the declared cap"
+  ],
+  "pins": [
+    "a declaration naming no maxEntryDepth leaves the engine's default on every side"
+  ],
+  "laneTests": [],
+  "interface": {
+    "changes": "a declaration may name `maxEntryDepth`; the factory hands it to `Chain.maxEntryDepth`, to the prompt's schema render, and to the package's own queue parses",
+    "hides": "that the rendered forest rules and the gates' parses are separate reads an author would otherwise have to keep at one value",
+    "rejected": "leaving the cap to `Chain.maxEntryDepth` alone — a consumer can already set it there, and it moves the parse without moving the rendered rules, telling a producer a bound its own queue read does not keep"
+  },
+  "notes": "`harness/prompts.ts` (`PENDING_SCHEMA`) and the two `parsePendingQueue` calls in `harness/gates.ts` pass no cap today, and the prompt's own comment states the condition this entry closes. The declaration walks in `tests/harnessDeclaration.test.ts` read both doc pages, so a new field reds them until each names it."
+}

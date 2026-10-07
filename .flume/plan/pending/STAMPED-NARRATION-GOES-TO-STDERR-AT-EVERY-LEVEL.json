@@ -1,0 +1,38 @@
+{
+  "tag": "STAMPED-NARRATION-GOES-TO-STDERR-AT-EVERY-LEVEL",
+  "gate": { "kind": "open" },
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/cliLog.ts",
+        "description": "the operator logger's sink, whose `info` is the engine default's stdout write"
+      },
+      {
+        "path": "tests/cliLog.test.ts",
+        "description": "the stream each level reaches"
+      },
+      {
+        "path": "tests/cli.test.ts",
+        "description": "whatever reads a narration line off a verb's stdout today"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "every level of the CLI's stamped narration writes to stderr, so a verb's stdout carries only what the verb itself produced",
+  "per": {
+    "path": "spec/cli.md",
+    "section": "A log line carries the instant it was written"
+  },
+  "acceptance": "an `info` line through the CLI's operator logger reaches stderr and not stdout, `warn` and `error` land where they already did, and a verb's own listing still reaches stdout",
+  "tests": [
+    "the CLI's stamped narration writes an info line to stderr",
+    "a verb's own listing reaches stdout while the narration of the same run does not"
+  ],
+  "pins": [
+    "the engine's consoleLogger still writes an info line to stdout"
+  ],
+  "laneTests": [],
+  "notes": "`operatorLog` takes `consoleLogger` as its sink, whose `info` is `console.log`, so supervisor and tick-child narration lands on stdout today — which `docs/CLI.md`, *Narration carries the instant it was written* already states it does not. The engine default stays what it is: the same section leaves an embedder's `Logger` its own timing and its own streams."
+}

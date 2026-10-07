@@ -1,0 +1,39 @@
+{
+  "tag": "A-GOALS-ROW-NAMES-THREE-WORK-ENTRIES-AND-COUNTS-THE-REST",
+  "gate": { "kind": "open" },
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/queueGoals.ts",
+        "description": "the row's work clause, which joins every tag, and the subtree sort that decides which three it would name"
+      },
+      {
+        "path": "docs/CLI.md",
+        "description": "the status paragraph's sentence on what a goal row names"
+      },
+      {
+        "path": "tests/cli.test.ts",
+        "description": "the goal rows, the only window on the served sequence"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "a Goals row names the first three of a goal's remaining work entries in the order they will be served and counts the rest, rather than every tag it carries",
+  "per": {
+    "path": "spec/cli.md",
+    "section": "`flume status` owes exactly this"
+  },
+  "acceptance": "a goal with more than three remaining `work` entries prints its first three in served order and a count of the remainder; one with three or fewer prints them all and counts nothing",
+  "tests": [
+    "a Goals row names at most three of the goal's remaining work entries",
+    "a Goals row counts the remaining work entries it did not name",
+    "a Goals row names a goal's remaining work entries in the order they will be served"
+  ],
+  "pins": [
+    "a goal with three remaining work entries names all three and counts nothing"
+  ],
+  "laneTests": [],
+  "notes": "`goalRow` joins every tag today, and `readGoals` sorts a goal's subtree by the queue's own default rather than by the served positions the ready set already carries — which is what decides *which* three a truncated row names. `docs/CLI.md`'s status paragraph restates the row and moves with it."
+}

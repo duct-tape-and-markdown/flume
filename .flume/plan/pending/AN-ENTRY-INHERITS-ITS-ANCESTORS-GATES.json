@@ -1,0 +1,53 @@
+{
+  "tag": "AN-ENTRY-INHERITS-ITS-ANCESTORS-GATES",
+  "gate": { "kind": "open" },
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/PendingSchema.ts",
+        "description": "the exported gate read, whose second parameter is a blocker set its caller composes"
+      },
+      {
+        "path": "src/selection.ts",
+        "description": "the selection-side read that composes it"
+      },
+      {
+        "path": "docs/CHAIN-AUTHORING.md",
+        "description": "the page's spelling of the exported call"
+      },
+      {
+        "path": "tests/PendingSchema.test.ts",
+        "description": "the inherited-gate cases over the exported read"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the same rule through selection"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "`isPickableNow` takes the queue the entry sits in, and an entry is pickable only where every ancestor's gate would pass too",
+  "per": {
+    "path": "spec/pending.md",
+    "section": "Pickability"
+  },
+  "acceptance": "a `work` entry under a parked, unsettled-`blockedBy` or unasserted-capability ancestor is unpickable through the exported read and through selection alike, and `isPickableNow` takes the queue rather than a blocker set its caller composed",
+  "tests": [
+    "a work entry under a parked group is not pickable",
+    "a work entry under a group whose blockedBy has not settled is not pickable",
+    "a work entry under a group gated on an unasserted capability is not pickable",
+    "a work entry two groups below a parked root is not pickable"
+  ],
+  "pins": [
+    "a work entry under an open group stays pickable"
+  ],
+  "laneTests": [],
+  "interface": {
+    "changes": "`isPickableNow` takes the queue the entry sits in and answers over its ancestors' gates as well as its own; a caller no longer composes a settled-blocker set for it",
+    "hides": "which tags have settled, and that an ancestor's gate has to be walked at all",
+    "rejected": "a second exported read for the inherited case beside the flat one — two spellings of the switch is exactly how the tooling read and selection come to disagree about what pickable means"
+  },
+  "notes": "`isPickableNow(entry, shippedTags, …)` reads the entry's own gate alone, so a `blockedBy` declared once on a goal holds nothing beneath it. Breaking on the package's public surface: the 0.22.0 cut's migration note walks the signature (`spec/cli.md`, *Versioning policy*), which is the cut's and not this entry's. Siblings on `src/selection.ts` and that page serialize against it."
+}
