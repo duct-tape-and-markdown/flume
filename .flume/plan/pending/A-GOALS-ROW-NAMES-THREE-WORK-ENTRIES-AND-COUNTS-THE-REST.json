@@ -1,6 +1,9 @@
 {
   "tag": "A-GOALS-ROW-NAMES-THREE-WORK-ENTRIES-AND-COUNTS-THE-REST",
-  "gate": { "kind": "open" },
+  "gate": {
+    "kind": "open"
+  },
+  "dependsOnForks": [],
   "kind": "work",
   "files": {
     "new": [],
@@ -35,5 +38,11 @@
     "a goal with three remaining work entries names all three and counts nothing"
   ],
   "laneTests": [],
-  "notes": "`goalRow` joins every tag today, and `readGoals` sorts a goal's subtree by the queue's own default rather than by the served positions the ready set already carries — which is what decides *which* three a truncated row names. `docs/CLI.md`'s status paragraph restates the row and moves with it."
+  "notes": "`goalRow` joins every tag today, and `readGoals` sorts a goal's subtree by the queue's own default rather than by the served positions the ready set already carries — which is what decides *which* three a truncated row names. `docs/CLI.md`'s status paragraph restates the row and moves with it.",
+  "observedFiles": [
+    ".flume/plan/notes/A-GOALS-ROW-NAMES-THREE-WORK-ENTRIES-AND-COUNTS-THE-REST.md",
+    "docs/CLI.md",
+    "src/queueGoals.ts",
+    "tests/cli.test.ts"
+  ]
 }
