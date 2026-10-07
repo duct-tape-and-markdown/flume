@@ -51,7 +51,7 @@ import {
 import { entryClaimPath, entryClaimSlug } from "../src/entryClaims.ts";
 import { renderPidClaim } from "../src/pidClaim.ts";
 import { readGatedQueue, readQueueAtRef } from "../src/pendingLedger.ts";
-import { entryFileName, parsePendingQueue } from "../src/PendingSchema.ts";
+import { entryFileName } from "../src/PendingSchema.ts";
 import { computeStateRootRel, matchesAny } from "../src/paths.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 import {
@@ -59,7 +59,6 @@ import {
   PLAN_SLICES,
   type PlanSlice,
 } from "../harness/declaration.ts";
-import { FILING_BANDS } from "../harness/filingBands.ts";
 import { JUDGED_SLICES } from "../harness/planState.ts";
 import { putDownPredicate } from "../harness/putDown.ts";
 import type { RunnerFactory } from "../harness/runner.ts";
@@ -87,7 +86,6 @@ vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
 const engine: GateEngine = {
   pendingGate,
   readGatedQueue,
-  parsePendingQueue,
   git: { readFileAtRef, isAncestor, statusRecords },
 };
 
@@ -303,13 +301,6 @@ const sliceGates = (name: PlanSlice): Gate[] =>
     putDown,
   });
 
-/** That slice's filing-band gate — by name, never by index. */
-function bandGate(name: PlanSlice): Gate {
-  const gate = sliceGates(name).find((g) => g.name === "filing band");
-  if (!gate) throw new Error(`${name}'s set has no filing-band gate`);
-  return gate;
-}
-
 /** The gate this set names `name` — by name, never by index. */
 function named(
   name: string,
@@ -425,188 +416,86 @@ it("the per gate reports a drained queue as skipped, not as a judged green", asy
 });
 
 /**
- * The filing-band gate (`spec/harness.md`, *The phases*). Every case drives a
- * real plan commit on the real repository: which entry files a span *added* is
- * the seam this gate turns on, so the listing it reads is the one the engine
- * reads at two real shas, never a span built by hand
+ * **Nothing a producer files carries a rank** (`spec/harness.md`, *The
+ * phases*): the queue has one ordering and no number an entry's filer chose
+ * is part of it, so no rank is the package's to refuse at the commit that
+ * filed it.
+ *
+ * Driven over a real plan commit through the real factory's whole
+ * `afterCommit` set for a real slice — the verdicts that slice's own ticks are
+ * handed, not the absence of one gate read off a roster
  * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
  * wrote*).
- *
- * The band numbers ride in off the package's own table — what these cases
- * claim is the pairing of a rank with the slice that filed it, and which
- * number sits with which source is pinned where it enters the suite
- * (`tests/harnessPrompts.test.ts`).
  */
-it("the band gate refuses a plan commit that added an entry outside the filing slice's band", async () => {
-  const gate = bandGate("plan-derive");
-
-  // An entry at derive's own band first: without it the refusal below could be
-  // a gate that never returns anything else.
-  await writeQueue([queueEntry("IN-BAND", { priority: FILING_BANDS.spec })]);
-  const judged = await gate.run(
-    ctxFor(commitAll("plan: derive an entry at its own band"), {
-      phaseName: "plan-derive",
-    }),
+it("a plan slice's commit adding an entry at a rank its old band excluded passes its gates", async () => {
+  // Three ranks the retired provenance bands kept apart — the sweep's, a
+  // build note's, and a downstream report's. The derive slice admitted
+  // exactly one of them, so two of these three rows were a refusal before.
+  const RANKED = [
+    { tag: "RANKED-AT-THE-SWEEPS-OLD-BAND", priority: 0 },
+    { tag: "RANKED-AT-A-BUILD-NOTES-OLD-BAND", priority: 20 },
+    { tag: "RANKED-AT-A-DOWNSTREAM-REPORTS-OLD-BAND", priority: 30 },
+  ];
+  await writeQueue(
+    RANKED.map(({ tag, priority }) => queueEntry(tag, { priority })),
   );
-  expect(judged).toMatchObject({ ok: true });
-  expect(judged.skipped).toBeUndefined();
-  expect(judged.message).toContain("1 entry file(s) added");
-
-  // The same slice files a second entry at the sweep's band — insurance rank
-  // on work a spec commit asked for, which is the queue served in the wrong
-  // order on every tick after.
-  await writeQueue([
-    queueEntry("IN-BAND", { priority: FILING_BANDS.spec }),
-    queueEntry("OFF-BAND", { priority: FILING_BANDS.sweep }),
-  ]);
-  const refused = await gate.run(
-    ctxFor(commitAll("plan: derive an entry at the sweep's band"), {
-      phaseName: "plan-derive",
-    }),
-  );
-
-  expect(refused.ok).toBe(false);
-  // The tag, the rank and the band, on the one entry this commit added.
-  expect((refused.details ?? "").split("\n")).toHaveLength(1);
-  expect(refused.details).toContain(
-    `OFF-BAND: filed at \`${FILING_BANDS.sweep}\``,
-  );
-  expect(refused.details).toContain(
-    `plan-derive's band of \`${FILING_BANDS.spec}\``,
-  );
-});
-
-it("the band gate passes a plan commit that amended an entry it did not add", async () => {
-  const gate = bandGate("plan-derive");
-
-  // An entry the sweep filed at its own band, in the queue before this span.
-  await writeQueue([queueEntry("SWEPT", { priority: FILING_BANDS.sweep })]);
-  commitAll("plan: the sweep files its insurance");
-
-  // Derive amends it — a widened `files`, which moves no provenance — and
-  // files one of its own in the same commit.
-  await writeQueue([
-    queueEntry("SWEPT", {
-      priority: FILING_BANDS.sweep,
-      edit: "src/other.ts",
-    }),
-    queueEntry("DERIVED", { priority: FILING_BANDS.spec }),
-  ]);
-  const span = commitAll("plan: amend a sibling's entry and file one of my own");
-  // Non-vacuity: git named both files, so the verdict below is the gate
-  // reading one as added and one as amended, not an empty span.
+  const span = commitAll("plan: derive three entries at three ranks");
+  // Non-vacuity: git named every entry file, so the verdicts below are read
+  // over a span that really filed each of them.
   expect(span.touchedPaths).toEqual(
-    [
-      `${STATE_ROOT}/plan/pending/${entryFileName("DERIVED")}`,
-      `${STATE_ROOT}/plan/pending/${entryFileName("SWEPT")}`,
-    ].sort(),
+    RANKED.map(
+      ({ tag }) => `${STATE_ROOT}/plan/pending/${entryFileName(tag)}`,
+    ).sort(),
   );
 
-  const amended = await gate.run(ctxFor(span, { phaseName: "plan-derive" }));
-
-  // Judged, not skipped: the added entry was ruled on, and the amended one —
-  // whose rank derive's band does not admit — was not read.
-  expect(amended.ok).toBe(true);
-  expect(amended.skipped).toBeUndefined();
-  expect(amended.message).toContain("1 entry file(s) added");
-});
-
-it("the band gate skips a plan commit that added no entry", async () => {
-  const gate = bandGate("plan-derive");
-
-  // A commit that adds one first: the same gate, on the same repo, rules and
-  // says so — so the skip below is this span's verdict and not a gate that
-  // never judges anything.
-  await writeQueue([queueEntry("DERIVED", { priority: FILING_BANDS.spec })]);
-  const judged = await gate.run(
-    ctxFor(commitAll("plan: file one entry"), { phaseName: "plan-derive" }),
-  );
-  expect(judged).toMatchObject({ ok: true });
-  expect(judged.skipped).toBeUndefined();
-
-  await write("src/widget.ts", `export const widget = "second";\n`);
-  const span = commitAll("plan: a commit that files nothing");
-  // The span is real and carries no entry file at all.
-  expect(span.touchedPaths).toEqual(["src/widget.ts"]);
-
-  const skipped = await gate.run(ctxFor(span, { phaseName: "plan-derive" }));
-
-  // Vacuous by design, and spelled: green, with the fact that nothing was
-  // judged carried on the verdict rather than read back out of the message.
-  expect(skipped.ok).toBe(true);
-  expect(skipped.skipped).toBe("no entry file added in the gated span");
-  expect(skipped.message).toContain("adds no entry");
+  const set = sliceGates("plan-derive").filter((g) => g.when === "afterCommit");
+  // Vacuity pin: there are gates at that point to run at all.
+  expect(set.length).toBeGreaterThan(0);
+  // A throw counts against the claim exactly as a refusal does: what the
+  // title asserts is that the commit *passes*, and a gate that cannot run
+  // over it has not passed it.
+  const refused = (
+    await Promise.all(
+      set.map(async (gate) => {
+        try {
+          const verdict = await gate.run(ctxFor(span, { phaseName: "plan-derive" }));
+          return verdict.ok ? [] : [`${gate.name}: ${verdict.message}`];
+        } catch (error) {
+          return [`${gate.name} threw: ${(error as Error).message}`];
+        }
+      }),
+    )
+  ).flat();
+  // The compared value is the refusing gates, named; the whole of each refusal
+  // rides the message, which chai does not truncate
+  // (`.claude/rules/platform-facts.md`, *chai truncates an inspected value in
+  // an assertion message at 40 characters*).
+  expect(
+    refused.map((line) => line.split(":")[0]),
+    refused.join("\n"),
+  ).toEqual([]);
 });
 
 /**
- * The band is a fact about the slice that filed the entry, so the gate is
- * built from that slice — read off the real factory for every declared slice
- * over one commit, and absent from build's set, which files no entry.
- *
- * Which slices admit the report band is spelled here rather than read back off
- * the package's table: the table is the writer under test, and a case reading
- * it would assert the wiring against the value the wiring came from.
+ * And no member of the set reads a rank at all. Read off the real factory for
+ * every declared slice rather than off build's set, which never carried the
+ * row: the band was a fact about the slice that filed the entry, so the
+ * producer's own set is where its absence has to hold.
  */
-it("the filing-band gate holds each plan slice to its own band, and build's set carries none", async () => {
-  const ADMITS_REPORT: Record<PlanSlice, boolean> = {
-    "plan-inbox": true,
-    "plan-derive": false,
-    "plan-sweep": false,
-  };
-
-  await writeQueue([queueEntry("REPORTED", { priority: FILING_BANDS.report })]);
-  const span = commitAll("plan: file an entry at the report band");
-
-  // Vacuity pin: there are slices to judge, and each one's set carries the
-  // gate at all.
+it("the gates a plan slice declares carry no filing-band row", () => {
+  // Vacuity pin: there are slices to read.
   expect(PLAN_SLICES.length).toBeGreaterThan(0);
+
   for (const slice of PLAN_SLICES) {
-    const result = await bandGate(slice).run(ctxFor(span, { phaseName: slice }));
-    expect({ slice, ok: result.ok }).toEqual({
+    const names = sliceGates(slice).map((g) => g.name);
+    // And that slice's set is populated: an empty set names no band either.
+    expect({ slice, populated: names.length > 0 }).toEqual({
       slice,
-      ok: ADMITS_REPORT[slice],
+      populated: true,
     });
+    expect({ slice, band: names.filter((name) => name.includes("band")) })
+      .toEqual({ slice, band: [] });
   }
-
-  // Build's own set carries no band at all: its fence admits no entry file.
-  expect(gates().map((g) => g.name)).not.toContain("filing band");
-});
-
-it("the filing-band gate skips a state root resolved outside the repository", async () => {
-  const gate = bandGate("plan-derive");
-
-  // A commit that genuinely files an entry: read against the repo's own state
-  // root, the same span is judged.
-  await writeQueue([queueEntry("DERIVED", { priority: FILING_BANDS.spec })]);
-  const span = commitAll("plan: file an entry beside a relocated state root");
-  expect(span.touchedPaths).toContain(
-    `${STATE_ROOT}/plan/pending/${entryFileName("DERIVED")}`,
-  );
-  const judged = await gate.run(ctxFor(span, { phaseName: "plan-derive" }));
-  expect(judged).toMatchObject({ ok: true });
-  expect(judged.skipped).toBeUndefined();
-  expect(judged.message).toContain("1 entry file(s) added");
-
-  // The offset the engine reports for a state root outside the repo: absent,
-  // because no path in a commit's tree can address it.
-  const relocated = { segments: ["..", "elsewhere", ".flume"] };
-  expect(
-    computeStateRootRel(repo, join(repo, ...relocated.segments)),
-  ).toBeUndefined();
-
-  const skipped = await gate.run(
-    ctxFor(span, { phaseName: "plan-derive", stateRoot: relocated }),
-  );
-
-  // Same span, same added entry file in it, and still no judgement — the skip
-  // is the reported offset's, spelled on the verdict. A band the gate went on
-  // enforcing here would rule off a queue read at one offset on both legs,
-  // where nothing can read as added.
-  expect(skipped.ok).toBe(true);
-  expect(skipped.skipped).toBe(
-    "the queue under a relocated state root is read off the disk at both ends, so no entry file can read as added",
-  );
-  expect(skipped.message).toBe("the state root is outside the repository");
 });
 
 it("the records gate refuses a record written outside the tick's own tag", async () => {
@@ -1108,7 +997,6 @@ it("the clean-tree gate takes its status records from the engine rather than spa
   const wired: GateEngine = {
     pendingGate,
     readGatedQueue,
-    parsePendingQueue,
     git: {
       readFileAtRef,
       isAncestor,

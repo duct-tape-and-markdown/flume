@@ -65,7 +65,7 @@ the first of them is what this page documents:
   and reports a `laneTests[]` line owed to the CI lane that runs it,
   the discipline gates that run ahead of whatever a consumer declared
   (`records`, `clean-tree`, `pending-gate`, `per cites resolve`,
-  `filing band`, `slice-state`), the records conventions, and the plan state
+  `slice-state`), the records conventions, and the plan state
   as typed state rather than prose a cursor is regexed out of.
 
 One package, one version: an engine minor that breaks the chain surface ships

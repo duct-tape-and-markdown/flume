@@ -46,8 +46,6 @@ Each record routes to exactly one of:
 
 **A family noted three times files once.** A shape accepted as debt in three `plan:` commit bodies has cost more in re-noting than filing it would. The count runs over every plan commit body, whichever slice wrote it, and reaches back with no window on it at all: it ends itself, because a filed family stops being re-noted, and a window is how a family re-noted twice inside each one never files. File it then: one entry that claims no property — no `tests[]`, no `pins[]` — names the target shape, names every site in `files`, and ships on its own. Read the count off `git log` over those bodies, never estimated; under three, shape stays out of the queue.
 
-{{FILING_BAND}}
-
 **Research-leaning by default.** A note that claims a gap is re-verified against the current tree before it scopes an entry — search for the claimed-missing surface; a note stamped `observed at <sha>` narrows the check to `git log <sha>..HEAD`. Scope to the verified gap, never the reported one. A finding a chain could have decided routes to the consumer's declaration or to a boundary question, not to a package entry.
 
 A record's byte cap is yours to report, never the gate's to revert: a record over it ships with the commit that wrote it, and `<records>` marks that file with what it measured. Name every marked record and its byte count in the commit body — that is the whole enforcement, so a tick that routes the record silently leaves the channel unbounded.

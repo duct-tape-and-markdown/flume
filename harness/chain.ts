@@ -170,7 +170,6 @@ export function harnessChain(options: HarnessChainOptions): Chain {
   const engine: GateEngine = {
     pendingGate: api.pendingGate,
     readGatedQueue: api.readGatedQueue,
-    parsePendingQueue: api.parsePendingQueue,
     git: {
       readFileAtRef: api.git.readFileAtRef,
       isAncestor: api.git.isAncestor,
