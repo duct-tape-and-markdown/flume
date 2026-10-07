@@ -32,11 +32,13 @@
  */
 
 import type { Agent } from "./Agent.js";
+import { byFilingThenTag, type FilingTimes } from "./filingOrder.js";
 import { existsLoudUnder } from "./fsProbe.js";
 import * as git from "./git.js";
 import { stopFlagPath } from "./paths.js";
 import type { StakedPidClaim } from "./pidClaim.js";
 import {
+  readLedgerFilingTimes,
   readPendingForDecision,
   readPendingTolerant,
 } from "./pendingLedger.js";
@@ -55,7 +57,7 @@ import type {
 import type { PriorAttempt } from "./Prompt.js";
 import { priorAttemptRef } from "./priorAttempts.js";
 import { mergeBatchWidth } from "./gateBatch.js";
-import { blamedOn, byQueueOrder, nextDisjointPick } from "./selection.js";
+import { blamedOn, nextDisjointPick } from "./selection.js";
 import { consultShouldRun, runAttempt } from "./tickAttempt.js";
 import type { PhaseTickOutcome, TickLegContext } from "./tickLeg.js";
 import {
@@ -108,10 +110,8 @@ export async function runFanout(
   // decide-read takes. A wave over an unparseable queue has no entry to assign
   // — `pending` is `[]`, so nothing is pickable — and the fact rides the result
   // below, so a `handoff` never reads that empty batch as a drained queue.
-  const { pending, queueParseFailure } = await readPendingForDecision(
-    leg,
-    phase,
-  );
+  const { pending, filingTimes, queueParseFailure } =
+    await readPendingForDecision(leg, phase);
   // spec/loop.md "No false signal": this queue read is the one place the
   // engine learns a tag has left the queue, so it is where records keyed
   // by a departed tag are retired — before selection, so nothing this
@@ -149,7 +149,7 @@ export async function runFanout(
     maxParallel,
   } = leg.selection(
     chain,
-    pending,
+    { pending, filingTimes },
     isForkResolved,
     { priorAttempts, headSha: preHead },
     claimedSlugs,
@@ -335,6 +335,10 @@ export async function runFanout(
   // triple below for the same reason they move together: an entry pulled
   // after a refill is judged against the queue that refill read.
   let liveQueue: readonly PendingEntry[] = pending;
+  // The filing times the live selection ordered that listing by, moved with
+  // it: the order a freed slot pulls in is the one the queue it read states,
+  // and the wave's own per-entry report is in that same order below.
+  let liveFilingTimes: FilingTimes = filingTimes;
   let liveClaimedTags: readonly string[] = claimedTags;
   let livePriorAttempts: ReadonlyMap<string, PriorAttempt> = priorAttempts;
   // The operator's graceful stop, as the last refill read it off disk
@@ -640,9 +644,13 @@ export async function runFanout(
       return;
     }
     const records = await leg.attempts.readAll();
+    // Re-read beside the queue, for the reason the queue is re-read: a
+    // sibling's ledger commit may have filed an entry since this wave opened,
+    // and the order a freed slot pulls in is the live queue's own.
+    liveFilingTimes = await readLedgerFilingTimes(leg);
     const selection = leg.selection(
       chain,
-      live,
+      { pending: live, filingTimes: liveFilingTimes },
       isForkResolved,
       { priorAttempts: records, headSha: await git.revParse(repoRoot) },
       await leg.claims.readLive(),
@@ -777,14 +785,17 @@ export async function runFanout(
   // the verdict log for. `find`, not a filter: at most one record per tag,
   // pinned by "records exactly one mergeOutcomes entry for that tag"
   // (tests/Dispatcher.test.ts).
-  // The queue's own order (`byQueueOrder`, `src/selection.ts`), not the order
-  // the agents happened to return in: `perEntry` fills as each slot's agent
-  // finishes, and which of two siblings finished first is a fact about the
-  // machine, never one a `handoff` should route on. The comparator itself,
+  // The queue's own order (`byFilingThenTag`, `src/filingOrder.ts`), not the
+  // order the agents happened to return in: `perEntry` fills as each slot's
+  // agent finishes, and which of two siblings finished first is a fact about
+  // the machine, never one a `handoff` should route on. The comparator itself,
   // not a position map off the wave's opening selection: a freed slot pulls
   // from the queue as it then stands, so an entry this wave ran may have no
-  // position in the set it opened on.
-  perEntry.sort((a, b) => byQueueOrder(a.entry, b.entry));
+  // position in the set it opened on. Over the filing times this wave read
+  // last, which is the latest read of the history every entry it ran was
+  // filed into.
+  const queueOrder = byFilingThenTag(liveFilingTimes);
+  perEntry.sort((a, b) => queueOrder(a.entry, b.entry));
   const entries: FanoutEntryOutcome[] = perEntry.map((r) => {
     const merge = mergeStage.mergeOutcomes.find(
       (m) => m.entryTag === r.entry.tag,
@@ -822,7 +833,10 @@ export async function runFanout(
   const priorAttemptsAfter = await leg.attempts.readAll();
   const postSelection = leg.selection(
     chain,
-    pendingAfterWave,
+    // The second world's times too: this wave's own ledger commits retire
+    // entries rather than file them, but a sibling's may have filed one while
+    // it ran.
+    { pending: pendingAfterWave, filingTimes: await readLedgerFilingTimes(leg) },
     isForkResolved,
     { priorAttempts: priorAttemptsAfter, headSha: await git.revParse(repoRoot) },
     // Re-read like the rest of the second world: this wave dropped its own

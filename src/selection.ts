@@ -5,14 +5,20 @@
  * One derivation for every surface that asks: `runSingleton`'s pre-tick read
  * (`src/singletonTick.ts`), `runFanout`'s wave (`src/waveTick.ts`),
  * `render`'s preview and `TickResult.pickableAfter`'s post-tick
- * re-derivation (`src/Dispatcher.ts`). The queue's ordering, the run-scoped
+ * re-derivation (`src/Dispatcher.ts`). The run-scoped
  * quarantine hold, the claim a sibling tick holds on an entry in flight, the
  * chain's own declared per-entry refusal, and the file-overlap partition are
  * spelled here alone, so no two of those surfaces can disagree about what
  * "pickable" means at the moment each is taken
  * (`.claude/rules/engineering.md`, *A module is one job*).
  *
- * The gate switch is not among them: it lives at the exported read every
+ * The queue's order is not among them: it is a read of git before it is a
+ * comparison, and the status flow figures want the same times, so it lives at
+ * its own door (`byFilingThenTag`, `src/filingOrder.ts`) and every selection
+ * here is taken over the queue *and* the times it was read with
+ * ({@link SelectableQueue}).
+ *
+ * The gate switch is not among them either: it lives at the exported read every
  * consumer already takes it from (`isPickableNow`, `src/PendingSchema.ts`),
  * and this module composes its `blockedBy` input off the queue and calls it.
  * The identity the hold and the refusal both key on is not this module's
@@ -23,6 +29,7 @@
 
 import { entryClaimSlug } from "./entryClaims.js";
 import { entryDeclaredKey } from "./entryKey.js";
+import { byFilingThenTag, type FilingTimes } from "./filingOrder.js";
 import { isDisjointFrom, partitionByFileOverlap } from "./partition.js";
 import { isPickableNow, type PendingEntry } from "./PendingSchema.js";
 import type { Chain, QuarantinedTag } from "./Phase.js";
@@ -91,19 +98,19 @@ function isPickable(
 }
 
 /**
- * The queue's one ordering (`spec/pending.md`, *The entry core*): tag
- * ascending. A file listing, a producer's array, a directory walk — whatever
- * order a queue is read in, every selection below takes this one, so the order
- * a tick picks in is the queue's own and never the order its files happened to
- * arrive in.
+ * The queue one selection is taken over: the entries a tick read, and when
+ * each of them was filed.
  *
- * Tags compare by code unit rather than `localeCompare`, so the ordering is
- * the same on every host: `TAG_PATTERN` (`src/PendingSchema.ts`) admits ASCII
- * alone, where code-unit order *is* ascending, and a locale-sensitive collator
- * would make the queue's order a property of the machine reading it.
+ * One value rather than two arguments, because they are one read — the order a
+ * selection serves is a property of the queue it is taken over, and a caller
+ * free to hand the entries of one world with the filing times of another would
+ * be ordering a queue by a history it does not have
+ * (`readPendingForDecision`, `src/pendingLedger.ts`).
  */
-export function byQueueOrder(a: PendingEntry, b: PendingEntry): number {
-  return a.tag < b.tag ? -1 : a.tag > b.tag ? 1 : 0;
+export interface SelectableQueue {
+  readonly pending: readonly PendingEntry[];
+  /** `readFilingTimes`'s map (`src/filingOrder.ts`), for this queue's own tip. */
+  readonly filingTimes: FilingTimes;
 }
 
 /**
@@ -214,7 +221,8 @@ export function bindEntryRefusal(
  * The pickable set and the two holds that shrank it — what `isPickable`
  * cleared, minus this run's live quarantine, minus what the chain's own
  * refusal declined, with each hold named by the entries it took. Every one of
- * the three is in the queue's own order ({@link byQueueOrder}).
+ * the three is in the queue's own order ({@link byFilingThenTag},
+ * `src/filingOrder.ts`).
  *
  * The one derivation `runSingleton`'s pre-tick selection, {@link selectBatch}
  * and `TickResult.pickableAfter`'s post-tick re-derivation all take, so no
@@ -264,6 +272,8 @@ interface PickableSelection {
  */
 export function pickableSelection(opts: {
   pending: readonly PendingEntry[];
+  /** When each of `pending` was filed — the default order's own input. */
+  filingTimes: FilingTimes;
   isForkResolved: (slug: string) => boolean;
   capabilities: ReadonlySet<string>;
   /** This run's live quarantine — `DispatcherOptions.quarantinedSlugs`, absent outside a supervised run. */
@@ -279,12 +289,14 @@ export function pickableSelection(opts: {
 }): PickableSelection {
   // The queue's one ordering, taken once over the eligible set: the pickable
   // set below and both hold lists are read off it in this order, so no
-  // surface that reports one of them can order it differently.
+  // surface that reports one of them can order it differently. The order is
+  // the queue's own default — this tick's filing times, and the tag beneath
+  // them (`byFilingThenTag`, `src/filingOrder.ts`).
   const eligible = gateEligible(
     opts.pending,
     opts.isForkResolved,
     opts.capabilities,
-  ).sort(byQueueOrder);
+  ).sort(byFilingThenTag(opts.filingTimes));
   // One consult per entry offered, partitioned in the same pass: the
   // predicate is the chain's code, and asking it twice about one entry both
   // pays for it twice and lets two answers disagree inside one selection.
@@ -352,7 +364,8 @@ export interface BatchSelection extends PickableSelection {
  * finished in (`spec/worktrees.md`, *Fanout and worktrees — provisioning,
  * isolation, teardown*).
  *
- * `candidates` is the pickable remainder in {@link byQueueOrder}; `undefined`
+ * `candidates` is the pickable remainder in the queue's own order
+ * ({@link byFilingThenTag}, `src/filingOrder.ts`); `undefined`
  * is "nothing left that this moment's in-flight set leaves room for", which a
  * wave reads as a slot it does not refill rather than as a drained queue.
  */
@@ -381,6 +394,8 @@ export function nextDisjointPick(opts: {
 export function selectBatch(opts: {
   chain: Chain;
   pending: readonly PendingEntry[];
+  /** When each of `pending` was filed — see {@link pickableSelection}. */
+  filingTimes: FilingTimes;
   isForkResolved: (slug: string) => boolean;
   /** This run's live quarantine — `DispatcherOptions.quarantinedSlugs`, absent outside a supervised run. */
   quarantinedSlugs?: ReadonlySet<string>;
@@ -391,7 +406,7 @@ export function selectBatch(opts: {
   /** The dispatcher's own parallelism ceiling, below whatever the chain declares. */
   maxParallel: number;
 }): BatchSelection {
-  const { chain, pending, isForkResolved } = opts;
+  const { chain, pending, filingTimes, isForkResolved } = opts;
   // The environment facts this chain asserts, matched against each entry's
   // `requiresCapability` gate.
   const capabilities = new Set(chain.capabilities ?? []);
@@ -403,6 +418,7 @@ export function selectBatch(opts: {
   // answered after both, over the entries they left standing.
   const selected = pickableSelection({
     pending,
+    filingTimes,
     isForkResolved,
     capabilities,
     ...(opts.quarantinedSlugs !== undefined

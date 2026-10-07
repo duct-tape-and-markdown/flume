@@ -22,11 +22,14 @@
 import type { EntryClaimStore } from "./entryClaims.js";
 import type { GateRunScope } from "./gateRun.js";
 import type { PendingLedgerContext } from "./pendingLedger.js";
-import type { PendingEntry } from "./PendingSchema.js";
 import type { Chain, TickResult } from "./Phase.js";
 import type { NoCommitMode } from "./Prompt.js";
 import type { PriorAttemptStore } from "./priorAttempts.js";
-import type { BatchSelection, EntryRefusalFacts } from "./selection.js";
+import type {
+  BatchSelection,
+  EntryRefusalFacts,
+  SelectableQueue,
+} from "./selection.js";
 import type { AttemptContext } from "./tickAttempt.js";
 import type {
   GateFailure,
@@ -121,15 +124,15 @@ export interface TickLegContext extends PendingLedgerContext {
    * {@link BatchSelection} under this dispatcher's own quarantine and
    * parallelism ceiling.
    *
-   * `refusalFacts` and `claimedSlugs` are the leg's, not the dispatcher's:
-   * the records, the tip a chain's declared refusal is judged against, and
-   * the claims standing on disk are all read *at* the selection, and a
-   * pre-wave batch and a post-wave `pickableAfter` are two selections over
-   * two worlds.
+   * `queue`, `refusalFacts` and `claimedSlugs` are the leg's, not the
+   * dispatcher's: the entries and their filing times, the records, the tip a
+   * chain's declared refusal is judged against, and the claims standing on
+   * disk are all read *at* the selection, and a pre-wave batch and a
+   * post-wave `pickableAfter` are two selections over two worlds.
    */
   selection(
     chain: Chain,
-    pending: readonly PendingEntry[],
+    queue: SelectableQueue,
     isForkResolved: (slug: string) => boolean,
     refusalFacts: EntryRefusalFacts,
     claimedSlugs: ReadonlySet<string>,

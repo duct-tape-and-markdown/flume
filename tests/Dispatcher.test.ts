@@ -387,13 +387,49 @@ async function commitEntryFile(
   file: string,
   content: string,
 ): Promise<void> {
-  const path = join(queueDirOf(repo), file);
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, content, "utf8");
-  await exec("git", ["add", "--", `.flume/plan/pending/${file}`], { cwd: repo });
+  await commitEntryFiles(repo, { [file]: content });
+}
+
+/**
+ * {@link commitEntryFile} over several files as **one** commit, optionally
+ * dated.
+ *
+ * The filing commit a fixture about the queue's own order needs: entries one
+ * commit adds share a filing time and entries two commits add do not
+ * (`readFilingTimes`, `src/filingOrder.ts`). `at` dates the commit on both of
+ * git's clocks, so a case about the filing axis does not turn on whether the
+ * host crossed a whole second between two of them — git stamps a commit time
+ * in seconds, and without a date the fixture's own speed decides which cases
+ * tie. Absent, git stamps now, which is every other caller's filing.
+ */
+async function commitEntryFiles(
+  repo: string,
+  files: Record<string, string>,
+  at?: string,
+): Promise<void> {
+  for (const [file, content] of Object.entries(files)) {
+    const path = join(queueDirOf(repo), file);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, content, "utf8");
+  }
+  const names = Object.keys(files);
+  await exec(
+    "git",
+    ["add", "--", ...names.map((file) => `.flume/plan/pending/${file}`)],
+    { cwd: repo },
+  );
   try {
-    await exec("git", ["commit", "-q", "-m", `test: pending/${file}`], {
+    await exec("git", ["commit", "-q", "-m", `test: pending/${names.join(" ")}`], {
       cwd: repo,
+      ...(at === undefined
+        ? {}
+        : {
+            env: {
+              ...process.env,
+              GIT_AUTHOR_DATE: at,
+              GIT_COMMITTER_DATE: at,
+            },
+          }),
     });
   } catch (err) {
     if ((err as { code?: unknown }).code !== 1) throw err;
@@ -3459,17 +3495,27 @@ describe("Dispatcher fanout — a freed slot pulls the next disjoint entry (WAVE
  * merges never reaches.
  */
 describe("Dispatcher fanout — a freed slot reads the live queue and the stop flag", () => {
-  it("a wave pulls an entry filed mid-wave ahead of one it started with", async () => {
+  it("a wave pulls an entry filed mid-wave that its opening selection never held", async () => {
     // One slot wide, so every entry past the first is a refill and the
-    // invocation order *is* the pick order. The tags carry the order, since
-    // that is what the queue's order is (`byQueueOrder`, `src/selection.ts`):
-    // MW-A-HEAD leads, and MW-C-TAIL is the only entry the wave opens beside
-    // it.
-    const entries = [
-      makeEntry("MW-A-HEAD", ["src/mw-a-head.ts"]),
-      makeEntry("MW-C-TAIL", ["src/mw-c-tail.ts"]),
-    ];
-    await writePending(fx.repo, entries);
+    // invocation order *is* the pick order. Both of these are filed by one
+    // dated commit, so they share a filing time and the tag orders them
+    // (`byFilingThenTag`, `src/filingOrder.ts`): MW-A-HEAD leads, and
+    // MW-C-TAIL is the only entry the wave opens beside it. The entry filed
+    // mid-wave is filed after both, so the queue's order puts it last — which
+    // is why it running at all is this case's claim.
+    await commitEntryFiles(
+      fx.repo,
+      Object.fromEntries(
+        [
+          makeEntry("MW-A-HEAD", ["src/mw-a-head.ts"]),
+          makeEntry("MW-C-TAIL", ["src/mw-c-tail.ts"]),
+        ].map((entry) => [
+          entryFileName(entry.tag),
+          JSON.stringify(entry, null, 2) + "\n",
+        ]),
+      ),
+      "2024-01-01T00:00:00Z",
+    );
     new Baton(join(fx.repo, ".flume")).wake("build");
 
     const phase = makePhase({ name: "build", concurrency: "fanout", gates: [] });
@@ -3479,10 +3525,11 @@ describe("Dispatcher fanout — a freed slot reads the live queue and the stop f
       supervisorPolicy: { maxParallel: 1 },
     };
 
-    // Filed onto trunk while MW-A-HEAD's agent runs, ahead of the entry the
-    // wave opened beside it. Committed, not merely written: every dispatch
-    // read resolves the committed tip (spec/pending.md, "Dispatch reads come
-    // from the tip, not the tree").
+    // Filed onto trunk while MW-A-HEAD's agent runs, behind the entry the
+    // wave opened beside it — a filing is as new as the commit that made it.
+    // Committed, not merely written: every dispatch read resolves the
+    // committed tip (spec/pending.md, "Dispatch reads come from the tip, not
+    // the tree").
     const filedMidWave: PendingEntry = makeEntry("MW-B-MIDWAVE", [
       "src/mw-b-midwave.ts",
     ]);
@@ -3525,10 +3572,11 @@ describe("Dispatcher fanout — a freed slot reads the live queue and the stop f
 
     const outcome = await dispatcher.tick();
 
-    // The freed slot re-read the queue and took its head: MW-B-MIDWAVE did not
-    // exist when the wave selected, and MW-C-TAIL — the only entry the wave
-    // started with that it had not attempted — waited behind it.
-    expect(order).toEqual(["mw-a-head", "mw-b-midwave", "mw-c-tail"]);
+    // The freed slot re-read the queue: MW-B-MIDWAVE did not exist when the
+    // wave selected, so no snapshot of that selection could have offered it,
+    // and the wave served it after the entry it started with — its filing is
+    // the newest of the three.
+    expect(order).toEqual(["mw-a-head", "mw-c-tail", "mw-b-midwave"]);
     expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
       "MW-A-HEAD",
       "MW-B-MIDWAVE",
@@ -3949,6 +3997,152 @@ describe("Dispatcher fanout — a freed slot reads the live queue and the stop f
 });
 
 
+
+/**
+ * THE-DEFAULT-QUEUE-ORDER-IS-OLDEST-FILING-THEN-TAG — `spec/pending.md`, *The
+ * entry core*: the queue's order is computed at every selection, and the
+ * order it takes where a chain declares none of its own is oldest filing
+ * first — the oldest commit that added a file under the tag, read from git —
+ * then tag ascending.
+ *
+ * Every case drives a whole `Dispatcher.tick()` one slot wide, so the order the
+ * wave served *is* the order its spans landed in: the real filing read runs
+ * over a real history, through the real selection, rather than a comparator
+ * asserted beside a map the case built by hand
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ *
+ * Each case files the entry whose tag sorts **last** first, so a tree ordering
+ * by the tag alone reds on it, and dates every filing commit, since git stamps
+ * a commit time in whole seconds and entries filed inside one second tie — the
+ * tie the last case is about, and one the fixture's own speed would otherwise
+ * hand the cases that are about the filing axis.
+ */
+describe("Dispatcher — the default queue order is oldest filing, then tag", () => {
+  /** Where a tag's span writes, so no two entries in a wave collide. */
+  const editPath = (tag: string): string => `src/${tag.toLowerCase()}.ts`;
+
+  /** `tags` filed as one commit dated `at`, each with an edit path of its own. */
+  const fileAt = (tags: readonly string[], at: string): Promise<void> =>
+    commitEntryFiles(
+      fx.repo,
+      Object.fromEntries(
+        tags.map((tag) => [
+          entryFileName(tag),
+          JSON.stringify(makeEntry(tag, [editPath(tag)]), null, 2) + "\n",
+        ]),
+      ),
+      at,
+    );
+
+  /** A one-slot-wide build chain, so the pick order is the ship order. */
+  const serialBuild = (): Chain => ({
+    phases: [makePhase({ name: "build", concurrency: "fanout", gates: [] })],
+    humanOnly: [],
+    supervisorPolicy: { maxParallel: 1 },
+  });
+
+  /** An agent that ships whichever of `tags` the slot it is given carries. */
+  const shipsEach = (tags: readonly string[]): Agent =>
+    fanoutAgent(
+      Object.fromEntries(
+        tags.map((tag) => [
+          tag.toLowerCase(),
+          (cwd: string) =>
+            writeAndCommit(cwd, editPath(tag), `${tag}\n`, `build(${tag}): ship`),
+        ]),
+      ),
+    );
+
+  const tickWith = (agent: Agent): Promise<TickOutcome> => {
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    return new Dispatcher({
+      chainLoader: staticLoader(serialBuild()),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent,
+      log: silent,
+    }).tick();
+  };
+
+  it("the default order serves the oldest-filed entry first", async () => {
+    await fileAt(["OF-ZULU"], "2024-01-01T00:00:00Z");
+    await fileAt(["OF-ALPHA"], "2024-02-01T00:00:00Z");
+
+    const outcome = await tickWith(shipsEach(["OF-ZULU", "OF-ALPHA"]));
+
+    // One slot, so OF-ALPHA could only have reached an agent as the refill of
+    // the slot OF-ZULU's merge freed: the wave served the older filing first
+    // and the tag decided nothing.
+    expect(outcome.result?.shippedTags).toEqual(["OF-ZULU", "OF-ALPHA"]);
+  });
+
+  it("two entries added by one commit break on the tag ascending", async () => {
+    await fileAt(["TB-ZULU"], "2024-01-01T00:00:00Z");
+    // One commit, so these two were filed at the same instant and nothing but
+    // the tag separates them.
+    await fileAt(["TB-BRAVO", "TB-ALPHA"], "2024-02-01T00:00:00Z");
+
+    const outcome = await tickWith(
+      shipsEach(["TB-ZULU", "TB-BRAVO", "TB-ALPHA"]),
+    );
+
+    // The tie is broken on the tag, and only after the filing axis has placed
+    // both of them behind the entry filed a month earlier.
+    expect(outcome.result?.shippedTags).toEqual([
+      "TB-ZULU",
+      "TB-ALPHA",
+      "TB-BRAVO",
+    ]);
+  });
+
+  it("re-filing an entry does not move it in the default order", async () => {
+    await fileAt(["RF-ZULU"], "2024-01-01T00:00:00Z");
+    await fileAt(["RF-ALPHA"], "2024-02-01T00:00:00Z");
+    // RF-ZULU leaves the queue and is filed again, after RF-ALPHA was: a read
+    // keyed on the newest add would serve RF-ALPHA first, which is also what
+    // the tag alone would do.
+    await writePending(fx.repo, [makeEntry("RF-ALPHA", [editPath("RF-ALPHA")])]);
+    await fileAt(["RF-ZULU"], "2024-03-01T00:00:00Z");
+
+    const outcome = await tickWith(shipsEach(["RF-ZULU", "RF-ALPHA"]));
+
+    expect(outcome.result?.shippedTags).toEqual(["RF-ZULU", "RF-ALPHA"]);
+  });
+
+  it("an entry no commit has added yet is served last", async () => {
+    await fileAt(["UF-ZULU"], "2024-01-01T00:00:00Z");
+    // Written into the queue directory and left uncommitted: a dispatch read
+    // resolves the tip, so the wave never offers it (spec/pending.md, *Dispatch
+    // reads come from the tip, not the tree*), while `pendingAfter` is the
+    // disk's own listing and holds it — with no filing commit behind it.
+    const unfiled = makeEntry("UF-ALPHA", [editPath("UF-ALPHA")]);
+    await writeFile(
+      join(queueDirOf(fx.repo), entryFileName("UF-ALPHA")),
+      JSON.stringify(unfiled, null, 2) + "\n",
+      "utf8",
+    );
+
+    // UF-ZULU's agent commits nothing, so it is still in the queue — and still
+    // pickable — when the post-wave selection is taken over both.
+    const ran: string[] = [];
+    const outcome = await tickWith({
+      name: "unfiled-order-probe",
+      async invoke(inv) {
+        ran.push(basename(inv.cwd));
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    });
+
+    // The wave got as far as a selection at all, so the order below is one the
+    // engine served rather than an empty set agreeing with anything.
+    expect(ran).toEqual(["uf-zulu"]);
+    expect(outcome.result?.pickableAfter.map((e: PendingEntry) => e.tag)).toEqual([
+      "UF-ZULU",
+      "UF-ALPHA",
+    ]);
+  });
+});
 
 /**
  * SUPERVISORPOLICY-TICKTIMEOUTMS — `Chain.supervisorPolicy.tickTimeoutMs`

@@ -281,6 +281,83 @@ export async function diffNameOnly(
 }
 
 /**
+ * When each path under `dirRel` first entered this history: for every path
+ * `ref` reaches that some commit *added* there, the commit time of the
+ * **oldest** commit that added it, keyed by the path as git spelled it.
+ *
+ * One `git log` walk rather than one per path: the caller holds a directory
+ * of files and wants a time for each, and a per-path leg prices that read at
+ * one git child per entry at every selection that takes it.
+ *
+ * Two flags make the answer a property of the history rather than of the host
+ * reading it:
+ *
+ * - `--no-renames`. Rename detection is on by default in modern git and is a
+ *   *host config*, so a file git chose to call a rename of another carries no
+ *   add at all under it — the same history then answers two hosts differently.
+ *   Under this flag an add is a path appearing where that path was not, which
+ *   is what a caller keying by path means.
+ * - `%ct`, the committer time: when the commit entered *this* history, which
+ *   is what a cherry-pick onto a trunk sets and what the author date (`%at`)
+ *   deliberately preserves from elsewhere.
+ *
+ * `-z` with a NUL-prefixed `--format` is what makes the two interleaved
+ * outputs decodable: git NUL-terminates both the commit header and each
+ * `--name-only` path, so the leading `%x00` gives every commit an empty
+ * record of its own — a boundary no path can be, since git never names an
+ * empty path — and the header is the record that follows it. The newline git
+ * writes between a header and its diff lands at the front of that commit's
+ * first path and is dropped there.
+ */
+export async function addedPathTimes(
+  repoRoot: string,
+  ref: string,
+  dirRel: string,
+): Promise<Map<string, number>> {
+  const { stdout } = await run(repoRoot, [
+    "log",
+    ref,
+    "--diff-filter=A",
+    "--no-renames",
+    "--format=%x00%ct",
+    "--name-only",
+    "-z",
+    "--",
+    dirRel,
+  ]);
+  const times = new Map<string, number>();
+  let atBoundary = false;
+  let addedAt: number | undefined;
+  for (const record of stdout.split("\0")) {
+    if (record.length === 0) {
+      atBoundary = true;
+      continue;
+    }
+    if (atBoundary) {
+      atBoundary = false;
+      const seconds = Number(record);
+      // git's own `%ct` is always a count of seconds, so a record here that
+      // is not one means this decode has lost git's framing — refused rather
+      // than folded into a path with no time, which would read as a path no
+      // commit ever added (`.claude/rules/engineering.md`, *Loud or nothing*).
+      if (!Number.isFinite(seconds))
+        throw new Error(
+          `git log answered a commit time this read cannot decode: ${JSON.stringify(record)}`,
+        );
+      addedAt = seconds;
+      continue;
+    }
+    // The newline git writes between the commit header and its diff output.
+    const path = record.startsWith("\n") ? record.slice(1) : record;
+    if (path.length === 0 || addedAt === undefined) continue;
+    // git walks newest first, so each later write is an older add and the
+    // last one standing is the oldest.
+    times.set(path, addedAt);
+  }
+  return times;
+}
+
+/**
  * Whether `ancestor` is a (non-strict) ancestor of `descendant` — `git
  * merge-base --is-ancestor`, exit code `0` for yes and `1` for no. Any other
  * exit code (bad revision, not a repository) rethrows rather than being

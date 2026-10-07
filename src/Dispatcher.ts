@@ -69,9 +69,10 @@ import {
 } from "./Prompt.js";
 import type { NoCommitMode } from "./Prompt.js";
 import {
-  selectBatch,
   type BatchSelection,
   type EntryRefusalFacts,
+  type SelectableQueue,
+  selectBatch,
 } from "./selection.js";
 import { runSingleton } from "./singletonTick.js";
 import type { AgentBounds, AttemptContext } from "./tickAttempt.js";
@@ -880,8 +881,8 @@ export class Dispatcher {
         ? { quarantinedSlugs: this.opts.quarantinedSlugs }
         : {}),
       supervisedRun: this.opts.supervisedRun === true,
-      selection: (chain, pending, isForkResolved, refusalFacts, claimed) =>
-        this.selection(chain, pending, isForkResolved, refusalFacts, claimed),
+      selection: (chain, queue, isForkResolved, refusalFacts, claimed) =>
+        this.selection(chain, queue, isForkResolved, refusalFacts, claimed),
     };
   }
 
@@ -895,14 +896,15 @@ export class Dispatcher {
    */
   private selection(
     chain: Chain,
-    pending: readonly PendingEntry[],
+    queue: SelectableQueue,
     isForkResolved: (slug: string) => boolean,
     refusalFacts: EntryRefusalFacts,
     claimedSlugs: ReadonlySet<string>,
   ): BatchSelection {
     return selectBatch({
       chain,
-      pending,
+      pending: queue.pending,
+      filingTimes: queue.filingTimes,
       isForkResolved,
       claimedSlugs,
       ...(this.opts.quarantinedSlugs !== undefined
@@ -1538,10 +1540,8 @@ export class Dispatcher {
     // unparseable queue must resolve the prompt that repair is rendered from,
     // and a preview of a phase that could not must refuse exactly where the
     // tick would.
-    const { pending, queueParseFailure } = await readPendingForDecision(
-      this.ledgerCtx,
-      phase,
-    );
+    const { pending, filingTimes, queueParseFailure } =
+      await readPendingForDecision(this.ledgerCtx, phase);
     const isForkResolved =
       (chainModule.forkResolver ?? this.opts.forkResolver)?.(
         this.opts.repoRoot,
@@ -1563,7 +1563,7 @@ export class Dispatcher {
     // is one job").
     const { pickable, batches, claimedTags } = this.selection(
       chain,
-      pending,
+      { pending, filingTimes },
       isForkResolved,
       { priorAttempts, headSha: await git.revParse(this.opts.repoRoot) },
       claimedSlugs,

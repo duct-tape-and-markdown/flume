@@ -1,6 +1,7 @@
 /**
  * The pending ledger's I/O: the queue directory's listing, every way a tick
- * reads the entry files under it, the queue a gate's own commit holds, the
+ * reads the entry files under it, when each of those files was filed, the
+ * queue a gate's own commit holds, the
  * chain-less read a CLI verb counts through, the relocation check those reads
  * turn on, the fence verdict that decides whose read may survive a parse
  * failure, and the one rewrite that retires what a wave shipped.
@@ -15,7 +16,8 @@
  * (`src/tickAttempt.ts`) and either leg takes a `TickLegContext`
  * (`src/tickLeg.ts`, which extends the context below).
  *
- * Nothing here interprets what it read. The strict reader refuses, the
+ * Nothing here interprets what it read. The filing read answers times and
+ * never an order, the strict reader refuses, the
  * decide-read hands the refusal to the queue's own writer as a fact, the
  * tolerant one announces and degrades, and the rewrite reports the commit it
  * landed if it landed one, the tip verdict it got, and where the queue it was
@@ -28,6 +30,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 
+import { type FilingTimes, readFilingTimes } from "./filingOrder.js";
 import { isDirectoryOrAbsentUnder } from "./fsProbe.js";
 import type { GateContext } from "./Gate.js";
 import * as git from "./git.js";
@@ -234,8 +237,8 @@ const QUEUE_SUBJECT = "pending queue";
  * caller declared it, and what stands above it is the caller's to answer for.
  *
  * Names are sorted so two hosts' directory orders cannot produce two
- * listings; what a selection picks in is the queue's declared order, applied
- * at its own home (`byQueueOrder`, `src/selection.ts`).
+ * listings; what a selection picks in is the queue's own order, applied
+ * at its own home (`byFilingThenTag`, `src/filingOrder.ts`).
  */
 export function readQueueOnDisk(
   stateRoot: string,
@@ -422,6 +425,34 @@ async function readQueueFiles(
   if (isPendingRelocated(ctx)) return readQueueOnDisk(ctx.flumeDir, ctx.pendingDir);
   // Non-relocated by the branch above, so the fold always answers.
   return readQueueAtRef(ctx.repoRoot, "HEAD", pendingDirRel(ctx)!);
+}
+
+/**
+ * When each entry this ledger has ever held was filed, read off the committed
+ * tip — the default queue order's own input (`readFilingTimes`,
+ * `src/filingOrder.ts`), and the times the status flow figures measure from.
+ *
+ * Here rather than at each selection because the one fact a filing read needs
+ * beyond the repo is where the ledger sits in git's alphabet, which is this
+ * module's ({@link pendingDirRel}) — including its `undefined`, the relocated
+ * dock git cannot name, where the read has no times to answer with and says so
+ * by answering none.
+ *
+ * `HEAD`, like every dispatch read on this page (`spec/pending.md`, *Dispatch
+ * reads come from the tip, not the tree*): a selection is taken over the
+ * committed queue, so the history its order comes from is the committed one.
+ * An entry a producer has written but not committed therefore has no filing
+ * time, which is exactly where the default order puts a brand-new entry
+ * anyway.
+ *
+ * Taken per read rather than once per tick: a tick's pre- and post-selections
+ * are two worlds (`TickLegContext.selection`, `src/tickLeg.ts`), and a wave's
+ * freed slot pulls from a queue a sibling may have filed into since it opened.
+ */
+export async function readLedgerFilingTimes(
+  ctx: PendingLedgerContext,
+): Promise<FilingTimes> {
+  return readFilingTimes(ctx.repoRoot, "HEAD", pendingDirRel(ctx));
 }
 
 /**
@@ -887,6 +918,14 @@ function withObservedFiles(
  */
 interface DecideRead {
   readonly pending: PendingEntry[];
+  /**
+   * When each entry of this ledger was filed
+   * ({@link readLedgerFilingTimes}) — read beside the queue, so the order the
+   * selection this read feeds takes is the one this queue's own history
+   * states. Answered on the carve-out path too, where `pending` is empty and
+   * the times are the ones the repair's own read would have seen.
+   */
+  readonly filingTimes: FilingTimes;
   readonly queueParseFailure: QueueParseFailure | undefined;
 }
 
@@ -919,6 +958,7 @@ export async function readPendingForDecision(
   ctx: PendingLedgerContext,
   phase: Pick<Phase, "name" | "writablePaths">,
 ): Promise<DecideRead> {
+  const filingTimes = await readLedgerFilingTimes(ctx);
   let pending: PendingEntry[];
   try {
     pending = await readPending(ctx);
@@ -950,10 +990,11 @@ export async function readPendingForDecision(
     );
     return {
       pending: [],
+      filingTimes,
       queueParseFailure: { path: rel!, errors: err.errors },
     };
   }
-  return { pending, queueParseFailure: undefined };
+  return { pending, filingTimes, queueParseFailure: undefined };
 }
 
 /**

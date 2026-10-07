@@ -432,7 +432,7 @@ export function composePendingEntry(
 /**
  * A producer's full pending queue, as a reader hands it on. Position carries
  * nothing: the order every selection takes is computed at selection time
- * (`byQueueOrder`, `src/selection.ts`). Empty is valid and means nothing
+ * (`byFilingThenTag`, `src/filingOrder.ts`). Empty is valid and means nothing
  * pending.
  */
 export type PendingList = PendingEntry[];
@@ -771,7 +771,7 @@ export function parsePendingQueueLoose(
  *
  * Entries come back in the order the listing handed them, which carries
  * nothing: the order a selection picks in is computed at the one home that
- * owns it (`byQueueOrder`, `src/selection.ts`).
+ * owns it (`byFilingThenTag`, `src/filingOrder.ts`).
  */
 function collectQueue(
   results: readonly EntryParseResult[],

@@ -25,6 +25,7 @@ import {
   type BystanderCheckpoint,
 } from "./mergeSpan.js";
 import {
+  readLedgerFilingTimes,
   readPendingForDecision,
   readPendingTolerant,
 } from "./pendingLedger.js";
@@ -65,10 +66,8 @@ export async function runSingleton(
   // one carve-out — a phase whose declared fence admits the ledger runs over
   // an unparseable queue with the failure as a tick fact, every other phase
   // is refused here before anything is provisioned.
-  const { pending, queueParseFailure } = await readPendingForDecision(
-    leg,
-    phase,
-  );
+  const { pending, filingTimes, queueParseFailure } =
+    await readPendingForDecision(leg, phase);
   // spec/chain.md "What a hook receives": the same selection verdict
   // `runFanout` computes for its own batch, so a singleton `shouldRun` and
   // the next fanout tick cannot disagree.
@@ -87,6 +86,7 @@ export async function runSingleton(
   const claimedSlugs = await leg.claims.readLive();
   const selected = pickableSelection({
     pending,
+    filingTimes,
     isForkResolved,
     capabilities,
     ...(quarantinedSlugs !== undefined ? { quarantinedSlugs } : {}),
@@ -503,6 +503,10 @@ export async function runSingleton(
   const priorAttemptsAfter = await leg.attempts.readAll();
   const postSelection = pickableSelection({
     pending: pendingAfterSingleton,
+    // Re-read with the queue, not the opening map: this tick may have filed
+    // an entry of its own, and the order the handoff reads is the one the
+    // next tick's selection will take.
+    filingTimes: await readLedgerFilingTimes(leg),
     isForkResolved,
     capabilities,
     ...(quarantinedSlugs !== undefined ? { quarantinedSlugs } : {}),
