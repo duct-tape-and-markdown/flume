@@ -1,0 +1,23 @@
+{
+  "tag": "A-TICK-LOADS-ONLY-PROJECT-SETTINGS-UNLESS-THE-CHAIN-INHERITS-THEM",
+  "gate": { "kind": "open" },
+  "priority": 10,
+  "files": {
+    "edit": [
+      { "path": "src/claudeCode.ts", "description": "the argv assembly and ClaudeCodeOptions, beside inheritUserMcp" },
+      { "path": "harness/declaration.ts", "description": "the agents row's new knob" },
+      { "path": "tests/claudeCode.test.ts", "description": "the argv cases" },
+      { "path": "tests/harnessDeclaration.test.ts", "description": "the declaration parse case" },
+      { "path": "tests/harnessChain.test.ts", "description": "the knob reaching the phase's claudeCode options" }
+    ]
+  },
+  "summary": "the adapter passes --setting-sources project unless inheritUserSettings, so a tick never reads the operator's own instructions, rules, hooks or settings",
+  "per": { "path": "spec/chain.md", "section": "Per-phase agent assignment" },
+  "acceptance": "the rendered argv carries --setting-sources project by default and omits it under inheritUserSettings, and the declaration's agents row parses the knob",
+  "tests": [
+    "the claude-code argv carries --setting-sources project by default",
+    "inheritUserSettings omits --setting-sources from the argv",
+    "a declared agents inheritUserSettings reaches the phase's claudeCode options"
+  ],
+  "notes": "Sibling of inheritUserMcp in every file it touches (src/claudeCode.ts:65,109,141; harness/declaration.ts:470) — the same table, one more row. A settings file the adapter passes itself applies either way."
+}

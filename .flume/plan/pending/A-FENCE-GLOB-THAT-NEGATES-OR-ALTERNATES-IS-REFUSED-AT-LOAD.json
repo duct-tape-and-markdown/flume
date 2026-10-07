@@ -1,0 +1,25 @@
+{
+  "tag": "A-FENCE-GLOB-THAT-NEGATES-OR-ALTERNATES-IS-REFUSED-AT-LOAD",
+  "gate": { "kind": "open" },
+  "priority": 10,
+  "files": {
+    "edit": [
+      { "path": "src/chainLoad.ts", "description": "the load-time refusal over a phase's writablePaths and channel paths" },
+      { "path": "src/paths.ts", "description": "the dialect's one home, beside matchesAny" },
+      { "path": "tests/chain.test.ts", "description": "the refusals, naming the glob and the dialect" },
+      { "path": "tests/paths.test.ts", "description": "the predicate over the two forms" }
+    ]
+  },
+  "summary": "a fence glob opening with ! or holding a brace alternation means a negation or a set elsewhere and a literal here, so chain load refuses it rather than let it silently match nothing",
+  "per": { "path": "spec/pending.md", "section": "The entry-scoped write guard is opt-in, and off by default" },
+  "acceptance": "chain load refuses a phase whose writablePaths or channel paths carry a leading ! or a {a,b} alternation, naming the glob and the dialect; every other glob loads unchanged",
+  "tests": [
+    "a writablePaths glob opening with ! is refused at chain load, naming the glob",
+    "a channel path holding a brace alternation is refused at chain load, naming the glob",
+    "the refusal names the dialect the glob was written in"
+  ],
+  "pins": [
+    "matchesAny treats * and ** as the only wildcards and a declared literal path matches only itself"
+  ],
+  "notes": "`matchesAny` (src/paths.ts) is the one spelling of the dialect the guard, the pending gate and `flume check` share; the refusal belongs beside it, never a second parse at the load site."
+}

@@ -1,0 +1,31 @@
+{
+  "tag": "A-HELD-PHASE-IS-NOT-WOKEN-BY-A-HANDOFF",
+  "gate": { "kind": "open" },
+  "priority": 10,
+  "files": {
+    "edit": [
+      { "path": "src/Baton.ts", "description": "the held marker beside the awake flag" },
+      { "path": "src/paths.ts", "description": "the held dir's path" },
+      { "path": "src/Dispatcher.ts", "description": "the handoff wake filter, beside humanOnly at :1274" },
+      { "path": "src/tickVerdict.ts", "description": "each declined wake and its reason" },
+      { "path": "src/loopSupervisor.ts", "description": "the supervisor declining to start a held phase" },
+      { "path": "src/cliTick.ts", "description": "bare tick skips a held phase; --phase runs it" },
+      { "path": "tests/Baton.test.ts", "description": "the marker" },
+      { "path": "tests/Dispatcher.test.ts", "description": "the declined wake and its verdict row" },
+      { "path": "tests/loopSupervisor.test.ts", "description": "the supervisor case" },
+      { "path": "tests/cli.test.ts", "description": "the tick cases" }
+    ]
+  },
+  "summary": "an operator hold at <flumeDir>/held/<phase> outranks a handoff's wake, and every declined wake is reported with its reason",
+  "per": { "path": "spec/loop.md", "section": "Baton — presence wakes, absence hibernates" },
+  "acceptance": "a handoff naming a held phase does not wake it and the verdict says why; the supervisor and a bare tick decline a held phase while `flume tick --phase` runs it",
+  "tests": [
+    "a held phase is not woken by a handoff that returns its name",
+    "the tick verdict names each declined wake and the reason it was declined",
+    "a humanOnly phase a handoff returns is reported as a declined wake",
+    "the supervisor does not start a held phase",
+    "a bare flume tick does not run a held phase",
+    "flume tick --phase runs a held phase"
+  ],
+  "notes": "The marker file is the mechanism; the verb is a sibling entry. A handoff never removes a hold — the hold is the operator's, and the wake a handoff performs is not the verb."
+}

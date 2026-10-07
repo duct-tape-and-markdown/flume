@@ -1,0 +1,23 @@
+{
+  "tag": "A-PREEMPT-RECORDS-HOW-THE-AGENT-PROCESS-ENDED",
+  "gate": { "kind": "open" },
+  "priority": 10,
+  "files": {
+    "edit": [
+      { "path": "src/Prompt.ts", "description": "PlatformPreemptAttempt gains the ending it records" },
+      { "path": "src/Phase.ts", "description": "the preempt's reporting surface" },
+      { "path": "src/Dispatcher.ts", "description": "the preempt fold, which must not merge several into one cause" },
+      { "path": "tests/Dispatcher.test.ts", "description": "the recorded endings" },
+      { "path": "tests/Prompt.test.ts", "description": "the record's render" }
+    ]
+  },
+  "summary": "a preempt records the agent process's exit code, or on posix the signal that ended it, and each preempt keeps its own ending rather than several folding into one cause",
+  "per": { "path": "spec/loop.md", "section": "The no-commit taxonomy" },
+  "acceptance": "every preempt record carries the real exit code or signal — never a placeholder — and a wave with two preempts reports two endings",
+  "tests": [
+    "a preempt records the agent process's exit code",
+    "a preempt records the signal that ended the agent process",
+    "two preempts in one wave each record their own ending rather than one shared cause"
+  ],
+  "notes": "`PlatformPreemptAttempt` (src/Prompt.ts:290) carries only `failureClass` today. A pattern a reader draws from several preempts ending together is not a verdict the engine records."
+}

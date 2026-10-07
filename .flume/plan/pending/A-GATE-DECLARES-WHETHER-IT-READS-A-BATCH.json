@@ -1,0 +1,29 @@
+{
+  "tag": "A-GATE-DECLARES-WHETHER-IT-READS-A-BATCH",
+  "gate": { "kind": "open" },
+  "priority": 10,
+  "files": {
+    "edit": [
+      { "path": "src/Gate.ts", "description": "Gate.batches, and GateContext.batch with the single-span fields withheld under one" },
+      { "path": "src/Phase.ts", "description": "supervisorPolicy.mergeBatch and the predicate deciding whether a phase batches" },
+      { "path": "src/chainLoad.ts", "description": "the policy's passthrough and default" },
+      { "path": "harness/declaration.ts", "description": "the supervisor row's mergeBatch" },
+      { "path": "harness/declaredGates.ts", "description": "a declared gate's batches flag" },
+      { "path": "tests/Gate.test.ts", "description": "the context's shape under a batch" },
+      { "path": "tests/chain.test.ts", "description": "the policy default and passthrough" },
+      { "path": "tests/harnessDeclaration.test.ts", "description": "the declared knob" }
+    ]
+  },
+  "summary": "mergeBatch is a chain-overridable policy defaulting to 1, and a phase batches only when every afterMerge gate declares batches: true",
+  "per": { "path": "spec/chain.md", "section": "What a gate receives" },
+  "acceptance": "a phase whose afterMerge gates all declare batches and whose chain raises mergeBatch above 1 reports as batching; any gate not declaring it holds the phase to one span per merge; a batch context withholds entry, baseSha and landedOnSha and carries the union of touched paths",
+  "tests": [
+    "the supervisor policy's mergeBatch defaults to 1",
+    "a declared supervisor mergeBatch reaches the dispatcher's policy",
+    "a phase whose afterMerge gate does not declare batches is held to one span per merge",
+    "a phase batches only when mergeBatch is above 1 and every afterMerge gate declares batches",
+    "a batch gate context withholds entry, baseSha and landedOnSha",
+    "a batch gate context's touchedPaths is the union of its spans and commitSha is the batch's last pick"
+  ],
+  "notes": "The surfaces and the predicate only; the merge that carries a batch is the sibling entry, which this one blocks. A gate written for one entry fails safe to serial merging — that is what the declaration buys."
+}

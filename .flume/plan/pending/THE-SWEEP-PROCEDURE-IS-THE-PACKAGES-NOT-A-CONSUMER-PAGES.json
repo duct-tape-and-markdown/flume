@@ -1,0 +1,23 @@
+{
+  "tag": "THE-SWEEP-PROCEDURE-IS-THE-PACKAGES-NOT-A-CONSUMER-PAGES",
+  "gate": { "kind": "open" },
+  "priority": 10,
+  "files": {
+    "edit": [
+      { "path": "harness/prompts/plan-sweep.md", "description": "the procedure stated here instead of delegated to the declared pages" },
+      { "path": "harness/sweepWindow.ts", "description": "the frontier's and the stamp's cites" },
+      { "path": "harness/planState.ts", "description": "the rotation and cursor cites" },
+      { "path": "harness/cursorWindow.ts", "description": "the stamp's cite" },
+      { "path": "harness/inboxWindow.ts", "description": "the drain's bar and the sweep-beside-build cite" },
+      { "path": "harness/ciLane.ts", "description": "the stamp's cite" },
+      { "path": "tests/commentCitations.test.ts", "description": "the pin over the package's cites" }
+    ]
+  },
+  "summary": "the package ships how plan-sweep applies posture pages — frontier, neighborhood, rotation close, on-disk verification, routing — so a consumer declares only the domain and the pages",
+  "per": { "path": "spec/harness.md", "section": "The sweep procedure" },
+  "acceptance": "the rendered plan-sweep prompt states the frontier, the neighborhood, the rotation's close, the verified-on-disk bar and the routing bar itself, and no module under harness/ cites a procedural rule to a page only a consumer carries",
+  "tests": [
+    "no module under harness/ cites .claude/rules/posture-sweep.md"
+  ],
+  "notes": "A consumer declares domain and pages (already: declaration slices.sweep); the pages keep the standard and any lens beyond their own sections. Trimming .claude/rules/posture-sweep.md to this repo's domain and Standing lenses is the operator's interactive commit, not build's — the page names that trigger itself."
+}
