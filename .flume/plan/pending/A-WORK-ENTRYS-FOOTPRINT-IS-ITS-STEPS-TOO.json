@@ -53,5 +53,26 @@
   ],
   "pins": [],
   "laneTests": [],
-  "notes": "The footprint read stops being a function of one entry, so the queue reaches the three callers that take it. Seam shared with the group's ship: both need one descendant walk at `src/PendingSchema.ts`."
+  "notes": "The footprint read stops being a function of one entry, so the queue reaches the three callers that take it. Seam shared with the group's ship: both need one descendant walk at `src/PendingSchema.ts`.",
+  "observedFiles": [
+    ".flume/plan/notes/A-WORK-ENTRYS-FOOTPRINT-IS-ITS-STEPS-TOO.md",
+    "docs/CHAIN-AUTHORING.md",
+    "src/Dispatcher.ts",
+    "src/PendingSchema.ts",
+    "src/Phase.ts",
+    "src/Prompt.ts",
+    "src/flumeApi.ts",
+    "src/index.ts",
+    "src/partition.ts",
+    "src/paths.ts",
+    "src/pendingLedger.ts",
+    "src/selection.ts",
+    "src/tickAttempt.ts",
+    "src/waveTick.ts",
+    "tests/PendingSchema.test.ts",
+    "tests/Prompt.test.ts",
+    "tests/harnessChain.test.ts",
+    "tests/partition.test.ts",
+    "tests/paths.test.ts"
+  ]
 }
