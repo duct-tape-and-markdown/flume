@@ -4,7 +4,6 @@
     "kind": "requiresCapability",
     "capability": "win32-build-host"
   },
-  "priority": 30,
   "files": {
     "edit": [
       {
