@@ -765,8 +765,9 @@ export interface Phase {
    * read in; it rides `FlumeApi`, so a chain predicate over the same globs
    * shares the enforcing matcher instead of hand-rolling one. A glob written
    * in another dialect — a leading `!` for a negation, a `{a,b}` set — is a
-   * literal here, so the chain load refuses it in this field and in
-   * `entryChannelPaths` rather than let it fence nothing.
+   * literal here, so the chain load refuses it in every list it reads through
+   * that matcher, this field and `entryChannelPaths` among them, rather than
+   * let it fence nothing.
    */
   writablePaths: string[];
 
@@ -1143,6 +1144,11 @@ export interface Chain {
      * only what counts as a partition collision, never a permission.
      * Default `[]`: byte-identical to no filter (spec/pending.md, "Fanout
      * partition — disjoint touched paths").
+     *
+     * Read through the same matcher as the fence, so the same two foreign
+     * spellings are literals here and the chain load refuses them: a glob
+     * that matches nothing ignores nothing, and the wave it was declared to
+     * keep wide serializes instead.
      */
     partitionIgnore?: string[];
   };

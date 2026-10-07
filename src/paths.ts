@@ -203,13 +203,13 @@ function globToRegex(glob: string): RegExp {
  * silently match nothing.
  *
  * `form` names the characters as they read in the glob; `dialect` names what
- * they mean where they came from. Unexported: a caller reads the two fields
- * off the answer and never names the type, so exporting it would be public
+ * they mean where they came from. Unexported: the one caller that reads the
+ * two fields is {@link foreignGlobRefusal} below, which turns them into the
+ * sentence a refusing load raises, so exporting the type would be public
  * surface with no consumer (`.claude/rules/engineering.md`, *An export earns
- * its consumer*). The site that refuses composes the message
- * (`src/chainLoad.ts`), because the phase and field names are its facts; what
- * the dialect is, and which spellings are foreign to it, are this module's —
- * the same reason `matchesAny` lives here rather than beside each enforcer.
+ * its consumer*). What the dialect is, and which spellings are foreign to it,
+ * are this module's facts — the same reason `matchesAny` lives here rather
+ * than beside each enforcer.
  */
 interface ForeignGlobForm {
   /** The offending characters, as prose naming what the glob opened with or carried. */
@@ -255,6 +255,33 @@ export function foreignGlobForm(glob: string): ForeignGlobForm | undefined {
     };
   }
   return undefined;
+}
+
+/**
+ * The refusal a load raises over a glob written in a dialect this engine does
+ * not read, or `undefined` when the glob is one this dialect can match.
+ *
+ * The whole sentence lives here, not just the two forms: what the characters
+ * mean where they came from is {@link foreignGlobForm}'s fact, and what
+ * {@link matchesAny} does with them instead — escape them, match the path
+ * that spells them — is this module's. Two loads refuse over it, the engine's
+ * chain load (`src/chainLoad.ts`) and the harness package's declaration parse
+ * (`harness/declaration.ts`), and each knows only which field it was reading;
+ * a message composed at each would be the matcher's rule spelled twice, one
+ * edit from two answers (`.claude/rules/engineering.md`, *The fix lands at
+ * the mechanism*). The caller prefixes the field it read and nothing else, so
+ * the glob leads the clause and the whole message names it once.
+ */
+export function foreignGlobRefusal(glob: string): string | undefined {
+  const foreign = foreignGlobForm(glob);
+  if (!foreign) return undefined;
+  return (
+    `${JSON.stringify(glob)} ${foreign.form}: that is ${foreign.dialect}, ` +
+    `and a literal character in flume's dialect — path matching is ` +
+    `matchesAny, where regex specials are escaped and '*' and '**' are the ` +
+    `only wildcards, so this glob matches only a path spelling it exactly. ` +
+    `Spell the paths out, or narrow with '*' and '**'.`
+  );
 }
 
 /**

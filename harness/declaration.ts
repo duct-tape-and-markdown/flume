@@ -24,6 +24,7 @@
 import { z } from "zod";
 
 import type { GatePhase } from "../src/Gate.js";
+import { foreignGlobRefusal } from "../src/paths.js";
 import type { Chain } from "../src/Phase.js";
 
 import type { CiTitleReader } from "./ci.js";
@@ -32,8 +33,41 @@ import type { Handoff } from "./handoff.js";
 import { parseOrThrow, strict } from "./refusal.js";
 import type { RunnerFactory } from "./runner.js";
 
-/** A non-empty list of path globs, in the engine's `matchesAny` dialect. */
-const globs = z.array(z.string().min(1)).min(1);
+/**
+ * A non-empty list of path globs, in the engine's `matchesAny` dialect — and
+ * the refusal of the two spellings that matcher reads as literals while
+ * nearly every other dialect reads them as operators: a leading `!`, a
+ * `{…,…}` set (`foreignGlobRefusal`, `src/paths.ts`).
+ *
+ * The refusal rides the shape, so every list this declaration spells with it
+ * — the spec locus, the fence's build and per-slice lists, the channel paths,
+ * the sweep's domain and its posture pages — is covered by the one check,
+ * and a list added later inherits it rather than being the one that was
+ * forgotten (`.claude/rules/engineering.md`, *The fix lands at the
+ * mechanism*). Per element rather than per list, so the issue path names the
+ * field and the index within it, which is the line the consumer edits.
+ *
+ * Refused at the parse, because what the glob does otherwise is nothing at
+ * all: a `plan-sweep` domain written `{src,harness}/**` draws an empty
+ * frontier, so the rotation closes quiet-on-clean over a tree nothing was
+ * read from, and a `specLocus` written that way resolves no cite while
+ * reporting every `per` as out of locus
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * `supervisor.partitionIgnore` is not spelled here: it is the engine's own
+ * policy, passed through whole (`spec/harness.md`, *What a consumer
+ * declares*), and the chain load refuses its dialect at the field the engine
+ * names — one refusal at the load that reads the value, never a second
+ * opinion the package forms about a field it only forwards.
+ */
+const globs = z
+  .array(
+    z.string().min(1).superRefine((glob, ctx) => {
+      const refusal = foreignGlobRefusal(glob);
+      if (refusal) ctx.addIssue({ code: "custom", message: refusal });
+    }),
+  )
+  .min(1);
 
 /**
  * The shell a declared command line runs under where the declaration names

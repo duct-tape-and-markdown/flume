@@ -37,7 +37,7 @@ import type { Chain } from "./Phase.js";
 import {
   assertStateRootRelative,
   chainModulePath,
-  foreignGlobForm,
+  foreignGlobRefusal,
   namespacedJoin,
 } from "./paths.js";
 
@@ -202,45 +202,54 @@ function validateNoDeadDeclarations(chain: Chain): void {
 }
 
 /**
- * Refuse a fence glob written in a dialect this engine does not read
+ * Refuse a declared glob written in a dialect this engine does not read
  * (spec/pending.md, *The entry-scoped write guard is opt-in, and off by
- * default*). A phase's `writablePaths` and `entryChannelPaths` are matched by
- * `matchesAny` (`src/paths.ts`) — regex specials escaped, `*` and `**` the
- * only wildcards — so a leading `!` or a `{…,…}` alternation compiles to a
- * literal and the glob matches nothing any commit will ever touch. Which
- * spellings are foreign, and what they mean where they came from, is the
- * dialect's own fact and lives with the matcher (`foreignGlobForm`); the
- * phase and the field are this site's, so this is where the message is
- * composed.
+ * default*). Every glob list a chain declares is matched by `matchesAny`
+ * (`src/paths.ts`) — regex specials escaped, `*` and `**` the only wildcards
+ * — so a leading `!` or a `{…,…}` alternation compiles to a literal and the
+ * glob matches nothing any commit will ever touch. What the spelling means
+ * where it came from, and what this matcher does with it instead, is the
+ * dialect's own fact and lives with the matcher (`foreignGlobRefusal`);
+ * which field held the glob is this site's, so that is all this site
+ * prefixes.
  *
  * Refused here, at the load, because the symptom otherwise is not a failure
  * at all: the author who wrote `!src/vendor/**` to carve an exception gets a
  * fence that silently admits nothing, and the paths they believed excluded
  * are excluded only by accident of what else the list happens to spell
- * (`.claude/rules/engineering.md`, *Loud or nothing*). Both fields together,
- * since the write guard matches the union of them and a dialect mistake in
- * either half degrades the same fence.
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * **Every list the chain declares as globs, not the fence alone.** The write
+ * guard matches `writablePaths ∪ entryChannelPaths`, so a dialect mistake in
+ * either half degrades the same fence; and `supervisorPolicy.partitionIgnore`
+ * is read by the same matcher to narrow the fanout collision set, so a
+ * foreign spelling there ignores nothing and every wave serializes on a path
+ * the author declared shared — a slower loop that reports as a correct one.
+ * A list the engine reads by a different rule (a phase name, a literal
+ * directory) is not here: this refusal follows the matcher, never the shape
+ * of the value.
  */
-function validateFenceGlobDialect(chain: Chain): void {
-  for (const phase of chain.phases) {
-    const fields: [string, string[]][] = [
-      ["writablePaths", phase.writablePaths],
-      ["entryChannelPaths", phase.entryChannelPaths ?? []],
-    ];
-    for (const [field, globs] of fields) {
-      for (const glob of globs) {
-        const foreign = foreignGlobForm(glob);
-        if (!foreign) continue;
-        throw new Error(
-          `phase '${phase.name}' declares the ${field} glob ` +
-            `${JSON.stringify(glob)}, which ${foreign.form}: that is ` +
-            `${foreign.dialect}, and a literal character in flume's dialect — ` +
-            `path matching is matchesAny, where regex specials are escaped ` +
-            `and '*' and '**' are the only wildcards, so this glob matches ` +
-            `only a path spelling it exactly. Spell the paths out, or narrow ` +
-            `with '*' and '**'.`,
-        );
-      }
+function validateGlobDialect(chain: Chain): void {
+  const lists: { field: string; globs: string[] }[] = [
+    ...chain.phases.flatMap((phase) => [
+      {
+        field: `phase '${phase.name}' declares the writablePaths`,
+        globs: phase.writablePaths,
+      },
+      {
+        field: `phase '${phase.name}' declares the entryChannelPaths`,
+        globs: phase.entryChannelPaths ?? [],
+      },
+    ]),
+    {
+      field: "the chain declares the supervisorPolicy.partitionIgnore",
+      globs: chain.supervisorPolicy?.partitionIgnore ?? [],
+    },
+  ];
+  for (const { field, globs } of lists) {
+    for (const glob of globs) {
+      const refusal = foreignGlobRefusal(glob);
+      if (refusal) throw new Error(`${field} glob ${refusal}`);
     }
   }
 }
@@ -434,7 +443,7 @@ export async function loadChainModule(
   validatePendingDirDeclaration(chain);
   validateSupervisorPolicyDeclaration(chain);
   validateNoDeadDeclarations(chain);
-  validateFenceGlobDialect(chain);
+  validateGlobDialect(chain);
   // The last declaration this load decides, and the only one whose check is
   // also its answer: evaluating `Chain.worktreesBase` is what refuses an
   // unusable base, so the value rides the loaded module from here and no

@@ -530,6 +530,107 @@ describe("Chain load — a fence glob in a foreign dialect is refused (spec/pend
 });
 
 /**
+ * `supervisorPolicy.partitionIgnore` is read by the same `matchesAny` the
+ * fence is — `partitionByFileOverlap` (`src/partition.ts`) and the wave-end
+ * footprint recorder (`src/waveMerge.ts`) both filter `touchedPaths` through
+ * it — so the two foreign spellings fail there exactly as silently and one
+ * step further from the symptom: a glob that matches nothing ignores nothing,
+ * every entry touching the path the author declared shared collides with
+ * every other, and a wave that should have run four slots runs one at a time
+ * while reporting a correct run (spec/pending.md, *Fanout partition —
+ * disjoint touched paths*).
+ *
+ * Refused at the load the fence's dialect is, over the same predicate, since
+ * it is the same matcher and the same silence
+ * (`.claude/rules/engineering.md`, *Loud or nothing*). Driven through the
+ * real loader over a real `chain.ts`, like the block above.
+ */
+describe("Chain load — a partitionIgnore glob in a foreign dialect is refused (spec/pending.md 'Fanout partition — disjoint touched paths')", () => {
+  /** A one-phase chain whose supervisor policy ignores the caller's globs. */
+  async function chainWithIgnore(
+    prefix: string,
+    ignore: readonly string[],
+  ): Promise<string> {
+    const cfg = await mkTempDir(`flume-cfg-partition-dialect-${prefix}-`);
+    await writeFile(join(cfg, "prompt.md"), "dummy\n", "utf8");
+    await writeFile(
+      join(cfg, "chain.ts"),
+      `export default () => ({ chain: { phases: [{ name: "build", ` +
+        `description: "", promptPath: "prompt.md", concurrency: "fanout", ` +
+        `writablePaths: ["src/**"], gates: [], handoff: () => [] }], ` +
+        `humanOnly: [], supervisorPolicy: { partitionIgnore: ` +
+        `${JSON.stringify(ignore)} } } });\n`,
+      "utf8",
+    );
+    return cfg;
+  }
+
+  function ignorePaths(cfg: string): FlumePaths {
+    return { repoRoot: cfg, configDir: cfg, flumeDir: cfg };
+  }
+
+  /** Load the chain written from `ignore`, cleaning the fixture up after. */
+  async function loadWithIgnore(
+    prefix: string,
+    ignore: readonly string[],
+  ): Promise<Chain> {
+    const cfg = await chainWithIgnore(prefix, ignore);
+    try {
+      return (await loadChainModule(ignorePaths(cfg))).chain;
+    } finally {
+      await rm(cfg, { recursive: true, force: true });
+    }
+  }
+
+  it("a partitionIgnore glob that opens with `!` refuses the chain load", async () => {
+    // The glob verbatim beside the field, because the fix is to edit that
+    // line, and the sibling glob stays in the list so what is refused is the
+    // `!` and not a list the load would have refused anyway.
+    await expect(
+      loadWithIgnore("negation", ["pnpm-lock.yaml", "!vendor/**"]),
+    ).rejects.toThrow(
+      /supervisorPolicy\.partitionIgnore glob "!vendor\/\*\*"/,
+    );
+  });
+
+  it("a partitionIgnore glob holding a `{…,…}` alternation refuses the chain load", async () => {
+    await expect(
+      loadWithIgnore("alternation", ["{pnpm,npm}-lock.yaml"]),
+    ).rejects.toThrow(
+      /supervisorPolicy\.partitionIgnore glob "\{pnpm,npm\}-lock\.yaml"/,
+    );
+  });
+
+  it("the partitionIgnore refusal names the field and the dialect the glob was written in", async () => {
+    // Naming the glob is half the fix; the other half is why a glob that
+    // reads correctly elsewhere narrows nothing here. Both forms, since each
+    // carries its own dialect.
+    await expect(
+      loadWithIgnore("dialect-negation", ["!docs/**"]),
+    ).rejects.toThrow(
+      /supervisorPolicy\.partitionIgnore[\s\S]*negation in gitignore, minimatch and picomatch[\s\S]*literal character in flume's dialect/,
+    );
+    await expect(
+      loadWithIgnore("dialect-alternation", ["docs/{a,b}.md"]),
+    ).rejects.toThrow(
+      /supervisorPolicy\.partitionIgnore[\s\S]*set in brace-expansion dialects \(bash, minimatch, picomatch\)[\s\S]*literal character in flume's dialect/,
+    );
+  });
+
+  it("an ordinary partitionIgnore glob list loads unrefused", async () => {
+    // The accepting leg, and the non-vacuity of the three refusals above: a
+    // list of the forms a partition legitimately ignores survives the load
+    // whole — a brace pair with no comma among them, since that expands to
+    // itself everywhere and so names a path rather than a set.
+    const ignore = ["pnpm-lock.yaml", "docs/**", "docs/{draft}/*.md"];
+
+    const chain = await loadWithIgnore("ordinary", ignore);
+
+    expect(chain.supervisorPolicy?.partitionIgnore).toEqual(ignore);
+  });
+});
+
+/**
  * `Chain.seedDir` once named a directory `flume job new` copied into a fresh
  * job dir. The engine seeds no second state root beneath a checkout
  * (spec/jobs.md, *The checkout is the unit of isolation*), so there is no

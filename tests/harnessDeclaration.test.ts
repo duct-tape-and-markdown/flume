@@ -167,6 +167,47 @@ const refusalFor = (declaration: unknown): string => {
   throw new Error("expected the declaration to be refused, but it parsed");
 };
 
+/**
+ * Every dotted path in a declaration whose value is a list of strings, found
+ * by walking the declaration rather than listed here: the dialect case below
+ * partitions this set into the lists the schema shapes as globs and the lists
+ * it reads by some other rule, and a list the schema gains has to land in one
+ * of them.
+ */
+const stringArrayPaths = (node: unknown, trail: string[] = []): string[] => {
+  if (typeof node !== "object" || node === null) return [];
+  if (Array.isArray(node)) {
+    return node.every((item) => typeof item === "string")
+      ? [trail.join(".")]
+      : [];
+  }
+  return Object.entries(node).flatMap(([key, value]) =>
+    stringArrayPaths(value, [...trail, key]),
+  );
+};
+
+/**
+ * The full declaration with `glob` pushed onto the front of the list at
+ * `path` — the list's own globs left in place, so what the parse refuses is
+ * the one glob and not a list it would have refused anyway.
+ */
+const withGlobPrepended = (
+  path: string,
+  glob: string,
+): Record<string, unknown> => {
+  const root = fullDeclaration();
+  const keys = path.split(".");
+  const last = keys[keys.length - 1]!;
+  const holder = keys
+    .slice(0, -1)
+    .reduce<Record<string, unknown>>(
+      (node, key) => node[key] as Record<string, unknown>,
+      root,
+    );
+  holder[last] = [glob, ...(holder[last] as string[])];
+  return root;
+};
+
 describe("the harness declaration schema", () => {
   it("the declaration schema parses a declaration naming every field", () => {
     const declared = fullDeclaration();
@@ -287,6 +328,69 @@ describe("the harness declaration schema", () => {
       DeclarationSchema.shape.supervisor.unwrap().shape,
     )) {
       expect(message).toContain(knob);
+    }
+  });
+
+  it("a foreign-dialect glob refuses the declaration in every list it shapes as globs", () => {
+    // The lists the schema spells with its `globs` shape, which is what
+    // carries the refusal — so the claim is the shape's reach, not one
+    // field's. Checked against the fully-populated declaration rather than
+    // against this list alone: a glob list the schema gains lands in the
+    // complement below and reds there, which is the vacuity guard a
+    // hand-kept list of covered fields cannot give itself
+    // (`.claude/rules/engineering.md`, *A green verdict is proven
+    // non-vacuous*).
+    const globLists = [
+      "specLocus",
+      "fence.build",
+      "fence.plan-inbox",
+      "fence.plan-derive",
+      "fence.plan-sweep",
+      "channelPaths",
+      "slices.sweep.domain",
+      "slices.sweep.posturePages",
+    ];
+    const paths = stringArrayPaths(fullDeclaration());
+    expect(paths).toEqual(expect.arrayContaining(globLists));
+
+    // The string lists the schema reads by some other rule, each excused by
+    // name and by reason rather than by the loop skipping it: `extraArgs` is
+    // an argv, `capabilities` and `slices.enabled` are vocabularies, and
+    // `setup.directories` names literal directories to install in.
+    // `supervisor.partitionIgnore` is globs — the engine's own, refused at
+    // the chain load that reads them (`src/chainLoad.ts`), never a second
+    // opinion formed here about a field this schema only forwards.
+    expect(paths.filter((path) => !globLists.includes(path))).toEqual([
+      "agents.build.extraArgs",
+      "supervisor.partitionIgnore",
+      "setup.directories",
+      "slices.enabled",
+      "capabilities",
+    ]);
+
+    // Both spellings, in every one of them: the refusal names the field and
+    // the index within it, since that is the line a consumer edits.
+    for (const path of globLists) {
+      for (const glob of ["!src/vendor/**", "docs/{a,b}.md"]) {
+        const message = refusalFor(withGlobPrepended(path, glob));
+
+        expect(message).toContain(`${path}.0:`);
+        expect(message).toContain(JSON.stringify(glob));
+        expect(message).toContain("literal character in flume's dialect");
+      }
+    }
+
+    // And the complement is untouched by it: a foreign-looking string in a
+    // list the schema never reads as globs is that list's business, so
+    // whatever the parse says about it, it does not say this.
+    for (const path of paths.filter((p) => !globLists.includes(p))) {
+      let message = "";
+      try {
+        parseDeclaration(withGlobPrepended(path, "!src/vendor/**"));
+      } catch (err) {
+        message = (err as Error).message;
+      }
+      expect(message).not.toContain("flume's dialect");
     }
   });
 
