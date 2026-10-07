@@ -334,7 +334,11 @@ succeeds, every "unreadable" refusal case resolves instead of rejecting, and
 a lane reads the loud-or-nothing posture as verified when it was never
 exercised. Deny structurally wherever the code path allows it — a plain file
 where a directory is expected, a directory where a file is expected — which
-denies on every host and survives a root-run test; where no structural
+denies on every host and survives a root-run test. A `.git` gitfile naming a
+missing gitdir is not one of them: on win32 it denies nothing, measured on the
+windows lane with the mechanism unread. Wherever a case's arming can count
+that it fired, the case asserts the count instead of reading its own planted
+file back (`engineering.md`, *A green verdict is proven non-vacuous*). Where no structural
 substitute exists, the case declares its host and skips on win32 with the
 reason stated, never silently.
 
