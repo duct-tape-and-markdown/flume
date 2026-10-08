@@ -1878,6 +1878,76 @@ it("the engine's subtree walk answers each entry below a tag with its depth", ()
   );
 });
 
+it("the engine's subtree walk keeps the listing's own sibling order where its caller supplied none", () => {
+  // Siblings filed in an order no comparator would produce — C, A, B at the
+  // top and a descending pair under C — so the sequence the walk answers is
+  // the listing's and not an order the engine chose for its callers
+  // (`.claude/rules/engine-boundary.md`, *Surface, not prescription*).
+  const forest = parsedForest([
+    forestEntry("THE-GOAL", "group"),
+    forestEntry("C-EPIC", "group", "THE-GOAL"),
+    forestEntry("C-LATER", "work", "C-EPIC"),
+    forestEntry("C-EARLY", "work", "C-EPIC"),
+    forestEntry("A-EPIC", "group", "THE-GOAL"),
+    forestEntry("A-WORK", "work", "A-EPIC"),
+    forestEntry("B-EPIC", "group", "THE-GOAL"),
+    forestEntry("B-WORK", "work", "B-EPIC"),
+  ]);
+
+  const below = subtreeOf(forest, "THE-GOAL");
+  const atDepth = (level: number): string[] =>
+    below.filter(({ depth }) => depth === level).map(({ entry }) => entry.tag);
+
+  // Non-vacuity: seven entries stand under the goal across two levels, so
+  // each sequence below is read off a populated branching descent and not a
+  // chain with one sibling per level.
+  expect(below).toHaveLength(7);
+  expect(atDepth(1)).toEqual(["C-EPIC", "A-EPIC", "B-EPIC"]);
+  expect(atDepth(2)).toEqual(["C-LATER", "C-EARLY", "A-WORK", "B-WORK"]);
+  // And the answer is not a sort: both levels' filed order differs from the
+  // ascending one a comparator-less walk would otherwise be mistaken for.
+  expect(atDepth(1)).not.toEqual([...atDepth(1)].sort());
+  expect(atDepth(2)).not.toEqual([...atDepth(2)].sort());
+});
+
+it("the engine's subtree walk nests each child's subtree before the next sibling", () => {
+  // Two sibling subtrees of unequal height: the first runs three levels deep,
+  // the second one. A level-by-level descent would read both epics before
+  // either work entry, so the sequence below separates the two.
+  const forest = parsedForest([
+    forestEntry("THE-GOAL", "group"),
+    forestEntry("FIRST-EPIC", "group", "THE-GOAL"),
+    forestEntry("FIRST-WORK", "work", "FIRST-EPIC"),
+    forestEntry("FIRST-STEP", "step", "FIRST-WORK"),
+    forestEntry("SECOND-EPIC", "group", "THE-GOAL"),
+    forestEntry("SECOND-WORK", "work", "SECOND-EPIC"),
+  ]);
+
+  const below = subtreeOf(forest, "THE-GOAL");
+
+  // Non-vacuity: five entries under the goal, two of them depth-1 siblings
+  // each carrying a subtree — so the nesting claim has two branches to order
+  // and the descent below is not a single chain's.
+  expect(below).toHaveLength(5);
+  expect(below.filter(({ depth }) => depth === 1)).toHaveLength(2);
+  expect(below.map(({ entry }) => entry.tag)).toEqual([
+    "FIRST-EPIC",
+    "FIRST-WORK",
+    "FIRST-STEP",
+    "SECOND-EPIC",
+    "SECOND-WORK",
+  ]);
+  // The depths say the same thing mechanically: the drop from the first
+  // subtree's deepest entry back to the second sibling is the nesting, and no
+  // level-by-level descent can produce a non-monotonic depth sequence.
+  expect(below.map(({ depth }) => depth)).toEqual([1, 2, 3, 1, 2]);
+  // What the flattening hands a caller reading the subtree as a set is the
+  // same sequence, since it is one call of this walk.
+  expect(descendantsOf(forest, "THE-GOAL").map((entry) => entry.tag)).toEqual(
+    below.map(({ entry }) => entry.tag),
+  );
+});
+
 it("the engine's subtree walk orders siblings by the comparator its caller supplied", () => {
   // Three sibling subtrees, filed in an order that is neither of the two the
   // comparators below ask for — so each answer is the comparator's doing and
