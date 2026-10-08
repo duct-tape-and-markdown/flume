@@ -1660,6 +1660,149 @@ describe("the queue's forest — the rules a whole listing keeps (spec/pending.m
     expect(spine.entries).toHaveLength(3);
   });
 
+  it("a group blocked on an entry blocked on one of that group's own descendants is refused at the queue read", () => {
+    // Neither end of this declares a cycle: the group waits outside its own
+    // subtree, which the containment rule admits, and the entry it waits on
+    // waits on a work entry whose own gate is open. The loop stands in the
+    // gate that work entry *inherits* — a blockedBy declared on a group holds
+    // its whole subtree (`spec/pending.md`, *Pickability*) — so all three
+    // parse, all three report queued, and none of them can ever be picked.
+    const closed = [
+      forestEntry("THE-GROUP", "group", undefined, {
+        kind: "blockedBy",
+        tags: ["OUTSIDE-WORK"],
+      }),
+      forestEntry("UNDER-IT", "work", "THE-GROUP"),
+      forestEntry("OUTSIDE-WORK", "work", undefined, {
+        kind: "blockedBy",
+        tags: ["UNDER-IT"],
+      }),
+    ];
+    const result = parseQueue(closed);
+    expect(result.ok).toBe(false);
+    // All-or-nothing over the directory, as for every other forest defect.
+    expect(result.entries).toEqual([]);
+    // One finding per offending edge, each in the file of the author who can
+    // cut it: the inherited hop is the group's field, not the descendant's.
+    expect(result.errors.map((e) => e.file).sort()).toEqual([
+      entryFileName("OUTSIDE-WORK"),
+      entryFileName("THE-GROUP"),
+    ]);
+    for (const error of result.errors) {
+      expect(error.path).toBe("gate.tags.0");
+    }
+    const fromGroup = result.errors.find(
+      (e) => e.file === entryFileName("THE-GROUP"),
+    )!;
+    // The entry on the cycle is named, the path reads in the order the
+    // effective edges lead, and the gate is placed where it was declared.
+    expect(fromGroup.message).toContain(
+      "UNDER-IT blocked by OUTSIDE-WORK blocked by UNDER-IT",
+    );
+    expect(fromGroup.message).toContain(
+      '"UNDER-IT" inherits this gate from "THE-GROUP" above it',
+    );
+    // The declarer's own hop is named as its own, with no inheritance clause.
+    const fromWork = result.errors.find(
+      (e) => e.file === entryFileName("OUTSIDE-WORK"),
+    )!;
+    expect(fromWork.message).toContain(
+      "OUTSIDE-WORK blocked by UNDER-IT blocked by OUTSIDE-WORK",
+    );
+    expect(fromWork.message).not.toContain("inherits this gate from");
+
+    // Non-vacuity: the same three entries with the group's gate opened are a
+    // forest the read admits, so what was refused is the closed loop and not
+    // a group parenting a work entry something else waits on.
+    const open = parseQueue([
+      forestEntry("THE-GROUP", "group"),
+      ...closed.slice(1),
+    ]);
+    expect(open.ok, JSON.stringify(open.errors)).toBe(true);
+    expect(open.entries).toHaveLength(3);
+    // And the chain-less read refuses it too — core shape, one verdict.
+    expect(parseQueueLoose(closed).ok).toBe(false);
+  });
+
+  it("a cycle standing only in the gates two entries inherit is refused at the queue read", () => {
+    // Four entries, two groups, and not one entry on the cycle carries a
+    // blockedBy of its own: each group waits on the other's work entry, and
+    // each work entry inherits that wait. A search that read only the gates
+    // an entry declares for itself starts at the two groups, and neither of
+    // them is on the loop.
+    const inherited = [
+      forestEntry("GROUP-ONE", "group", undefined, {
+        kind: "blockedBy",
+        tags: ["WORK-TWO"],
+      }),
+      forestEntry("WORK-ONE", "work", "GROUP-ONE"),
+      forestEntry("GROUP-TWO", "group", undefined, {
+        kind: "blockedBy",
+        tags: ["WORK-ONE"],
+      }),
+      forestEntry("WORK-TWO", "work", "GROUP-TWO"),
+    ];
+    const result = parseQueue(inherited);
+    expect(result.ok).toBe(false);
+    expect(result.entries).toEqual([]);
+    // Non-vacuity on the subject: every refusal lands on a group's gate, so
+    // what was read is the inherited fold and not a declared edge.
+    expect(result.errors.map((e) => e.file).sort()).toEqual([
+      entryFileName("GROUP-ONE"),
+      entryFileName("GROUP-TWO"),
+    ]);
+    for (const error of result.errors) {
+      expect(error.path).toBe("gate.tags.0");
+      expect(error.message).toContain("inherits this gate from");
+    }
+    const fromOne = result.errors.find(
+      (e) => e.file === entryFileName("GROUP-ONE"),
+    )!;
+    expect(fromOne.message).toContain(
+      "WORK-ONE blocked by WORK-TWO blocked by WORK-ONE",
+    );
+
+    // Non-vacuity: the same four entries with one group's gate opened are a
+    // forest the read admits, so what was refused is the closed loop and not
+    // a group waiting on a work entry outside its own subtree.
+    const open = parseQueue([
+      forestEntry("GROUP-ONE", "group"),
+      ...inherited.slice(1),
+    ]);
+    expect(open.ok, JSON.stringify(open.errors)).toBe(true);
+    expect(open.entries).toHaveLength(4);
+  });
+
+  it("a blockedBy edge that crosses containment without closing on itself is admitted", () => {
+    // The containment rule bounds an edge into the declarer's *own*
+    // containment. An edge reaching into somebody else's is a dependency on
+    // one of their descendants, and the fold above it closes nothing: the
+    // blocker can ship, and then so can the waiter.
+    const queue = [
+      forestEntry("THE-GROUP", "group"),
+      forestEntry("UNDER-IT", "work", "THE-GROUP"),
+      forestEntry("OUTSIDE-WORK", "work", undefined, {
+        kind: "blockedBy",
+        tags: ["UNDER-IT"],
+      }),
+    ];
+    const result = parseQueue(queue);
+    expect(result.ok, JSON.stringify(result.errors)).toBe(true);
+    expect(result.entries.map((e) => e.tag)).toEqual([
+      "THE-GROUP",
+      "UNDER-IT",
+      "OUTSIDE-WORK",
+    ]);
+    // And the listing still has something pickable, which is the whole
+    // difference from a cycle: the blocker is pickable now and the waiter is
+    // not, so the queue drains rather than standing forever.
+    const byTag = new Map(result.entries.map((e) => [e.tag, e] as const));
+    expect(isPickableNow(byTag.get("UNDER-IT")!, result.entries)).toBe(true);
+    expect(isPickableNow(byTag.get("OUTSIDE-WORK")!, result.entries)).toBe(
+      false,
+    );
+  });
+
   it("a blockedBy naming a tag no entry in the queue carries is admitted", () => {
     // A blocker the queue does not hold has already shipped by the membership
     // read selection takes, so it closes no cycle and gates nothing: the

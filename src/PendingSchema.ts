@@ -991,6 +991,18 @@ function queueForestErrors(
     }
   }
 
+  /**
+   * The `blockedBy` edges the containment arm below refuses, keyed by the
+   * gate field their author wrote — so the cycle arm after it can drop them
+   * rather than refuse one edge twice. A containment edge closes a cycle in
+   * the *effective* graph by construction: the descendant inherits the gate
+   * naming it, which is the half of the containment reason the refusal
+   * already states ({@link CONTAINMENT_BLOCKED_BY_WHY}).
+   */
+  const containmentRefused = new Set<string>();
+  const edgeKey = (declarer: string, index: number): string =>
+    `${declarer}\u0000${index}`;
+
   for (const entry of entries) {
     if (entry.gate.kind !== "blockedBy") continue;
     /**
@@ -1023,6 +1035,7 @@ function queueForestErrors(
       const path = `gate.tags.${index}`;
       const relation = containment.get(tag);
       if (relation !== undefined) {
+        containmentRefused.add(edgeKey(entry.tag, index));
         refuse(
           entry,
           path,
@@ -1059,22 +1072,81 @@ function queueForestErrors(
     });
   }
 
+  /**
+   * Every entry's **effective** blockers — its own `blockedBy` tags together
+   * with every ancestor's, nearest first, which is the fold pickability
+   * already takes over the same gates ({@link isPickableNow}). Read once per
+   * listing so the search below walks one graph.
+   *
+   * The fold is what makes the cycle visible: a gate declared on a group
+   * holds its whole subtree, so two entries can wait on each other without
+   * either one carrying a `blockedBy` of its own. Each edge keeps the entry
+   * that declared it and the index it sits at, because that pair — not the
+   * entry the edge reaches *from* — is the field an author can cut.
+   */
+  const effectiveEdges = new Map<string, readonly BlockerEdge[]>(
+    entries.map((entry) => [
+      entry.tag,
+      [entry, ...ancestorsOf(entries, entry)]
+        .flatMap((declarer) =>
+          declarer.gate.kind === "blockedBy"
+            ? declarer.gate.tags.map((tag, index) => ({ tag, declarer, index }))
+            : [],
+        )
+        .filter(
+          (edge) =>
+            !containmentRefused.has(edgeKey(edge.declarer.tag, edge.index)),
+        ),
+    ]),
+  );
+  const blockersOf = (of: PendingEntry): readonly string[] =>
+    (effectiveEdges.get(of.tag) ?? []).map((edge) => edge.tag);
+
+  // One finding per offending edge: two entries on one cycle name two
+  // different hops, while two entries inheriting the *same* hop name one
+  // field, and a reader is handed each cut once.
+  const named = new Set<string>();
   for (const entry of entries) {
-    if (entry.gate.kind !== "blockedBy") continue;
-    const cycle = blockerCycleFrom(entry, byTag);
+    const edges = effectiveEdges.get(entry.tag) ?? [];
+    if (edges.length === 0) continue;
+    const cycle = blockerCycleFrom(entry, byTag, blockersOf);
     if (cycle === undefined) continue;
-    // The hop out of this entry is one of its own declared tags, so the
-    // refusal names the field the author wrote rather than the gate.
+    // The hop out of this entry is an effective edge, so the refusal names
+    // the field its author wrote — this entry's own gate where it declared
+    // one, and the ancestor's where the gate is inherited. Nearest first, so
+    // an entry restating a gate above it is told about its own.
+    const hop = edges.find((edge) => edge.tag === cycle[1])!;
+    const key = edgeKey(hop.declarer.tag, hop.index);
+    if (named.has(key)) continue;
+    named.add(key);
     refuse(
-      entry,
-      `gate.tags.${entry.gate.tags.indexOf(cycle[1]!)}`,
+      hop.declarer,
+      `gate.tags.${hop.index}`,
       `the blockers above "${entry.tag}" close on it ` +
         `(${cycle.join(" blocked by ")}): an entry waiting on itself is ` +
-        `reported queued and can never be picked`,
+        `reported queued and can never be picked` +
+        (hop.declarer.tag === entry.tag
+          ? ""
+          : `, and "${entry.tag}" inherits this gate from ` +
+            `"${hop.declarer.tag}" above it`),
     );
   }
 
   return errors;
+}
+
+/**
+ * One `blockedBy` tag as the queue read sees it: the tag it names, the entry
+ * whose gate declares it, and the index it sits at in that gate's own `tags`.
+ *
+ * The declarer travels with the tag because an inherited gate's edge is
+ * cuttable only where it was written: an entry that reaches a blocker through
+ * the group above it has no field of its own to name.
+ */
+interface BlockerEdge {
+  readonly tag: string;
+  readonly declarer: PendingEntry;
+  readonly index: number;
 }
 
 /**
@@ -1090,10 +1162,15 @@ function queueForestErrors(
  * rather than leaving a marker every consumer must remember to inspect
  * (`.claude/rules/engineering.md`, *Loud or nothing*).
  *
- * An edge closing through *containment* rather than through a second
- * `blockedBy` is invisible here — the blocker's own gate is open and leads
- * nowhere back — and is refused on its own terms ({@link
- * CONTAINMENT_BLOCKED_BY_SCOPE}).
+ * The edges are the caller's to supply, and the caller folds each entry's own
+ * gate together with every ancestor's: a cycle standing only in inherited
+ * gates runs through entries whose own gate is open, so a search over
+ * declared edges alone leads nowhere back from any of them.
+ *
+ * An edge *into* its declarer's containment is refused on its own terms
+ * ({@link CONTAINMENT_BLOCKED_BY_SCOPE}) and the caller withholds it from the
+ * graph, so the one closing edge the containment rule owns is not refused
+ * twice.
  *
  * A tag naming no entry in the queue is **not** an edge here and not a
  * finding: a blocker outside the queue has already shipped by the membership
@@ -1105,9 +1182,8 @@ function queueForestErrors(
 function blockerCycleFrom(
   entry: PendingEntry,
   byTag: ReadonlyMap<string, PendingEntry>,
+  blockersOf: (of: PendingEntry) => readonly string[],
 ): readonly string[] | undefined {
-  const blockersOf = (of: PendingEntry): readonly string[] =>
-    of.gate.kind === "blockedBy" ? of.gate.tags : [];
   const visited = new Set<string>();
   const walk = (
     cursor: PendingEntry,
