@@ -1,0 +1,37 @@
+{
+  "tag": "THE-STEPS-BLOCK-RENDERS-THE-NESTING-ITS-LINE-MUST-CLOSE-OVER",
+  "gate": {
+    "kind": "open"
+  },
+  "dependsOnForks": [],
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "harness/prompts.ts",
+        "description": "the steps block's flat tag list and the finished line it instructs"
+      },
+      {
+        "path": "tests/harnessPrompts.test.ts",
+        "description": "the block's first cases — it is named nowhere in the file today"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "the `<steps>` block renders the nesting its finished line must close over, so a session naming a subset writes a list the ship refusal accepts rather than one that orphans a substep",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A seam gate reads what the real writer wrote"
+  },
+  "acceptance": "the steps block renders each step beneath the step it is part of and states that naming a step names every step under it, so a partial line a session composes is closed downward by construction rather than by luck; and the line the block instructs is read by the real decoder rather than asserted as text",
+  "tests": [
+    "the steps block renders each substep beneath the step it is part of",
+    "the steps block states that naming a step names every step under it"
+  ],
+  "pins": [
+    "the line the steps block instructs decodes to every step the entry carries"
+  ],
+  "laneTests": [],
+  "notes": "Measured on this tip: `stepsBlock` renders its tags flat and instructs `Finished: <every tag>`, so a session finishing a subset cannot see which tag sits under which; the engine then refuses the orphaning list at the merge (shipped 2b51afe9), which keeps the span on the trunk and spends the wave. `tests/harnessPrompts.test.ts` names the block nowhere, so every line here is its first case. `assignedSteps` carries whole entries, so `parent` is in hand."
+}

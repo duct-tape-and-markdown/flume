@@ -1,0 +1,37 @@
+{
+  "tag": "ONE-EDGE-EARNS-ONE-REFUSAL-WHATEVER-ARM-REFUSED-IT",
+  "gate": {
+    "kind": "open"
+  },
+  "dependsOnForks": [],
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/PendingSchema.ts",
+        "description": "the withholding set the cycle arm reads, keyed to the containment arm alone, and the step-scope arm that adds nothing to it"
+      },
+      {
+        "path": "tests/PendingSchema.test.ts",
+        "description": "the forest refusal cases, over two steps of different work entries blocked on each other"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "every arm that refuses a `blockedBy` edge withholds it from the cycle search — one edge, one refusal, as the withholding set already claims, not the containment arm's alone",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "The fix lands at the mechanism"
+  },
+  "acceptance": "two steps of different work entries blocked on each other draw one refusal per edge — the step-scope one, naming the field its author wrote — where today the same `gate.tags.<n>` carries a step-scope refusal and a cycle refusal; the withholding is keyed on an edge some arm refused rather than on which arm refused it, so the containment arm stops being the special case; its own single refusal stands unchanged",
+  "tests": [
+    "two steps of different work entries blocked on each other draw one refusal per edge"
+  ],
+  "pins": [
+    "a containment edge that closes a cycle draws one refusal",
+    "a step blocked on a step of another work entry is refused where no cycle closes"
+  ],
+  "laneTests": [],
+  "notes": "Measured on this tip: two work entries, one step each, the steps blocked on each other — 4 errors, `S1.json gate.tags.0` and `S2.json gate.tags.0` each twice, once per arm. The containment control draws 1. `containmentRefused` (`src/PendingSchema.ts`) is the set, and the comment above it already says one edge earns one refusal; the step-scope arm never adds to it. Collides with THE-SUBTREE-WALKS-DEFAULT-ORDER-GAINS-ITS-CASE on the test file."
+}
