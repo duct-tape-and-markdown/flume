@@ -1046,9 +1046,13 @@ const cumulative: Gate = {
   `ctx.touchedPaths`, which under a batch is the union of the spans' own, so
   an entry *any* span touched is refused and named. The `afterMerge` copy the
   claim check wants therefore costs a batching phase nothing.
-  `chainLoadGate` withholds the declaration — it judges the gated commit as
-  one span's — so it is the one built-in a chain can hang at `afterMerge` that
-  narrows the phase back to a span per merge.
+- **`chainLoadGate` declares it**, on the same ground: `ctx.touchedPaths` is
+  the union, so a `chain.ts` *any* span rewrote is loaded rather than only the
+  last pick's, and the roots it loads through are the placement's, the same at
+  either width. So every built-in you can place at `afterMerge` declares it —
+  `writablePathsGate` is the dispatcher's own, per span and `afterCommit`,
+  never yours to move — and a phase held to a span per merge is held there by
+  a gate of your own.
 - **A batch withholds rather than approximates.** `entry`, `baseSha` and
   `landedOnSha` are absent under a batch — the type says so — because no
   single value of any of them is true of the merge. `commitSha` is the
@@ -1083,7 +1087,9 @@ const factory: ChainFactory = (flume) => {
   that can write `chain.ts` — it is not attached for you, and it skips as a
   pass on every commit that touched no chain file. It takes no options: a
   plain `Gate`, spread to move its gate point
-  (`{ ...chainLoadGate, when: "afterMerge" }`).
+  (`{ ...chainLoadGate, when: "afterMerge" }`). Declares `batches: true`
+  ([*Reading a batched merge*](#reading-a-batched-merge)), so that spread
+  holds no batching phase to a span per merge.
 - `writablePathsGate` — attached automatically by the dispatcher from each
   phase's `writablePaths`. Don't list manually.
 - `pendingGate` — `pendingGate({ targetFence, extension?, fenceWhen?,

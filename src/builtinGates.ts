@@ -258,11 +258,25 @@ export const eslintGate: PkgManagerGate = pkgManagerGate(
  * `chain.ts`). Promoted to a builtin — not chain-local like the pending-parse
  * gate — because `chain.ts` is universal to every flume project (the queue
  * is specific to a plan/build chain).
+ *
+ * **It declares `batches: true`** (spec/worktrees.md, *Batched merges*), so a
+ * chain may hang it at `afterMerge` without collapsing the phase to a span
+ * per merge. The declaration is withheld from a gate that would read a
+ * batch's facts as one entry's, and none of the four facts this gate reads is
+ * one. `ctx.touchedPaths` is the batch's union, so a `chain.ts` *any* span
+ * rewrote is judged rather than only the last pick's; `repoRoot`, `configDir`
+ * and `flumeDir` are {@link GateSite} — the placement, which is the same at
+ * either width. Hence `run`'s parameter is the two context shapes' union
+ * rather than {@link GateContext} alone: the per-span facts a batch withholds
+ * ({@link BatchGateContext}) are ones this gate never reads, and the one tree
+ * it loads from is the one tree the merge left behind however many spans were
+ * picked into it.
  */
-export const chainLoadGate: SingleSpanGate = {
+export const chainLoadGate: BatchingGate = {
   name: "chain-load",
   when: "afterCommit",
-  async run(ctx: GateContext): Promise<GateResult> {
+  batches: true,
+  async run(ctx: GateContext | BatchGateContext): Promise<GateResult> {
     const touched = ctx.touchedPaths;
     // The touched-path key is the file `loadChainModule` will resolve from
     // this same `configDir`, made repo-relative and posix-slashed to match

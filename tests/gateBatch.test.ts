@@ -79,7 +79,12 @@ describe("mergeBatchWidth — the two declarations a batch needs", () => {
     expect(mergeBatchWidth(chainWith(phase, 4), phase)).toBe(4);
   });
 
-  it("a phase whose afterMerge gate does not declare batches is held to one span per merge", () => {
+  it("a chain-authored gate that withholds the batch declaration holds its phase to one span per merge", () => {
+    // The narrowing arm's subject is a gate of the chain's own: every builtin
+    // a chain can place at the merge declares it (the cases below), so one
+    // written for a single entry is the only thing left that can hold the
+    // phase back — beside a batch-reading sibling, which is what makes the
+    // narrowing the undeclared gate's rather than an absent batch reader's.
     const phase = phaseWith([afterMerge("suite", true), afterMerge("lint", false)]);
     expect(phase.gates.filter((gate) => gate.when === "afterMerge")).toHaveLength(2);
 
@@ -156,21 +161,40 @@ describe("mergeBatchWidth — the two declarations a batch needs", () => {
     expect(mergeBatchWidth(chainWith(phase, 4), phase)).toBe(4);
   });
 
-  it("a phase whose afterMerge gates include chainLoadGate still merges one span at a time", () => {
-    // The gate that re-loads a committed `chain.ts` judges the gated commit
-    // as one span's, so it is the one builtin a chain can hang at the merge
-    // that holds the phase back — beside a batch-reading sibling, which is
-    // what makes the narrowing the undeclared gate's rather than an absent
-    // batch reader's.
+  it("a phase whose afterMerge gates are builtins reaches the declared merge width with chain-load among them", () => {
+    // Chain-load is the last builtin a chain can place at the merge, so this
+    // is the whole builtin roster at that point: the suite gate, the queue
+    // gate and the chain-load gate, each the real factory's or const's own
+    // relocated the way a chain relocates it — not a fixture declaring
+    // `batches` by the tester's hand, which is what the cases above do and
+    // what would pass over a builtin that never made the declaration
+    // (`.claude/rules/engineering.md`, *A seam gate reads what the real
+    // writer wrote*).
     const phase = phaseWith([
-      afterMerge("suite", true),
+      vitestGate({ when: "afterMerge" }),
+      pendingGate({
+        targetFence: { writablePaths: ["src/**"] },
+        when: "afterMerge",
+      }),
       { ...chainLoadGate, when: "afterMerge" },
     ]);
     const atMerge = phase.gates.filter((gate) => gate.when === "afterMerge");
-    expect(atMerge.map((gate) => gate.name)).toEqual(["suite", "chain-load"]);
-    expect(atMerge.map((gate) => gate.batches === true)).toEqual([true, false]);
+    // Non-vacuity: three real `afterMerge` gates, and the declaration each
+    // makes is spelled here rather than left to be inferred from the width —
+    // so a chain-load gate that withheld it would red on this line as well as
+    // on the width below.
+    expect(atMerge.map((gate) => gate.name)).toEqual([
+      "vitest",
+      "pending-gate",
+      "chain-load",
+    ]);
+    expect(atMerge.map((gate) => gate.batches === true)).toEqual([
+      true,
+      true,
+      true,
+    ]);
 
-    expect(mergeBatchWidth(chainWith(phase, 4), phase)).toBe(1);
+    expect(mergeBatchWidth(chainWith(phase, 4), phase)).toBe(4);
   });
 
   it("a phase with no afterMerge gate batches at the declared width", () => {

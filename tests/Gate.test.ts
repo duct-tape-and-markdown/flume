@@ -21,7 +21,9 @@ import {
   pendingGate,
 } from "../src/builtinGates.ts";
 import { entryFileName } from "../src/PendingSchema.ts";
-import type { Gate, GateContext } from "../src/Gate.ts";
+import { batchGateContext } from "../src/gateBatch.ts";
+import { runGate, type GateRunScope } from "../src/gateRun.ts";
+import type { Gate, GateContext, GateSite } from "../src/Gate.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { SPAWN_BUDGET_MS, exec } from "./helpers/subprocess.ts";
 
@@ -53,6 +55,18 @@ function ctx(cwd: string, overrides: Partial<GateContext> = {}): GateContext {
     log: () => {},
     ...overrides,
   };
+}
+
+/**
+ * The placement half of the same fixture — what a batch's gates are handed,
+ * since the span facts a single-span context carries are the ones a batch
+ * withholds (`batchGateContext`, `src/gateBatch.ts`). Taken off `ctx` rather
+ * than spelled a second time, so one fixture states both widths' roots.
+ */
+function siteOf(from: GateContext): GateSite {
+  const { commitSha, baseSha, touchedPaths, batch, entry, steps, ...site } =
+    from;
+  return site;
 }
 
 /**
@@ -767,6 +781,51 @@ describe("chainLoadGate / writablePathsGate — consume ctx.touchedPaths, no ind
         touchedPaths: [".flume/chain.ts"],
       }),
     );
+    expect(result.ok).toBe(true);
+    expect(result.message).toMatch(/valid Chain/);
+  });
+
+  it("chainLoadGate declares it reads a batch", async () => {
+    await mkdir(join(notARepo, ".flume"), { recursive: true });
+    await writeFile(join(notARepo, ".flume", "chain.ts"), VALID_CHAIN, "utf8");
+    // Driven through `runGate` (`src/gateRun.ts`), which is where the
+    // declaration stops being a flag and becomes the door: an undeclared gate
+    // handed a batch is refused there and recorded as that gate's failure,
+    // never run over the last pick's facts. And the batch context is the real
+    // one `batchGateContext` builds, so what the gate reads is the union a
+    // merge actually hands it (`.claude/rules/engineering.md`, *A seam gate
+    // reads what the real writer wrote*).
+    const batch = batchGateContext(siteOf(ctx(notARepo)), [
+      {
+        commitSha: "c1",
+        baseSha: "b1",
+        landedOnSha: "t0",
+        touchedPaths: [".flume/chain.ts"],
+      },
+      {
+        commitSha: "c2",
+        baseSha: "b2",
+        landedOnSha: "c1",
+        touchedPaths: ["src/other.ts"],
+      },
+    ]);
+    // Non-vacuity, and the arm: two spans, and the chain rewrite is the
+    // *first* pick's, so a gate keyed on the last pick's own paths would skip
+    // here instead of loading.
+    expect(batch.batch).toHaveLength(2);
+    expect(batch.batch.at(-1)?.touchedPaths).toEqual(["src/other.ts"]);
+
+    const { result } = await runGate(chainLoadGate, batch, {
+      worktreeCtx: {
+        repoRoot: notARepo,
+        flumeDir: join(notARepo, ".flume"),
+        stateRootRel: computeStateRootRel(notARepo, join(notARepo, ".flume")),
+        log: { info: () => {}, warn: () => {}, error: () => {} },
+      },
+      log: { info: () => {}, warn: () => {}, error: () => {} },
+    } satisfies GateRunScope);
+
+    expect(result.skipped).toBeUndefined();
     expect(result.ok).toBe(true);
     expect(result.message).toMatch(/valid Chain/);
   });
