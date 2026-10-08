@@ -44,7 +44,7 @@ import {
   writeMinimalChain,
   type Fixture,
 } from "./helpers/dispatcherFixture.ts";
-import { exec, SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
+import { exec, gitOut, SPAWN_BUDGET_MS } from "./helpers/subprocess.ts";
 import { waitFor } from "./helpers/waitFor.ts";
 
 // `makeFixture` seeds a temp repository through real `git` plumbing, so every
@@ -3765,22 +3765,41 @@ describe("superviseLoop — a mount-dead 69 aborts only while the mount is still
     });
   };
 
-  /** A parseable entry, so the clean case's re-read judges a file rather than an absent directory. */
-  const GOOD = JSON.stringify(
-    {
-      tag: "GOOD",
-      gate: { kind: "open" },
-      dependsOnForks: [],
-      kind: "work",
-      files: { new: [], edit: [], retire: [] },
-    },
-    null,
-    2,
-  );
+  /**
+   * A parseable entry under `tag`, so a case's re-read judges a file rather
+   * than an absent directory — and so the repair case's re-read parses an
+   * entry rather than an emptied queue.
+   */
+  const parseableEntry = (tag: string): string =>
+    JSON.stringify(
+      {
+        tag,
+        gate: { kind: "open" },
+        dependsOnForks: [],
+        kind: "work",
+        files: { new: [], edit: [], retire: [] },
+      },
+      null,
+      2,
+    );
 
-  /** One run whose every child exits 69, over whatever the case left on disk. */
+  /** The parseable entry the standing cases queue. */
+  const GOOD = parseableEntry("GOOD");
+
+  /**
+   * One run whose every child exits 69, over whatever the case left on disk.
+   *
+   * `whileTheChildRuns` is the one seam a case has for moving the mount
+   * *during* a run: it is awaited inside the stubbed child, so whatever it
+   * writes is on disk before that child's exit is accounted for and before
+   * the supervisor's re-read of the wall. A single process reaches no closer
+   * to "after the exit" than that — the supervisor reads disk only at the
+   * re-read, so the repair or the breakage lands in exactly the gap the
+   * re-read exists to cover.
+   */
   const runOver69 = async (
     tickBudget: number,
+    whileTheChildRuns?: (call: number) => Promise<void>,
   ): Promise<{
     res: SuperviseResult;
     calls: number;
@@ -3795,9 +3814,10 @@ describe("superviseLoop — a mount-dead 69 aborts only while the mount is still
       repoRoot: fx.repo,
       configDir: fx.configDir,
       tickBudget,
-      runTick: () => {
+      runTick: async () => {
         calls++;
-        return Promise.resolve({ exitCode: EX_MOUNT_DEAD });
+        await whileTheChildRuns?.(calls);
+        return { exitCode: EX_MOUNT_DEAD };
       },
       log: {
         info: () => {},
@@ -3911,5 +3931,84 @@ describe("superviseLoop — a mount-dead 69 aborts only while the mount is still
     }
     expect(res.shippedTags).toEqual([]);
     expect(loopExitCode(res)).toBe(1);
+  });
+
+  // The five cases above set the mount before the run and never move it, so
+  // each reads the same answer whether the supervisor re-resolves per child
+  // or answers every 69 from one resolve it took once. The two below move it
+  // in the gap between a child's exit and the read, which is the
+  // transition the whole arm is about: one breaks a mount an earlier re-read
+  // of the same run read clean, the other repairs one the child died on.
+
+  it("a mount-dead re-read ends the run on a chain that broke after an earlier re-read read it clean", async () => {
+    await writeMinimalChain(fx.configDir);
+    await commitEntry("GOOD", GOOD);
+    const chainPath = join(fx.configDir, "chain.ts");
+
+    // The mount dies under the second child: a `.flume` the operator moved, a
+    // checkout that took chain.ts with it. Removal rather than a rewrite
+    // because a rewrite is unreadable in one process by construction — Node's
+    // ESM registry is keyed by resolved URL and cannot be evicted
+    // (`.claude/rules/platform-facts.md`), so a second `tsImport` of a path
+    // already evaluated answers the first evaluation whatever is on disk
+    // (measured on this tree). The absence probe `loadChainModule` takes
+    // before it imports is the chain leg a live process can still decide, and
+    // the production re-read is a fresh child's load either way.
+    const { res, calls, errors, warns } = await runOver69(4, async (call) => {
+      if (call === 2) await rm(chainPath);
+    });
+
+    // The first 69's re-read found every leg clean and the run went on —
+    // without that, the case would prove nothing about a *second* re-read.
+    expect(
+      warns.filter((l) => l.includes("has been repaired since")),
+    ).toHaveLength(1);
+    // The second's found the chain gone and ended the run there, two ticks
+    // into a budget of four: the verdict is the tip each child would load
+    // from, never the one this process resolved first.
+    expect(calls).toBe(2);
+    expect(res.ticks).toBe(2);
+    expect(res.mountDead).toBe(true);
+    expect(loopExitCode(res)).toBe(EX_MOUNT_DEAD);
+    expect(
+      errors.some((e) => e.includes("the chain still will not load")),
+    ).toBe(true);
+  });
+
+  it("a mount-dead re-read declines the abort on a queue repaired between the child's exit and the read", async () => {
+    await writeMinimalChain(fx.configDir);
+    await commitEntry("CORRUPT", CORRUPT);
+    const rel = `.flume/plan/pending/${entryFileName("CORRUPT")}`;
+
+    // The queue's declared writer committing over a failed parse
+    // (`spec/pending.md`, *Queue reads are strict*) while the child that
+    // exited 69 on it is still the supervisor's to account for — the sibling
+    // repair this arm exists for. The tip is read first, so the case holds
+    // what the child died on rather than asserting the repair alone.
+    let tipAtExit: string | undefined;
+    const { res, calls, errors, warns } = await runOver69(2, async (call) => {
+      if (call !== 1) return;
+      tipAtExit = await gitOut(fx.repo, ["show", `HEAD:${rel}`]);
+      await commitEntry("CORRUPT", parseableEntry("CORRUPT"));
+    });
+
+    // The arming: the queue really was unparseable at the tip the supervisor
+    // re-reads from, so the declined abort below is a repair being seen and
+    // not a corruption that never landed.
+    expect(tipAtExit).toBe(CORRUPT);
+    // And the repair is why no abort came: both children's 69s were declined,
+    // each with the supervisor saying so, and no queue-leg refusal stands.
+    expect(calls).toBe(2);
+    expect(res.ticks).toBe(2);
+    expect(res.mountDead).toBeUndefined();
+    expect(loopExitCode(res)).not.toBe(EX_MOUNT_DEAD);
+    expect(
+      warns.filter((l) => l.includes("has been repaired since")),
+    ).toHaveLength(2);
+    expect(
+      errors.filter((e) =>
+        e.includes("the queue still will not read at the tip"),
+      ),
+    ).toHaveLength(0);
   });
 });
