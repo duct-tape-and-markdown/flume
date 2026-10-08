@@ -44,6 +44,10 @@ import {
   diskChainLoader,
   type LoadedChain,
 } from "./chainLoad.js";
+import {
+  assertPositiveCount,
+  WAVE_WIDTH_FLOOR_REASON,
+} from "./counted.js";
 import { EntryClaimStore } from "./entryClaims.js";
 import type { FlumePaths } from "./flumeApi.js";
 import type { GateRunScope } from "./gateRun.js";
@@ -138,6 +142,13 @@ function resolveAgentBounds(
 }
 
 /**
+ * The fanout width a dispatcher binds when the embedder passed none and the
+ * chain declares none. One number, read by the binding and by the refusal
+ * that names what omitting the option falls back to.
+ */
+const DEFAULT_MAX_PARALLEL = 4;
+
+/**
  * Constructor input for `Dispatcher`. `repoRoot`, `configDir`, and `agent`
  * are required; the rest tune chain resolution, concurrency, trunk
  * identification, logging, and per-tick wall-clock budget.
@@ -190,7 +201,11 @@ export interface DispatcherOptions {
   forkResolver?: (repoRoot: string) => (slug: string) => boolean;
   log?: Logger;
   /**
-   * Max parallel ticks per fanout batch. Default 4. Overridable per chain via
+   * Max parallel ticks per fanout batch. A positive integer, refused at
+   * construction below one or fractional — the width is the only thing
+   * standing between a ready queue and a wave that opens no slot, and the
+   * chain's own half of it is refused at the load the same way
+   * (`src/chainLoad.ts`). Default 4. Overridable per chain via
    * `Chain.supervisorPolicy.maxParallel` (`src/Phase.ts`), which `runFanout`
    * prefers when declared — this option is the fallback below it, for a
    * programmatic embedder that wants a floor the chain doesn't set.
@@ -736,6 +751,17 @@ export class Dispatcher {
   private bounds: AgentBounds;
 
   constructor(opts: DispatcherOptions) {
+    // Before anything this dispatcher builds: a width below one is a run that
+    // cannot happen, and the wave is the wrong place to learn it — the slot
+    // fill would read a ready queue, take none of it, and report the untouched
+    // queue as a quiet no-op. The chain's half of this width refuses at the
+    // load through the same predicate (`src/chainLoad.ts`).
+    assertPositiveCount("dispatcher constructed with", {
+      field: "maxParallel",
+      value: opts.maxParallel,
+      why: WAVE_WIDTH_FLOOR_REASON,
+      omitted: `${DEFAULT_MAX_PARALLEL} slots per wave`,
+    });
     this.opts = opts;
     this.flumeDir = opts.flumeDir ?? defaultStateRoot(opts.repoRoot);
     this.stateRootRel = computeStateRootRel(opts.repoRoot, this.flumeDir);
@@ -752,7 +778,7 @@ export class Dispatcher {
       this.log,
     );
     this.claims = new EntryClaimStore(opts.repoRoot);
-    this.maxParallel = opts.maxParallel ?? 4;
+    this.maxParallel = opts.maxParallel ?? DEFAULT_MAX_PARALLEL;
     this.tickTimeoutMs = opts.tickTimeoutMs;
     this.bounds = resolveAgentBounds(undefined, this.tickTimeoutMs);
     this.pendingDir = resolvePendingDir(this.flumeDir);

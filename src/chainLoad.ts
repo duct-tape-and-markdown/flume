@@ -21,6 +21,11 @@ import { pathToFileURL } from "node:url";
 import { tsImport } from "tsx/esm/api";
 
 import type { Agent } from "./Agent.js";
+import {
+  assertPositiveCount,
+  type CountedValue,
+  WAVE_WIDTH_FLOOR_REASON,
+} from "./counted.js";
 // `buildFlumeApi` is a function, not a constant, precisely so this
 // import participates safely in the flumeApi cycle — see its docstring.
 // flumeApi takes `CjsContextLoadError` back out of this module, and both
@@ -150,16 +155,19 @@ function resolveWorktreesBaseDeclaration(
  * positive integer: the value counts processes, slots, commits, or generations
  * of a queue entry, and `1.5` of any of them is not a budget anyone declared
  * on purpose. Refused here, at the load, rather than at the boundary where the
- * symptom appears (`.claude/rules/engineering.md`, *Loud or nothing*).
+ * symptom appears (`.claude/rules/engineering.md`, *Loud or nothing*); the
+ * predicate and the sentence are `assertPositiveCount` (`src/counted.ts`),
+ * shared with the construction argument that stands in for one of these
+ * fields when a chain declares none.
  *
  * - `supervisorPolicy.maxTicks` is how many `flume tick` children the
  *   supervisor holds at once (`src/Phase.ts`), and a supervisor that may hold
  *   none can never start one — the run would report the flags still standing
  *   as an orphaned baton and stop having done nothing.
- * - `supervisorPolicy.maxParallel` is how many entry worktrees one fanout
- *   wave holds open at once (spec/worktrees.md, *Fanout and worktrees —
- *   provisioning, isolation, teardown*), and a wave that may open no slot
- *   picks nothing: the slot fill reads a pickable set that was ready, takes
+ * - `supervisorPolicy.maxParallel` is the fanout wave's width
+ *   (spec/worktrees.md, *Fanout and worktrees — provisioning, isolation,
+ *   teardown*), and `WAVE_WIDTH_FLOOR_REASON` (`src/counted.ts`) is why one
+ *   is its floor: the slot fill reads a pickable set that was ready, takes
  *   none of it, and every tick of the run reports an untouched queue as a
  *   quiet no-op until the budget is spent. A fraction is the same defect one
  *   rung quieter — `1.5` opens one slot and the declared width is simply
@@ -179,8 +187,10 @@ function resolveWorktreesBaseDeclaration(
  * `DEFAULT_MAX_TICKS` (`src/loopSupervisor.ts`), the merge to
  * `DEFAULT_MERGE_BATCH` (`src/gateBatch.ts`), which together are the serial
  * loop, the wave to whatever the embedder passed as
- * `DispatcherOptions.maxParallel` (`src/Dispatcher.ts`), and every queue parse
- * to `DEFAULT_MAX_ENTRY_DEPTH` (`src/PendingSchema.ts`).
+ * `DispatcherOptions.maxParallel` (`src/Dispatcher.ts`) — refused there, at
+ * construction, on this same range, so neither half of the width can reach a
+ * wave as a zero — and every queue parse to `DEFAULT_MAX_ENTRY_DEPTH`
+ * (`src/PendingSchema.ts`).
  *
  * The other knobs in the supervisor block are deliberately not checked beside
  * these: each of those degrades to something an operator can read off a run —
@@ -189,12 +199,7 @@ function resolveWorktreesBaseDeclaration(
  * (`.claude/rules/engine-boundary.md`, *Capability vs convention*).
  */
 function validateCountedDeclarations(chain: Chain): void {
-  const counted: {
-    field: string;
-    value: number | undefined;
-    why: string;
-    omitted: string;
-  }[] = [
+  const counted: CountedValue[] = [
     {
       field: "supervisorPolicy.maxTicks",
       value: chain.supervisorPolicy?.maxTicks,
@@ -206,10 +211,7 @@ function validateCountedDeclarations(chain: Chain): void {
     {
       field: "supervisorPolicy.maxParallel",
       value: chain.supervisorPolicy?.maxParallel,
-      why:
-        `it is how many entry worktrees one fanout wave holds open at once, ` +
-        `and a wave that may open no slot picks nothing from a queue that ` +
-        `was ready`,
+      why: WAVE_WIDTH_FLOOR_REASON,
       omitted:
         `the width the embedder passed the dispatcher, which is four under ` +
         `the CLI`,
@@ -231,15 +233,8 @@ function validateCountedDeclarations(chain: Chain): void {
       omitted: `${DEFAULT_MAX_ENTRY_DEPTH} (goal, epic, work, step)`,
     },
   ];
-  for (const { field, value, why, omitted } of counted) {
-    if (value === undefined) continue;
-    if (!Number.isInteger(value) || value < 1) {
-      throw new Error(
-        `chain declares ${field}: ${JSON.stringify(value)}; ` +
-          `it must be a positive integer — ${why}. Omit it for the default ` +
-          `of ${omitted}.`,
-      );
-    }
+  for (const declared of counted) {
+    assertPositiveCount("chain declares", declared);
   }
 }
 

@@ -3106,7 +3106,7 @@ describe("Dispatcher fanout — supervisorPolicy.maxParallel overrides the batch
     expect(readPendingFromDisk(fx.repo)).toEqual([]);
   });
 
-  it("a chain declaring nothing gets maxParallel: 4", async () => {
+  it("a dispatcher constructed with no maxParallel opens four slots", async () => {
     const entries = [
       makeEntry("MPD-A", ["src/mpd-a.ts"]),
       makeEntry("MPD-B", ["src/mpd-b.ts"]),
@@ -3170,6 +3170,66 @@ describe("Dispatcher fanout — supervisorPolicy.maxParallel overrides the batch
       "MPD-E",
     ]);
     expect(outcome.result?.pendingAfter).toEqual([]);
+  });
+});
+
+/**
+ * The embedder's half of the wave width, refused where the chain's half
+ * already is (`tests/chain.test.ts`): `DispatcherOptions.maxParallel` is read
+ * by the wave's slot fill and by nothing before it, so a width that opens no
+ * slot used to bind unread and surface only as every tick of the run
+ * reporting a queue that was ready and went untouched
+ * (`.claude/rules/engineering.md`, *Loud or nothing*). Clamping to one is the
+ * degradation the same posture turns down on the declared side: an embedder
+ * that asked for no slots and got one reads as a correct wave.
+ *
+ * Construction is the whole subject, so these cases drive no queue and no
+ * tick — the point is that the object the wave would have run never exists.
+ * That an in-range width is honored is the peak cases above.
+ */
+describe("Dispatcher construction — a maxParallel that opens no slot refuses", () => {
+  /** A dispatcher over the real fixture roots, differing only in the width. */
+  function construct(maxParallel: number): Dispatcher {
+    const opts: DispatcherOptions = {
+      chainLoader: staticLoader({
+        phases: [makePhase({ name: "build", concurrency: "fanout" })],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: singleAgent(async () => {}),
+      log: silent,
+      maxParallel,
+    };
+    return new Dispatcher(opts);
+  }
+
+  it("a dispatcher constructed with a maxParallel below one refuses", () => {
+    // The fixture's own control: the same options with a width in range build,
+    // so each refusal below is the value answering rather than an option set
+    // the constructor refused for an unrelated reason.
+    expect(() => construct(2)).not.toThrow();
+
+    // Zero opens no slot at all, and a negative is the same wave one spelling
+    // further out.
+    expect(() => construct(0)).toThrow(
+      /maxParallel: 0[\s\S]*must be a positive integer/,
+    );
+    expect(() => construct(-1)).toThrow(
+      /maxParallel: -1[\s\S]*must be a positive integer/,
+    );
+    // And it says what omitting the option would have bound, so an embedder
+    // reads the fallback off the refusal instead of out of the engine.
+    expect(() => construct(0)).toThrow(/Omit it for the default of 4 slots/);
+  });
+
+  it("a dispatcher constructed with a fractional maxParallel refuses", () => {
+    expect(() => construct(2)).not.toThrow();
+    // A fraction is the same defect one rung quieter: `1.5` opens one slot and
+    // the width the embedder passed is simply gone.
+    expect(() => construct(1.5)).toThrow(
+      /maxParallel: 1\.5[\s\S]*must be a positive integer/,
+    );
   });
 });
 
