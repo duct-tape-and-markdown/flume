@@ -11295,13 +11295,31 @@ describe("Phase.shipped — the tags a span ships out of its work entry and its 
       .sort();
 
   /**
-   * One wave of `phase` over {@link decomposed}, with the queue seeded and
-   * the baton woken — the whole drive every case here judges by.
+   * The nested queue the downward-closure cases drive: the same `work` entry,
+   * one step of it, and a substep of *that step*. Steps nest
+   * (`spec/pending.md`, *The queue is a forest*), so the flat listing a
+   * predicate is handed cannot be read as "the entry's children" — and a list
+   * naming a mid-level step alone is the removal {@link decomposed} has no
+   * level deep enough to express.
+   */
+  const nested = (): PendingEntry[] => [
+    makeEntry("THE-WORK", ["src/work.ts"]),
+    step("STEP-ONE", "THE-WORK", ["src/one.ts"]),
+    step("SUBSTEP-ONE", "STEP-ONE", ["src/sub.ts"]),
+  ];
+
+  /**
+   * One wave of `phase` over `over` — {@link decomposed} unless a case names
+   * the nested queue — with it seeded and the baton woken: the whole drive
+   * every case here judges by. `warnings` collects the operator lines a case
+   * reads a refusal out of, and leaves the log silent where none does.
    */
   const waveOver = async (
     shipped?: Phase["shipped"],
+    over: PendingEntry[] = decomposed(),
+    warnings?: string[],
   ): Promise<TickOutcome> => {
-    await writePending(fx.repo, decomposed());
+    await writePending(fx.repo, over);
     new Baton(join(fx.repo, ".flume")).wake("build");
     const phase = makePhase({
       name: "build",
@@ -11318,7 +11336,14 @@ describe("Phase.shipped — the tags a span ships out of its work entry and its 
       repoRoot: fx.repo,
       configDir: fx.configDir,
       agent: landsTheWork(),
-      log: silent,
+      log:
+        warnings === undefined
+          ? silent
+          : {
+              info: () => {},
+              warn: (line) => warnings.push(line),
+              error: () => {},
+            },
     }).tick();
   };
 
@@ -11495,6 +11520,124 @@ describe("Phase.shipped — the tags a span ships out of its work entry and its 
         outcome: outcome.verdict?.mergeOutcomes.map((m) => m.outcome),
       }).toEqual({ what, outcome: ["not-shipped"] });
     }
+  });
+
+  /**
+   * The same refusal one level down, and the reason it is one rule: the entry
+   * without its steps and a step without its substeps are the same removal —
+   * a file some remaining entry's `parent` names. The refusal is therefore
+   * keyed on the offered subtree's own shape rather than on the work entry's
+   * tag (`.claude/rules/engineering.md`, *Loud or nothing*).
+   */
+  it("a shipped list naming a step without its own substeps is refused as unshippable", async () => {
+    const warnings: string[] = [];
+    const outcome = await waveOver(() => ["STEP-ONE"], nested(), warnings);
+
+    // Non-vacuity: this entry's span really landed and was gated, so the
+    // refusal below is over a consult that happened.
+    expect(
+      outcome.result?.entries?.map((e) => ({
+        tag: e.tag,
+        committed: e.committed,
+        shipped: e.shipped,
+      })),
+    ).toEqual([{ tag: "THE-WORK", committed: true, shipped: false }]);
+    // Nothing left the queue: the step's file stays because the substep's
+    // `parent` still has to resolve through it.
+    expect(outcome.result?.shippedTags).toEqual([]);
+    expect(queuedTags()).toEqual(["STEP-ONE", "SUBSTEP-ONE", "THE-WORK"]);
+    // The operator line names which tag stranded which — not the work entry,
+    // which this list never mentioned.
+    expect(
+      warnings.filter(
+        (w) =>
+          w.includes("answered with a list this span cannot ship") &&
+          w.includes("STEP-ONE without its step(s) SUBSTEP-ONE"),
+      ),
+    ).toHaveLength(1);
+    // A broken hook, on the accounting a throwing one lands on.
+    expect(outcome.result?.shipFailures?.map((f) => f.tag)).toEqual([
+      "THE-WORK",
+    ]);
+    expect(outcome.verdict?.mergeOutcomes.map((m) => m.outcome)).toEqual([
+      "not-shipped",
+    ]);
+  });
+
+  /**
+   * What the refusal buys, read where it matters: the queue the *next* tick
+   * parses. A rewrite that removed the mid-level step's file would leave the
+   * substep naming no entry, which is the strict read every dispatch does off
+   * the tip refusing (`spec/pending.md`, *Queue reads are strict*) — exit 69
+   * on a queue nothing in the loop can repair.
+   */
+  it("a wave whose shipped list omits a named step's substep leaves the queue parseable at the tip", async () => {
+    let offered: readonly PendingEntry[] | undefined;
+    // The list a chain writes when it reads `steps` as the entry's children:
+    // every step whose parent is the entry, and so not the substep under one
+    // of them.
+    const outcome = await waveOver(({ entry, steps }) => {
+      offered = steps;
+      return steps.filter((s) => s.parent === entry.tag).map((s) => s.tag);
+    }, nested());
+
+    // Non-vacuity: the span landed and was gated — the wave-level
+    // `committed` cannot say it, since it reads "anything shipped" — and the
+    // predicate was handed the nested subtree whose deeper level the list
+    // then omitted, so the parse below is over a queue a rewrite had
+    // something to remove from.
+    expect(
+      outcome.result?.entries?.map((e) => ({
+        tag: e.tag,
+        committed: e.committed,
+      })),
+    ).toEqual([{ tag: "THE-WORK", committed: true }]);
+    expect(
+      offered?.map((s) => `${s.tag} under ${String(s.parent)}`).sort(),
+    ).toEqual(["STEP-ONE under THE-WORK", "SUBSTEP-ONE under STEP-ONE"]);
+
+    // The tip's own queue, through the engine's at-ref reader and the strict
+    // parse a dispatch read uses: every file still there, and the forest's
+    // `parent` links resolving.
+    const files = await readQueueAtRef(fx.repo, "HEAD", ".flume/plan/pending");
+    const parsed = parsePendingQueue(files ?? []);
+    expect({
+      ok: parsed.ok,
+      errors: parsed.errors.map((e) => `${e.file}: ${e.message}`),
+    }).toEqual({ ok: true, errors: [] });
+    expect(parsed.entries.map((e) => e.tag).sort()).toEqual([
+      "STEP-ONE",
+      "SUBSTEP-ONE",
+      "THE-WORK",
+    ]);
+  });
+
+  it("a shipped list naming a leaf step alone ships that step and leaves its entry queued", async () => {
+    const outcome = await waveOver(() => ["SUBSTEP-ONE"], nested());
+
+    // Non-vacuity: the span landed, so the removal is a ship rather than a
+    // wave that never committed.
+    expect(outcome.result?.committed).toBe(true);
+    // A leaf strands nothing, so the partial list stands: its file left and
+    // everything above it stayed.
+    expect(outcome.result?.shippedTags).toEqual(["SUBSTEP-ONE"]);
+    expect(queuedTags()).toEqual(["STEP-ONE", "THE-WORK"]);
+  });
+
+  it("a shipped list naming the entry and every step ships them all", async () => {
+    const outcome = await waveOver(
+      ({ entry, steps }) => [entry.tag, ...steps.map((s) => s.tag)],
+      nested(),
+    );
+
+    // Non-vacuity: the whole nested subtree was named, and the span landed.
+    expect(outcome.result?.committed).toBe(true);
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
+      "STEP-ONE",
+      "SUBSTEP-ONE",
+      "THE-WORK",
+    ]);
+    expect(queuedTags()).toEqual([]);
   });
 });
 

@@ -1355,9 +1355,18 @@ async function consultShipped(
  *
  * - a tag the span was never offered, which names an entry some other
  *   session is carrying, or none at all;
- * - the entry's own tag without every one of its steps, which would remove
- *   the file each remaining step's `parent` names and leave a queue no later
+ * - a set that is not closed downward over the offered subtree: a tag that
+ *   leaves while an offered entry whose `parent` names it stays, which would
+ *   remove the file that `parent` resolves through and leave a queue no later
  *   read can parse (`spec/pending.md`, *The queue is a forest*).
+ *
+ * The second is one rule and not two, because **steps nest**: a step's parent
+ * is its work entry *or another of its steps* (`PARENT_KINDS`,
+ * `src/PendingSchema.ts`), so the entry's own tag without every one of its
+ * steps is this rule read at the top of the subtree, and a mid-level step
+ * without its substeps is the same removal one level down. Downward closure
+ * says both — naming a tag obliges its children, and theirs in turn — so the
+ * entry's arm is an instance rather than a clause of its own.
  *
  * Refused rather than narrowed or completed: a list the engine quietly fixed
  * up would ship a tag the chain did not name, and a queue written past this
@@ -1370,18 +1379,29 @@ function unshippableTags(
   r: EntryAttempt,
   declared: readonly string[],
 ): string | undefined {
-  const offered = new Set([r.entry.tag, ...r.steps.map((s) => s.tag)]);
-  const foreign = declared.filter((tag) => !offered.has(tag));
+  const offered = [r.entry, ...r.steps];
+  const named = new Set(declared);
+  const foreign = declared.filter((tag) => !offered.some((e) => e.tag === tag));
   if (foreign.length > 0) {
     return `shipped named ${foreign.join(", ")}, which is neither ${r.entry.tag} nor a step of it`;
   }
-  if (!declared.includes(r.entry.tag)) return undefined;
-  const left = r.steps.filter((s) => !declared.includes(s.tag));
-  return left.length === 0
-    ? undefined
-    : `shipped named ${r.entry.tag} without its step(s) ${left
-        .map((s) => s.tag)
-        .join(", ")}, which the queue cannot hold: a step's parent names an entry in the same queue`;
+  // Orphans grouped under the tag that would strand them, in the queue's
+  // order: one phrase per leaving parent, so a list that broke the closure in
+  // two places names both rather than the first the walk happened to reach.
+  // The entry's own `parent` is the one link that can point outside the
+  // offered subtree — the group or epic above it — and a tag nobody named is
+  // not leaving, which is what the `named` read of a parent says.
+  const orphaned = new Map<string, string[]>();
+  for (const e of offered) {
+    if (named.has(e.tag) || e.parent === undefined || !named.has(e.parent))
+      continue;
+    orphaned.set(e.parent, [...(orphaned.get(e.parent) ?? []), e.tag]);
+  }
+  if (orphaned.size === 0) return undefined;
+  const without = [...orphaned].map(
+    ([parent, left]) => `${parent} without its step(s) ${left.join(", ")}`,
+  );
+  return `shipped named ${without.join("; ")}, which the queue cannot hold: a step's parent names an entry in the same queue`;
 }
 
 /**

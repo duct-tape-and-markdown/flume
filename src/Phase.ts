@@ -1040,6 +1040,13 @@ export interface Phase {
    * `shipped: false` with a `merged` {@link FanoutEntryOutcome.mergeOutcome},
    * which is the pair that tells a partial ship from a declined one.
    *
+   * What a partial list must be is **closed downward**: a tag it names takes
+   * every offered entry whose `parent` names that tag with it — a step's own
+   * substeps, and the entry's every step where it names the entry. The file a
+   * remaining `parent` resolves through cannot leave while that entry stays
+   * (`spec/pending.md`, *The queue is a forest*), so a list that strands one
+   * is read as a broken hook, like a foreign tag.
+   *
    * An **empty** list records the entry `not-shipped`: the commit stays on
    * trunk, the entry stays in the queue. The engine holds no vocabulary
    * for *why* — a park, a partial, a deliberate hand-off are one chain's
