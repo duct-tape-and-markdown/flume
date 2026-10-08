@@ -1,7 +1,20 @@
 {
   "sweptThrough": "fda897abbef29a7680ce9b1b761b2212d14d9320",
   "rotation": {
-    "kind": "closed"
+    "kind": "open",
+    "covered": [
+      "harness/chain.ts",
+      "harness/declaration.ts",
+      "harness/gates.ts",
+      "harness/goals.ts",
+      "harness/prompts.ts",
+      "src/PendingSchema.ts",
+      "src/builtinGates.ts",
+      "src/cliHelp.ts",
+      "src/exitCodes.ts",
+      "src/loopSupervisor.ts",
+      "src/queueGoals.ts"
+    ]
   },
-  "retiredThrough": "fda897abbef29a7680ce9b1b761b2212d14d9320"
+  "retiredThrough": "2d0be2fd5cefb3d34994bd66230945cabf2cce87"
 }
