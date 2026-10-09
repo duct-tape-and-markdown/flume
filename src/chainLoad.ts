@@ -409,8 +409,8 @@ function isCjsContextLoadFailure(err: unknown): err is Error {
  * and consumer .flume/chain.ts is a .ts file regardless of where flume lives).
  *
  * In-process this returns a *pinned* evaluation — see
- * .claude/rules/platform-facts.md, "Node's ESM registry is keyed by resolved
- * URL and cannot be evicted". That is *why* per-tick re-resolution is a
+ * .claude/rules/platform-facts.md, "A plain `import()` is pinned; `tsImport`
+ * re-reads". That is *why* per-tick re-resolution is a
  * process boundary rather than in-process re-eval: `flume loop` spawns one
  * `flume tick` per iteration, each a fresh process that loads chain.ts
  * exactly once. A rewritten chain.ts governs the next tick because the next

@@ -111,16 +111,13 @@ including a `chain.ts` change that rides a same-commit `src/` change.
 
 - **The mechanism is a process boundary.** `flume loop` is a supervisor that
   spawns one `flume tick` child per iteration; the chain is resolved once, in
-  that child, at tick start. In-process re-resolution is *impossible* on the
-  supported toolchain and is not attempted: Node's ESM module registry is keyed
-  by resolved URL and non-evictable, so a fixed-path `chain.ts` is pinned to
-  its first evaluation for the life of the process — no content-hash query
-  string, `tsImport` namespace, or loader re-registration evicts it (verified
-  empirically on tsx 4.21 / Node 22.21; the plain-`import()` control proves it
-  is a Node-ESM constraint, not a `tsx` bug). An in-process loader also could
-  not pick up a `chain.ts` whose behavior moved into a same-commit `src/`
-  change, since those dependency modules are already evaluated. The process
-  boundary is therefore *the* mechanism, not an optimization.
+  that child, at tick start. The boundary is what makes a tick fresh: no module
+  state, no half-finished teardown and no crash crosses it, whatever the chain's
+  modules hold at top level. A load is not pinned in-process — `tsImport`
+  re-reads `chain.ts` and its dependency graph on every call — and the
+  supervisor's mount-dead re-read (`spec/loop.md`, *Exit codes — the run never
+  lies to CI*) leans on that; the process boundary is what a tick's freshness
+  rests on, never the loader.
 - **No memoization, no cache-bust.** `diskChainLoader` loads
   once per call: there is exactly one resolution per process and nothing to
   memoize across. Cost is one small `tsImport` of `chain.ts` per tick,

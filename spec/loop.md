@@ -70,10 +70,9 @@ detail. `flume loop` is a supervisor that spawns one `flume tick` child per phas
 starts, each told its phase, carrying no in-memory chain or phase state across them;
 at every child start and exit it re-reads the baton from disk. What it holds in
 memory is the table of children it owns — pids and phase names — which is the
-process tree's fact, not the run's state: a fresh supervisor rebuilds it from nothing. The
-process boundary is the only mechanism that re-evaluates the whole module graph, so
-it is *the* mechanism — see `spec/chain.md` for per-tick chain re-resolution and why
-in-process reload cannot deliver it.
+process tree's fact, not the run's state: a fresh supervisor rebuilds it from nothing. The process boundary is what keeps a tick fresh — no module state, no half-finished
+teardown and no crash crosses it — so it is *the* mechanism; see `spec/chain.md` for
+per-tick chain re-resolution.
 
 Everything that crosses from one tick to the next crosses on disk: the baton, the
 prior-attempt record, the tick verdict, the committed tree itself. **What crosses is
@@ -809,7 +808,7 @@ report — and a present file that will not open is never read as absent.
 | 1 | harness error, HEAD detached, or another live process holds the tip claim |
 | 2 | usage — including the CJS-context host refusal, a nameable fix rather than a dead chain (`spec/chain.md`) |
 | 74 | `EX_IOERR` — a file the tick must read is present and unreadable: the state root at discovery, or the verdict history when the tick records its own verdict. In the second case the tick's work has already landed; the code names the recording failure, and the tick's own outcome is in the log |
-| 69 | `EX_MOUNT_DEAD` — the chain module could not load, its state root is missing, or its declaration is invalid (no agent ran); or the ledger failed to parse (see below) |
+| 69 | `EX_MOUNT_DEAD` — the chain module could not load, its state root is missing, or its declaration is invalid, or the phase's declared prompt template could not be read (no agent ran); or the ledger failed to parse (see below) |
 | 78 | `EX_TERMINAL_MISCONFIG` — the chain resolved but declares an inconsistent world (below) |
 
 **69 does not promise "no agent ran".** That holds for the chain-resolution legs, and
@@ -825,8 +824,8 @@ that leg writes no verdict at all (see *The tick verdict*).
 `flume loop`:
 
 - **Mount-dead aborts — once the mount is still dead.** On a child's 69 the
-  supervisor re-reads what the next child would — the chain's resolution and the
-  queue's parse, at the tip — and aborts, propagating 69, only if one of them still
+  supervisor re-reads what the next child would — the chain's resolution, the phase's
+  declared prompt template, and the queue's parse, at the tip — and aborts, propagating 69, only if one of them still
   fails, rather than burning the remaining `--max` ticks re-hitting the same wall. A
   69 whose cause no longer holds, because a sibling's repair has landed (the queue's
   declared writer runs over a failed parse, `spec/pending.md`, *Queue reads are
@@ -883,7 +882,8 @@ declare. `kind` is a union open to future members; each arrives with its own spe
 A deterministic failure repeats identically every tick — the burn shape the mount-dead
 abort exists to prevent: each lap is paid again, at full agent price once the agent is
 invoked, and in a slot a pickable sibling could have had before it.
-The accounting therefore covers **every failure fact the verdict records**,
+The accounting therefore covers **every failure fact the verdict records, and the one a
+missing verdict states**,
 keyed by stage-tagged signature:
 
 - **provision** — a pre-tick worktree provisioning failure (sweep, create, or the
@@ -909,6 +909,10 @@ keyed by stage-tagged signature:
   no-commit taxonomy*), recorded under the phase with its preempt class as the
   signature and blamed on no entry, so it feeds the backstop alone: an expired login
   or a spent cap fails every tick identically, and no retry the run can make moves it.
+- **exit** — a child that exited non-zero without writing a verdict, recorded under its
+  phase with its exit code as the signature and blamed on no entry, so it feeds the
+  backstop alone: a refusal raised before any verdict exists — a 69 the mount-dead
+  re-read cannot name among them — otherwise repeats until `--max` runs out.
 
 A clean exit or park never joins the accounting — an agent that committed nothing is
 not evidence anything went wrong. A signature is the bounded,

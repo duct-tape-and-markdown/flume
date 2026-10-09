@@ -195,6 +195,18 @@ a duplicate rather than a gate refusing it (*The phases*).
 And the **goal rank** gate: only a root `group` carries a goal rank, and only an
 inbox commit adds or changes one, because the rank is the operator's statement
 and a tick that set it would be pulling a lever.
+The `per` gate and the goal rank gate judge the producers alone — the plan
+slices, the only phases that write the queue. A build commit can neither strand
+a cite nor set a rank, and its fence lets it repair neither, so refusing one
+would revert delivered work over a queue defect the build never touched, and the
+next build tick would meet the same wall. A cite stranded by an edit to the page
+it names is the next plan tick's to repair.
+And a **new blocker resolves**: a `blockedBy` tag a producer's commit adds must
+name an entry the queue carries at that commit. A blocker that has shipped is
+absent by design (`spec/pending.md`, *Pickability*), so an edge already standing
+is never judged again — a restored or relocated queue stays runnable — and only
+the producer writing an edge is told, at its own commit, that the tag names
+nothing.
 The record byte cap is not the gate's: a note over the cap ships with its entry,
 and the drain that reads it says so in the plan commit body — a shape rule on
 a prose channel refuses the prose, never the code it rode in with.
@@ -459,7 +471,7 @@ declaration already resolves.
 | `runner` | A factory, `({ api, provision }) => Runner`, for the test runner the judge drives — see *The runner interface*. The package calls it at chain load with the chain's own `FlumeApi` and the declared `setup` as a provisioning function, so a runner constructs neither by hand. |
 | `resolver` | A section resolver for `per` cites, replacing heading-text resolution — see *The cite resolver*. Optional. |
 | `handoff` | A per-phase override of the default handoff — see *The default `handoff`*. Optional, per phase, so overriding build's routing never copies the slice ladder. |
-| `gates` | Extra gates per phase and `when`, by registry name, inline shell, or script. A shell or script gate runs in the gate's own tree, under the declared `shell` (its own row), with the engine's gate facts in its environment, `FLUME_`-prefixed — the gated commit, the span's base, the trunk the span landed onto (`FLUME_LANDED_ON_SHA`, `afterMerge` only), the state root and its repo-relative offset, the touched paths — so a gate that measures trunk before and after this entry reads `FLUME_LANDED_ON_SHA` rather than deriving `HEAD^`, which a multi-commit span makes wrong, and a gate that needs what the tick saw reads `FLUME_BASE_SHA`. The package's discipline gates are always present and always first; its judge runs after the consumer's declared gates at the same `when`, so a seconds-long typecheck reports before a minutes-long suite. |
+| `gates` | Extra gates per phase and `when`, by registry name, inline shell, or script. A shell or script gate runs in the gate's own tree, under the declared `shell` (its own row), with the engine's gate facts in its environment, `FLUME_`-prefixed — the gated commit, the span's base, the trunk the span landed onto (`FLUME_LANDED_ON_SHA`, `afterMerge` only), the state root and its repo-relative offset, the touched paths — so a gate that measures trunk before and after this entry reads `FLUME_LANDED_ON_SHA` rather than deriving `HEAD^`, which a multi-commit span makes wrong, and a gate that needs what the tick saw reads `FLUME_BASE_SHA`. The package's discipline gates are always present and always first; its judge runs after the consumer's declared gates at the same `when`, so a seconds-long typecheck reports before a minutes-long suite. A shell or script gate carries one span's facts, so it declares no batch: a phase that hangs one at `afterMerge` merges one entry at a time whatever `supervisor.mergeBatch` says (`spec/worktrees.md`, *Batched merges*). |
 | `agents` | Model per phase, extra agent arguments, the model's context window in tokens (`contextWindow`, forwarded to the adapter's budget line — `spec/chain.md`, *The agent seam*), and whether the tick inherits the user's MCP servers (`inheritUserMcp`) or the user's own Claude Code settings, instructions and rules (`inheritUserSettings`), both off by default; absent means the package's default. |
 | `maxEntryDepth` | The forest's depth cap (`spec/pending.md`, *The queue is a forest*), passed to the chain; absent, the engine's default of four. The package's prompt render and gates read the same value, so a declared depth reaches every side at once. |
 | `supervisor` | The engine's supervisor policy, passed through whole — `maxParallel`, `mergeBatch`, `tickTimeoutMs`, `abortThreshold`, `quarantineScope`, `partitionIgnore`, `killGraceMs` — declared here so one file holds the environment and no knob is lost behind the factory. |

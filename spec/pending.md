@@ -69,6 +69,12 @@ session, so finer structure never means more sessions.
   `Chain.maxEntryDepth` (default `4`: goal, epic, work, step).
 - A step's `blockedBy` names only steps of the same `work` entry; a dependency reaching
   outside it is declared on the `work` entry. The session does its steps in that order.
+- No entry's `blockedBy` names an entry in its own containment — an ancestor or a
+  descendant. An ancestor leaves the queue only with its last descendant, and a step
+  leaves only in its work entry's session, so either edge waits on the entry waiting for
+  it. An edge that breaks this rule and the step rule at once is refused for containment,
+  because the step rule's remedy — declare it on the `work` entry — cannot place an edge
+  that has no valid home.
 - A `work` entry's footprint is its own `files` and its steps' together, for the partition
   and the fence alike.
 - A queue breaking any of these is refused like any malformed queue (*Queue reads are
@@ -194,28 +200,22 @@ re-earns that span at full agent price. Where a phase may write is
 
 ## Pickability
 
-Two implementations, one rule set:
+One rule set, read by selection and by tooling alike. An entry is pickable when:
 
-- **`isPickableNow(entry, shippedTags, isForkResolved?, capabilities?)`** — exported for tooling
-  that holds its own shipped-tags set and its own resolver (`examples/backlog-groomer-chain.ts`).
-  Resolves `blockedBy` against a **shipped-tags set**. A chain's `handoff` and `shouldRun` do not
-  call it: they read `TickResult.pickableAfter` and `TickContext.pickable`, the dispatcher's
-  verdict with the chain's resolver and capabilities already applied (`spec/chain.md`, *What a
-  hook receives*). Calling it with the default resolver and an empty capability set yields a
-  different answer for any fork- or capability-gated entry.
-- **`isPickable(entry, pending, isForkResolved?, capabilities?)`** — internal
-  to fanout selection. Resolves `blockedBy` against the **pending list**: a dep is satisfied iff
-  it is no longer pending, since entries are removed on ship.
+- **every `dependsOnForks` slug it or any ancestor declares is resolved** — read before any
+  gate, so an unresolved foundation holds the entry whatever its gate says, `open` included;
+- **its gate passes, and every ancestor's would too**: `open` passes; `blockedBy` passes iff
+  every named blocker has landed; `parked` and `deferred` never pass; `requiresCapability`
+  passes iff the chain asserts the named string.
 
-Both short-circuit identically before the gate switch: **if any declared `dependsOnForks` slug is
-unresolved, the entry is not pickable, regardless of gate kind** — including `open`. Then the
-switch: `open` → pickable; `blockedBy` → iff **every** named blocker landed; `parked`/`deferred`
-→ never; `requiresCapability` → iff the chain asserts the named string.
-
-**An entry inherits its ancestors' gates.** Both implementations read the entry's
-ancestors (*The queue is a forest*): an entry is pickable only when every ancestor's gate
-would pass too, so a `blockedBy` declared once on a goal holds its whole subtree and tooling
-and selection give one answer. `isPickableNow` therefore takes the queue the entry sits in.
+**An entry inherits what its ancestors declare** (*The queue is a forest*), so a blocker or a
+foundation declared once on a goal holds its whole subtree, and tooling and selection give one
+answer. The exported predicate, `isPickableNow`, therefore reads the queue the entry sits in,
+never a set of shipped tags kept beside it. A chain's `handoff` and `shouldRun` do not call it:
+they read `TickResult.pickableAfter` and `TickContext.pickable`, the dispatcher's verdict with
+the chain's resolver and capabilities already applied (`spec/chain.md`, *What a hook
+receives*). Called with the default resolver and no capabilities, it answers differently for
+any fork- or capability-gated entry.
 
 **A blocker no queue entry carries counts as landed** — absence from the queue is how a ship
 reads — so a restored or relocated queue stays runnable. Selection reports such tags on
@@ -236,8 +236,8 @@ taxonomy*). Selection skips an entry another tick holds a claim on the same way,
 one entry has exactly one gate state. An entry can simultaneously be `open`, rest on two open
 forks, and later be capability-gated. Folding foundations into `gate` would force the producer to
 choose which fact to record and lose the other. A composable array is strictly more expressive
-for the same code. It defaults to `[]` — an entry declaring no fork never invokes the resolver and
-is governed by its gate alone.
+for the same code. It defaults to `[]` — an entry none of whose ancestry declares a fork never invokes the
+resolver.
 
 ## The fork-resolution seam
 
@@ -325,12 +325,13 @@ whose members have **disjoint `touchedPaths()` sets**, so a batch can run in par
 It is greedy: walk pending in order, place each entry in the first batch that has room
 (`< maxParallel` members) and whose paths it doesn't collide with, otherwise open a new batch — so
 a batch closes on capacity as well as on overlap. Not optimal by count, but stable and respectful
-of pending order (*The entry core*). The dispatcher runs `batch[0]`, then re-derives pending and partitions again.
+of pending order (*The entry core*). The wave opens on `batch[0]`; after that, each slot a finished entry frees takes the next
+pickable entry disjoint from those still running.
 
-`maxParallel` comes from `DispatcherOptions.maxParallel` and **defaults to 4**. The CLI forwards
-no override, so a CLI-driven wave runs at most four agents concurrently; only a programmatic
-embedder changes it. The value is unvalidated: a non-positive one satisfies no batch's capacity
-test, so every entry opens its own batch and the wave runs a single entry rather than refusing.
+`maxParallel` is the wave's width: the chain's `supervisorPolicy.maxParallel` where declared,
+else `DispatcherOptions.maxParallel`, else **4**. A width that is not a positive integer opens no
+slot, so it is refused where it is declared — at chain load for the chain's value, at
+construction for an embedder's — rather than running a wave of nothing.
 
 The disjointness input is deliberately **wider** than the fence input:
 
@@ -586,10 +587,13 @@ that did not know the extension is how declared fields get destroyed.
 
 ## What the package exports
 
-`src/index.ts` and `FlumeApi` are the canonical lists, and they carry the same
-values: every pending-schema helper, the tag-to-filename rule and the record path
-built from it, and every path rule a chain composes with — held by the shipped
-`.d.ts` rather than by a roster here. `slugify` and `priorAttemptPath` are the tag-to-filename rule and the record path built from it
+`src/index.ts` and `FlumeApi` are the package's public surface, held by the shipped `.d.ts`
+rather than by a roster here, and they are not one list: `FlumeApi` carries the values a chain
+takes off its factory's parameter, and `src/index.ts` what an embedder or a type import
+reaches. A helper joins them when a chain composes with it — the tag-to-filename rule and the
+record path built from it, a path rule a chain reads by — never because the engine or the
+harness package calls it; a helper only `harness/` reaches stays internal until a chain needs
+it. `slugify` and `priorAttemptPath` are the tag-to-filename rule and the record path built from it
 (`priorAttemptPath(flumeDir, ref)`, the ref pairing keyspace and identity): a chain reading
 `prior-attempts/` — a `shouldRun` declining
 to redispatch an entry whose last attempt bailed — uses the engine's rule rather than restating

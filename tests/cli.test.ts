@@ -4681,8 +4681,8 @@ describe("flume tick — a signalled bare tick takes its agent down (spec/loop.m
  *
  * The append sits in the factory body rather than at module scope. A module is
  * evaluated once per process whatever the engine does with it
- * (`.claude/rules/platform-facts.md`, "Node's ESM registry is keyed by
- * resolved URL and cannot be evicted"), so a module-scope append would read 1
+ * (`.claude/rules/platform-facts.md`, "A plain `import()` is pinned; `tsImport`
+ * re-reads"), so a module-scope append would read 1
  * however many times the factory was applied — the count this case exists to
  * see.
  */

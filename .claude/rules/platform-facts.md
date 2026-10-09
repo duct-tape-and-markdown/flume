@@ -199,19 +199,17 @@ suffix, an extension. Size the bound off the **tightest** consumer, compute the
 arithmetic at that writer rather than restating the number, and pin it against
 the real writer with the longest input the schema accepts.
 
-## Node's ESM registry is keyed by resolved URL and cannot be evicted
+## A plain `import()` is pinned; `tsImport` re-reads
 
-A fixed-path module is pinned to its first evaluation for the life of the
-process. No content-hash query string, `tsx`/`tsImport` namespace, or loader
-re-registration evicts it — verified empirically, and the plain-`import()`
-control proves it is a Node constraint rather than a `tsx` bug.
+A plain `import()` of a fixed path is pinned to its first evaluation for the
+life of the process; only a changed URL (a query string) evaluates it again.
+`tsx`'s `tsImport` is not: it re-reads the entry and its dependency subgraph
+from disk on every call, and a module broken between two calls throws
+`TransformError` rather than returning the earlier evaluation. Measured on
+tsx 4.21 under node 22.20, 22.23 and 24.21.
 
-An in-process reload also cannot pick up a change that rode a same-commit edit
-to a module already evaluated.
-
-Therefore **a process boundary is the only mechanism that re-reads a module
-graph** — not an optimization to remove, the reason the design is shaped this
-way.
+So an in-process `tsImport` sees the disk as it is now. A re-read that leans
+on that holds only while the load goes through `tsImport`.
 
 ## MSYS2 corrupts non-ASCII in argv; use stdin
 
