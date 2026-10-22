@@ -1,6 +1,8 @@
 {
   "tag": "TRUNK-MOVES-ONLY-BY-FAST-FORWARD-TO-A-JUDGED-CANDIDATE",
-  "gate": { "kind": "open" },
+  "gate": {
+    "kind": "open"
+  },
   "dependsOnForks": [],
   "kind": "work",
   "files": {
@@ -46,7 +48,10 @@
     "retire": []
   },
   "summary": "a span's pick and its `afterMerge` gates run on a candidate at the trunk tip, and trunk fast-forwards once to the judged candidate carrying span and ledger commit",
-  "per": { "path": "spec/worktrees.md", "section": "Per-entry `afterMerge` revert isolation" },
+  "per": {
+    "path": "spec/worktrees.md",
+    "section": "Per-entry `afterMerge` revert isolation"
+  },
   "acceptance": "an entry's span is cherry-picked onto a candidate at the current trunk tip and gated there; green lands its ledger commit on the candidate and fast-forwards trunk to it in one move, while a red gate, a gate that throws, or a pick that conflicts discards the candidate and trunk never named the span",
   "tests": [
     "a span's afterMerge gates run in a candidate at the trunk tip, not in the primary checkout",
@@ -60,11 +65,28 @@
     "a span taken back off is rowed as an afterMerge-reverted merge outcome with its footprint"
   ],
   "laneTests": [],
+  "notes": "Today `carryMergeSpan` picks onto the primary checkout, gates the merged tip there, and `reset --keep`s back on red. The ff is new to `git.ts`; the candidate is `checkoutAt`/`createWorktree` shaped. The revert leg's own machinery dies here with the path (the foreign-tip guard before the rewind, the `afterMerge-revert-refused` fate); what outlives it is THE-REWIND-MACHINERY-LEAVES-WITH-THE-REWIND. Batching keeps its current shape until its own entry.",
   "contractTouching": true,
   "interface": {
     "changes": "an `afterMerge` gate's `cwd` and `repoRoot` are the candidate it judges — the tree trunk is about to become — rather than the primary checkout",
     "hides": "that trunk ever names a commit no gate has judged, and every state between a pick and its verdict that a caller had to reason about",
     "rejected": "picking onto trunk and rewinding on red: it breaks every copy of the branch taken in the gate window, and this repo cannot force-push the recovery"
   },
-  "notes": "Today `carryMergeSpan` picks onto the primary checkout, gates the merged tip there, and `reset --keep`s back on red. The ff is new to `git.ts`; the candidate is `checkoutAt`/`createWorktree` shaped. The revert leg's own machinery dies here with the path (the foreign-tip guard before the rewind, the `afterMerge-revert-refused` fate); what outlives it is THE-REWIND-MACHINERY-LEAVES-WITH-THE-REWIND. Batching keeps its current shape until its own entry."
+  "observedFiles": [
+    ".flume/plan/notes/TRUNK-MOVES-ONLY-BY-FAST-FORWARD-TO-A-JUDGED-CANDIDATE.md",
+    "src/Gate.ts",
+    "src/Phase.ts",
+    "src/git.ts",
+    "src/mergeSpan.ts",
+    "src/paths.ts",
+    "src/pendingLedger.ts",
+    "src/singletonTick.ts",
+    "src/tickAttempt.ts",
+    "src/tickVerdict.ts",
+    "src/waveMerge.ts",
+    "src/worktrees.ts",
+    "tests/Dispatcher.test.ts",
+    "tests/cli.test.ts",
+    "tests/worktrees.test.ts"
+  ]
 }
