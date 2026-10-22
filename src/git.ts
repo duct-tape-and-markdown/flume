@@ -169,53 +169,6 @@ export async function gitToplevel(cwd: string): Promise<string | undefined> {
 }
 
 /**
- * Thrown by {@link resetKeepTo} when git refuses the reset — a path the
- * reset would touch also carries an uncommitted change of its own. `git
- * reset --keep` is transactional: on this refusal it has updated nothing,
- * so both the engine's span and the bystander's uncommitted content are
- * exactly as they were before the call. `gitMessage` carries git's own
- * stderr for the operator's log, never parsed by the caller — the engine
- * does not classify *why* --keep refused
- * (`.claude/rules/engine-boundary.md`, "Told, not inferred"), only that it
- * did.
- */
-export class ResetKeepRefusedError extends Error {
-  constructor(
-    public readonly cwd: string,
-    public readonly targetSha: string,
-    public readonly gitMessage: string,
-  ) {
-    super(
-      `reset --keep to ${targetSha} refused in ${cwd}: ${gitMessage} — ` +
-        `uncommitted state collides with the revert; both writers' work ` +
-        `left in place`,
-    );
-  }
-}
-
-/**
- * Reset the branch pointer to `sha`, preserving uncommitted state the
- * caller did not author (spec/loop.md "Tip verify — one writer per branch,
- * absorption at the merge", "dropping it must not take bystanders") — `git
- * reset --keep`, never `--hard`, on a checkout that may hold a bystander's
- * staged or unstaged work. `--keep` updates only the paths that differ
- * between the current tip and `sha`; a path among those that also carries
- * an uncommitted change of its own makes git refuse the whole reset
- * atomically rather than silently discard either side, which this surfaces
- * as {@link ResetKeepRefusedError}. The caller's only safe move on that
- * refusal is to propagate it — never fall back to `reset --hard`, which is
- * exactly the wipe this primitive exists to avoid.
- */
-export async function resetKeepTo(cwd: string, sha: string): Promise<void> {
-  try {
-    await run(cwd, ["reset", "--keep", sha]);
-  } catch (err) {
-    const message = thrownMessage(err);
-    throw new ResetKeepRefusedError(cwd, sha, message);
-  }
-}
-
-/**
  * Thrown by {@link fastForwardTo} when git declines to fast-forward. Two
  * causes, one refusal: the target is no longer a descendant of the current
  * tip — something landed on the branch under the candidate — or the move
@@ -249,9 +202,9 @@ export class FastForwardRefusedError extends Error {
  * `--ff-only` is the whole guarantee: git either advances the ref to a
  * descendant of the current tip, updating the working tree with it, or it
  * refuses and changes nothing. No merge commit is ever written, no history is
- * rewritten, and an uncommitted change that the move would overwrite refuses
- * exactly as `reset --keep` does, so a bystander's work on the checkout is
- * never discarded to make room for a span. A `sha` the tip already contains
+ * rewritten, and the move updates only the paths that differ — an uncommitted
+ * change on one of them refuses the whole move, so a bystander's work on the
+ * checkout is never discarded to make room for a span. A `sha` the tip already contains
  * is already-up-to-date and succeeds having moved nothing, which is a span
  * trunk absorbed whole.
  */
@@ -993,44 +946,6 @@ export async function listTreeBlobNames(
 }
 
 /**
- * `git rev-parse --git-path <relPath>` — the checkout-relative path git
- * itself resolves for a piece of its own state, rather than this caller
- * assuming `.git/<relPath>` directly (right for a linked worktree, where
- * `CHERRY_PICK_HEAD`/`sequencer/` live under `.git/worktrees/<name>/`, not
- * under the shared common dir `gitCommonDir` resolves).
- */
-async function revParseGitPath(
-  repoRoot: string,
-  relPath: string,
-): Promise<string> {
-  const { stdout } = await run(repoRoot, ["rev-parse", "--git-path", relPath]);
-  return resolve(repoRoot, stdout);
-}
-
-/**
- * Whether a cherry-pick sequence has actually started on this checkout —
- * `CHERRY_PICK_HEAD` or a `sequencer/` directory present, git's own state
- * for an in-progress (possibly multi-commit) pick. Read structurally off
- * disk, never inferred from a prior call's outcome
- * (`.claude/rules/engine-boundary.md` "Told, not inferred").
- */
-async function hasCherryPickSequencerState(repoRoot: string): Promise<boolean> {
-  const [headPath, sequencerPath] = await Promise.all([
-    revParseGitPath(repoRoot, "CHERRY_PICK_HEAD"),
-    revParseGitPath(repoRoot, "sequencer"),
-  ]);
-  // Absent is the only silent reading (`existsLoud`, src/fsProbe.ts): an
-  // unstattable `CHERRY_PICK_HEAD`/`sequencer/` would otherwise read as "no
-  // sequence started", and the abort that spec/loop.md "Crash equals stop"
-  // owes an interrupted pick would be skipped over a checkout still holding
-  // the pick's state (`.claude/rules/engineering.md`, "Loud or nothing").
-  return (
-    existsLoud(toNamespacedPath(headPath)) ||
-    existsLoud(toNamespacedPath(sequencerPath))
-  );
-}
-
-/**
  * The commit a stopped cherry-pick emptied against the current tip, or
  * `undefined` when git stopped on anything else — the one reading that lets
  * {@link cherryPickRange} skip a commit rather than refuse over it.
@@ -1092,52 +1007,6 @@ async function indexMatchesHead(repoRoot: string): Promise<boolean> {
     if (code === 1) return false;
     throw err;
   }
-}
-
-/**
- * Abort an in-progress cherry-pick, restoring the working tree to its
- * pre-cherry-pick state — but only when a sequence actually started
- * (spec/loop.md "Crash equals stop": "An abort is issued only against a
- * sequence that started"). Called with nothing to abort at all — no
- * `cherryPickRange` call preceded it this process, or git never got far
- * enough to write `CHERRY_PICK_HEAD`/`sequencer/` state in the first place
- * — this issues no `--abort` (only the two `rev-parse --git-path` probes
- * the state read costs): a blind `--abort` there would reset the
- * operator's index and working tree for no reason. Once a range pick has
- * been attempted, git's own sequencer bookkeeping for that range is on disk
- * even when the very first commit's pre-flight check refuses (e.g. an
- * operator's uncommitted change colliding with a path the pick would
- * touch) — in that case the guard here still lets `--abort` run, since a
- * sequence did start in git's own accounting; `checkpointBystanderState`
- * below is what makes that abort's own fallout recoverable, not this
- * guard. Still idempotent past the check: a sequence that clears between
- * the check and the call is swallowed, nothing left to clean up.
- */
-export async function cherryPickAbort(repoRoot: string): Promise<void> {
-  if (!(await hasCherryPickSequencerState(repoRoot))) return;
-  try {
-    await run(repoRoot, ["cherry-pick", "--abort"]);
-  } catch {
-    // Sequencer state was present a moment ago but cleared before the
-    // abort landed — nothing left to clean up.
-  }
-}
-
-/**
- * Capture whatever is staged or unstaged on the primary checkout as a
- * dangling commit — `git stash create`'s shape: an object is written, no
- * ref moves, nothing is reset or touched on disk (spec/loop.md "Crash
- * equals stop": "Staged bystander state is checkpointed before a pick
- * range begins"). The operator's work stays exactly where it is; the sha
- * is recovery insurance for if a later `--abort` or gate-revert reset
- * disturbs it. Returns `undefined` when the tree was clean — `git stash
- * create` itself prints nothing to capture in that case.
- */
-export async function checkpointBystanderState(
-  repoRoot: string,
-): Promise<string | undefined> {
-  const { stdout } = await run(repoRoot, ["stash", "create"]);
-  return stdout.length > 0 ? stdout : undefined;
 }
 
 /**

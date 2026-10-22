@@ -20,10 +20,7 @@
 
 import type { Agent } from "./Agent.js";
 import * as git from "./git.js";
-import {
-  carryMergeSpan,
-  type BystanderCheckpoint,
-} from "./mergeSpan.js";
+import { carryMergeSpan } from "./mergeSpan.js";
 import {
   readLedgerFilingTimes,
   readPendingForDecision,
@@ -273,11 +270,6 @@ export async function runSingleton(
   // ledger commit of its own — so the fate the merge stage below reports is
   // what sets this, and every other fate leaves it unset.
   let gatedTip: string | undefined;
-  // spec/loop.md "Crash equals stop": staked the one time this tick's merge
-  // stage actually begins a pick range, by the carry that begins it
-  // ({@link BystanderCheckpoint}, `src/mergeSpan.ts`). A singleton carries one
-  // span, so "once per carrier" is once.
-  const checkpoint: BystanderCheckpoint = { attempted: false, sha: undefined };
   const gateResults: ReportedGateResult[] = [];
   // spec/loop.md "The tick verdict — one facts artifact": one
   // `TickVerdictTiming` row per gate run and per merge, paired with the rows
@@ -413,7 +405,6 @@ export async function runSingleton(
         // lands in the phase's own slot (spec/worktrees.md "Singleton runs in
         // a worktree").
         ref,
-        checkpoint,
         onGateRow: (row, ms) => {
           gateResults.push(row);
           timings.push({ kind: "gate", gate: row.gate, ms });
@@ -591,7 +582,6 @@ export async function runSingleton(
     },
     ...(noCommit ? { noCommit } : {}),
     ...(tipMoved ? { tipMoved } : {}),
-    ...(checkpoint.sha ? { bystanderCheckpointSha: checkpoint.sha } : {}),
     ...(provisionFailures.length > 0 ? { provisionFailures } : {}),
     ...(gateFailures.length > 0 ? { gateFailures } : {}),
     ...(attempt.renderFailure

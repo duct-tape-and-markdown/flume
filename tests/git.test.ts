@@ -40,8 +40,8 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 // once at git.ts's module-load time and calls that directly, bypassing the
 // wrapped `execFileMock` vi.fn body entirely; a spy attached to `execFileMock`
 // (or reassigned onto the custom symbol after import) never sees these
-// calls. Read via `execArgsLogSince` below — the cherryPickAbort tests are
-// the one place a call log, not just a passthrough, is needed.
+// calls. Read via `execArgsLogSince` below, wherever a case's claim is about
+// the argv a helper issued rather than about what it answered.
 const execArgsLog: unknown[][] = [];
 
 // The argv of every call this mock actually answered with the localized
@@ -109,8 +109,6 @@ import {
   acquireTipClaim,
   addWorktree,
   checkoutAddress,
-  checkpointBystanderState,
-  cherryPickAbort,
   cherryPickRange,
   commitPaths,
   currentRefPath,
@@ -126,8 +124,6 @@ import {
   pinLongPaths,
   readFileAtRef,
   removeWorktree,
-  resetKeepTo,
-  ResetKeepRefusedError,
   revParse,
   showNameOnly,
   softResetTo,
@@ -820,113 +816,6 @@ describe("softResetTo (spec/loop.md 'Tip verify', per-entry leg)", () => {
   });
 });
 
-describe("resetKeepTo (spec/loop.md 'Tip verify', \"dropping it must not take bystanders\")", () => {
-  it("moves the tip back and preserves an unrelated unstaged bystander edit", async () => {
-    const base = await revParse(repo);
-    await writeFile(join(repo, "engine.txt"), "engine change");
-    await exec("git", ["add", "."], { cwd: repo });
-    await exec("git", ["commit", "-q", "-m", "engine commit"], { cwd: repo });
-
-    // A bystander's uncommitted edit to a file the engine's commit never
-    // touched.
-    await writeFile(join(repo, ".seed"), "bystander unstaged edit");
-
-    await resetKeepTo(repo, base);
-
-    expect(await revParse(repo)).toBe(base);
-    expect(existsSync(join(repo, "engine.txt"))).toBe(false);
-    expect(await readFile(join(repo, ".seed"), "utf8")).toBe(
-      "bystander unstaged edit",
-    );
-  });
-
-  it("moves the tip back and preserves an unrelated staged bystander edit", async () => {
-    const base = await revParse(repo);
-    await writeFile(join(repo, "engine.txt"), "engine change");
-    await exec("git", ["add", "."], { cwd: repo });
-    await exec("git", ["commit", "-q", "-m", "engine commit"], { cwd: repo });
-
-    await writeFile(join(repo, ".seed"), "bystander staged edit");
-    await exec("git", ["add", "."], { cwd: repo });
-
-    await resetKeepTo(repo, base);
-
-    expect(await revParse(repo)).toBe(base);
-    const { stdout: status } = await exec("git", ["status", "--porcelain"], {
-      cwd: repo,
-    });
-    expect(status).toContain(".seed");
-    expect(await readFile(join(repo, ".seed"), "utf8")).toBe(
-      "bystander staged edit",
-    );
-  });
-
-  it("refuses on a textual collision — unstaged bystander edit to the exact path the reset would touch — leaving both writers' content in place", async () => {
-    await writeFile(join(repo, "shared.txt"), "base");
-    await exec("git", ["add", "."], { cwd: repo });
-    await exec("git", ["commit", "-q", "-m", "seed shared.txt"], {
-      cwd: repo,
-    });
-    const preEngine = await revParse(repo);
-    await writeFile(join(repo, "shared.txt"), "base\nengine change");
-    await exec("git", ["add", "."], { cwd: repo });
-    await exec("git", ["commit", "-q", "-m", "engine commit"], { cwd: repo });
-    const postEngine = await revParse(repo);
-
-    // Bystander edits the exact same file the revert needs to touch,
-    // without committing or staging.
-    await writeFile(
-      join(repo, "shared.txt"),
-      "base\nengine change\nbystander collision",
-    );
-
-    await expect(resetKeepTo(repo, preEngine)).rejects.toThrow(
-      ResetKeepRefusedError,
-    );
-
-    // Refused: neither the engine's commit nor the bystander's edit moved.
-    expect(await revParse(repo)).toBe(postEngine);
-    expect(await readFile(join(repo, "shared.txt"), "utf8")).toBe(
-      "base\nengine change\nbystander collision",
-    );
-  });
-
-  it("refuses on a textual collision — staged bystander edit to the exact path the reset would touch — leaving both writers' content in place", async () => {
-    await writeFile(join(repo, "shared.txt"), "base");
-    await exec("git", ["add", "."], { cwd: repo });
-    await exec("git", ["commit", "-q", "-m", "seed shared.txt"], {
-      cwd: repo,
-    });
-    const preEngine = await revParse(repo);
-    await writeFile(join(repo, "shared.txt"), "base\nengine change");
-    await exec("git", ["add", "."], { cwd: repo });
-    await exec("git", ["commit", "-q", "-m", "engine commit"], { cwd: repo });
-    const postEngine = await revParse(repo);
-
-    await writeFile(
-      join(repo, "shared.txt"),
-      "base\nengine change\nbystander collision",
-    );
-    await exec("git", ["add", "."], { cwd: repo });
-
-    const err = await resetKeepTo(repo, preEngine).catch((e) => e);
-    expect(err).toBeInstanceOf(ResetKeepRefusedError);
-    expect((err as ResetKeepRefusedError).targetSha).toBe(preEngine);
-    expect((err as ResetKeepRefusedError).cwd).toBe(repo);
-
-    // Refused: neither the engine's commit nor the bystander's staged edit
-    // moved.
-    expect(await revParse(repo)).toBe(postEngine);
-    const { stdout: status } = await exec("git", ["status", "--porcelain"], {
-      cwd: repo,
-    });
-    expect(status).toContain("shared.txt");
-    expect(await readFile(join(repo, "shared.txt"), "utf8")).toBe(
-      "base\nengine change\nbystander collision",
-    );
-  });
-});
-
 describe("diffNameOnly (spec/loop.md 'Tip verify', per-entry leg)", () => {
   it("returns the cumulative footprint across a multi-commit span, not just the newest commit", async () => {
     const base = await revParse(repo);
@@ -1138,10 +1027,11 @@ describe("cherryPickRange (spec/loop.md 'Tip verify', per-entry leg)", () => {
     await exec("git", ["commit", "-q", "-m", "trunk"], { cwd: repo });
 
     await expect(cherryPickRange(repo, base, head)).rejects.toThrow();
-    // The stopped sequence is the caller's to abort — the absorption leg
-    // never quietly skipped past it.
+    // The sequence is left stopped on disk — the absorption leg never quietly
+    // skipped past it. Nothing clears it here: a pick only ever runs in a
+    // merge candidate, and the candidate's removal takes the tree, the index
+    // and git's sequencer state together (`src/mergeSpan.ts`).
     expect(existsSync(join(repo, ".git", "CHERRY_PICK_HEAD"))).toBe(true);
-    await cherryPickAbort(repo);
   });
 
   it("cherry-picks a single-commit range identically to the plain single-sha form", async () => {
@@ -1165,170 +1055,6 @@ describe("cherryPickRange (spec/loop.md 'Tip verify', per-entry leg)", () => {
       { cwd: repo },
     );
     expect(subject.trim()).toBe("solo");
-  });
-});
-
-/**
- * cherryPickAbort (spec/loop.md "Crash equals stop", "An abort is issued
- * only against a sequence that started"): `--abort` runs iff
- * `CHERRY_PICK_HEAD`/`sequencer/` state is actually on disk — never blind,
- * since a blind abort on a checkout that never started a sequence would
- * reset an operator's index/working tree for no reason. Asserted off
- * `execArgsLogSince` (top of file) — the exact `(file, args, options)`
- * triples git.ts's own `exec` issued — rather than a per-test spy, since
- * `promisify(execFile)` resolves `[promisify.custom]` once at git.ts's
- * module-load time and calls that directly, bypassing any wrapper attached
- * after import.
- */
-describe("cherryPickAbort (spec/loop.md 'Crash equals stop')", () => {
-  function abortCalls(calls: unknown[][]): unknown[][] {
-    return calls.filter((c) => {
-      const args = c[1] as string[] | undefined;
-      return args?.[0] === "cherry-pick" && args?.[1] === "--abort";
-    });
-  }
-
-  /** The relPath of every `rev-parse --git-path <relPath>` in `calls`. */
-  function gitPathProbes(calls: unknown[][]): string[] {
-    return calls.flatMap((c) => {
-      const args = c[1] as string[] | undefined;
-      return args?.[0] === "rev-parse" && args[1] === "--git-path" && args[2]
-        ? [args[2]]
-        : [];
-    });
-  }
-
-  it("cherryPickAbort probes for sequencer state and issues no --abort when none is present", async () => {
-    // A totally untouched checkout — no cherry-pick of any kind was ever
-    // attempted, so neither CHERRY_PICK_HEAD nor sequencer/ exists.
-    expect(existsSync(join(repo, ".git", "CHERRY_PICK_HEAD"))).toBe(false);
-    expect(existsSync(join(repo, ".git", "sequencer"))).toBe(false);
-
-    const since = execArgsLog.length;
-    await expect(cherryPickAbort(repo)).resolves.toBeUndefined();
-    const calls = execArgsLogSince(since);
-
-    // Vacuity pin before the verdict: "zero `--abort` calls" is a claim
-    // about a log that caught this call's git commands, and the
-    // `promisify.custom` interception it rides on is fragile (top of file).
-    // The guard reads the sequencer state through exactly two `rev-parse
-    // --git-path` probes, so a live log carries both; an interception that
-    // silently stopped recording leaves an empty slice over which the
-    // assertion below is green for the wrong reason. The probes are also
-    // why the verdict is "no `--abort`", not "no git command".
-    expect(gitPathProbes(calls).sort()).toEqual([
-      "CHERRY_PICK_HEAD",
-      "sequencer",
-    ]);
-    expect(abortCalls(calls)).toHaveLength(0);
-  });
-
-  it("issues --abort when CHERRY_PICK_HEAD/sequencer state is present", async () => {
-    const base = await revParse(repo);
-    await exec("git", ["checkout", "-q", "-b", "other"], { cwd: repo });
-    await writeFile(join(repo, "file.txt"), "from-other\n");
-    await exec("git", ["add", "."], { cwd: repo });
-    await exec("git", ["commit", "-q", "-m", "other-change"], { cwd: repo });
-    const head = await revParse(repo);
-
-    await exec("git", ["checkout", "-q", base], { cwd: repo });
-    await writeFile(join(repo, "file.txt"), "from-primary\n");
-    await exec("git", ["add", "."], { cwd: repo });
-    await exec("git", ["commit", "-q", "-m", "primary-change"], {
-      cwd: repo,
-    });
-
-    // A real content conflict — git writes CHERRY_PICK_HEAD once it
-    // actually starts applying the conflicting commit, unlike a pre-flight
-    // refusal that never gets that far.
-    await expect(
-      exec("git", ["cherry-pick", `${base}..${head}`], { cwd: repo }),
-    ).rejects.toThrow();
-    expect(existsSync(join(repo, ".git", "CHERRY_PICK_HEAD"))).toBe(true);
-
-    const since = execArgsLog.length;
-    await cherryPickAbort(repo);
-    expect(abortCalls(execArgsLogSince(since)).length).toBeGreaterThan(0);
-
-    expect(existsSync(join(repo, ".git", "CHERRY_PICK_HEAD"))).toBe(false);
-    const { stdout: status } = await exec("git", ["status", "--porcelain"], {
-      cwd: repo,
-    });
-    expect(status.trim()).toBe("");
-    expect(await readFile(join(repo, "file.txt"), "utf8")).toBe(
-      "from-primary\n",
-    );
-  });
-
-  // `existsSync` collapsed every stat failure to `false`, so a sequencer
-  // path that is on disk but unstattable read as "no sequence started" and
-  // the abort spec/loop.md "Crash equals stop" owes an interrupted pick was
-  // skipped silently, over a checkout still holding the pick's state. The
-  // probe now splits ENOENT from the rest (`existsLoud`, src/fsProbe.ts).
-  it("cherryPickAbort throws when a sequencer-state path is present but unstattable", async () => {
-    const headPath = join(repo, ".git", "CHERRY_PICK_HEAD");
-    // Vacuity guard: the fixture below is the only reason this path is
-    // present, so the checkout starts with no real sequencer state at all.
-    expect(existsSync(headPath)).toBe(false);
-    // ELOOP — present, unstattable. Not a permission bit: a root-run test
-    // would bypass that.
-    await symlink(basename(headPath), headPath);
-
-    const since = execArgsLog.length;
-    await expect(cherryPickAbort(repo)).rejects.toThrow(/ELOOP/);
-    // The refusal landed at the state probe, not at a blind `--abort` that
-    // would have reset the operator's index and working tree.
-    expect(abortCalls(execArgsLogSince(since))).toHaveLength(0);
-  });
-});
-
-describe("checkpointBystanderState (spec/loop.md 'Crash equals stop', 'Staged bystander state is checkpointed before a pick range begins')", () => {
-  it("returns undefined and touches nothing when the checkout is clean", async () => {
-    await expect(checkpointBystanderState(repo)).resolves.toBeUndefined();
-    const { stdout: status } = await exec("git", ["status", "--porcelain"], {
-      cwd: repo,
-    });
-    expect(status.trim()).toBe("");
-  });
-
-  it("captures staged content as a recoverable dangling commit, without resetting anything", async () => {
-    await writeFile(join(repo, "staged.txt"), "staged content\n");
-    await exec("git", ["add", "staged.txt"], { cwd: repo });
-    await writeFile(join(repo, ".seed"), "unstaged edit\n");
-
-    const shaOrUndefined = await checkpointBystanderState(repo);
-    expect(shaOrUndefined).toEqual(expect.stringMatching(/^[0-9a-f]{40}$/));
-    const sha = shaOrUndefined as string;
-
-    // Nothing was reset — the staged/unstaged content is exactly where the
-    // caller left it, and the checkpoint itself moved no ref.
-    const { stdout: status } = await exec("git", ["status", "--porcelain"], {
-      cwd: repo,
-    });
-    expect(status).toContain("staged.txt");
-    expect(status).toContain(".seed");
-    expect(await readFile(join(repo, "staged.txt"), "utf8")).toBe(
-      "staged content\n",
-    );
-
-    // Recoverable from the sha alone.
-    const { stdout: recovered } = await exec(
-      "git",
-      ["show", `${sha}:staged.txt`],
-      { cwd: repo },
-    );
-    expect(recovered).toBe("staged content\n");
-    const { stdout: head } = await exec("git", ["rev-parse", "HEAD"], {
-      cwd: repo,
-    });
-    // A dangling commit — no branch or ref points at it.
-    const { stdout: branchAtSha } = await exec(
-      "git",
-      ["branch", "--contains", sha],
-      { cwd: repo },
-    );
-    expect(branchAtSha.trim()).toBe("");
-    expect(head.trim()).not.toBe(sha);
   });
 });
 

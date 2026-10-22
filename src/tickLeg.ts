@@ -49,8 +49,6 @@ export type PhaseTickOutcome = {
   tipMoved?: boolean;
   /** Sibling to `noCommit`/`tipMoved` — see {@link TickVerdict.declined}. */
   declined?: boolean;
-  /** See {@link TickVerdict.bystanderCheckpointSha}. */
-  bystanderCheckpointSha?: string;
   provisionFailures?: ProvisionFailure[];
   /** See {@link TickVerdict.stakeLosses}; fanout only. */
   stakeLosses?: StakeLoss[];

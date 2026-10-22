@@ -819,17 +819,6 @@ export interface TickVerdict {
    * Absent when nothing this tick touched hit a `shouldRun` refusal.
    */
   declined?: boolean;
-  /**
-   * spec/loop.md "Crash equals stop": the sha of a dangling commit
-   * (`git stash create`'s shape — object written, no ref moved, nothing
-   * reset) capturing whatever was staged or unstaged on the primary
-   * checkout when this tick's merge stage began, checkpointed before the
-   * tick's first cherry-pick range so a later `--abort` or gate revert can
-   * never destroy the operator's own bystander work unrecoverably. Absent
-   * when the tree was clean at that point, or when the tick's merge stage
-   * never began (nothing committed to cherry-pick).
-   */
-  bystanderCheckpointSha?: string;
   /** Every gate that ran this tick, in run order, across every entry. */
   gateResults: ReportedGateResult[];
   /** Entry tags shipped by this tick (entries the phase's `shipped` predicate rejected already excluded); empty for a singleton phase. */
@@ -1010,7 +999,6 @@ interface TickVerdictFacts {
   noCommit?: NoCommitMode | undefined;
   tipMoved?: boolean | undefined;
   declined?: boolean | undefined;
-  bystanderCheckpointSha?: string | undefined;
   gateResults: readonly ReportedGateResult[];
   shippedTags: readonly string[];
   mergeOutcomes?: readonly TickVerdictMergeOutcome[] | undefined;
@@ -1064,9 +1052,6 @@ export function buildTickVerdict(facts: TickVerdictFacts): TickVerdict {
     ...(facts.noCommit ? { noCommit: facts.noCommit } : {}),
     ...(facts.tipMoved ? { tipMoved: facts.tipMoved } : {}),
     ...(facts.declined ? { declined: facts.declined } : {}),
-    ...(facts.bystanderCheckpointSha
-      ? { bystanderCheckpointSha: facts.bystanderCheckpointSha }
-      : {}),
     gateResults: [...facts.gateResults],
     shippedTags: [...facts.shippedTags],
     mergeOutcomes: [...(facts.mergeOutcomes ?? [])],

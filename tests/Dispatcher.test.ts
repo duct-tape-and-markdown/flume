@@ -10491,12 +10491,12 @@ describe("Dispatcher — an afterMerge revert on the primary checkout preserves 
   });
 });
 
-// ---------- bystander checkpoint before the primary-checkout merge stage
-// (spec/loop.md "Crash equals stop": "Staged bystander state is
-// checkpointed before a pick range begins") ----------
+// ---------- an operator's own work on the primary checkout, across a merge
+// (spec/loop.md "Crash equals stop": "No engine mutation destroys
+// uncommitted state it did not author") ----------
 
-describe("Dispatcher — staged bystander state is checkpointed to a recoverable sha before the merge stage", () => {
-  it("fanout: a staged bystander edit no longer reaches the wave's own cherry-pick, and the checkpoint sha still rides the verdict", async () => {
+describe("Dispatcher — a merge never writes the uncommitted work it found on the primary checkout", () => {
+  it("fanout: a staged bystander edit never reaches the wave's cherry-pick and is left exactly as the operator had it", async () => {
     await writePending(fx.repo, [makeEntry("SHIP-IT", ["src/thing.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
 
@@ -10512,14 +10512,13 @@ describe("Dispatcher — staged bystander state is checkpointed to a recoverable
     // The operator has staged unrelated work on the primary checkout before
     // this tick's merge stage begins. Git refuses *any* cherry-pick outright
     // while the checkout carries staged content, disjoint or not ("your local
-    // changes would be overwritten by cherry-pick") — and the pick no longer
-    // runs there: it runs in the merge's candidate, a tree of its own
+    // changes would be overwritten by cherry-pick") — and the pick does not
+    // run there: it runs in the merge's candidate, a tree of its own
     // (`spec/worktrees.md`, *Per-entry `afterMerge` revert isolation*), so the
-    // span lands and the fast-forward that carries it leaves the staged file
-    // alone. The checkpoint is still taken, because the fast-forward is a
-    // write to this checkout's working tree, and it is still recovery rather
-    // than prevention (spec/loop.md "Crash equals stop",
-    // "Never-destroy-always-leave-a-sha").
+    // span lands and the fast-forward that carries it to trunk touches only
+    // the paths that differ, leaving the staged file alone. That move is the
+    // engine's one write to this checkout, and it refuses rather than
+    // overwrite (spec/loop.md "Crash equals stop").
     await writeFile(join(fx.repo, "operator-staged.txt"), "bystander content\n");
     await exec("git", ["add", "operator-staged.txt"], { cwd: fx.repo });
 
@@ -10536,47 +10535,18 @@ describe("Dispatcher — staged bystander state is checkpointed to a recoverable
 
     expect(outcome.result?.shippedTags).toEqual(["SHIP-IT"]);
     expect(readPendingFromDisk(fx.repo)).toEqual([]);
-    // The staged file is where the operator left it, content intact.
+    // The staged file is where the operator left it, staged and content
+    // intact: the span shipped without the engine writing a path it did not
+    // author, which is why there is no recovery handle on the verdict to need.
     expect(
       await readFile(join(fx.repo, "operator-staged.txt"), "utf8"),
     ).toBe("bystander content\n");
-
-    const sha = outcome.verdict?.bystanderCheckpointSha;
-    expect(sha).toEqual(expect.stringMatching(/^[0-9a-f]{40}$/));
-
-    // Recoverable from the checkpoint sha alone — `git stash create`'s
-    // shape, an object in the store independent of whatever the failed
-    // pick and its abort did to the working tree.
-    const { stdout } = await exec(
+    const { stdout: staged } = await exec(
       "git",
-      ["show", `${sha}:operator-staged.txt`],
+      ["diff", "--cached", "--name-only"],
       { cwd: fx.repo },
     );
-    expect(stdout).toBe("bystander content\n");
-  });
-
-  it("singleton: absent when the primary checkout was clean at merge time", async () => {
-    new Baton(join(fx.repo, ".flume")).wake("plan");
-
-    const phase = makePhase({ name: "plan", concurrency: "singleton", gates: [] });
-    const chain: Chain = { phases: [phase], humanOnly: [] };
-
-    const agent = singleAgent(async (cwd) => {
-      await writeAndCommit(cwd, "src/plan-out.ts", "content\n", "plan: attempt");
-    });
-
-    const dispatcher = new Dispatcher({
-      chainLoader: staticLoader(chain),
-      repoRoot: fx.repo,
-      configDir: fx.configDir,
-      agent,
-      log: silent,
-    });
-
-    const outcome = await dispatcher.tick();
-
-    expect(outcome.result?.committed).toBe(true);
-    expect(outcome.verdict?.bystanderCheckpointSha).toBeUndefined();
+    expect(staged.trim()).toBe("operator-staged.txt");
   });
 });
 
@@ -16996,7 +16966,6 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
       "noCommit",
       "tipMoved",
       "declined",
-      "bystanderCheckpointSha",
       "gateResults",
       "shippedTags",
       "mergeOutcomes",
@@ -17069,14 +17038,12 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
 
     // The judged wave, shaped to reach past the always-present fields: one
     // entry ships, one trips the real writable-paths gate, one is declined
-    // by `shouldRun`, STALE-ONE has left the queue, and an unstaged
-    // bystander edit on the primary checkout forces the pre-merge checkpoint.
+    // by `shouldRun`, and STALE-ONE has left the queue.
     await writePending(fx.repo, [
       makeEntry("SHIP-IT", ["src/ship-it.ts"]),
       makeEntry("GATE-FAIL", ["src/gate-fail.ts"]),
       makeEntry("DECLINE-ME", ["src/decline-me.ts"]),
     ]);
-    await writeFile(join(fx.repo, "README.md"), "operator's own edit\n");
     new Baton(flumeDir).wake("build");
     const wave = await fanoutBuild(
       { shouldRun: (ctx) => ctx.assignedEntry?.tag !== "DECLINE-ME" },
@@ -17135,7 +17102,6 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
     for (const conditional of [
       "noCommit",
       "declined",
-      "bystanderCheckpointSha",
       "gateFailures",
       "clearedPriorAttempts",
     ]) {
@@ -28000,9 +27966,6 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
       makeEntry("H-CONFLICT-TRUNK", ["src/h-conflict-trunk.ts"]),
       makeEntry("I-GATE-OUT", ["src/i-gate-out.ts"]),
     ]);
-    // The operator's own unstaged edit, which the wave checkpoints before its
-    // first pick (`bystanderCheckpointSha`).
-    await writeFile(join(target.repo, "README.md"), "operator's own edit\n");
     new Baton(flumeDir).wake("build");
 
     const outcome = await dispatcherWith(
@@ -28136,7 +28099,6 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
       noCommit: "unreachable",
       tipMoved: "unreachable",
       declined: "populated",
-      bystanderCheckpointSha: "populated",
       provisionFailures: "populated",
       stakeLosses: "populated",
       renderFailures: "populated",
@@ -28353,9 +28315,9 @@ it("the verdict a wave writes after a slot leg throws names every span it landed
 /**
  * spec/worktrees.md, *Batched merges*: one merge of a wave carrying up to
  * `supervisorPolicy.mergeBatch` of the spans that have finished and are waiting
- * on the ship lock — cherry-picked in order, gated once, shipped in one ledger
- * commit, and taken back off to the tip before the batch when a gate reds or a
- * pick conflicts.
+ * on the ship lock — cherry-picked in order onto one candidate, gated once over
+ * it, shipped in one ledger commit and one fast-forward, and discarded with
+ * that candidate when a gate reds or a pick conflicts.
  *
  * Every case here plants a **live** ship lock before the wave and releases it
  * off the engine's own queue-depth line (`offerAttempt`, `src/waveMerge.ts`).
@@ -28451,6 +28413,60 @@ describe("Dispatcher fanout — a merge carries a batch of spans, gated once (sp
     ctx.batch === undefined
       ? [ctx.assignment?.entry.tag ?? "(no entry)"]
       : ctx.batch.map((s) => s.assignment?.entry.tag ?? "(no entry)");
+
+  /**
+   * Where one `afterMerge` run happened and what the primary checkout held
+   * while it ran — read inside the gate, because "trunk never named the
+   * batch" is only observable from inside the window the candidate exists in.
+   */
+  type GateSite = {
+    /** The tree the gate ran in. */
+    tree: string;
+    /** Which of `files` that tree holds. */
+    treeHolds: string[];
+    /** The primary checkout's tip, as the gate found it. */
+    trunkTip: string;
+    /** Which of `files` the primary checkout holds. */
+    trunkHolds: string[];
+  };
+  const siteOf = async (
+    ctx: GateContext | BatchGateContext,
+    files: string[],
+  ): Promise<GateSite> => ({
+    tree: ctx.repoRoot,
+    treeHolds: files.filter((f) => existsSync(join(ctx.repoRoot, f))),
+    trunkTip: await head(fx.repo),
+    trunkHolds: files.filter((f) => existsSync(join(fx.repo, f))),
+  });
+
+  /**
+   * The shas trunk's own reflog records since `from`, newest first — one entry
+   * per update of the ref, which is what makes "one fast-forward" a count
+   * rather than an inference from the tip the tick ended at.
+   */
+  const trunkUpdatesSince = async (from: string): Promise<string[]> => {
+    const { stdout: branch } = await exec(
+      "git",
+      ["rev-parse", "--abbrev-ref", "HEAD"],
+      { cwd: fx.repo },
+    );
+    const { stdout } = await exec(
+      "git",
+      ["reflog", "show", "--format=%H", branch.trim()],
+      { cwd: fx.repo },
+    );
+    const log = stdout.trim().split("\n").filter((l) => l !== "");
+    // Vacuity: the ref's log has to reach the tip the batch started from, or
+    // "the updates since it" is a slice of a log that never recorded it.
+    expect(log).toContain(from);
+    return log.slice(0, log.indexOf(from));
+  };
+
+  /** Every merge candidate still registered on the fixture repo. */
+  const candidatesLeft = async (): Promise<string[]> =>
+    (await readdir(join(fx.repo, ".git", "worktrees")).catch(() => [])).filter(
+      (d) => d.startsWith("candidate-"),
+    );
 
   it("a merge carries up to mergeBatch finished spans of the same tick", async () => {
     // Three spans waiting, two per merge: the first merge takes two and the
@@ -28569,18 +28585,33 @@ describe("Dispatcher fanout — a merge carries a batch of spans, gated once (sp
     ]);
   });
 
-  it("the afterMerge gates run once over a green batch", async () => {
-    const runs: Array<{ gate: string; spans: number }> = [];
+  it("a batch's spans are picked in order onto one candidate and gated once over it", async () => {
+    const files = ["src/once-a.ts", "src/once-b.ts"];
+    /** One `afterMerge` run: the gate, the picks it was handed, and where it ran. */
+    const runs: Array<
+      {
+        gate: string;
+        spans: { tag: string; commitSha: string; landedOnSha: string }[];
+      } & GateSite
+    > = [];
     const probe = (name: string): Gate => ({
       name,
       when: "afterMerge",
       batches: true,
       async run(ctx) {
-        runs.push({ gate: name, spans: tagsOf(ctx).length });
+        runs.push({
+          gate: name,
+          spans: (ctx.batch ?? []).map((span) => ({
+            tag: span.assignment?.entry.tag ?? "(no entry)",
+            commitSha: span.commitSha,
+            landedOnSha: span.landedOnSha,
+          })),
+          ...(await siteOf(ctx, files)),
+        });
         return { ok: true, message: "" };
       },
     });
-    const { outcome } = await batchedWave({
+    const { outcome, preHead } = await batchedWave({
       entries: [
         makeEntry("ONCE-A", ["src/once-a.ts"]),
         makeEntry("ONCE-B", ["src/once-b.ts"]),
@@ -28595,19 +28626,40 @@ describe("Dispatcher fanout — a merge carries a batch of spans, gated once (sp
     });
 
     // Two gates, two spans: four runs is the per-span merge, two is the
-    // batched one, and each run saw the whole batch.
-    expect(runs).toEqual([
-      { gate: "once-first", spans: 2 },
-      { gate: "once-second", spans: 2 },
-    ]);
+    // batched one — gated once over the batch, by each gate.
+    expect(runs.map((r) => r.gate)).toEqual(["once-first", "once-second"]);
+    for (const run of runs) {
+      // Picked in order onto one tree, read off the only account of the picks
+      // a batch gate gets: the first span landed on the tip the candidate was
+      // cut at, and the second onto the commit the first produced. Two
+      // distinct entries, so neither pick can have been a no-op the chain
+      // would read through.
+      expect(run.spans).toHaveLength(2);
+      expect(run.spans[0]!.landedOnSha).toBe(preHead);
+      expect(run.spans[1]!.landedOnSha).toBe(run.spans[0]!.commitSha);
+      expect(run.spans[1]!.commitSha).not.toBe(run.spans[0]!.commitSha);
+      expect(run.spans.map((span) => span.tag).sort()).toEqual([
+        "ONCE-A",
+        "ONCE-B",
+      ]);
+      // And that tree is a candidate, not the checkout an operator reads: it
+      // holds both spans while trunk holds neither and stands exactly where
+      // the wave found it.
+      expect(run.tree).not.toBe(fx.repo);
+      expect(run.treeHolds).toEqual(files);
+      expect(run.trunkTip).toBe(preHead);
+      expect(run.trunkHolds).toEqual([]);
+    }
+    // One candidate for the batch, not one per gate.
+    expect(new Set(runs.map((r) => r.tree)).size).toBe(1);
     expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
       "ONCE-A",
       "ONCE-B",
     ]);
   });
 
-  it("a green batch ships every span in one ledger commit", async () => {
-    const { outcome } = await batchedWave({
+  it("a green batch ships every span in one ledger commit and one fast-forward", async () => {
+    const { outcome, preHead } = await batchedWave({
       entries: [
         makeEntry("LEDGER-A", ["src/ledger-a.ts"]),
         makeEntry("LEDGER-B", ["src/ledger-b.ts"]),
@@ -28628,11 +28680,22 @@ describe("Dispatcher fanout — a merge carries a batch of spans, gated once (sp
       "LEDGER-A",
       "LEDGER-B",
     ]);
-    // One rewrite for the pair, not one per span — the whole claim.
+    // One rewrite for the pair, not one per span — half the claim.
     expect(outcome.result?.ledgerCommitShas).toHaveLength(1);
     expect(readPendingFromDisk(fx.repo)).toEqual([]);
     expect(await readFile(join(fx.repo, "src/ledger-a.ts"), "utf8")).toBe("a\n");
     expect(await readFile(join(fx.repo, "src/ledger-b.ts"), "utf8")).toBe("b\n");
+    // The other half, counted off the ref's own log: one update since the tip
+    // the batch started from, landing on the tick's own tip. Both picks and
+    // the ledger commit rode it — a pick-onto-trunk merge would have left one
+    // update per span and another for the commit on top.
+    const tip = await head(fx.repo);
+    expect(await trunkUpdatesSince(preHead)).toEqual([tip]);
+    // Non-vacuity: that one move carried everything the batch produced.
+    const reachable = await reachableFrom(tip);
+    expect(reachable).toContain(outcome.result?.ledgerCommitShas?.[0]);
+    for (const row of outcome.verdict?.mergeOutcomes ?? [])
+      expect(reachable).toContain(row.headSha);
   });
 
   it("a sibling tick's spans are never carried in this tick's batch", async () => {
@@ -28693,10 +28756,13 @@ describe("Dispatcher fanout — a merge carries a batch of spans, gated once (sp
     ]);
   });
 
-  it("a batch whose afterMerge gates red resets to the tip and merges its spans one at a time", async () => {
+  it("a red batch discards its candidate and merges its spans one at a time", async () => {
     // Red over a batch, green over a span: the one gate shape that separates
     // "the batch was gated" from "each span was".
     const calls: Array<number | null> = [];
+    const files = ["src/red-a.ts", "src/red-b.ts"];
+    /** Where the batch's own run happened, and what trunk held while it did. */
+    const batchSites: GateSite[] = [];
     const { outcome, preHead } = await batchedWave({
       entries: [
         makeEntry("RED-A", ["src/red-a.ts"]),
@@ -28711,9 +28777,9 @@ describe("Dispatcher fanout — a merge carries a batch of spans, gated once (sp
           batches: true,
           async run(ctx) {
             calls.push(ctx.batch === undefined ? null : ctx.batch.length);
-            return ctx.batch === undefined
-              ? { ok: true, message: "span ok" }
-              : { ok: false, message: "batch refused" };
+            if (ctx.batch === undefined) return { ok: true, message: "span ok" };
+            batchSites.push(await siteOf(ctx, files));
+            return { ok: false, message: "batch refused" };
           },
         },
       ],
@@ -28726,6 +28792,16 @@ describe("Dispatcher fanout — a merge carries a batch of spans, gated once (sp
     // One batched run, then one run per span: the extra gate run is the priced
     // cost of a red batch, and the two after it are the individual gating.
     expect(calls).toEqual([2, null, null]);
+    // The red was ruled in a candidate, so there was nothing to take back off:
+    // trunk stood at the tip the batch started from, holding neither span,
+    // while the gate that condemned them ran.
+    expect(batchSites).toHaveLength(1);
+    expect(batchSites[0]!.tree).not.toBe(fx.repo);
+    expect(batchSites[0]!.treeHolds).toEqual(files);
+    expect(batchSites[0]!.trunkTip).toBe(preHead);
+    expect(batchSites[0]!.trunkHolds).toEqual([]);
+    // And the candidate it ruled in is gone.
+    expect(await candidatesLeft()).toEqual([]);
     // Both entries ship, so the red batch cost nothing but a gate run — and
     // each landed through a rewrite of its own.
     expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
@@ -28736,9 +28812,9 @@ describe("Dispatcher fanout — a merge carries a batch of spans, gated once (sp
 
     const rows = outcome.verdict?.mergeOutcomes ?? [];
     const rowFor = (tag: string) => rows.find((m) => m.entryTag === tag);
-    // The reset happened: each span was re-picked onto a trunk that no longer
-    // held the batch's commits, so each merge row names a commit it added
-    // rather than a span the tip already held whole.
+    // The serial pass carried the spans itself: each was picked onto a trunk
+    // that had never held the batch's commits, so each merge row names a
+    // commit it added rather than a span the tip already held whole.
     for (const tag of ["RED-A", "RED-B"]) {
       const row = rowFor(tag);
       expect(row?.outcome).toBe("merged");
@@ -28759,10 +28835,10 @@ describe("Dispatcher fanout — a merge carries a batch of spans, gated once (sp
     ).toEqual(["RED-A", "RED-B"]);
   });
 
-  it("a conflict while picking a batch falls back to per-entry merging", async () => {
+  it("a conflict while picking a batch discards the candidate and the spans are carried serially", async () => {
     // Disjoint declarations, colliding edits: the two entries are pickable
     // together, and their spans are not. Whichever is picked second conflicts,
-    // which takes the batch off trunk before any gate sees it.
+    // which gives up the batch before any gate sees it.
     const gated: Array<number | null> = [];
     const { outcome } = await batchedWave({
       entries: [
@@ -28817,6 +28893,17 @@ describe("Dispatcher fanout — a merge carries a batch of spans, gated once (sp
     expect(
       merges.flatMap((t) => (t.entryTag === undefined ? [] : [t.entryTag])).sort(),
     ).toEqual(["CLASH-A", "CLASH-B"]);
+    // The conflicting pick was given up by discarding the tree it stopped in,
+    // and the serial span it fell back to was picked onto the tip the batch
+    // started from: no candidate is left registered, and the primary checkout
+    // holds neither a stopped sequence nor a half-applied index — the engine
+    // never ran a pick there to abort.
+    expect(await candidatesLeft()).toEqual([]);
+    expect(existsSync(join(fx.repo, ".git", "CHERRY_PICK_HEAD"))).toBe(false);
+    const { stdout: status } = await exec("git", ["status", "--porcelain"], {
+      cwd: fx.repo,
+    });
+    expect(status.trim()).toBe("");
   });
 });
 

@@ -36,11 +36,7 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 
 import * as git from "./git.js";
-import {
-  carryMergeBatch,
-  carryMergeSpan,
-  type BystanderCheckpoint,
-} from "./mergeSpan.js";
+import { carryMergeBatch, carryMergeSpan } from "./mergeSpan.js";
 import type { MergingMarker } from "./mergingMarkers.js";
 import {
   mergingDir,
@@ -338,11 +334,10 @@ interface BatchCandidate {
  * It is a value rather than a set of locals because the stage is no longer
  * one call. A span is carried onto trunk as its own agent finishes
  * (`spec/worktrees.md`, *Fanout and worktrees — provisioning, isolation,
- * teardown*), so what one pick learned — the bystander checkpoint it took,
- * the outcomes and gate rows it recorded — has to outlive that pick and reach
- * the fold the wave ends with. Every field below is an accumulator, and
- * nothing reads across entries except the checkpoint, the one thing the wave
- * is still explicitly once-per-wave about.
+ * teardown*), so what one pick learned — the outcomes, gate rows and records
+ * it produced — has to outlive that pick and reach the fold the wave ends
+ * with. Every field below is an accumulator: nothing one pick writes is read
+ * as another's, and the fold at close is the only reader of the whole.
  */
 interface WaveMerge {
   readonly setup: WaveMergeSetup;
@@ -442,13 +437,6 @@ interface WaveMerge {
   /** `shouldRun` declined at least one entry. */
   declined: boolean;
   /**
-   * spec/loop.md "Crash equals stop": this wave's one checkpoint over the
-   * operator's uncommitted work, taken lazily by the first span it carries and
-   * read at close. Its once-per-carrier mechanics are the carry's
-   * ({@link BystanderCheckpoint}).
-   */
-  readonly checkpoint: BystanderCheckpoint;
-  /**
    * The cause a pick's ledger rewrite refused with, boxed so that "refused"
    * is readable whatever the cause is; `undefined` while none has.
    *
@@ -494,8 +482,6 @@ interface WaveMergeResult {
   readonly tipMoved: boolean;
   /** `shouldRun` declined at least one entry. */
   readonly declined: boolean;
-  /** The checkpoint staked over the operator's uncommitted work, when one was taken. */
-  readonly bystanderCheckpointSha?: string;
   /** Wave-level no-commit cause, only when the wave shipped nothing usable. */
   readonly noCommit?: NoCommitMode;
 }
@@ -519,7 +505,6 @@ export function openWaveMerge(setup: WaveMergeSetup): WaveMerge {
     gatedTip: undefined,
     tipMoved: false,
     declined: false,
-    checkpoint: { attempted: false, sha: undefined },
     refusal: undefined,
   };
 }
@@ -742,16 +727,33 @@ export async function drainWaiting(w: WaveMerge): Promise<void> {
       spans.push({ attempt, base: attempt.spanBase, head: attempt.headSha });
     }
     // spec/worktrees.md "Batched merges": one merge carrying several spans,
-    // picked in order and gated once. Red, or a conflict while picking, puts
-    // trunk back at the tip before the batch and the spans are merged one at a
-    // time below — so the batch arm either ships everything it carried or
-    // leaves the serial arm exactly the tree it would have started from.
+    // picked in order onto one candidate and gated once over it. Red, or a
+    // conflict while picking, discards that candidate and the spans are merged
+    // one at a time below — so the batch arm either ships everything it carried
+    // or leaves the serial arm exactly the tree it would have started from,
+    // trunk never having named a span of it.
     let batched = false;
     if (spans.length > 1) {
       try {
-        batched = await carryBatch(w, spans, landOnTrunk);
+        const batch = await carryBatch(w, spans, land);
+        batched = batch.fate !== "discarded";
+        // What the batch leaves for trunk itself. A shipped batch's ledger
+        // commit rode the fast-forward in with its picks, so only what that
+        // rewrite left on the stage is still owed; a batch trunk never named
+        // has rows of its own to record and no candidate left to record them
+        // in.
+        if (batch.fate === "merged")
+          await recordLanded(batch.shipped, batch.update);
+        else if (batch.fate === "tip-moved")
+          await landOnTrunk([], batch.rows);
+        // spec/loop.md "Crash equals stop": retired at whichever exit closed
+        // their hazard — the queue on disk accounts for a shipped batch, and a
+        // discarded or refused one left nothing on trunk to warn the next start
+        // about. Before the serial pass below re-stakes them, because a crash
+        // in between would otherwise refuse that start over spans no tip holds.
+        for (const slug of batch.staked) await retireMergingMarker(leg, slug);
       } finally {
-        // Stamped however the batch left — shipped, unwound or thrown: every
+        // Stamped however the batch left — shipped, discarded or thrown: every
         // way out of it is a merge that happened, and a red batch's one extra
         // gate run is the priced cost the section names, so it is on the
         // artifact rather than folded silently into the serial rows below
@@ -938,17 +940,39 @@ async function foldAttemptFacts(
 }
 
 /**
+ * What a batched merge leaves its drain to do, beside the merge markers it
+ * staked: those are the drain's to retire at every exit, because a batch that
+ * reached its picks has one standing per span whichever way it left.
+ */
+type BatchLanding = { staked: readonly string[] } & (
+  | {
+      /** Trunk fast-forwarded to the candidate, so the ledger commit is already there. */
+      fate: "merged";
+      shipped: readonly PendingEntry[];
+      update: PendingRewriteResult | undefined;
+    }
+  | {
+      /** Trunk named no span of the batch: these rows are the drain's to land on trunk itself. */
+      fate: "tip-moved";
+      rows: readonly TickVerdictMergeOutcome[];
+    }
+  /** The candidate was discarded: the same spans are the drain's to carry one at a time. */
+  | { fate: "discarded" }
+);
+
+/**
  * Carry several finished spans in one merge (spec/worktrees.md, *Batched
- * merges*): cherry-picked onto the tip in order, the `afterMerge` gates run
- * **once** over the result, and every span shipped in one ledger commit when
- * they are green.
+ * merges*): cherry-picked in order onto one candidate, the `afterMerge` gates
+ * run **once** over it, and every span shipped in one ledger commit and one
+ * fast-forward when they are green.
  *
- * Answers whether the batch shipped. `false` is the fallback the section names
- * — red, or a conflict while picking — and by then trunk is back at the tip
- * before the batch, so the caller merges the same spans one at a time, gated
- * individually, and blame and revert stay per entry. The batch's own gate rows
- * stay on the stage either way: they name a run that happened and what it cost,
- * which is the one gate run more a red batch is priced at.
+ * Answers what the batch left its drain to do ({@link BatchLanding}).
+ * `discarded` is the fallback the section names — red, or a conflict while
+ * picking — and trunk named no span of the candidate that went, so the caller
+ * merges the same spans one at a time, gated individually, and blame and revert
+ * stay per entry. The batch's own gate rows stay on the stage either way: they
+ * name a run that happened and what it cost, which is the one gate run more a
+ * red batch is priced at.
  *
  * No gate failure, no prior-attempt record and no merge outcome is recorded for
  * a batch that did not ship. Each is a per-entry verdict, and the serial pass
@@ -958,21 +982,23 @@ async function foldAttemptFacts(
 async function carryBatch(
   w: WaveMerge,
   spans: readonly BatchCandidate[],
+  /** This drain's ledger rewrite, run inside the candidate on the green exit. */
   land: (
     shipped: readonly PendingEntry[],
     rows: readonly TickVerdictMergeOutcome[],
-  ) => Promise<void>,
-): Promise<boolean> {
+    tree: string,
+  ) => Promise<PendingRewriteResult | undefined>,
+): Promise<BatchLanding> {
   const { leg, phase } = w.setup;
   const entryMergeGateResultsStart = w.mergeGateResults.length;
   // The merge markers this batch stakes, one per span as its own pick begins,
-  // retired at whichever exit closed their hazard — the ledger commit of a
-  // green batch, or the reset of an unwound one.
+  // handed back for the drain to retire however the batch left.
   const staked: string[] = [];
+  /** Every entry this batch carries, for the lines that name all of them. */
+  const tags = spans.map((s) => s.attempt.entry.tag).join(", ");
   const batch = await carryMergeBatch({
     leg,
     phase,
-    checkpoint: w.checkpoint,
     onGateRow: (row, ms) => {
       w.mergeGateResults.push(row);
       w.timings.push({ kind: "gate", gate: row.gate, ms });
@@ -984,36 +1010,68 @@ async function carryBatch(
       stake: async () => {
         // spec/loop.md "Crash equals stop": each span's marker goes down before
         // its own pick, so a death anywhere inside the batch leaves a marker
-        // for every span already on trunk and none for a span not yet picked.
+        // for every span already picked and none for a span not yet reached.
         staked.push(slugify(r.entry.tag));
         await writeMergingMarker(leg, r.entry, r.branch, base);
       },
       narrate: {
         pickFailed: (message) =>
-          `[flume] cherry-pick failed for ${r.entry.tag}: ${message}; the batch goes back off trunk and its spans merge one at a time`,
+          `[flume] cherry-pick failed for ${r.entry.tag}: ${message}; the batch's candidate is discarded and its spans merge one at a time`,
         absorbed: (shas) =>
-          `[flume] ${r.entry.tag}: trunk already held ${shas.map((sha) => sha.slice(0, 8)).join(", ")} of ${base.slice(0, 8)}..${head.slice(0, 8)}; absorbed, not a conflict`,
+          `[flume] ${r.entry.tag}: the candidate already held ${shas.map((sha) => sha.slice(0, 8)).join(", ")} of ${base.slice(0, 8)}..${head.slice(0, 8)}; absorbed, not a conflict`,
         merged: (mergedSha, landedOnSha) =>
           mergedSha === landedOnSha
             ? `[flume] ${r.entry.tag}: trunk already holds the whole span ${base.slice(0, 8)}..${head.slice(0, 8)}; merged with no commit to add`
             : `[flume] cherry-picked ${r.entry.tag} → ${mergedSha.slice(0, 8)}`,
       },
     })),
+    // Green: the `shipped` consult per span, asked with that span's own facts
+    // and the batch's gate rows ({@link consultShipped}), and the one ledger
+    // commit that retires every tag they named — both inside the candidate, so
+    // the batch and the commit that ships it reach trunk in the one
+    // fast-forward past this callback. Nothing here reaches the stage until
+    // that move takes.
+    land: async (green) => {
+      const shipped: PendingEntry[] = [];
+      const rows: TickVerdictMergeOutcome[] = [];
+      const gateResults = w.mergeGateResults.slice(entryMergeGateResultsStart);
+      for (const [i, { attempt: r, base }] of spans.entries()) {
+        const verdict = await consultShipped(
+          w,
+          r,
+          base,
+          green.landed[i]!,
+          green.candidate,
+          gateResults,
+        );
+        shipped.push(...verdict.shipped);
+        rows.push(verdict.outcome);
+      }
+      return {
+        shipped,
+        rows,
+        update: await land(shipped, rows, green.candidate),
+      };
+    },
     narrate: {
       tipClaimed: (pid) =>
-        `[flume] ${phase.name}: tip claimed by pid ${pid}; refusing to cherry-pick ${spans.map((s) => s.attempt.entry.tag).join(", ")}, entries stay pending`,
+        `[flume] ${phase.name}: tip claimed by pid ${pid}; refusing to cherry-pick ${tags}, entries stay pending`,
       gateFailed: (gate) =>
         `[flume] afterMerge gate '${gate}' failed over the batch of ${spans.length}; each span merges on its own so blame and revert stay per entry`,
-      unwound: (why) =>
-        `[flume] ${phase.name}: batch of ${spans.length} taken back off trunk (${why}); merging its spans one at a time`,
+      discarded: (why) =>
+        `[flume] ${phase.name}: the candidate carrying the batch of ${spans.length} is discarded (${why}); merging its spans one at a time`,
+      fastForwardRefused: ({ candidateSha, landedOnSha, refusal }) =>
+        `[flume] ${phase.name}: fast-forward of trunk from ${landedOnSha.slice(0, 8)} to the batch's candidate ${candidateSha.slice(0, 8)} refused (${refusal}); trunk unchanged, ${tags} stay pending`,
     },
   });
   if (batch.fate === "tip-moved") {
-    // The shared trunk raced before this merge's first pick, so no span of the
-    // batch is on trunk and none is retryable from a landed sha. Each span's
-    // two shas are the whole recovery handle: the entry stays pending and its
-    // commits outlive the branch teardown deletes. Reported per span rather
-    // than once for the batch, because the refusal is every entry's fate
+    // The shared trunk was not this merge's to move — a foreign engine held
+    // the claim before the first pick, or it declined the fast-forward to the
+    // judged candidate — so no span of the batch is on trunk and none is
+    // retryable from a landed sha. Each span's two shas are the whole recovery
+    // handle: the entry stays pending and its commits outlive the branch
+    // teardown deletes. Reported per span rather than once for the batch,
+    // because the refusal is every entry's fate
     // (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
     // never rediscovered*).
     w.tipMoved = true;
@@ -1026,47 +1084,20 @@ async function carryBatch(
       }),
     );
     w.mergeOutcomes.push(...rows);
-    await land([], rows);
-    return true;
+    return { fate: "tip-moved", staked, rows };
   }
-  if (batch.fate === "unwound") {
-    // The reset put trunk back at the tip before the batch, so nothing of these
-    // spans is on trunk and the markers staked for them warn of nothing left.
-    // Retired here rather than left for the serial pass to re-stake over: a
-    // crash between the unwind and the first serial pick would otherwise refuse
-    // the next start over spans the reset had already removed
-    // (spec/loop.md "Crash equals stop").
-    for (const slug of staked) await retireMergingMarker(leg, slug);
-    return false;
-  }
-  // Green: every span is on trunk and the gates ruled over all of them, so the
-  // `shipped` consult is the only verdict left and it is per span, asked with
-  // that span's own facts and the batch's gate rows
-  // ({@link consultShipped}).
-  const shipped: PendingEntry[] = [];
-  const rows: TickVerdictMergeOutcome[] = [];
-  const gateResults = w.mergeGateResults.slice(entryMergeGateResultsStart);
-  for (const [i, { attempt: r, base }] of spans.entries()) {
-    const landed = batch.landed[i]!;
-    const verdict = await consultShipped(
-      w,
-      r,
-      base,
-      landed,
-      leg.repoRoot,
-      gateResults,
-    );
-    shipped.push(...verdict.shipped);
-    w.shipped.push(...verdict.shipped);
-    rows.push(verdict.outcome);
-  }
-  w.mergeOutcomes.push(...rows);
-  // One ledger commit for the whole batch (spec/worktrees.md, *Batched
-  // merges*), landed inside the hold its picks ran in — and the markers it
-  // staked retired with it, on {@link drainWaiting}'s serial terms.
-  await land(shipped, rows);
-  for (const slug of staked) await retireMergingMarker(leg, slug);
-  return true;
+  if (batch.fate === "discarded") return { fate: "discarded", staked };
+  // Trunk fast-forwarded to the candidate, so everything the landing step
+  // wrote into it is on trunk now — and only now does any of it reach the
+  // stage, exactly as a single span's own landing does ({@link carrySpan}).
+  w.shipped.push(...batch.landing.shipped);
+  w.mergeOutcomes.push(...batch.landing.rows);
+  return {
+    fate: "merged",
+    staked,
+    shipped: batch.landing.shipped,
+    update: batch.landing.update,
+  };
 }
 
 /**
@@ -1136,7 +1167,6 @@ async function carrySpan(
     // session's footprint is both (`GateContext.assignment`, `src/Gate.ts`).
     assignment: { entry: r.entry, steps: r.steps },
     ref,
-    checkpoint: w.checkpoint,
     stake: async () => {
       // spec/loop.md "Crash equals stop": the marker goes down before the
       // pick — a death anywhere past it leaves the marker standing, and the
@@ -1301,10 +1331,11 @@ async function consultShipped(
    * as `ShipContext.repoRoot` (`src/Phase.ts`): a single span's own candidate
    * — the tree trunk fast-forwards to once this verdict and the rewrite behind
    * it have landed on it (`spec/worktrees.md`, *Per-entry `afterMerge` revert
-   * isolation*) — and the primary checkout for a batch, which picks onto trunk.
-   * Handed in rather than read off the leg: a predicate inspecting the merged
-   * result must open the tree that holds it, and the primary checkout does not
-   * hold a candidate's span until the fast-forward takes.
+   * isolation*) — or the one a batch shares, which is the same tree at a width
+   * (`spec/worktrees.md`, *Batched merges*). Handed in rather than read off the
+   * leg: a predicate inspecting the merged result must open the tree that holds
+   * it, and the primary checkout does not hold a candidate's spans until the
+   * fast-forward takes.
    */
   tree: string,
   mergeGateResults: readonly ReportedGateResult[],
@@ -1527,7 +1558,6 @@ export function closeWaveMerge(w: WaveMerge): WaveMergeResult {
     shipFailures: w.shipFailures,
     tipMoved: w.tipMoved,
     declined: w.declined,
-    ...(w.checkpoint.sha ? { bystanderCheckpointSha: w.checkpoint.sha } : {}),
     ...(noCommit ? { noCommit } : {}),
   };
 }
@@ -1908,7 +1938,6 @@ async function settledWaveVerdict(
     noCommit: waveNoCommitCause(committed, w.attempts, w.mergeReverted),
     tipMoved: w.tipMoved,
     declined: w.declined,
-    bystanderCheckpointSha: w.checkpoint.sha,
     gateResults: waveGateResults(w),
     timings: w.timings,
     shippedTags,

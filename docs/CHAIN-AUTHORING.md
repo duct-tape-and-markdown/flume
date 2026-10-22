@@ -1023,8 +1023,9 @@ says so below.
 
 A merge normally carries one span, and a gate reads that span's facts off
 `ctx` directly. Raise `supervisorPolicy.mergeBatch` (§9) and one merge may
-carry several of a wave's finished spans at once, gated once over the result
-— which is a different input, so a gate opts into it by name:
+carry several of a wave's finished spans at once — picked in order onto one
+candidate and gated once over it, which is a different input, so a gate opts
+into it by name:
 
 ```ts
 const cumulative: Gate = {
@@ -1552,10 +1553,14 @@ it once per entry, a singleton tick once for the one worktree it runs in
 (`ctx.worktreeKey` is the entry's tag under fanout, the phase name under
 singleton).
 
-Every merge calls it too, for the candidate the span is picked onto and
-judged in — same key, same contract, once per span the merge carries. Budget
-the install there as well: an `afterMerge` gate that resolves a tool out of
-`node_modules` needs the candidate provisioned exactly as the worktree was.
+Every merge calls it too, for the candidate the merge picks onto and judges
+in — same contract, once per candidate. That is once per span for the serial
+carry, and once for a whole batch, which shares one candidate
+([*Reading a batched merge*](#reading-a-batched-merge)); a batch's
+`ctx.worktreeKey` is the **phase name**, since no one entry of it names that
+tree any more than the gate context over it does. Budget the install there as
+well: an `afterMerge` gate that resolves a tool out of `node_modules` needs
+the candidate provisioned exactly as the worktree was.
 
 A fresh tree holds only tracked files; provision the gitignored deps
 the gates need first. **Default:** the `setupWorktree` helper — sibling to
@@ -2815,11 +2820,12 @@ const chain: Chain = {
 - **`mergeBatch`** — how many of a wave's finished spans one merge carries.
   Default 1: a merge per span, which is the serial carry and every
   consumer's behavior until it declares otherwise. Above one, the spans
-  waiting on the ship lock at that moment are cherry-picked onto the tip in
-  order and the `afterMerge` gates run once over the result, so a wave of N
-  entries pays one gate run instead of N; a red batch, or a conflict while
-  picking, resets and re-merges its spans one at a time so blame and revert
-  stay per entry (`spec/worktrees.md`, "Batched merges"). Raising it is
+  waiting on the ship lock at that moment are cherry-picked in order onto
+  **one** candidate and the `afterMerge` gates run once over it, so a wave of
+  N entries pays one gate run instead of N, and a green batch ships in one
+  ledger commit and one fast-forward; a red batch, or a conflict while
+  picking, discards that candidate and re-merges its spans one at a time so
+  blame and revert stay per entry (`spec/worktrees.md`, "Batched merges"). Raising it is
   necessary but not sufficient: the phase batches only where **every** one
   of its `afterMerge` gates declares `batches: true`
   ([*Reading a batched merge*](#reading-a-batched-merge)), and one gate

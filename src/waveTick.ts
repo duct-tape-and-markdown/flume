@@ -934,9 +934,6 @@ export async function runFanout(
     ...(mergeStage.noCommit ? { noCommit: mergeStage.noCommit } : {}),
     ...(mergeStage.tipMoved ? { tipMoved: mergeStage.tipMoved } : {}),
     ...(mergeStage.declined ? { declined: mergeStage.declined } : {}),
-    ...(mergeStage.bystanderCheckpointSha
-      ? { bystanderCheckpointSha: mergeStage.bystanderCheckpointSha }
-      : {}),
     ...(provisionFailures.length > 0 ? { provisionFailures } : {}),
     ...(stakeLosses.length > 0 ? { stakeLosses } : {}),
     ...(renderFailures.length > 0 ? { renderFailures } : {}),

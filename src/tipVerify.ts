@@ -1,17 +1,19 @@
 /**
  * spec/loop.md "Tip verify — one writer per branch, absorption at the
- * merge": the two checks a tick takes around the trunk it is about to move —
- * whether another engine instance holds the claim on the ref, and whether
- * the commit a revert is about to reset past is still the tip it was.
+ * merge": the check a tick takes around the trunk it is about to move —
+ * whether another engine instance holds the claim on the ref.
  *
- * One caller reaches both — the span carry every concurrency's merge runs
- * (`carryMergeSpan`, `src/mergeSpan.ts`) asks the claim before its
- * cherry-pick and the revert guard before its afterMerge reset — and the
- * wave's trailing ledger commit reaches the claim a second time
- * (`commitPendingUpdate`, `src/pendingLedger.ts`), so the pair lives in the
- * file its name is rather than as two methods on the class that dispatches
- * between the legs (`.claude/rules/engineering.md`, *A module is one job*). Neither reads a recorded tip: there is no expected-sha
- * bookkeeping here, only what the disk says at the moment of the check.
+ * Every harness-driven commit site asks it: the span carry every
+ * concurrency's merge runs, before its first cherry-pick (`carryMergeSpan`
+ * and `carryMergeBatch`, `src/mergeSpan.ts`), and the wave's trailing ledger
+ * commit (`commitPendingUpdate`, `src/pendingLedger.ts`). So it lives in the
+ * file its name is rather than as a method on the class that dispatches
+ * between the legs (`.claude/rules/engineering.md`, *A module is one job*).
+ * It reads no recorded tip: there is no expected-sha bookkeeping here, only
+ * what the disk says at the moment of the check. Nothing compares a tip
+ * against one it remembers, because nothing rewinds trunk past a commit —
+ * a candidate is discarded instead (`spec/worktrees.md`, *Per-entry
+ * `afterMerge` revert isolation*).
  */
 
 import { existsLoudUnder } from "./fsProbe.js";
@@ -64,31 +66,4 @@ export async function liveForeignClaimPid(
   const holder = (await git.liveTipClaim(claimPath))?.pid ?? null;
   if (holder === null || holder === ownTipClaimPid) return null;
   return holder;
-}
-
-/**
- * Tip verify's afterMerge-revert guard (spec/loop.md "Tip verify — one
- * writer per branch, absorption at the merge", "one window stays a refusal,
- * deliberately"). `resetKeepTo` at the caller drops the span it
- * cherry-picked onto trunk at `mergedSha` — but a gate can take long enough
- * to run that a foreign commit lands on trunk in the gap between the merge
- * and the gate failing it. That foreign commit is legal history the wave
- * would otherwise absorb (same section); resetting to `preCherry` regardless
- * would silently discard it along with the entry's own commit. Returns the
- * refusal message, naming both the merged sha the caller expected and the
- * trunk tip it actually found, when the two disagree; `undefined` when
- * `resetKeepTo` is still safe to run.
- */
-export async function checkMergedTipUnmoved(
-  repoRoot: string,
-  preCherry: string,
-  mergedSha: string,
-): Promise<string | undefined> {
-  const currentTip = await git.revParse(repoRoot);
-  if (currentTip === mergedSha) return undefined;
-  return (
-    `afterMerge revert refused: trunk tip ${currentTip} is not the ` +
-    `merged commit ${mergedSha} — a foreign commit landed on trunk ` +
-    `after the cherry-pick; resetting to ${preCherry} would discard it`
-  );
 }
