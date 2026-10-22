@@ -65,7 +65,7 @@ import type { Gate, GateContext, GateResult } from "../src/Gate.js";
 import type { GitStatusRecord } from "../src/git.js";
 import { matchesAny } from "../src/paths.js";
 import type { GatedQueue, GatedQueueContext } from "../src/pendingLedger.js";
-import { descendantsOf, isGoal } from "../src/PendingSchema.js";
+import { isGoal } from "../src/PendingSchema.js";
 import type {
   EntryExtension,
   ParseResult,
@@ -176,10 +176,10 @@ export interface GateEngine {
  * declared depth cap, travelling together.
  *
  * One value rather than two parameters at each gate because the two are one
- * decision: three reads of the queue happen behind this module (the pending
- * gate's, the goal-rank gate's, and the records gate's step descent), and a
- * read holding the extension while another also holds the cap is a gate
- * judging the same listing by a schema its sibling does not use. `undefined`
+ * decision: two reads of the queue happen behind this module (the pending
+ * gate's and the goal-rank gate's), and a read holding the extension while
+ * another also holds the cap is a gate judging the same listing by a schema
+ * its sibling does not use. `undefined`
  * for either is the engine's own reading — the bare core, the parse's own
  * default — never a value spelled here.
  */
@@ -552,18 +552,19 @@ function goalRankGate(
  * same parse the predicate reads (`namedSteps`, `putDown.ts`): a second
  * spelling beside this gate would admit exactly the lines the ship cannot see.
  *
- * The steps themselves come off the queue at the gated commit, through the
- * engine's own listing read and its own walk over `parent` links — build's
- * fence admits no entry file, so that listing is the one the wave selected
- * over. A queue that will not read is refused rather than judged as an entry
- * with no steps, which would pass every misspelling (*Loud or nothing*). The
- * read is taken only when a record names something, so the ordinary build
- * commit pays nothing for it.
+ * The steps themselves are the span's, off {@link GateContext.steps}: the
+ * selection that pulled the entry already walked the queue for them, and the
+ * engine reports that walk beside the entry it scoped this session's fence
+ * from, so a descent here would rediscover a fact the gate was handed —
+ * and rediscover it from a listing that may not read at the gated commit at
+ * all (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*). What a record may name therefore survives a queue
+ * missing or unparseable under the commit being judged, and the ordinary
+ * build commit reads no ledger for it.
  */
 function recordsGate(
   engine: GateEngine,
   putDown: PutDownPredicate,
-  parse: QueueParse,
 ): Gate {
   return {
     name: "records",
@@ -669,8 +670,17 @@ function recordsGate(
       }
 
       if (named.length > 0 && entry !== undefined) {
-        const carries = await stepTagsAt(ctx, engine, parse, entry.tag);
-        if (typeof carries === "string") return refuse(carries, []);
+        // The pair travels together on a span, an undecomposed entry stating
+        // the empty list (`GateContext.steps`, `src/Gate.ts`), so an entry
+        // stated without its steps is a context that cannot answer the
+        // question — refused rather than read as an entry carrying none,
+        // which would refuse every tag the record names (*Loud or nothing*).
+        if (ctx.steps === undefined)
+          return refuse(
+            `the span states ${entry.tag} without its steps, so the steps a record names cannot be checked against the entry`,
+            [],
+          );
+        const carries = ctx.steps.map((step) => step.tag);
         for (const { path, tag } of named) {
           if (carries.includes(tag)) continue;
           problems.push(
@@ -699,41 +709,6 @@ function recordsGate(
       };
     },
   };
-}
-
-/**
- * The tags of every step one entry carries, as the queue at the gated commit
- * holds it — or a refusal naming why the queue could not be read.
- *
- * The listing read and the descent are both the engine's: `readGatedQueue` is
- * the one offset a gate reads the ledger through, and `descendantsOf` is the
- * same walk the dispatcher resolves a slot's steps with, so what this gate
- * holds a record to is the set the ship predicate is handed
- * (`.claude/rules/engineering.md`, *A fact the engine holds is reported, never
- * rediscovered*).
- *
- * The consumer's extension rides the parse for the reason every other queue
- * read here takes it: a queue carrying a declared field is validated against
- * it rather than refused as unknown, and an entry refused is an entry whose
- * steps go missing from this set.
- */
-async function stepTagsAt(
-  ctx: GateContext,
-  engine: GateEngine,
-  parse: QueueParse,
-  tag: string,
-): Promise<string[] | string> {
-  const queue = await engine.readGatedQueue(ctx);
-  if (queue.files === null)
-    return `${queue.rel} missing at ${short(ctx.commitSha)}, so the steps a record names cannot be checked against the entry`;
-  const parsed = engine.parsePendingQueue(
-    queue.files,
-    parse.extension,
-    parse.maxEntryDepth,
-  );
-  if (!parsed.ok)
-    return `${queue.rel} does not parse at ${short(ctx.commitSha)}, so the steps a record names cannot be checked against the entry`;
-  return descendantsOf(parsed.entries, tag).map((step) => step.tag);
 }
 
 /**
@@ -1065,7 +1040,7 @@ export function harnessGates(options: HarnessGatesOptions): Gate[] {
       : {}),
   };
   return [
-    recordsGate(engine, putDown, parse),
+    recordsGate(engine, putDown),
     cleanTreeGate(phase.writablePaths, engine),
     engine.pendingGate(queue),
     perGate(declaration, engine),

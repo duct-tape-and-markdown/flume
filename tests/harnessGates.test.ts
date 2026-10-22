@@ -261,6 +261,7 @@ function ctxFor(
   over: {
     phaseName: string;
     entry?: PendingEntry;
+    steps?: readonly PendingEntry[];
     stateRoot?: { segments: string[] };
   },
 ): GateContext {
@@ -279,6 +280,11 @@ function ctxFor(
     baseSha: span.baseSha,
     touchedPaths: span.touchedPaths,
     ...(over.entry ? { entry: over.entry } : {}),
+    // The entry's steps beside it, the pair a span states together
+    // (`GateContext.steps`, `src/Gate.ts`) — stated here only where the case
+    // states them, so a case can also drive the half-stated context the
+    // records gate refuses.
+    ...(over.steps ? { steps: over.steps } : {}),
     log: () => {},
   };
 }
@@ -885,6 +891,7 @@ it("the records gate refuses a note naming a step tag the entry does not carry",
   const admitted = await records(commitAll("build: finish the step"), {
     phaseName: "build",
     entry: work,
+    steps: [step],
   });
   expect(admitted).toMatchObject({ ok: true });
   expect(admitted.message).toContain("MINE-STEP");
@@ -895,6 +902,7 @@ it("the records gate refuses a note naming a step tag the entry does not carry",
   const refused = await records(commitAll("build: name a step that is not one"), {
     phaseName: "build",
     entry: work,
+    steps: [step],
   });
 
   expect(refused.ok).toBe(false);
@@ -912,8 +920,10 @@ it("the records gate refuses a continuing note naming a step of another entry", 
   const theirs = queueEntry("YOURS-STEP", { kind: "step", parent: "YOURS" });
   await writeQueue([work, step, sibling, theirs]);
 
-  // Non-vacuity: the queue genuinely holds the sibling's step, so the refusal
-  // below is "not this entry's" and not "no such entry anywhere".
+  // Non-vacuity: the queue genuinely holds the sibling's step, and the span
+  // states this entry's alone, so the refusal below is "not this entry's" and
+  // not "no such entry anywhere" — the span's account of the assignment, not
+  // the listing, is what the record is held to.
   await write(
     continuingNotePath(STATE_ROOT, "MINE"),
     "# a segment\n\nFinished: MINE-STEP\n",
@@ -921,6 +931,7 @@ it("the records gate refuses a continuing note naming a step of another entry", 
   const admitted = await records(commitAll("build: put the rest down"), {
     phaseName: "build",
     entry: work,
+    steps: [step],
   });
   expect(admitted).toMatchObject({ ok: true });
 
@@ -931,11 +942,114 @@ it("the records gate refuses a continuing note naming a step of another entry", 
   const refused = await records(commitAll("build: claim a sibling's step"), {
     phaseName: "build",
     entry: work,
+    steps: [step],
   });
 
   expect(refused.ok).toBe(false);
   expect(refused.details).toContain("YOURS-STEP");
   expect(refused.details).toContain("no step of MINE");
+});
+
+it("the records gate holds a record's named steps to the entry's steps with no queue at the gated commit", async () => {
+  const work = queueEntry("MINE");
+  const step = queueEntry("MINE-STEP", { kind: "step", parent: "MINE" });
+  // The queue gone from the commit the gate judges — the state a relocated
+  // or not-yet-seeded ledger leaves behind, and the one a ledger read cannot
+  // answer from. What the record is held to is the span's own account of the
+  // assignment, which the engine already walked the queue for at selection
+  // (`GateContext.steps`, `src/Gate.ts`).
+  await rm(join(repo, STATE_ROOT, "plan", "pending"), {
+    recursive: true,
+    force: true,
+  });
+  await write(notePath(STATE_ROOT, "MINE"), "# done\n\nFinished: MINE-STEP\n");
+  const span = commitAll("build: finish the step with the ledger gone");
+  const over = { phaseName: "build", entry: work, steps: [step] };
+
+  // Non-vacuity on the premise, through the engine's own listing read — the
+  // reader this gate used to descend with says there is nothing to read at
+  // this commit, so the verdicts below cannot be a queue answering quietly.
+  expect((await readGatedQueue(ctxFor(span, over))).files).toBeNull();
+
+  const admitted = await records(span, over);
+  expect(admitted).toMatchObject({ ok: true });
+  expect(admitted.skipped).toBeUndefined();
+  expect(admitted.message).toContain("MINE-STEP");
+
+  // And the refusal still bites by name: the misspelling is one character off
+  // the step the span states, with no listing involved either way.
+  await write(notePath(STATE_ROOT, "MINE"), "# done\n\nFinished: MINE-STEPS\n");
+  const refused = await records(
+    commitAll("build: name a step that is not one"),
+    over,
+  );
+
+  expect(refused.ok).toBe(false);
+  expect(refused.details).toContain(notePath(STATE_ROOT, "MINE"));
+  expect(refused.details).toContain("MINE-STEPS");
+  expect(refused.details).toContain("it carries MINE-STEP");
+});
+
+it("the records gate holds a record's named steps to the entry's steps over an unparseable queue at the gated commit", async () => {
+  const work = queueEntry("MINE");
+  const step = queueEntry("MINE-STEP", { kind: "step", parent: "MINE" });
+  // The other half of a ledger that cannot answer: present and refused by the
+  // schema. A build commit cannot have written this — build's fence admits no
+  // entry file — which is the whole reason the gate judging that commit has no
+  // business re-reading it.
+  await write(`${STATE_ROOT}/plan/pending/WRECKED.json`, "{ not an entry\n");
+  await write(
+    continuingNotePath(STATE_ROOT, "MINE"),
+    "# a segment\n\nFinished: MINE-STEP\n",
+  );
+  const span = commitAll("build: put the rest down beside a wrecked ledger");
+  const over = { phaseName: "build", entry: work, steps: [step] };
+
+  // Non-vacuity on the premise, through the engine's own read and its own
+  // parse: the listing is there and the schema refuses it.
+  const files = (await readGatedQueue(ctxFor(span, over))).files;
+  expect(files).not.toBeNull();
+  expect(parsePendingQueue(files ?? [], entryExtension()).ok).toBe(false);
+
+  const admitted = await records(span, over);
+  expect(admitted).toMatchObject({ ok: true });
+  expect(admitted.message).toContain("MINE-STEP");
+
+  await write(
+    continuingNotePath(STATE_ROOT, "MINE"),
+    "# a segment\n\nFinished: YOURS-STEP\n",
+  );
+  const refused = await records(
+    commitAll("build: claim a step over a wrecked ledger"),
+    over,
+  );
+
+  expect(refused.ok).toBe(false);
+  expect(refused.details).toContain("YOURS-STEP");
+  expect(refused.details).toContain("no step of MINE");
+});
+
+it("the records gate refuses a record naming a step on a span that states its entry without its steps", async () => {
+  const work = queueEntry("MINE");
+  const step = queueEntry("MINE-STEP", { kind: "step", parent: "MINE" });
+  await writeQueue([work, step]);
+  await write(notePath(STATE_ROOT, "MINE"), "# done\n\nFinished: MINE-STEP\n");
+  const span = commitAll("build: finish the step");
+
+  // Non-vacuity: the same span with its steps stated is admitted, so the
+  // refusal below is the half-stated context and not the note.
+  expect(
+    await records(span, { phaseName: "build", entry: work, steps: [step] }),
+  ).toMatchObject({ ok: true });
+
+  // The pair travels together, and a queue holding the step is no substitute:
+  // a context that states the entry alone cannot answer what it carries, so
+  // the gate says that rather than reading it as an entry with no steps,
+  // which would refuse every tag a record names.
+  const refused = await records(span, { phaseName: "build", entry: work });
+
+  expect(refused.ok).toBe(false);
+  expect(refused.message).toContain("MINE without its steps");
 });
 
 it("the records gate refuses a record whose first line is not a title", async () => {
