@@ -493,9 +493,11 @@ The judge does not know which test tool a consumer runs. A `runner` is a
 declared value with three operations, each returning structured results rather
 than exit codes the judge would have to interpret:
 
-- **`run(names, cwd)`** — run the tests whose full names contain each of `names`
-  and report, per name, whether one passing test carried it and whether a
-  skipped test names it. The skipped half is what a `laneTests[]` line is owed
+- **`run(names, cwd)`** — run the whole suite and report, per line in
+  `names`, whether one passing test whose full name contains it carried it and
+  whether a skipped test names it; every failure the run met is reported beside
+  them, which is what the merged-tree regression run and the `base-red` re-run
+  read (*The judges*). The skipped half is what a `laneTests[]` line is owed
   on (*The judges*): a runner whose tool cannot report skips reports `false`,
   and its consumer has no `laneTests[]`.
 - **`runAtBase(names, files, baseSha, cwd)`** — lay the merged bytes of `files`
