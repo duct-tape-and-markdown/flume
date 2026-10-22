@@ -1,10 +1,7 @@
 {
   "tag": "THE-VITEST-REPORT-IS-READ-WHERE-THE-RUNNER-TOLD-IT",
   "gate": {
-    "kind": "blockedBy",
-    "tags": [
-      "THE-VITEST-RUNNER-TAKES-THE-CONSUMERS-SCOPE"
-    ]
+    "kind": "open"
   },
   "dependsOnForks": [],
   "kind": "work",
