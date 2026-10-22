@@ -341,6 +341,15 @@ function perGate(declaration: Declaration, engine: GateEngine): Gate {
 }
 
 /**
+ * The goal-rank gate's reason for a green that judged placement and not
+ * provenance — the discriminant a chain keys on instead of re-reading the
+ * message's English (`GateResult.verdict`, `src/Gate.ts`). Not `skipped`: the
+ * placement leg ran, and a gate claiming it judged nothing would be as wrong
+ * in the other direction.
+ */
+const PLACEMENT_ONLY = "placement-only";
+
+/**
  * The goal rank's two rules, each read at the commit that could have broken
  * it (`spec/harness.md`, *The gates the discipline needs*): **only a root
  * `group` carries one**, and **only an inbox commit adds or changes one**.
@@ -379,11 +388,12 @@ function perGate(declaration: Declaration, engine: GateEngine): Gate {
  * one is what holds the commit's own queue to the schema.
  *
  * **One leg cannot be judged under a relocated state root** and the verdict
- * says so rather than reading as green: the engine reads that queue off the
- * disk at both ends of the span, so the two listings are one and no rank can
- * read as moved (`readGatedQueue`, `src/pendingLedger.ts`). Placement still
- * holds there, for the reason the pending gate's schema leg does — the disk
- * listing is the queue the next tick reads.
+ * states that on {@link PLACEMENT_ONLY} rather than reading as the green a
+ * fully judged queue earns: the engine reads that queue off the disk at both
+ * ends of the span, so the two listings are one and no rank can read as moved
+ * (`readGatedQueue`, `src/pendingLedger.ts`). Placement still holds there,
+ * for the reason the pending gate's schema leg does — the disk listing is the
+ * queue the next tick reads.
  */
 function goalRankGate(
   phaseName: string,
@@ -466,13 +476,21 @@ function goalRankGate(
       const placed = `${parsed.entries.length} entr${parsed.entries.length === 1 ? "y" : "ies"} placed, ${ranked} carrying a goal rank`;
 
       if (queue.dirRel === undefined) {
-        // Provenance is unjudgeable here and the verdict says so rather than
-        // reading as green: the engine reads a relocated root's queue off the
-        // disk at both ends of the span, so the two listings are one and the
-        // leg below would report every rank unmoved whatever this commit did.
+        // Provenance is unjudgeable here: the engine reads a relocated root's
+        // queue off the disk at both ends of the span, so the two listings
+        // are one and the leg below would report every rank unmoved whatever
+        // this commit did (`readGatedQueue`, `src/pendingLedger.ts`).
+        //
+        // Placement *was* judged, above, so this is no skip — half of what
+        // the gate names ran. `verdict` is the engine's declared discriminant
+        // for why a gate ruled as it did (`GateResult.verdict`,
+        // `src/Gate.ts`), which is where the unjudged half is stated: without
+        // it this green reads as the one a fully judged queue earns, and only
+        // the message's English separates them.
         return {
           ok: true,
           message: `${placed}; no rank can read as moved under a relocated state root, where both ends of the span are one disk listing`,
+          verdict: PLACEMENT_ONLY,
         };
       }
 
@@ -619,14 +637,19 @@ function newBlockerGate(phaseName: string, engine: GateEngine): Gate {
       const stated = `${edges.length} \`blockedBy\` edge${edges.length === 1 ? "" : "s"} in ${queue.rel}`;
 
       if (queue.dirRel === undefined) {
-        // Unjudgeable here, and the verdict says so rather than reading as
-        // green: the engine reads a relocated root's queue off the disk at
-        // both ends of the span, so the two listings are one and every edge
-        // below would read as already standing whatever this commit wrote
-        // (`readGatedQueue`, `src/pendingLedger.ts`).
+        // Unjudgeable here: the engine reads a relocated root's queue off the
+        // disk at both ends of the span, so the two listings are one and
+        // every edge below would read as already standing whatever this
+        // commit wrote (`readGatedQueue`, `src/pendingLedger.ts`).
+        //
+        // This gate judges one thing, and it judged none of it, so the fact
+        // is `skipped` — a green without it claims the judge ran
+        // (`GateResult.skipped`, `src/Gate.ts`), and the edges the message
+        // counts would read as edges this gate cleared.
         return {
           ok: true,
           message: `${stated}; no edge can read as new under a relocated state root, where both ends of the span are one disk listing`,
+          skipped: "no edge can be told from a standing one under a relocated state root",
         };
       }
 

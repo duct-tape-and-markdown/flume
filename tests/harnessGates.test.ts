@@ -164,6 +164,20 @@ interface Span {
 
 let repo: string;
 
+/**
+ * A directory outside the repository, holding the state root a case points
+ * `FLUME_DIR` at — its own temp root, so the two spellings cannot be nested
+ * one inside the other and the engine's offset really comes back absent.
+ *
+ * A relocated root's queue is read off the **disk** rather than out of a
+ * commit (`readGatedQueue`, `src/pendingLedger.ts`), so a case about that leg
+ * needs a real listing there; the two cases below are the only ones that do.
+ */
+let elsewhere: string;
+
+/** The state root under {@link elsewhere} — `.flume`, as a relocation spells it. */
+const outsideRoot = (): string => join(elsewhere, ".flume");
+
 const write = async (rel: string, text: string): Promise<void> => {
   const abs = join(repo, rel);
   await mkdir(dirname(abs), { recursive: true });
@@ -255,10 +269,33 @@ const writeQueue = async (entries: readonly unknown[]): Promise<void> => {
 };
 
 /**
+ * The same queue, written under the relocated state root instead — on disk
+ * and committed nowhere, which is the whole of what a root outside the
+ * repository means: no commit's tree can address it, so the only listing
+ * either end of the span has is this one.
+ */
+const writeQueueOutside = async (
+  entries: readonly PendingEntry[],
+): Promise<void> => {
+  const dir = join(outsideRoot(), "plan", "pending");
+  await mkdir(dir, { recursive: true });
+  for (const name of await readdir(dir)) {
+    if (name.endsWith(".json")) await rm(join(dir, name), { force: true });
+  }
+  for (const entry of entries) {
+    await writeFile(
+      join(dir, entryFileName(entry.tag)),
+      `${JSON.stringify(entry, null, 2)}\n`,
+    );
+  }
+};
+
+/**
  * The context a dispatcher builds for a gate on this repo — `.flume` at the
- * repo root by default, or the nested root a case names. The offset is the
- * engine's own, computed from the same two roots a dispatcher computes it
- * from, never a spelling of the tester's.
+ * repo root by default, or the root a case names: `segments` under the repo
+ * for a nested root, `at` for one that genuinely sits elsewhere on disk. The
+ * offset is the engine's own, computed from the same two roots a dispatcher
+ * computes it from, never a spelling of the tester's.
  */
 function ctxFor(
   span: Span,
@@ -266,12 +303,15 @@ function ctxFor(
     phaseName: string;
     entry?: PendingEntry;
     steps?: readonly PendingEntry[];
-    stateRoot?: { segments: string[] };
+    stateRoot?: { segments: string[] } | { at: string };
   },
 ): GateContext {
-  const flumeDir = over.stateRoot
-    ? join(repo, ...over.stateRoot.segments)
-    : join(repo, STATE_ROOT);
+  const flumeDir =
+    over.stateRoot === undefined
+      ? join(repo, STATE_ROOT)
+      : "at" in over.stateRoot
+        ? over.stateRoot.at
+        : join(repo, ...over.stateRoot.segments);
   return {
     cwd: repo,
     repoRoot: repo,
@@ -361,6 +401,7 @@ const records = (
 
 beforeEach(async () => {
   repo = await mkTempDir("flume-harness-gates-");
+  elsewhere = await mkTempDir("flume-harness-gates-elsewhere-");
   git(repo, ["init", "-q"]);
   git(repo, ["config", "user.email", "t@example.com"]);
   git(repo, ["config", "user.name", "t"]);
@@ -395,6 +436,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   if (repo) await rm(repo, { recursive: true, force: true });
+  if (elsewhere) await rm(elsewhere, { recursive: true, force: true });
 });
 
 it("a plan commit whose queue carries a stranded per cite is refused", async () => {
@@ -797,6 +839,55 @@ it("a rank an inbox commit changes on a standing goal passes the gate", async ()
   expect(verdict.skipped).toBeUndefined();
 });
 
+it("a goal-rank verdict under a relocated state root states that it ruled on placement alone", async () => {
+  const gate = goalRankGateOf("plan-derive");
+
+  // Judged whole against the repo's own root first — a derive commit that
+  // adds a rank, which is exactly what the provenance leg refuses. Without
+  // it the green below could be a gate that never rules at all.
+  await baseQueue([queueEntry("THE-WORK")]);
+  await writeQueue([queueEntry("THE-WORK"), goal("A-GOAL", 1)]);
+  const span = commitAll("plan: derive files a goal and ranks it");
+  const judged = await gate.run(ctxFor(span, { phaseName: "plan-derive" }));
+  expect(judged.ok).toBe(false);
+  expect(judged.verdict).toBeUndefined();
+
+  // The offset the engine reports for a state root outside the repo: absent,
+  // because no path in a commit's tree can address it.
+  const at = outsideRoot();
+  expect(computeStateRootRel(repo, at)).toBeUndefined();
+
+  // The queue that root really holds, on disk: a goal with its rank beside
+  // the work, well placed.
+  await writeQueueOutside([goal("A-GOAL", 1), queueEntry("THE-WORK")]);
+  const placement = await gate.run(
+    ctxFor(span, { phaseName: "plan-derive", stateRoot: { at } }),
+  );
+
+  expect(placement, placement.details ?? placement.message).toMatchObject({
+    ok: true,
+  });
+  // The same span that was refused reads green, because provenance went
+  // unjudged — and the verdict is where that is stated, rather than left to
+  // the message's English for a reader to parse.
+  expect(placement.verdict).toBe("placement-only");
+  // Not `skipped`: the placement leg ran, and the green names what it placed.
+  expect(placement.skipped).toBeUndefined();
+  expect(placement.message).toContain("2 entries placed, 1 carrying a goal rank");
+
+  // And placement is a ruling there rather than a count in a message: the
+  // same root holding a rank on a `work` entry is refused.
+  await writeQueueOutside([
+    goal("A-GOAL", 1),
+    queueEntry("THE-WORK", { rank: 2 }),
+  ]);
+  const refused = await gate.run(
+    ctxFor(span, { phaseName: "plan-derive", stateRoot: { at } }),
+  );
+  expect(refused.ok).toBe(false);
+  expect(refused.details).toContain("THE-WORK");
+});
+
 /**
  * Build files no entry, so there is no rank on its commit to place and none
  * it could have moved — the same reasoning the merged-tree pending gate's
@@ -1002,6 +1093,46 @@ it("a queue stating no blockedBy edge is reported skipped, not as a judged green
   // Vacuous-by-design is spelled over a populated queue: the entries were
   // there and none of them stated an edge.
   expect(verdict.message).toContain("2 entries");
+});
+
+it("a new-blocker verdict under a relocated state root is reported skipped, not as a judged green", async () => {
+  const gate = newBlockerGateOf("plan-derive");
+
+  // Judged whole against the repo's own root first — the dangling edge this
+  // gate exists to refuse. Without it the green below could be a gate that
+  // never rules at all.
+  await baseQueue([queueEntry("THE-BLOCKER")]);
+  await writeQueue([
+    queueEntry("THE-BLOCKER"),
+    waitsOn("THE-WAITER", "NEVER-FILED"),
+  ]);
+  const span = commitAll("plan: derive files a wait on a tag it never filed");
+  const judged = await gate.run(ctxFor(span, { phaseName: "plan-derive" }));
+  expect(judged.ok).toBe(false);
+  expect(judged.skipped).toBeUndefined();
+
+  // The offset the engine reports for a state root outside the repo: absent,
+  // because no path in a commit's tree can address it.
+  const at = outsideRoot();
+  expect(computeStateRootRel(repo, at)).toBeUndefined();
+
+  // The same dangling edge, in the queue that root really holds on disk.
+  await writeQueueOutside([
+    queueEntry("THE-BLOCKER"),
+    waitsOn("THE-WAITER", "NEVER-FILED"),
+  ]);
+  const verdict = await gate.run(
+    ctxFor(span, { phaseName: "plan-derive", stateRoot: { at } }),
+  );
+
+  expect(verdict).toMatchObject({ ok: true });
+  // Non-vacuity on the skip: the edge was there and the gate read it, so this
+  // is a judge that could not run rather than a queue that stated nothing —
+  // which the empty-queue arm's own skip would say instead.
+  expect(verdict.message).toContain("1 `blockedBy` edge");
+  expect(verdict.skipped).toBe(
+    "no edge can be told from a standing one under a relocated state root",
+  );
 });
 
 /**
