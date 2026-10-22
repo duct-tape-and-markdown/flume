@@ -1348,10 +1348,10 @@ describe("the shell-backed builtins read a batch (spec/worktrees.md 'Batched mer
       // single-span facts withheld — so the green below is the builtin
       // reading a merge of three and not one span wearing a batch's name.
       expect(batch.batch).toHaveLength(3);
-      expect({ entry: batch.entry, baseSha: batch.baseSha }).toEqual({
-        entry: undefined,
-        baseSha: undefined,
-      });
+      expect({
+        assignment: batch.assignment,
+        baseSha: batch.baseSha,
+      }).toEqual({ assignment: undefined, baseSha: undefined });
 
       const scope: GateRunScope = {
         worktreeCtx: {

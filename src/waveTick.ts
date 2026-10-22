@@ -1046,8 +1046,7 @@ async function runFanoutEntry(
       ctx,
       ref,
       label: entry.tag,
-      entry,
-      steps,
+      assignment: { entry, steps },
       ...(extraEnv !== undefined ? { extraEnv } : {}),
     })),
   };

@@ -12,7 +12,14 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { BatchingGate, GateBatchSpan, GateSite, SingleSpanGate } from "../src/Gate.ts";
+import type {
+  BatchingGate,
+  GateAssignment,
+  GateBatchSpan,
+  GateSite,
+  SingleSpanGate,
+} from "../src/Gate.ts";
+import type { PendingEntry } from "../src/PendingSchema.ts";
 import {
   chainLoadGate,
   eslintGate,
@@ -225,7 +232,29 @@ const span = (
   baseSha: string,
   landedOnSha: string,
   touchedPaths: string[],
-): GateBatchSpan => ({ commitSha, baseSha, landedOnSha, touchedPaths });
+  assignment?: GateAssignment,
+): GateBatchSpan => ({
+  commitSha,
+  baseSha,
+  landedOnSha,
+  touchedPaths,
+  ...(assignment ? { assignment } : {}),
+});
+
+/** A queued entry, core fields only — these cases read its tag and nothing else. */
+const queued = (tag: string): PendingEntry => ({
+  tag,
+  gate: { kind: "open" },
+  dependsOnForks: [],
+  kind: "work",
+  files: { new: [], edit: [], retire: [] },
+});
+
+/** One session's assignment, as a span of a batch states its own. */
+const assigned = (tag: string, steps: readonly string[]): GateAssignment => ({
+  entry: queued(tag),
+  steps: steps.map(queued),
+});
 
 describe("batchGateContext — what a merge of several spans hands its gates", () => {
   const spans = [
@@ -234,17 +263,29 @@ describe("batchGateContext — what a merge of several spans hands its gates", (
     span("c3", "base3", "c2", ["src/c.ts"]),
   ];
 
-  it("a batch gate context withholds entry, baseSha and landedOnSha", () => {
-    const ctx = batchGateContext(site, spans);
+  it("a batch's gate context withholds the single-span assignment", () => {
+    // The spans carry assignments of their own here: a batch's top-level
+    // absence is only "withheld" against spans that had a session to state
+    // (`.claude/rules/engineering.md`, *A green verdict is proven
+    // non-vacuous*).
+    const assignedSpans = [
+      span("c1", "base1", "tip0", ["src/a.ts"], assigned("WORK-A", ["STEP-A"])),
+      span("c2", "base2", "c1", ["src/b.ts"], assigned("WORK-B", [])),
+    ];
+    const ctx = batchGateContext(site, assignedSpans);
 
     // Non-vacuity: the spans each carry the three facts, so their absence at
     // the top level is the context withholding them rather than a batch that
     // had none to state.
-    expect(ctx.batch).toHaveLength(3);
-    expect(ctx.batch.map((s) => s.baseSha)).toEqual(["base1", "base2", "base3"]);
-    expect(ctx.batch.map((s) => s.landedOnSha)).toEqual(["tip0", "c1", "c2"]);
+    expect(ctx.batch).toHaveLength(2);
+    expect(ctx.batch.map((s) => s.assignment?.entry.tag)).toEqual([
+      "WORK-A",
+      "WORK-B",
+    ]);
+    expect(ctx.batch.map((s) => s.baseSha)).toEqual(["base1", "base2"]);
+    expect(ctx.batch.map((s) => s.landedOnSha)).toEqual(["tip0", "c1"]);
 
-    expect(ctx.entry).toBeUndefined();
+    expect(ctx.assignment).toBeUndefined();
     expect(ctx.baseSha).toBeUndefined();
     expect(ctx.landedOnSha).toBeUndefined();
   });

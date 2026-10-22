@@ -149,14 +149,14 @@ function isDeclaredFile(
  * instead of a reviewer's reading of the commit body. The engine reads none of
  * `tests[]`; a declared extension field is judged by the chain that declared
  * it, and the engine supplies the injection points this needs
- * (`GateContext.entry`, `GateResult.details`) rather than the policy.
+ * (`GateContext.assignment`, `GateResult.details`) rather than the policy.
  *
  * Takes the suite gate as a parameter — any gate whose `details` carry a
  * vitest JSON report composes, and the wrapper is drivable over a report the
  * caller supplies — and the engine's path rule alongside it, for matching
  * the reporter's absolute filenames against the entry's declaration.
  *
- * The wrapper reads `ctx.entry`, which is a **per-span** fact a batched merge
+ * The wrapper reads `ctx.assignment`, which is a **per-span** fact a batched merge
  * withholds, so it declares `batches: false` whatever the gate it wraps
  * declares — `shellGate` and the package-manager builtins each say they read a
  * batch, since a bare command reads only its `cwd`. A phase hanging this
@@ -175,7 +175,9 @@ export function judgedByEntryTests(
       // `tests[]` is this chain's declared extension field — narrow it through
       // the same schema the parse gate validated it with. Absent parses to the
       // schema's `[]` default: an entry naming no behavior has none to judge.
-      const named = entryExtension.tests.schema.parse(ctx.entry?.tests);
+      const named = entryExtension.tests.schema.parse(
+        ctx.assignment?.entry.tests,
+      );
       const result = await suite.run(ctx);
       if (!result.ok || named.length === 0) return result;
 
@@ -249,8 +251,8 @@ const inWords = (s: SpanShape): string =>
  * the three classes *mean* about the tree is nobody's rule but this chain's,
  * so the judgement lives here. Every fact it needs is one the engine already
  * reported on `GateContext` (spec/chain.md, *What a gate receives*) and none
- * is re-derived: `entry` is the pick the span was provisioned for, `steps` is
- * the rest of that one session's assignment, `touchedPaths` is what the commit
+ * is re-derived: `assignment` is the session the span was provisioned for —
+ * the pick and its steps as one value — `touchedPaths` is what the commit
  * changed, `baseSha` is the tip the tick branched from — the one value that
  * separates "the tick created this" from "it was already there", and the
  * reason this gate never shells its own `git merge-base` or guesses the base
@@ -262,8 +264,8 @@ const inWords = (s: SpanShape): string =>
  * paths touched its own declaration and nothing of its parent's. Reading
  * `entry.files` alone would refuse exactly that span — a gate narrower than
  * the fence the same engine handed the agent. The steps arrive on the context
- * beside the entry, and a gate could not walk for them: it holds one entry and
- * no queue.
+ * *with* the entry, one assignment, and a gate could not walk for them: it
+ * holds one entry and no queue.
  *
  * Only declared paths the span actually touched are judged — a deliberate
  * narrowing, declared here with the refusal that bounds it
@@ -291,8 +293,8 @@ export function declaredFilesGate(
     name: "declared-files",
     when: "afterCommit",
     async run(ctx): Promise<GateResult> {
-      const entry = ctx.entry;
-      if (!entry) {
+      const assignment = ctx.assignment;
+      if (!assignment) {
         return {
           ok: true,
           message: "no entry on this tick",
@@ -300,16 +302,17 @@ export function declaredFilesGate(
             "a singleton tick carries no entry, so there is no declaration to judge",
         };
       }
+      const { entry, steps } = assignment;
       const { baseSha, commitSha, touchedPaths } = ctx;
       const span = `${baseSha.slice(0, 7)}..${commitSha.slice(0, 7)}`;
       // The session's whole declaration: the entry's own classes and its
       // steps', which is the union the engine fenced the tick to
-      // (`GateContext.steps`). Keyed by path, so a path two of the session's
+      // (`GateContext.assignment`). Keyed by path, so a path two of the session's
       // entries both name is judged once, under the last of them in listing
       // order — this gate judges the span against the queue, and a path
       // declared twice within one session is the queue's own defect.
       const declared = new Map<string, DeclaredKind>(
-        [entry, ...(ctx.steps ?? [])].flatMap((e) => [
+        [entry, ...steps].flatMap((e) => [
           ...e.files.new.map((f) => [f.path, "new"] as const),
           ...e.files.edit.map((f) => [f.path, "edit"] as const),
           ...e.files.retire.map((p) => [p, "retire"] as const),

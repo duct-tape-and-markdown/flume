@@ -64,7 +64,7 @@ function ctx(cwd: string, overrides: Partial<GateContext> = {}): GateContext {
  * than spelled a second time, so one fixture states both widths' roots.
  */
 function siteOf(from: GateContext): GateSite {
-  const { commitSha, baseSha, touchedPaths, batch, entry, steps, ...site } =
+  const { commitSha, baseSha, touchedPaths, batch, assignment, ...site } =
     from;
   return site;
 }

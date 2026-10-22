@@ -38,13 +38,13 @@
 import { batchGateContext } from "./gateBatch.js";
 import type {
   BatchGateContext,
+  GateAssignment,
   GateBatchSpan,
   GateContext,
   GateSite,
 } from "./Gate.js";
 import { runGate } from "./gateRun.js";
 import * as git from "./git.js";
-import type { PendingEntry } from "./PendingSchema.js";
 import type { Phase } from "./Phase.js";
 import { buildGateRevert, type PriorAttemptRef } from "./priorAttempts.js";
 import { thrownMessage } from "./thrown.js";
@@ -222,19 +222,13 @@ export async function carryMergeSpan(carry: {
   /** The span's head — the last commit the agent left on its worktree branch. */
   head: string;
   /**
-   * The entry this span carries, for the gates that read it
-   * (`GateContext.entry`, `src/Gate.ts`) — absent on a singleton phase's span,
-   * which has no entry at all.
+   * The session this span carries — the entry and its steps as the queue
+   * listing its slot pulled from held them, for the gates that read it
+   * (`GateContext.assignment`, `src/Gate.ts`). Absent on a singleton phase's
+   * span, which is assigned nothing; one value, so what reaches the gates is
+   * the leg's whole account of the session rather than half of one.
    */
-  entry?: PendingEntry;
-  /**
-   * That entry's steps, as the queue listing its slot pulled from held them
-   * (`GateContext.steps`, `src/Gate.ts`). Stated by every leg that states an
-   * {@link entry} — an entry no producer decomposed states the empty list —
-   * and absent with it, so what reaches the gates is the leg's own account of
-   * the session's assignment rather than a default invented here.
-   */
-  steps?: readonly PendingEntry[];
+  assignment?: GateAssignment;
   /** Where a gate revert's prior-attempt record lands (`priorAttemptRef`, `src/priorAttempts.ts`). */
   ref: PriorAttemptRef;
   /** This carrier's {@link BystanderCheckpoint}, updated in place when this span is the one that takes it. */
@@ -285,11 +279,10 @@ export async function carryMergeSpan(carry: {
       ...gateSite(leg, phase),
       commitSha: mergedSha,
       touchedPaths,
-      ...(carry.entry ? { entry: carry.entry } : {}),
-      // The entry's steps beside it: one span is one session, and a session's
-      // footprint is the entry's declaration and its steps' together
-      // (`GateContext.steps`, `src/Gate.ts`).
-      ...(carry.steps ? { steps: carry.steps } : {}),
+      // One span is one session, and a session's footprint is the entry's
+      // declaration and its steps' together, so the gates read the pair as
+      // one value (`GateContext.assignment`, `src/Gate.ts`).
+      ...(carry.assignment ? { assignment: carry.assignment } : {}),
       // The span's own base, not the tip it landed on: an `afterMerge` gate
       // reading trunk needs the tip its agent branched from to tell an input
       // the span ignored from one that landed after it started
@@ -386,10 +379,8 @@ interface BatchSpanInput {
   base: string;
   /** The span's head — the last commit the agent left on its worktree branch. */
   head: string;
-  /** The entry this span carries, for the batch's gates to read as its own ({@link GateBatchSpan}). */
-  entry?: PendingEntry;
-  /** That entry's steps, on {@link carryMergeSpan}'s terms — stated with {@link entry} and absent with it. */
-  steps?: readonly PendingEntry[];
+  /** The session this span carries, for the batch's gates to read as its own ({@link GateBatchSpan}). */
+  assignment?: GateAssignment;
   /** This span's stake window, on {@link carryMergeSpan}'s terms — before its own pick, never the batch's first. */
   stake?: () => Promise<void>;
   /** The words this span's own pick is reported in. */
@@ -530,8 +521,7 @@ export async function carryMergeBatch(carry: {
     }
     landed.push(picked);
     gateSpans.push({
-      ...(span.entry ? { entry: span.entry } : {}),
-      ...(span.steps ? { steps: span.steps } : {}),
+      ...(span.assignment ? { assignment: span.assignment } : {}),
       commitSha: picked.mergedSha,
       baseSha: span.base,
       landedOnSha: picked.landedOnSha,

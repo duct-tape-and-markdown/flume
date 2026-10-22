@@ -712,10 +712,11 @@ function newBlockerGate(phaseName: string, engine: GateEngine): Gate {
  * same parse the predicate reads (`namedSteps`, `putDown.ts`): a second
  * spelling beside this gate would admit exactly the lines the ship cannot see.
  *
- * The steps themselves are the span's, off {@link GateContext.steps}: the
+ * The steps themselves are the span's, off {@link GateContext.assignment}: the
  * selection that pulled the entry already walked the queue for them, and the
- * engine reports that walk beside the entry it scoped this session's fence
- * from, so a descent here would rediscover a fact the gate was handed —
+ * engine reports that walk as one value with the entry it scoped this
+ * session's fence from — so there is no entry here without its steps to rule
+ * on, and a descent would rediscover a fact the gate was handed —
  * and rediscover it from a listing that may not read at the gated commit at
  * all (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
  * never rediscovered*). What a record may name therefore survives a queue
@@ -758,7 +759,8 @@ function recordsGate(
       // The tick's own notes, one per kind: which of them it wrote is the
       // tick's own verdict and the chain's to read (`chain.ts`), so what this
       // holds is only that whichever it wrote carries *its* tag.
-      const entry = ctx.entry;
+      const assignment = ctx.assignment;
+      const entry = assignment?.entry;
       // The entry's continuation, on the one commit that has to take it: a
       // build commit this span's own predicate reads as finishing the entry.
       // `repoRoot` is the tick's worktree under `afterCommit`, which is the
@@ -829,22 +831,17 @@ function recordsGate(
         );
       }
 
-      if (named.length > 0 && entry !== undefined) {
-        // The pair travels together on a span, an undecomposed entry stating
-        // the empty list (`GateContext.steps`, `src/Gate.ts`), so an entry
-        // stated without its steps is a context that cannot answer the
-        // question — refused rather than read as an entry carrying none,
-        // which would refuse every tag the record names (*Loud or nothing*).
-        if (ctx.steps === undefined)
-          return refuse(
-            `the span states ${entry.tag} without its steps, so the steps a record names cannot be checked against the entry`,
-            [],
-          );
-        const carries = ctx.steps.map((step) => step.tag);
+      if (named.length > 0 && assignment !== undefined) {
+        // The entry and its steps arrive as one value, an undecomposed entry
+        // stating the empty list (`GateContext.assignment`, `src/Gate.ts`), so
+        // a span that named the entry is a span that answered what it carries:
+        // the empty list here is "no steps" and never "unreported", and the
+        // tags below are judged rather than refused wholesale.
+        const carries = assignment.steps.map((step) => step.tag);
         for (const { path, tag } of named) {
           if (carries.includes(tag)) continue;
           problems.push(
-            `${path}: names \`${tag}\` as finished, which is no step of ${entry.tag}` +
+            `${path}: names \`${tag}\` as finished, which is no step of ${assignment.entry.tag}` +
               (carries.length === 0
                 ? ` — the entry carries no steps, so it names none`
                 : ` — it carries ${carries.join(", ")}`),

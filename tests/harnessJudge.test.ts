@@ -617,14 +617,19 @@ const SITE: GateSite = {
   log: () => {},
 };
 
-const gateContext = (
-  over: Pick<GateContext, "entry" | "touchedPaths">,
-): GateContext => ({
+const gateContext = (over: {
+  entry: PendingEntry;
+  touchedPaths: GateContext["touchedPaths"];
+}): GateContext => ({
   ...SITE,
   commitSha: "a".repeat(40),
   baseSha: BASE_SHA,
   landedOnSha: "b".repeat(40),
-  ...over,
+  touchedPaths: over.touchedPaths,
+  // The entry and its steps as one value, which is how the dispatcher states
+  // a session (`GateContext.assignment`, `src/Gate.ts`); these cases judge
+  // named lines, which no step of the entry carries.
+  assignment: { entry: over.entry, steps: [] },
 });
 
 /** The entry a span was provisioned for, naming one behavior. */
@@ -999,7 +1004,7 @@ describe("the named-lines gate over a batch", () => {
     touchedPaths: readonly string[],
     baseSha = BASE_SHA,
   ): GateBatchSpan => ({
-    entry,
+    assignment: { entry, steps: [] },
     commitSha: "c".repeat(40),
     baseSha,
     landedOnSha: "b".repeat(40),

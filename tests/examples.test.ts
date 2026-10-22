@@ -1701,7 +1701,7 @@ describe("cascade-chain.ts — the plan ladder over a real tick", () => {
 
 /**
  * `.claude/rules/engine-boundary.md`, *Surface, not prescription* — the engine
- * offers the injection points (`GateContext.entry`, `GateResult.details`) and
+ * offers the injection points (`GateContext.assignment`, `GateResult.details`) and
  * reads none of `tests[]`; judging a declared extension field is the chain's.
  * Cascade declared the field and judged nothing, so the flagship taught the
  * shape of acceptance-driven backpressure without the gate that makes it
@@ -1763,14 +1763,17 @@ describe("cascade-chain.ts — the entry's tests[] is judged on the trunk", () =
     commitSha: "c".repeat(40),
     baseSha: "b".repeat(40),
     touchedPaths: [],
-    entry: {
-      tag: "NAMED-BEHAVIOR",
-      gate: { kind: "open" },
-      dependsOnForks: [],
-      kind: "work",
-      files: { new: [], edit: [], retire: [] },
-      tests,
-    } satisfies PendingEntry,
+    assignment: {
+      entry: {
+        tag: "NAMED-BEHAVIOR",
+        gate: { kind: "open" },
+        dependsOnForks: [],
+        kind: "work",
+        files: { new: [], edit: [], retire: [] },
+        tests,
+      } satisfies PendingEntry,
+      steps: [],
+    },
     log: () => {},
   });
 
@@ -1913,7 +1916,7 @@ describe("cascade-chain.ts — the entry's file classes are judged against the s
     commitSha: TIP,
     log: () => {},
     touchedPaths,
-    ...(entry ? { entry, steps: steps ?? [] } : {}),
+    ...(entry ? { assignment: { entry, steps: steps ?? [] } } : {}),
   });
 
   it("the cascade example's gate reads the entry tag and the span's base sha from its gate context", async () => {
@@ -2047,7 +2050,7 @@ describe("cascade-chain.ts — the entry's file classes are judged against the s
   it("the example declared-files gate passes a span that touched only a step's declared files", async () => {
     // A span is one session's: the `work` entry it was provisioned for and
     // its steps, fenced to the union of their `files`
-    // (`GateContext.steps`, `src/Gate.ts`). A session that spent its tick on
+    // (`GateContext.assignment`, `src/Gate.ts`). A session that spent its tick on
     // a step's paths met its own declaration and nothing of its parent's, so
     // a gate reading `entry.files` alone refuses a commit the engine's own
     // fence allowed.
@@ -2783,7 +2786,7 @@ describe("docs/CHAIN-AUTHORING.md — the gate section walks GateContext", () =>
     const landedOn = bulletFor("landedOnSha");
     expect(landedOn).toContain("`afterMerge`");
     expect(landedOn).toContain("Absent under `afterCommit`");
-    expect(bulletFor("entry")).toContain("absent on a singleton tick");
+    expect(bulletFor("assignment")).toContain("absent on a singleton tick");
   });
 });
 

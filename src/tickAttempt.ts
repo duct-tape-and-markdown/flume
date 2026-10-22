@@ -32,7 +32,7 @@ import {
 } from "./Agent.js";
 import { bound } from "./bounds.js";
 import { writablePathsGate } from "./builtinGates.js";
-import type { Gate } from "./Gate.js";
+import type { Gate, GateAssignment } from "./Gate.js";
 import type { GateBounds } from "./gateDeadline.js";
 import { runGate } from "./gateRun.js";
 import * as git from "./git.js";
@@ -292,26 +292,26 @@ export async function runAttempt(
     ref: PriorAttemptRef;
     /** What every log line and record here is keyed by: the entry tag under fanout, the phase name for a singleton. */
     label: string;
-    /** The entry a fanout attempt carries; absent for a singleton, which assigns none. */
-    entry?: PendingEntry;
     /**
-     * That entry's steps, as the listing the slot pulled from held them
-     * (`ShipContext.steps`, `src/Phase.ts`). The attempt's own fence is the
-     * whole session's footprint — the entry's files and its steps' together
-     * (`spec/pending.md`, *The queue is a forest*) — and this one value
-     * reaches both sides of it: the `<harness>` block the agent reads and the
-     * write guard that enforces it. Empty for a singleton and for an entry no
-     * producer decomposed.
+     * What a fanout attempt was assigned — the entry and its steps, as the
+     * listing the slot pulled from held them ({@link GateAssignment},
+     * `src/Gate.ts`); absent for a singleton, which is assigned nothing. The
+     * attempt's own fence is the whole session's footprint — the entry's files
+     * and its steps' together (`spec/pending.md`, *The queue is a forest*) —
+     * and this one value reaches every side of it: the `<harness>` block the
+     * agent reads, the write guard that enforces it, and the gates that judge
+     * the commit against it.
      */
-    steps?: readonly PendingEntry[];
+    assignment?: GateAssignment;
     extraEnv?: Record<string, string>;
   },
 ): Promise<AttemptOutcome> {
-  const { phase, chain, agent, wt, ctx: tickCtx, ref, label, entry } = opts;
-  // One listing for both sides of the fence — rendered and enforced — so
-  // neither can state a scope the other does not
+  const { phase, chain, agent, wt, ctx: tickCtx, ref, label } = opts;
+  // One value for every side of the fence — rendered, enforced and judged —
+  // so none can state a scope another does not
   // (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
-  const steps = opts.steps ?? [];
+  const assignment = opts.assignment;
+  const entry = assignment?.entry;
   const prior = await ctx.attempts.read(ref);
 
   const argsResult = await resolvePromptArgs(ctx, phase, tickCtx, ref, label);
@@ -336,7 +336,12 @@ export async function runAttempt(
       template: ctx.promptTemplate,
       cwd: wt.path,
       args: argsResult.args,
-      ...(entry ? { assignedEntry: entry, assignedSteps: steps } : {}),
+      ...(assignment
+        ? {
+            assignedEntry: assignment.entry,
+            assignedSteps: assignment.steps,
+          }
+        : {}),
       ...(prior ? { priorAttempt: prior } : {}),
     });
   } catch (err) {
@@ -455,8 +460,7 @@ export async function runAttempt(
     phase,
     wt.path,
     headSha,
-    entry,
-    steps,
+    assignment,
     spanBase,
     spanTouchedPaths,
   );
@@ -695,13 +699,12 @@ async function runAfterCommitGates(
   phase: Phase,
   cwd: string,
   commitSha: string,
-  assignedEntry: PendingEntry | undefined,
   /**
-   * `assignedEntry`'s steps — the listing its own fence reads them from, the
-   * same value the `<harness>` block was rendered with
-   * (`RenderOptions`, `src/Prompt.ts`).
+   * What this attempt was assigned — the entry and the listing its own fence
+   * reads its steps from, the same value the `<harness>` block was rendered
+   * with (`RenderOptions`, `src/Prompt.ts`). Absent for a singleton.
    */
-  assignedSteps: readonly PendingEntry[],
+  assignment: GateAssignment | undefined,
   /**
    * The span's base — `baseSha` on every gate context this loop builds.
    * Both a fanout entry's worktree branch and a
@@ -743,7 +746,7 @@ async function runAfterCommitGates(
     ...phase.gates.filter((g) => g.when === "afterCommit"),
     writablePathsGate(
       phase.writablePaths,
-      entryWriteScope(phase, assignedEntry, assignedSteps),
+      entryWriteScope(phase, assignment?.entry, assignment?.steps ?? []),
     ),
   ];
   // `cwd` here is the fanout worktree (or a singleton's own worktree,
@@ -779,11 +782,11 @@ async function runAfterCommitGates(
         commitSha,
         touchedPaths: spanTouchedPaths,
         baseSha: spanBase,
-        // The entry and its steps together, or neither: the pair is the
-        // session's whole assignment, so a gate judging the span against the
-        // declaration reads the same footprint the write guard below was
-        // scoped from (`GateContext.steps`, `src/Gate.ts`).
-        ...(assignedEntry ? { entry: assignedEntry, steps: assignedSteps } : {}),
+        // The session's whole assignment, or nothing: one value, so a gate
+        // judging the span against the declaration reads the same footprint
+        // the write guard above was scoped from
+        // (`GateContext.assignment`, `src/Gate.ts`).
+        ...(assignment ? { assignment } : {}),
         log: (l) => ctx.log.info(l),
       },
       ctx,

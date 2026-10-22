@@ -13,10 +13,10 @@
 import type {
   BatchGateContext,
   BatchingGate,
+  GateAssignment,
   GateContext,
   GateResult,
 } from "../src/Gate.js";
-import type { PendingEntry } from "../src/PendingSchema.js";
 
 import { LaneTestsSchema, NamedLinesSchema } from "./entryExtension.js";
 import { judgeNamedLines, type JudgeSpan, type JudgeVerdict } from "./judge.js";
@@ -49,8 +49,8 @@ const PUT_DOWN: Record<PutDownKind, { said: string; skipped: string }> = {
  * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
  */
 interface SpanFacts {
-  /** The entry this span was provisioned for — absent on one carrying none. */
-  readonly entry?: PendingEntry | undefined;
+  /** What this span was assigned — absent on one carrying nothing. */
+  readonly assignment?: GateAssignment | undefined;
   /** The sha this span started from: the base its `tests[]` lines are proved at. */
   readonly baseSha: string;
   /** This span's own changed paths, as the dispatcher computed them. */
@@ -132,7 +132,7 @@ export function namedLinesGate(
         ctx.batch === undefined
           ? [
               {
-                entry: ctx.entry,
+                assignment: ctx.assignment,
                 baseSha: ctx.baseSha,
                 touchedPaths: ctx.touchedPaths,
               },
@@ -152,7 +152,7 @@ export function namedLinesGate(
           baseSha: span.baseSha,
           footprint: span.touchedPaths,
         };
-        const entry = span.entry;
+        const entry = span.assignment?.entry;
         if (entry === undefined) {
           skips.push(NO_ENTRY);
           spans.push(unjudged);

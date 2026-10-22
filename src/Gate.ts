@@ -117,6 +117,42 @@ export interface GateSite {
 }
 
 /**
+ * One session's assignment, as the gates judging that session read it: the
+ * entry a span was provisioned for and that entry's steps, in one value.
+ *
+ * The pair is one fact and travels as one. A span is one *session's*, and a
+ * session's footprint is the entry's `files` and its steps' together
+ * (`declaredPaths`, `src/PendingSchema.ts`) — the union the engine already
+ * folded to scope the write guard and to render the `<harness>` block. Two
+ * optional fields would let a leg state one half and drop the other, and a
+ * consumer handed that cannot tell an entry no producer decomposed from a
+ * context that never answered — two states whose verdicts are opposite
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported, never
+ * rediscovered*). One optional value makes both unconstructable, which is the
+ * rung above pinning the pairing in a suite.
+ */
+export interface GateAssignment {
+  /**
+   * The pending entry the span was provisioned for, as the wave selected it.
+   * A chain gate reads its extension fields (`tests[]`, an acceptance) through
+   * the chain's own schema to hold the commit to the entry's own contract; the
+   * engine reads none of them. Reported from the value the dispatcher already
+   * holds for the scoped fence, never re-read from the queue.
+   */
+  entry: PendingEntry;
+  /**
+   * {@link entry}'s steps — every descendant of it in the queue the selection
+   * that pulled it read (`spec/pending.md`, *The queue is a forest*), in that
+   * listing's own order: the same value `ShipContext.steps` (`src/Phase.ts`)
+   * carries for the span and `TickContext.assignedSteps` (`src/Phase.ts`)
+   * rendered to its agent. `[]` for an entry a producer has not decomposed,
+   * which is the whole of what "no steps" means here — a gate cannot walk for
+   * them, since it is handed one entry and no queue.
+   */
+  steps: readonly PendingEntry[];
+}
+
+/**
  * One span of a batched merge, as the gates over that batch read it
  * (spec/worktrees.md, "Batched merges"). The per-span facts a single-span
  * context carries on {@link GateContext} itself: a batch withholds them
@@ -131,19 +167,13 @@ export interface GateSite {
  */
 export interface GateBatchSpan {
   /**
-   * The pending entry this span was provisioned for, as the wave selected it
-   * — absent on a span that carries none, exactly as {@link GateContext.entry}
-   * is.
-   */
-  entry?: PendingEntry;
-  /**
-   * That entry's steps — {@link GateContext.steps}, per span. Stated wherever
-   * this span's {@link entry} is and absent wherever it is, for the same
-   * reason: the pair is one session's assignment, and a batch that named the
-   * entry without its steps would hand a path-judging gate a footprint
+   * The session this span was provisioned for ({@link GateAssignment}) —
+   * {@link GateContext.assignment}, per span. Absent on a span that carries
+   * none, exactly as it is there; the entry and its steps cannot part company
+   * on the way here, so a batch cannot hand a path-judging gate a footprint
    * narrower than the one the engine fenced.
    */
-  steps?: readonly PendingEntry[];
+  assignment?: GateAssignment;
   /** The span's own tip once it was picked onto trunk. */
   commitSha: string;
   /** The sha this span started from — {@link GateContext.baseSha}, per span. */
@@ -226,36 +256,14 @@ export interface GateContext extends GateSite {
    */
   landedOnSha?: string;
   /**
-   * The pending entry this span was provisioned for, as the wave selected it
-   * — set at both stages under fanout, absent on a singleton tick, which
-   * carries no entry (spec/chain.md "What a gate receives"). A chain gate
-   * reads its extension fields (`tests[]`, an acceptance) through the
-   * chain's own schema to hold the commit to the entry's own contract; the
-   * engine reads none of them. Reported from the value the dispatcher
-   * already holds for the scoped fence, never re-read from the queue.
+   * The session this span was provisioned for ({@link GateAssignment}) — set
+   * at both stages under fanout, absent on a singleton tick, which is
+   * assigned nothing (spec/chain.md "What a gate receives"). A chain gate
+   * holding a commit to its session's declaration reads the entry and its
+   * steps off this one value; absence is the singleton, never a half-answer
+   * it would have to rule on.
    */
-  entry?: PendingEntry;
-  /**
-   * {@link entry}'s steps — every descendant of it in the queue the selection
-   * that pulled it read (`spec/pending.md`, *The queue is a forest*), in that
-   * listing's own order: the same value `ShipContext.steps` (`src/Phase.ts`)
-   * carries for the span and `TickContext.assignedSteps` (`src/Phase.ts`)
-   * rendered to its agent.
-   *
-   * Travels with {@link entry}: absent on a singleton tick, which carries no
-   * entry and so no steps, and `[]` for an entry a producer has not
-   * decomposed.
-   *
-   * Reported because the span the gate is judging is one *session's*, and a
-   * session's footprint is the entry's `files` and its steps' together
-   * (`declaredPaths`, `src/PendingSchema.ts`) — the union the engine already
-   * folded to scope the write guard. A chain gate holding a commit to its
-   * entry's declaration reads both halves off here; it cannot walk for the
-   * second, because a gate is handed one entry and no queue
-   * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
-   * never rediscovered*).
-   */
-  steps?: readonly PendingEntry[];
+  assignment?: GateAssignment;
 }
 
 /**
@@ -265,9 +273,9 @@ export interface GateContext extends GateSite {
  * written for one span would read a batch's facts as one entry's.
  *
  * The single-span facts are withheld rather than filled with the last pick's:
- * {@link GateContext.entry}, {@link GateContext.steps},
- * {@link GateContext.baseSha} and {@link GateContext.landedOnSha} are absent,
- * and each span states its own on {@link batch}.
+ * {@link GateContext.assignment}, {@link GateContext.baseSha} and
+ * {@link GateContext.landedOnSha} are absent, and each span states its own on
+ * {@link batch}.
  */
 export interface BatchGateContext extends GateSite {
   /**
@@ -287,9 +295,7 @@ export interface BatchGateContext extends GateSite {
    */
   touchedPaths: readonly string[];
   /** Withheld under a batch — each span states its own on {@link batch}. */
-  entry?: undefined;
-  /** Withheld under a batch — each span states its own on {@link batch}. */
-  steps?: undefined;
+  assignment?: undefined;
   /** Withheld under a batch — each span states its own on {@link batch}. */
   baseSha?: undefined;
   /** Withheld under a batch — each span states its own on {@link batch}. */
@@ -409,8 +415,8 @@ export interface GateIdentity {
 /**
  * A gate written for **one** span — the default, and what every gate is
  * until it says otherwise. Its `run` is typed over {@link GateContext}
- * alone, so the span's entry, base and landing are there to read without a
- * guard, and the merge is held to one span at a time on its behalf
+ * alone, so the span's assignment, base and landing are there to read without
+ * a guard, and the merge is held to one span at a time on its behalf
  * (spec/worktrees.md, "Batched merges").
  */
 export interface SingleSpanGate extends GateIdentity {

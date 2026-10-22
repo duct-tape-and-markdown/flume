@@ -283,12 +283,13 @@ function ctxFor(
     commitSha: span.commitSha,
     baseSha: span.baseSha,
     touchedPaths: span.touchedPaths,
-    ...(over.entry ? { entry: over.entry } : {}),
-    // The entry's steps beside it, the pair a span states together
-    // (`GateContext.steps`, `src/Gate.ts`) — stated here only where the case
-    // states them, so a case can also drive the half-stated context the
-    // records gate refuses.
-    ...(over.steps ? { steps: over.steps } : {}),
+    // The entry and its steps as one value, which is the only way a span
+    // states a session (`GateContext.assignment`, `src/Gate.ts`): a case that
+    // names no steps is an entry no producer decomposed, exactly as the
+    // dispatcher would state it.
+    ...(over.entry
+      ? { assignment: { entry: over.entry, steps: over.steps ?? [] } }
+      : {}),
     log: () => {},
   };
 }
@@ -1196,7 +1197,7 @@ it("the records gate holds a record's named steps to the entry's steps with no q
   // or not-yet-seeded ledger leaves behind, and the one a ledger read cannot
   // answer from. What the record is held to is the span's own account of the
   // assignment, which the engine already walked the queue for at selection
-  // (`GateContext.steps`, `src/Gate.ts`).
+  // (`GateContext.assignment`, `src/Gate.ts`).
   await rm(join(repo, STATE_ROOT, "plan", "pending"), {
     recursive: true,
     force: true,
@@ -1266,29 +1267,6 @@ it("the records gate holds a record's named steps to the entry's steps over an u
   expect(refused.ok).toBe(false);
   expect(refused.details).toContain("YOURS-STEP");
   expect(refused.details).toContain("no step of MINE");
-});
-
-it("the records gate refuses a record naming a step on a span that states its entry without its steps", async () => {
-  const work = queueEntry("MINE");
-  const step = queueEntry("MINE-STEP", { kind: "step", parent: "MINE" });
-  await writeQueue([work, step]);
-  await write(notePath(STATE_ROOT, "MINE"), "# done\n\nFinished: MINE-STEP\n");
-  const span = commitAll("build: finish the step");
-
-  // Non-vacuity: the same span with its steps stated is admitted, so the
-  // refusal below is the half-stated context and not the note.
-  expect(
-    await records(span, { phaseName: "build", entry: work, steps: [step] }),
-  ).toMatchObject({ ok: true });
-
-  // The pair travels together, and a queue holding the step is no substitute:
-  // a context that states the entry alone cannot answer what it carries, so
-  // the gate says that rather than reading it as an entry with no steps,
-  // which would refuse every tag a record names.
-  const refused = await records(span, { phaseName: "build", entry: work });
-
-  expect(refused.ok).toBe(false);
-  expect(refused.message).toContain("MINE without its steps");
 });
 
 it("the records gate refuses a record whose first line is not a title", async () => {

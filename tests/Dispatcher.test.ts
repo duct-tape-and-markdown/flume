@@ -24917,81 +24917,23 @@ describe("src/index.ts — QuarantinedTag barrel export (INDEX-EXPORTS-ORPHANED-
   });
 });
 
-describe("GateContext.entry — the gated span's own entry (spec/chain.md 'What a gate receives')", () => {
-  const capture = (when: "afterCommit" | "afterMerge", seen: Record<string, string | null>): Gate => ({
-    name: `see-${when}`,
-    when,
-    async run(ctx) {
-      seen[when] = "entry" in ctx ? ctx.entry!.tag : null;
-      return { ok: true, message: "seen" };
-    },
-  });
-
-  it("fanout: both stages receive the entry the wave provisioned, by identity of tag", async () => {
-    await writePending(fx.repo, [makeEntry("CTX-ENTRY", ["src/e.ts"])]);
-    new Baton(join(fx.repo, ".flume")).wake("build");
-    const seen: Record<string, string | null> = {};
-    const phase = makePhase({
-      name: "build",
-      concurrency: "fanout",
-      gates: [capture("afterCommit", seen), capture("afterMerge", seen)],
-    });
-    const dispatcher = new Dispatcher({
-      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
-      repoRoot: fx.repo,
-      configDir: fx.configDir,
-      agent: fanoutAgent({
-        "ctx-entry": async (cwd) => {
-          await writeAndCommit(cwd, "src/e.ts", "e\n", "build: e");
-        },
-      }),
-      log: silent,
-    });
-    const outcome = await dispatcher.tick();
-    expect(outcome.result?.shippedTags).toEqual(["CTX-ENTRY"]);
-    expect(seen).toEqual({ afterCommit: "CTX-ENTRY", afterMerge: "CTX-ENTRY" });
-  });
-
-  it("singleton: the key is absent at both stages — no entry exists to report", async () => {
-    new Baton(join(fx.repo, ".flume")).wake("plan");
-    const seen: Record<string, string | null> = {};
-    const phase = makePhase({
-      name: "plan",
-      concurrency: "singleton",
-      gates: [capture("afterCommit", seen), capture("afterMerge", seen)],
-    });
-    const dispatcher = new Dispatcher({
-      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
-      repoRoot: fx.repo,
-      configDir: fx.configDir,
-      agent: singleAgent(async (cwd) => {
-        await writeAndCommit(cwd, "src/p.ts", "p\n", "plan: p");
-      }),
-      log: silent,
-    });
-    const outcome = await dispatcher.tick();
-    expect(outcome.result?.committed).toBe(true);
-    expect(seen).toEqual({ afterCommit: null, afterMerge: null });
-  });
-});
-
 /**
- * `GateContext.steps` (`src/Gate.ts`) — the other half of what a span was
- * provisioned for. A span is one *session's*: a `work` entry and its steps,
+ * `GateContext.assignment` (`src/Gate.ts`) — what a span was provisioned for,
+ * as one value. A span is one *session's*: a `work` entry and its steps,
  * fenced to the union of their `files` (`declaredPaths`,
- * `src/PendingSchema.ts`). Before this, a gate held the entry alone, so a
- * chain judging a commit against its declaration read a footprint narrower
- * than the one the engine handed the agent — and could not widen it, holding
- * one entry and no queue (`.claude/rules/engineering.md`, *A fact the engine
- * holds is reported, never rediscovered*).
+ * `src/PendingSchema.ts`). The entry and the steps were two optional fields,
+ * so a leg could state one and drop the other and a gate handed that could
+ * not tell an undecomposed entry from a context that never answered
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*).
  *
  * Driven through the real wave at both stages rather than over a hand-built
- * context: what is claimed is that the *dispatcher* states the steps it
+ * context: what is claimed is that the *dispatcher* states the session it
  * already resolved for the fence, which a fixture composing the field itself
  * would not pin (`.claude/rules/engineering.md`, *A seam gate reads what the
  * real writer wrote*).
  */
-describe("GateContext.steps — the assignment's other half (spec/chain.md 'What a gate receives')", () => {
+describe("GateContext.assignment — the gated span's own session (spec/chain.md 'What a gate receives')", () => {
   /** A step of `parent`, declaring its own file like any other entry. */
   const step = (tag: string, parent: string, path: string): PendingEntry => ({
     ...makeEntry(tag, [path]),
@@ -25001,26 +24943,28 @@ describe("GateContext.steps — the assignment's other half (spec/chain.md 'What
 
   /**
    * One probe gate per stage, recording what each context said about the
-   * session's assignment — the two keys together, because "carries no steps"
-   * is a claim only against a stage that carries some.
+   * session's assignment — the entry and its steps together, because they
+   * arrive as one value or not at all.
    */
   type Said = { entry: string | null; steps: string[] | null };
   const capture = (
     when: "afterCommit" | "afterMerge",
     seen: Record<string, Said>,
   ): Gate => ({
-    name: `steps-${when}`,
+    name: `assignment-${when}`,
     when,
     async run(ctx) {
       seen[when] = {
-        entry: "entry" in ctx ? (ctx.entry?.tag ?? null) : null,
-        steps: "steps" in ctx ? [...(ctx.steps ?? [])].map((s) => s.tag) : null,
+        entry: ctx.assignment?.entry.tag ?? null,
+        steps: ctx.assignment
+          ? ctx.assignment.steps.map((e) => e.tag)
+          : null,
       };
       return { ok: true, message: "seen" };
     },
   });
 
-  it("a gate on a step-bearing entry reads that entry's steps on its context", async () => {
+  it("a gate reads its entry and that entry's steps from one assignment", async () => {
     await writePending(fx.repo, [
       makeEntry("STEPPED-WORK", ["src/work.ts"]),
       step("STEPPED-ONE", "STEPPED-WORK", "src/one.ts"),
@@ -25048,10 +24992,10 @@ describe("GateContext.steps — the assignment's other half (spec/chain.md 'What
     // Non-vacuity: the span landed, so both stages really ran over a commit
     // rather than the keys below being an unreached context's defaults.
     expect(outcome.result?.committed).toBe(true);
-    // The steps as the queue listing held them, beside the entry they are of
-    // — at both stages, since a chain gate judging a declaration may sit at
-    // either. Sorted: which order the listing returned them in is the
-    // queue's fact, not this claim's.
+    // The entry the wave provisioned and the steps as the queue listing held
+    // them, off the one value — at both stages, since a chain gate judging a
+    // declaration may sit at either. Sorted: which order the listing returned
+    // them in is the queue's fact, not this claim's.
     const stepsAt = (when: string): string[] =>
       [...(seen[when]?.steps ?? [])].sort();
     expect(seen["afterCommit"]?.entry).toBe("STEPPED-WORK");
@@ -25060,10 +25004,10 @@ describe("GateContext.steps — the assignment's other half (spec/chain.md 'What
     expect(stepsAt("afterMerge")).toEqual(["STEPPED-ONE", "STEPPED-TWO"]);
   });
 
-  it("a gate context built for a singleton tick carries no steps", async () => {
+  it("a singleton tick's gate context carries no assignment", async () => {
     // The armed half first: a fanout stage over an undecomposed entry states
-    // the key with an empty list, so "no steps" below is the *absence* of a
-    // key rather than the shape every context has
+    // the value with an empty step list, so "no assignment" below is the
+    // *absence* of the key rather than the shape every context has
     // (`.claude/rules/engineering.md`, *A green verdict is proven
     // non-vacuous*).
     await writePending(fx.repo, [makeEntry("UNDECOMPOSED", ["src/u.ts"])]);
@@ -25095,8 +25039,9 @@ describe("GateContext.steps — the assignment's other half (spec/chain.md 'What
       steps: [],
     });
 
-    // And the singleton: neither half of an assignment, because there is no
-    // assignment — the key is absent, which is the fact a gate branches on.
+    // And the singleton: no entry and no steps, because there is no
+    // assignment — the key is absent, which is the fact a gate branches on,
+    // and one key rather than two, so a gate cannot be handed half of one.
     new Baton(join(fx.repo, ".flume")).wake("plan");
     const atSingleton: Record<string, Said> = {};
     const singleton = makePhase({
@@ -26836,7 +26781,7 @@ describe("Dispatcher — the trunk tip an afterMerge span landed onto", () => {
     expect(second.baseSha).toBe(first.baseSha);
     expect(
       await git.diffNameOnly(fx.repo, first.commitSha, second.landedOnSha!),
-    ).toEqual([`.flume/plan/pending/${entryFileName(first.entry!.tag)}`]);
+    ).toEqual([`.flume/plan/pending/${entryFileName(first.assignment!.entry.tag)}`]);
     expect(second.landedOnSha).not.toBe(second.baseSha);
     // And the shared base is the wrong lower end: over it the second entry's
     // range carries its sibling's file — and the ledger commit that retired
@@ -26845,7 +26790,7 @@ describe("Dispatcher — the trunk tip an afterMerge span landed onto", () => {
       (await git.diffNameOnly(fx.repo, second.baseSha, second.commitSha)).sort(),
     ).toEqual(
       [
-        `.flume/plan/pending/${entryFileName(first.entry!.tag)}`,
+        `.flume/plan/pending/${entryFileName(first.assignment!.entry.tag)}`,
         "src/landed-first.ts",
         "src/landed-second.ts",
       ].sort(),
@@ -28565,8 +28510,8 @@ describe("Dispatcher fanout — a merge carries a batch of spans, gated once (sp
   /** Every span of one `afterMerge` invocation, by tag — a batch's, or the one span's. */
   const tagsOf = (ctx: GateContext | BatchGateContext): string[] =>
     ctx.batch === undefined
-      ? [ctx.entry?.tag ?? "(no entry)"]
-      : ctx.batch.map((s) => s.entry?.tag ?? "(no entry)");
+      ? [ctx.assignment?.entry.tag ?? "(no entry)"]
+      : ctx.batch.map((s) => s.assignment?.entry.tag ?? "(no entry)");
 
   it("a merge carries up to mergeBatch finished spans of the same tick", async () => {
     // Three spans waiting, two per merge: the first merge takes two and the
@@ -28612,9 +28557,9 @@ describe("Dispatcher fanout — a merge carries a batch of spans, gated once (sp
     ]);
   });
 
-  it("each span of a batch carries its own entry's steps", async () => {
-    // Two decomposed sessions in one merge: the batch withholds `entry` and
-    // `steps` at the top level, so the only place a path-judging gate can
+  it("a batch row carries its span's assignment whole", async () => {
+    // Two decomposed sessions in one merge: the batch withholds the
+    // assignment at the top level, so the only place a path-judging gate can
     // read a declaration is the span record it belongs to.
     const step = (tag: string, parent: string, path: string): PendingEntry => ({
       ...makeEntry(tag, [path]),
@@ -28638,16 +28583,17 @@ describe("Dispatcher fanout — a merge carries a batch of spans, gated once (sp
           when: "afterMerge",
           batches: true,
           async run(ctx) {
-            // The top-level halves are withheld, which is what makes the per
-            // span records the only reading — asserted here rather than
+            // The top-level assignment is withheld, which is what makes the
+            // per-span records the only reading — asserted here rather than
             // trusted, since a context filled with the last pick's would
             // satisfy the per-span claim below for one of the two spans.
-            expect(ctx.entry).toBeUndefined();
-            expect(ctx.steps).toBeUndefined();
+            expect(ctx.assignment).toBeUndefined();
             seen.push(
               (ctx.batch ?? []).map((s) => ({
-                entry: s.entry?.tag ?? "(no entry)",
-                steps: [...(s.steps ?? [])].map((e) => e.tag).sort(),
+                entry: s.assignment?.entry.tag ?? "(no entry)",
+                steps: [...(s.assignment?.steps ?? [])]
+                  .map((e) => e.tag)
+                  .sort(),
               })),
             );
             return { ok: true, message: "" };
@@ -28976,7 +28922,7 @@ async function gatedTipWave(opts: {
     name: "entry-wall",
     when: "afterMerge",
     async run(ctx) {
-      const tag = ctx.entry?.tag;
+      const tag = ctx.assignment?.entry.tag;
       return tag !== undefined && red.includes(tag)
         ? { ok: false, message: `entry-wall refuses ${tag}`, details: tag }
         : { ok: true, message: "entry-wall passes" };
@@ -29377,7 +29323,10 @@ async function waveShippingTwice(opts: { claimOn?: string } = {}): Promise<{
     name: "claim-tip",
     when: "afterMerge",
     async run(ctx) {
-      if (opts.claimOn !== undefined && ctx.entry?.tag === opts.claimOn) {
+      if (
+        opts.claimOn !== undefined &&
+        ctx.assignment?.entry.tag === opts.claimOn
+      ) {
         await stakeForeignTipClaim();
         armed = true;
       }

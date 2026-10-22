@@ -405,12 +405,11 @@ export async function runSingleton(
         phase,
         base: spanBase,
         head: spanHead,
-        // No `entry` and so no `steps`, and the phase-keyed `ref`: a
-        // singleton is a wave of one keyed on the phase name, so the gates
-        // read a span with neither half of an assignment
-        // (`GateContext.steps`, `src/Gate.ts`) and the record lands in the
-        // phase's own slot (spec/worktrees.md "Singleton runs in a
-        // worktree").
+        // No `assignment`, and the phase-keyed `ref`: a singleton is a wave
+        // of one keyed on the phase name, so the gates read a span assigned
+        // nothing (`GateContext.assignment`, `src/Gate.ts`) and the record
+        // lands in the phase's own slot (spec/worktrees.md "Singleton runs in
+        // a worktree").
         ref,
         checkpoint,
         onGateRow: (row, ms) => {

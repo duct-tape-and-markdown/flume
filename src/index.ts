@@ -71,6 +71,9 @@ export type {
   BatchingGate,
   BatchGateContext,
   GateBatchSpan,
+  // One session's assignment, which both span shapes carry as one value: a
+  // chain that passes it to a helper of its own holds the name.
+  GateAssignment,
 } from "./Gate.js";
 
 export {

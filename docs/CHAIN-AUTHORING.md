@@ -981,28 +981,28 @@ says so below.
   landing; `HEAD^` is right only while a span lands as one commit. Absent
   under `afterCommit`, where no trunk is involved and `baseSha` is the whole
   story.
-- `entry` — the pending entry the gated span was provisioned for, as the
-  wave selected it: set at both stages under fanout, absent on a singleton
-  tick, which carries no entry. It is how a chain gate holds a commit to the
-  entry's *own* contract — the behaviors its `tests[]` names, an acceptance
-  its extension declares — rather than to the phase's uniform bar alone. The
-  engine reads none of those fields; a gate reads them back through the
-  chain's own extension schema.
-- `steps` — that entry's steps, every descendant of it in the queue the
-  selection read, in that listing's own order. It travels with `entry`:
-  absent on a singleton tick, `[]` for an entry no producer decomposed. The
-  span is one *session's*, and a session's footprint is the entry's `files`
-  and its steps' together — the union the write guard scopes a fanout tick
-  to, and the same listing `assignedSteps` renders to the agent (§1) — so a
-  gate judging a commit against its declaration reads both halves here. It cannot walk for the second: a gate is handed one entry and
-  no queue.
+- `assignment` — what the gated span was provisioned for, as one value:
+  `.entry`, the pending entry as the wave selected it, and `.steps`, every
+  descendant of it in the queue that selection read, in that listing's own
+  order. Set at both stages under fanout, absent on a singleton tick, which
+  is assigned nothing; `.steps` is `[]` for an entry no producer decomposed.
+  The entry is how a chain gate holds a commit to the entry's *own* contract
+  — the behaviors its `tests[]` names, an acceptance its extension declares —
+  rather than to the phase's uniform bar alone; the engine reads none of those
+  fields, and a gate reads them back through the chain's own extension schema.
+  The steps are there because the span is one *session's*, and a session's
+  footprint is the entry's `files` and its steps' together — the union the
+  write guard scopes a fanout tick to, and the same listing `assignedSteps`
+  renders to the agent (§1). Both halves arrive or neither does, so a gate
+  never rules on an entry whose steps went unreported, and it could not walk
+  for them anyway: it is handed one entry and no queue.
 - `batch` — set only when one merge carried several spans, and only for a
   gate that declared it reads one
   ([*Reading a batched merge*](#reading-a-batched-merge)). One record per
   span, in the order they were picked, each carrying that span's own
-  `entry`, `steps`, `commitSha`, `baseSha`, `landedOnSha` and
-  `touchedPaths`. Absent everywhere else, which is every merge until a chain
-  raises `supervisorPolicy.mergeBatch` (§9).
+  `assignment`, `commitSha`, `baseSha`, `landedOnSha` and `touchedPaths`.
+  Absent everywhere else, which is every merge until a chain raises
+  `supervisorPolicy.mergeBatch` (§9).
 - `log` — the harness-side output channel. A gate does not write to stdout
   itself.
 
@@ -1058,7 +1058,7 @@ const cumulative: Gate = {
   `writablePathsGate` is the dispatcher's own, per span and `afterCommit`,
   never yours to move — and a phase held to a span per merge is held there by
   a gate of your own.
-- **A batch withholds rather than approximates.** `entry`, `baseSha` and
+- **A batch withholds rather than approximates.** `assignment`, `baseSha` and
   `landedOnSha` are absent under a batch — the type says so — because no
   single value of any of them is true of the merge. `commitSha` is the
   batch's last pick and `touchedPaths` is the union of the spans', so a
