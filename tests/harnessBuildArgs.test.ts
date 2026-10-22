@@ -62,6 +62,7 @@ import {
   type SectionResolver,
 } from "../harness/index.ts";
 import { PerSchema } from "../harness/entryExtension.ts";
+import { namedSteps } from "../harness/putDown.ts";
 import { computeStateRootRel } from "../src/paths.ts";
 import type { Phase } from "../src/Phase.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
@@ -690,6 +691,97 @@ const step = (tag: string, parent: string): PendingEntry => ({
   parent,
 });
 
+/**
+ * The lines the rendered `<steps>` listing carries, indentation kept — the
+ * half of the block whose shape is the claim, read out of the fence the
+ * prompt tells the agent to read them from rather than searched for anywhere
+ * in the region.
+ */
+function stepsListing(region: string): string[] {
+  const open = region.indexOf("<steps>\n");
+  const close = region.indexOf("\n</steps>");
+  expect(open, "the region carries no <steps> fence").toBeGreaterThanOrEqual(0);
+  expect(close, "the <steps> fence does not close").toBeGreaterThan(open);
+  return region.slice(open + "<steps>\n".length, close).split("\n");
+}
+
+/**
+ * A `work` entry with a step carrying a step of its own, which is the shape
+ * the closure rule exists for: a line naming the middle step without the one
+ * beneath it is what the merge refuses (`unshippableTags`, `src/waveMerge.ts`).
+ */
+const NESTED = (() => {
+  const assigned = entry({ tag: "HARNESS-BUILD-NESTED-STEPS" });
+  const outer = step("HARNESS-BUILD-NESTED-OUTER", assigned.tag);
+  return {
+    assigned,
+    steps: [
+      outer,
+      step("HARNESS-BUILD-NESTED-INNER", outer.tag),
+      step("HARNESS-BUILD-NESTED-SIBLING", assigned.tag),
+    ],
+  };
+})();
+
+it("the steps block renders each substep beneath the step it is part of", async () => {
+  const { assigned, steps } = NESTED;
+  const ctx = { ...(await seedTick(assigned)), assignedSteps: steps };
+
+  // Non-vacuity: the listing under test really is handed a step whose parent
+  // is another step, so the nesting below is a level the fixture has rather
+  // than one siblings alone could satisfy.
+  const [outer, inner] = steps;
+  expect(inner!.parent).toBe(outer!.tag);
+
+  const listing = stepsListing(stepsRegion(await renderOver(ctx)));
+
+  // The whole listing, indentation and order: a direct step of the entry sits
+  // flush, and a step of a step sits one level in under it.
+  expect(listing).toEqual([
+    "HARNESS-BUILD-NESTED-OUTER",
+    "  HARNESS-BUILD-NESTED-INNER",
+    "HARNESS-BUILD-NESTED-SIBLING",
+  ]);
+}, SPAWN_BUDGET_MS);
+
+it("the steps block states that naming a step names every step under it", async () => {
+  const { assigned, steps } = NESTED;
+  const ctx = { ...(await seedTick(assigned)), assignedSteps: steps };
+
+  const region = stepsRegion(await renderOver(ctx));
+
+  // Non-vacuity: the block really rendered the nesting the rule is about, so
+  // the sentence below sits beside a listing a partial line could orphan.
+  expect(stepsListing(region).some((line) => line.startsWith("  "))).toBe(true);
+
+  // The obligation the merge enforces, said in the block that renders the
+  // nesting: a step named without its subtree is refused, and the refusal
+  // costs every step rather than the line.
+  expect(region).toContain(
+    "**Naming a step names every step indented under it.**",
+  );
+  expect(region).toContain("no* step leaves the queue");
+}, SPAWN_BUDGET_MS);
+
+it("the line the steps block instructs decodes to every step the entry carries", async () => {
+  const { assigned, steps } = NESTED;
+  const ctx = { ...(await seedTick(assigned)), assignedSteps: steps };
+
+  const region = stepsRegion(await renderOver(ctx));
+
+  // Non-vacuity: the entry carries steps, and the block rendered them — a
+  // decode of an absent line would read [] against [] and pass.
+  expect(steps.length).toBeGreaterThan(0);
+  expect(stepsListing(region)).toHaveLength(steps.length);
+
+  // The real decoder, over the real writer's own region: whatever the block
+  // instructs a session to write is what the records gate and the put-down
+  // reader take off that record (`namedSteps`, `harness/putDown.ts`). Exact,
+  // so a region carrying a second decodable line — or one tag short of the
+  // entry's steps — reds here rather than at a merge.
+  expect(namedSteps(region)).toEqual(steps.map((carried) => carried.tag));
+}, SPAWN_BUDGET_MS);
+
 it("the rendered build prompt names the step tags the assigned entry carries", async () => {
   const assigned = entry({ tag: "HARNESS-BUILD-STEP-TAGS" });
   const steps = [
@@ -708,11 +800,9 @@ it("the rendered build prompt names the step tags the assigned entry carries", a
   // Every tag, in the block the prompt tells the agent to read them from...
   expect(region).toContain("<steps>");
   for (const carried of steps) expect(region).toContain(carried.tag);
-  // ...and the line it tells the agent to write them back on, naming both
-  // records a session may name them in.
-  expect(region).toContain(
-    `Finished: ${steps.map((carried) => carried.tag).join(", ")}`,
-  );
+  // ...and both records a session may name them back in. What the line it
+  // instructs *says* is read by the real decoder rather than matched as text,
+  // one case below.
   expect(region).toContain(notePath(".flume", assigned.tag));
   expect(region).toContain(continuingNotePath(".flume", assigned.tag));
 }, SPAWN_BUDGET_MS);

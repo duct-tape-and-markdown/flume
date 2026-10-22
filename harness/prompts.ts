@@ -55,6 +55,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   renderSchemaForPrompt,
+  subtreeOf,
   type EntryExtension,
   type PendingEntry,
 } from "../src/PendingSchema.js";
@@ -760,7 +761,7 @@ export function buildPromptArgs(
     PARK_NOTE_PATH: parkedNotePath(noteRoot(ctx), entry.tag),
     CONTINUING_NOTE_PATH: continuing,
     CONTINUING_NOTE: continuingBlock(continuing, read(continuing)),
-    STEPS: stepsBlock(ctx.assignedSteps ?? [], {
+    STEPS: stepsBlock(entry, ctx.assignedSteps ?? [], {
       note: notePath(noteRoot(ctx), entry.tag),
       continuing,
     }),
@@ -778,22 +779,65 @@ export function buildPromptArgs(
  * line leaves the session to invent a spelling nothing reads, and the line
  * without the tags leaves it guessing at names the records gate refuses.
  *
+ * **The listing is nested, because the line it instructs must close
+ * downward.** Steps nest, and the merge refuses a list naming a step without
+ * every step beneath it — a tag whose `parent` would leave the queue while it
+ * stayed is a queue no later tick can read (`src/waveMerge.ts`). That refusal
+ * keeps the whole span on the trunk and spends the wave, so the only partial
+ * line a session can safely compose is one it can *see* is closed: a flat
+ * listing hides which tag sits under which, and the closure becomes luck. So
+ * the block renders each step beneath the one it is part of and states the
+ * rule beside it — the engine's own descent supplies the nesting
+ * (`subtreeOf`, `src/PendingSchema.ts`) rather than a second walk of the
+ * `parent` links here (`.claude/rules/engineering.md`, *A fact the engine
+ * holds is reported, never rediscovered*).
+ *
+ * A step the descent cannot place under this entry **throws** rather than
+ * rendering a listing short of what the engine reported: the tags the block
+ * drops are tags the session never sees and so never names, which is a step
+ * silently done twice (*Loud or nothing*). The engine reports this entry's own
+ * descendants, so the case is a contradiction between the assignment and its
+ * steps, not an input a session can act on.
+ *
  * Nothing renders for a flat entry, for the reason {@link continuingBlock}
  * renders nothing for an absent note: a session with no steps has no
  * declaration to make, and a block saying so is a section it has to read and
  * rule out.
  */
 function stepsBlock(
+  entry: PendingEntry,
   steps: readonly PendingEntry[],
   records: { note: string; continuing: string },
 ): string {
   if (steps.length === 0) return "";
-  const tags = steps.map((step) => step.tag);
+  const nested = subtreeOf(steps, entry.tag);
+  if (nested.length !== steps.length) {
+    const placed = new Set(nested.map(({ entry: below }) => below.tag));
+    throw new Error(
+      `prompt args: ${entry.tag} was reported ${steps.length} step(s) and ` +
+        `${nested.length} of them descend from it — ` +
+        `${steps
+          .map((step) => step.tag)
+          .filter((tag) => !placed.has(tag))
+          .join(", ")} ` +
+        `name no parent chain reaching the assigned entry, so the steps ` +
+        `block cannot render them (spec/pending.md, The queue is a forest)`,
+    );
+  }
+  // Depth-first, so a parent precedes everything indented under it, and the
+  // indent is the one the engine answered each entry at — `1` for a direct
+  // step of the entry, which sits flush with the block.
+  const lines = nested.map(
+    ({ entry: below, depth }) => `${"  ".repeat(depth - 1)}${below.tag}`,
+  );
+  const tags = nested.map(({ entry: below }) => below.tag);
   return [
     `# THE STEPS THIS ENTRY CARRIES`,
     "",
+    `Each step indented beneath the step it is part of:`,
+    "",
     `<steps>`,
-    ...tags,
+    ...lines,
     `</steps>`,
     "",
     `This entry was decomposed, and a step is **told finished, never assumed**:`,
@@ -808,6 +852,13 @@ function stepsBlock(
     `name leave the queue, and the entry leaves with its last one. A commit`,
     `naming none ships nothing — so a step you finished and did not name is a`,
     `step the next tick does again.`,
+    "",
+    `**Naming a step names every step indented under it.** A step leaves the`,
+    `queue only with its own subtree, so a line naming a step while a step`,
+    `indented under it stays is refused whole: your commit lands on the trunk`,
+    `and *no* step leaves the queue, so every one of them is done again. Name a`,
+    `step only once you can name everything indented under it — finish the`,
+    `deepest steps first, or name the subtree you finished entire.`,
   ].join("\n");
 }
 
