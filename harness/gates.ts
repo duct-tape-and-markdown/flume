@@ -12,10 +12,11 @@
  * **Always first is mechanism here, not a promise.** {@link harnessGates}
  * returns the package's own and then the consumer's, so a declaration
  * cannot displace one by ordering, and there is no per-phase table of which
- * gate applies where to fall out of step with the fence. The `afterCommit`
- * set is the same for every phase the package ships: each of them is a claim
- * about *any* commit the package's chain produces, and the ones whose subject
- * a given phase never writes cost a handful of at-ref reads to say so.
+ * gate applies where to fall out of step with the fence. Most of the
+ * `afterCommit` set is the same for every phase the package ships: each of
+ * those is a claim about *any* commit the package's chain produces, and the
+ * ones whose subject a given phase never writes cost a handful of at-ref
+ * reads to say so.
  *
  * The members that are not uniform are not a table of where a gate
  * applies — each is the same reasoning read the other way, that build's fence
@@ -30,12 +31,15 @@
  * between that commit and its cherry-pick — a pre-merge read answers about a
  * tree the collision is not in.
  *
- * The **goal-rank** gate and the **new-blocker** gate are the producers'
- * alone for the converse of that reasoning: a rank moves and a `blockedBy`
- * edge is written only where an entry file can be written, so build's commit
- * carries no rank for one to place, no rank it could have moved, and no edge
- * for the other to resolve. Refusing build over either would revert delivered
- * work for a queue defect the build never touched and could not repair.
+ * The **`per` gate**, the **goal-rank** gate and the **new-blocker** gate are
+ * the producers' alone for the converse of that reasoning: a cite is placed, a
+ * rank moves and a `blockedBy` edge is written only where an entry file can be
+ * written, so build's commit strands no cite, carries no rank for one to place,
+ * no rank it could have moved, and no edge for the other to resolve. Refusing
+ * build over any of them would revert delivered work for a queue defect the
+ * build never touched and could not repair — and the next build tick would
+ * meet the same wall, because a cite the queue stranded is the next plan
+ * tick's to repair (`spec/harness.md`, *The gates the discipline needs*).
  *
  * The order they run in is dependency order, not the spec's listing
  * order: the dispatcher stops at the first refusal, so the pending gate —
@@ -275,6 +279,11 @@ const refuse = (message: string, problems: readonly string[]): GateResult => ({
  * Every unresolved cite is reported in one message. A queue handed back one
  * fix at a time costs a tick per cite, and the tag leads each line because
  * the tag is the entry whose cite has to change.
+ *
+ * Wired to the queue's producers alone, with the goal-rank gate and the
+ * new-blocker gate: build's fence admits no entry file, so a build commit
+ * strands no cite and can repair none, and the entry whose cite an edit to
+ * the cited page stranded is the next plan tick's.
  */
 function perGate(declaration: Declaration, engine: GateEngine): Gate {
   const locus: CiteLocus = {
@@ -1140,10 +1149,10 @@ function isQueueProducer(name: string): boolean {
  * the others read. The dispatcher stops at the first refusal, so that order is
  * what decides which message a tick is handed back.
  *
- * The merged-tree pending gate, the goal-rank gate and the new-blocker gate
- * are the members the set does not carry for every phase, and the module doc
- * above says why: the queue a commit rewrote is each one's subject, and
- * build's fence admits no entry file.
+ * The merged-tree pending gate, the `per` gate, the goal-rank gate and the
+ * new-blocker gate are the members the set does not carry for every phase,
+ * and the module doc above says why: the queue a commit rewrote is each one's
+ * subject, and build's fence admits no entry file.
  */
 export function harnessGates(options: HarnessGatesOptions): Gate[] {
   const { phase, declaration, engine, putDown, entryFields, declared = [] } =
@@ -1194,9 +1203,12 @@ export function harnessGates(options: HarnessGatesOptions): Gate[] {
     recordsGate(engine, putDown),
     cleanTreeGate(phase.writablePaths, engine),
     engine.pendingGate(queue),
-    perGate(declaration, engine),
     ...(producer
-      ? [goalRankGate(phase.name, engine, parse), newBlockerGate(phase.name, engine)]
+      ? [
+          perGate(declaration, engine),
+          goalRankGate(phase.name, engine, parse),
+          newBlockerGate(phase.name, engine),
+        ]
       : []),
     sliceStateGate(engine),
     ...(producer

@@ -339,6 +339,20 @@ function named(
   return gate;
 }
 
+/**
+ * The gate one plan slice's set names `name` — the producer's own set, which
+ * is where every member wired to the queue's producers has to be read from.
+ *
+ * {@link named} reads build's, so a producer-only gate is absent there; the
+ * throw is what keeps that absence from reading as a case that silently
+ * stopped driving its subject.
+ */
+function sliceNamed(slice: PlanSlice, name: string): Gate {
+  const gate = sliceGates(slice).find((g) => g.name === name);
+  if (!gate) throw new Error(`${slice}'s set has no gate named "${name}"`);
+  return gate;
+}
+
 const records = (
   span: Span,
   over: Parameters<typeof ctxFor>[1],
@@ -376,8 +390,8 @@ afterEach(async () => {
   if (repo) await rm(repo, { recursive: true, force: true });
 });
 
-it("the per gate refuses a commit whose cited file is not in it, naming the tag", async () => {
-  const gate = named("per cites resolve");
+it("a plan commit whose queue carries a stranded per cite is refused", async () => {
+  const gate = sliceNamed("plan-derive", "per cites resolve");
 
   // The resolving queue first: without it the refusal below could be a gate
   // that never returns anything else.
@@ -407,7 +421,7 @@ it("the per gate refuses a commit whose cited file is not in it, naming the tag"
 });
 
 it("the per gate reports a drained queue as skipped, not as a judged green", async () => {
-  const gate = named("per cites resolve");
+  const gate = sliceNamed("plan-derive", "per cites resolve");
 
   // A queue with one entry first: the same gate, on the same repo, rules and
   // says so — so the skip below is the empty queue's verdict and not a gate
@@ -440,6 +454,68 @@ it("the per gate reports a drained queue as skipped, not as a judged green", asy
   expect(skipped.skipped).toBe("the queue is empty");
   expect(skipped.message).toContain("cites nothing");
   expect(skipped.message).not.toContain("per cite(s) resolve");
+});
+
+/**
+ * And build is not held to it (`spec/harness.md`, *The gates the discipline
+ * needs*): build's fence admits no entry file, so a cite stranded by an edit
+ * to the page it names is a queue defect no build commit wrote and none can
+ * repair. Refusing one would revert delivered work, and the next build tick
+ * would meet the same wall.
+ *
+ * Driven over a real build commit through the real factory's whole
+ * `afterCommit` set for build — the verdicts a build tick is handed, not one
+ * gate's absence read off a roster (`.claude/rules/engineering.md`, *A seam
+ * gate reads what the real writer wrote*).
+ */
+it("a build commit whose queue carries a stranded per cite is not refused", async () => {
+  const entry = assigned("STRANDS-NO-CITE-OF-ITS-OWN");
+  await writeQueue([
+    queueEntry("A-STRANDED-CITE", {
+      per: { path: "spec/absent.md", section: "The gates the discipline needs" },
+    }),
+  ]);
+  // The delivery, and the note a build tick leaves beside it.
+  await write("src/widget.ts", `export const widget = "delivered";\n`);
+  await write(notePath(STATE_ROOT, entry.tag), "# what I saw\n\nIn `src/`.\n");
+  const span = commitAll("build: deliver work beside a queue cite that strands");
+
+  // Non-vacuity, and the whole of the split: the cite really does not resolve
+  // at this commit, because the producer's own gate refuses this very span.
+  const producer = await sliceNamed("plan-derive", "per cites resolve").run(
+    ctxFor(span, { phaseName: "plan-derive" }),
+  );
+  expect(producer.ok).toBe(false);
+  expect(producer.details).toContain("A-STRANDED-CITE");
+
+  const set = gates().filter((g) => g.when === "afterCommit");
+  // Vacuity pin: there are gates at that point to run at all.
+  expect(set.length).toBeGreaterThan(0);
+  // A throw counts against the claim exactly as a refusal does: the title
+  // asserts the commit is *not refused*, and a gate that cannot run over it
+  // has refused it in every way a build tick can tell.
+  const refused = (
+    await Promise.all(
+      set.map(async (gate) => {
+        try {
+          const verdict = await gate.run(
+            ctxFor(span, { phaseName: BUILD_PHASE, entry, steps: [] }),
+          );
+          return verdict.ok ? [] : [`${gate.name}: ${verdict.message}`];
+        } catch (error) {
+          return [`${gate.name} threw: ${(error as Error).message}`];
+        }
+      }),
+    )
+  ).flat();
+  // The compared value is the refusing gates, named; the whole of each refusal
+  // rides the message, which chai does not truncate
+  // (`.claude/rules/platform-facts.md`, *chai truncates an inspected value in
+  // an assertion message at 40 characters*).
+  expect(
+    refused.map((line) => line.split(":")[0]),
+    refused.join("\n"),
+  ).toEqual([]);
 });
 
 /**
@@ -533,11 +609,7 @@ it("the gates a plan slice declares carry no filing-band row", () => {
  * fixture composes one through `queueEntry`, so the forest fields these cases
  * turn on are the core's own rather than a bag shaped like an entry.
  */
-const goalRankGateOf = (slice: PlanSlice): Gate => {
-  const gate = sliceGates(slice).find((g) => g.name === "goal rank");
-  if (!gate) throw new Error(`${slice}'s set has no gate named "goal rank"`);
-  return gate;
-};
+const goalRankGateOf = (slice: PlanSlice): Gate => sliceNamed(slice, "goal rank");
 
 /** A goal, as the inbox slice files one: a root `group` carrying its rank. */
 const goal = (tag: string, rank: number): PendingEntry =>
@@ -723,7 +795,7 @@ it("a rank an inbox commit changes on a standing goal passes the gate", async ()
  * it could have moved — the same reasoning the merged-tree pending gate's
  * wiring rests on (`harness/gates.ts`).
  */
-it("build's gate set carries no goal-rank row", () => {
+it("a build phase's gate set carries no goal rank gate", () => {
   const producer = sliceGates(INBOX_PHASE).map((g) => g.name);
   // Vacuity pin: the row exists to be absent from build's set.
   expect(producer).toContain("goal rank");
@@ -742,13 +814,8 @@ it("build's gate set carries no goal-rank row", () => {
  * parses, which is exactly why only the commit that wrote it can be told
  * (`spec/pending.md`, *Pickability*).
  */
-const newBlockerGateOf = (slice: PlanSlice): Gate => {
-  const gate = sliceGates(slice).find((g) => g.name === "new blocker resolves");
-  if (!gate) {
-    throw new Error(`${slice}'s set has no gate named "new blocker resolves"`);
-  }
-  return gate;
-};
+const newBlockerGateOf = (slice: PlanSlice): Gate =>
+  sliceNamed(slice, "new blocker resolves");
 
 /** An entry waiting on one tag, as a producer files a dependency. */
 const waitsOn = (tag: string, blocker: string): PendingEntry =>
@@ -2235,13 +2302,7 @@ it("the package's gates precede a consumer's declared gates for the same phase",
   expect(declared.length).toBeGreaterThan(0);
 
   const set = gates(declared);
-  const DISCIPLINE = [
-    "records",
-    "clean-tree",
-    "pending-gate",
-    "per cites resolve",
-    "slice-state",
-  ];
+  const DISCIPLINE = ["records", "clean-tree", "pending-gate", "slice-state"];
   expect(set.map((g) => g.name)).toEqual([
     ...DISCIPLINE,
     ...declared.map((g) => g.name),
