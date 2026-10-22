@@ -124,11 +124,13 @@ export interface GateEngine {
    * (`FlumeApi.readGatedQueue`), so the gates below judge exactly the listing
    * `pendingGate` ahead of them parsed, over an offset none of them composed.
    *
-   * Taken at the ref its context names, which is the gated commit for every
-   * caller here but one: the goal-rank gate reads the same listing at
-   * `ctx.baseSha` to learn which ranks this span moved, and a second spelling
-   * of "the queue at a ref" for that leg is the divergence this field exists
-   * to prevent.
+   * Taken at the ref its context names — the gated commit for every gate
+   * here, and `ctx.baseSha` as well wherever a leg compares the span's two
+   * ends. Both such legs read this same listing at the base: the goal-rank
+   * gate to learn which ranks this span moved, the new-blocker gate to tell
+   * an edge this commit added from one already standing. A second spelling of
+   * "the queue at a ref" for either is the divergence this field exists to
+   * prevent.
    */
   readonly readGatedQueue: (ctx: GatedQueueContext) => Promise<GatedQueue>;
   /**

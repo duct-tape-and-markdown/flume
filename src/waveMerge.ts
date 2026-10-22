@@ -303,21 +303,6 @@ interface WaveMergeSetup {
 }
 
 /**
- * A wave's merge stage while it is running: opened by {@link openWaveMerge},
- * advanced once per finished attempt by {@link offerAttempt} and
- * {@link drainWaiting}, closed by
- * {@link closeWaveMerge}.
- *
- * It is a value rather than a set of locals because the stage is no longer
- * one call. A span is carried onto trunk as its own agent finishes
- * (`spec/worktrees.md`, *Fanout and worktrees — provisioning, isolation,
- * teardown*), so what one pick learned — the bystander checkpoint it took,
- * the outcomes and gate rows it recorded — has to outlive that pick and reach
- * the fold the wave ends with. Every field below is an accumulator, and
- * nothing reads across entries except the checkpoint, the one thing the wave
- * is still explicitly once-per-wave about.
- */
-/**
  * One finished attempt waiting on the ship lock: the attempt itself and the
  * merge-outcome rows its fold already produced, which the ledger commit of
  * whichever merge carries it has to record (spec/worktrees.md, *Batched
@@ -344,6 +329,21 @@ interface BatchCandidate {
   readonly head: string;
 }
 
+/**
+ * A wave's merge stage while it is running: opened by {@link openWaveMerge},
+ * advanced once per finished attempt by {@link offerAttempt} and
+ * {@link drainWaiting}, closed by
+ * {@link closeWaveMerge}.
+ *
+ * It is a value rather than a set of locals because the stage is no longer
+ * one call. A span is carried onto trunk as its own agent finishes
+ * (`spec/worktrees.md`, *Fanout and worktrees — provisioning, isolation,
+ * teardown*), so what one pick learned — the bystander checkpoint it took,
+ * the outcomes and gate rows it recorded — has to outlive that pick and reach
+ * the fold the wave ends with. Every field below is an accumulator, and
+ * nothing reads across entries except the checkpoint, the one thing the wave
+ * is still explicitly once-per-wave about.
+ */
 interface WaveMerge {
   readonly setup: WaveMergeSetup;
   /**
