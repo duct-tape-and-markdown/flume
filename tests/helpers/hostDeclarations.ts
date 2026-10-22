@@ -1,21 +1,22 @@
 /**
- * The suite's host declarations, and the permission-bit denials that may only
- * sit inside one.
+ * The suite's host declarations, and the host-shaped denials that may only sit
+ * inside one.
  *
  * `spec/cli.md`, *win32 is a supported host*, splits the lane's reds in two: a
  * case whose subject is platform-neutral is a defect in the engine or in the
  * fixture, and a case whose subject is POSIX error semantics "declares its
  * host and skips on win32 with the reason stated, never silently". This scan
  * is what makes the second half decidable — every `runIf`/`skipIf` on
- * `process.platform` in the suite, and every `chmod` that takes a permission
- * away, read off the source rather than off a lane run.
+ * `process.platform` in the suite, and every arming that denies on posix
+ * alone, read off the source rather than off a lane run.
  *
  * A source scan, because both properties are what a case *declares*. A skip is
  * invisible at runtime on the host it does not skip on, so the lane that would
- * observe it is the one lane that never runs it; and a permission bit denies
- * nothing on win32 (`.claude/rules/platform-facts.md`, *`chmod` denies nothing
- * on win32*), so the case it stands in reports green over a refusal the host
- * never made. Neither is visible to a run of this suite on this host.
+ * observe it is the one lane that never runs it; and the armings in
+ * {@link DenialPrimitive} deny nothing on win32
+ * (`.claude/rules/platform-facts.md`, *`chmod` denies nothing on win32*), so
+ * the case one stands in reports green over a refusal the host never made.
+ * Neither is visible to a run of this suite on this host.
  *
  * The reasons live in `tests/helpers/host-declarations.json` and not here.
  * **It is data, not a module, on the `EXTERNAL_VOCABULARY` idiom
@@ -78,6 +79,23 @@ const CHMOD = /^(chmod|chmodSync|lchmod|lchmodSync|fchmod|fchmodSync)$/;
 const OWNER_READ = 0o400;
 const OWNER_WRITE = 0o200;
 
+/**
+ * The calls that put bytes in a file, for the same reason {@link CHMOD} lists
+ * every spelling of its own: which writer a fixture reaches for says nothing
+ * about what it is arming.
+ */
+const WRITE =
+  /^(writeFile|writeFileSync|appendFile|appendFileSync|write|writeSync)$/;
+
+/**
+ * The pointer that makes a plain file a worktree's gitfile. A `.git` file
+ * naming a gitdir that is not there is the suite's second denial primitive and
+ * the second one win32 does not honour: it denied on posix, denied nothing on
+ * the windows lane, and left five walled-wave cases asserting a wall that
+ * never happened.
+ */
+const GITDIR_POINTER = /^\s*gitdir:/;
+
 /** One host-declared case, as the ledger keys it. */
 export interface HostSite extends ScanSite {
   /** The registrar's own title — a `describe` block's or a case's. */
@@ -90,10 +108,23 @@ export interface HostSite extends ScanSite {
   readonly reason: string | null;
 }
 
-/** One place a fixture denies with a permission bit. */
+/**
+ * What a fixture denies with. Both primitives deny on posix and deny nothing
+ * on win32, so both are only ever sound inside a host-declared case; which one
+ * a site reaches for is what a finding names, never whether it is judged.
+ */
+export type DenialPrimitive =
+  /** A POSIX permission bit taken away — `chmod(dir, 0o000)`, `{ mode: 0o444 }`. */
+  | "mode"
+  /** A worktree's `.git` wrecked into a pointer at a gitdir that is not there. */
+  | "gitfile";
+
+/** One place a fixture denies on posix alone. */
 export interface DenialSite extends ScanSite {
-  /** The mode it sets, as the source spells it. */
-  readonly mode: string;
+  /** Which primitive this site arms. */
+  readonly primitive: DenialPrimitive;
+  /** The arming as the source spells it — the mode, or the pointer written. */
+  readonly arming: string;
   /**
    * The innermost host-declared case it sits inside, or `null` when it sits in
    * a case every host runs — which is the finding.
@@ -104,8 +135,9 @@ export interface DenialSite extends ScanSite {
 /**
  * Two verdicts over two judged sets, so each is a `Scan` of its own
  * (`tests/helpers/repoProgram.ts`): every host-declared case, whose findings
- * are the ones the ledger names no reason for; and every permission-bit
- * denial, whose findings are the ones standing outside a host-declared case.
+ * are the ones the ledger names no reason for; and every posix-only denial,
+ * whichever primitive arms it, whose findings are the ones standing outside a
+ * host-declared case.
  */
 export interface HostScan {
   readonly declarations: Scan<HostSite>;
@@ -270,16 +302,24 @@ function bindingsOf(src: ts.SourceFile, module: string): Bindings {
   return { hosts, registrars };
 }
 
+/**
+ * The callee's own name — `writeFile` for `fs.promises.writeFile(…)`, and the
+ * root for a bare call. Shared by both primitives' detectors, because which
+ * `node:fs` member a call names is one question however many armings key on
+ * it (`.claude/rules/engineering.md`, *The fix lands at the mechanism*).
+ */
+const calleeName = (call: ts.CallExpression): string | null =>
+  ts.isPropertyAccessExpression(call.expression)
+    ? call.expression.name.text
+    : calleeRoot(call.expression);
+
 /** The mode a `chmod` call sets, or a `mode:` option a call is handed. */
 function deniedMode(call: ts.CallExpression): ts.NumericLiteral | null {
   const denies = (literal: ts.NumericLiteral): boolean => {
     const mode = Number(literal.text);
     return (mode & OWNER_READ) === 0 || (mode & OWNER_WRITE) === 0;
   };
-  const root = calleeRoot(call.expression);
-  const name = ts.isPropertyAccessExpression(call.expression)
-    ? call.expression.name.text
-    : root;
+  const name = calleeName(call);
   for (const arg of call.arguments) {
     if (name && CHMOD.test(name) && ts.isNumericLiteral(arg) && denies(arg))
       return arg;
@@ -300,8 +340,49 @@ function deniedMode(call: ts.CallExpression): ts.NumericLiteral | null {
 }
 
 /**
- * Every host-declared case in the given sources, and every permission-bit
- * denial, each denial carrying the innermost host-declared case it sits in.
+ * The `gitdir:` pointer a write puts in a file, or `null` when the call writes
+ * something else.
+ *
+ * A source scan cannot decide whether the gitdir named is there, and a pointer
+ * at a path that resolves is a working gitfile rather than a denial — so every
+ * `gitdir:` write is the primitive, and a fixture that wants one inside a
+ * declared host says so. The content is read as the literal the source holds,
+ * head included for an interpolated path, since a pointer composed at runtime
+ * wrecks the same file as a constant one.
+ */
+function writtenGitdirPointer(call: ts.CallExpression): ts.Node | null {
+  const name = calleeName(call);
+  if (!name || !WRITE.test(name)) return null;
+  for (const arg of call.arguments) {
+    if (ts.isStringLiteralLike(arg) && GITDIR_POINTER.test(arg.text)) return arg;
+    if (ts.isTemplateExpression(arg) && GITDIR_POINTER.test(arg.head.text))
+      return arg;
+  }
+  return null;
+}
+
+/** A denial as the scan files it: which primitive, and the node it cites. */
+interface Denial {
+  readonly primitive: DenialPrimitive;
+  /** The arming's own node — what the finding's line and spelling come off. */
+  readonly node: ts.Node;
+}
+
+/**
+ * The denial a call arms, or `null`. One door over both primitives, so the
+ * walk below attributes either to its enclosing case by one path.
+ */
+function denialOf(call: ts.CallExpression): Denial | null {
+  const mode = deniedMode(call);
+  if (mode) return { primitive: "mode", node: mode };
+  const pointer = writtenGitdirPointer(call);
+  return pointer === null ? null : { primitive: "gitfile", node: pointer };
+}
+
+/**
+ * Every host-declared case in the given sources, and every denial either
+ * primitive arms, each denial carrying the innermost host-declared case it
+ * sits in.
  *
  * Takes its sources rather than reading disk, so the scan's own cover drives
  * the one detector the suite is judged by over a fixture written to be caught
@@ -349,12 +430,13 @@ export function scanHostDeclarations(
             inner = site;
           }
         }
-        const mode = deniedMode(node);
-        if (mode)
+        const denial = denialOf(node);
+        if (denial)
           denials.push({
             module,
-            line: lineOf(mode),
-            mode: mode.getText(src),
+            line: lineOf(denial.node),
+            primitive: denial.primitive,
+            arming: denial.node.getText(src),
             declared: inner,
           });
       }
