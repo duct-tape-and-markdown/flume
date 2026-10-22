@@ -8501,6 +8501,25 @@ describe('flume status — the Goals rows (spec/cli.md "flume status owes exactl
   const goalTagOf = (row: string): string =>
     row.slice("goal ".length, row.indexOf(":"));
 
+  /**
+   * The work tags one Goals row names, in the order it named them — read off
+   * that row's own work clause, with the count of what it did not name cut
+   * away, so a truncated row's remainder is never read as a tag.
+   */
+  const namedWorkOf = (row: string): string[] => {
+    const clause = row
+      .slice(row.indexOf(":") + 1)
+      .split("; ")
+      .map((c) => c.trim())
+      .find((c) => c.startsWith("work "));
+    return clause === undefined
+      ? []
+      : clause
+          .slice("work ".length)
+          .replace(/ and \d+ more$/, "")
+          .split(", ");
+  };
+
   it("the Goals rows order each goal by the position of its earliest ready work", async () => {
     const repo = await makeScratchRepo("flume-status-goals-order-", "main");
     try {
@@ -8617,6 +8636,157 @@ describe('flume status — the Goals rows (spec/cli.md "flume status owes exactl
       expect(rows[0]).toContain("work W-ONE, W-TWO");
       expect(rows[0]).not.toContain("S-STEP");
       expect(rows[0]).toContain("stood 2d 12h");
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it("a Goals row names at most three of the goal's remaining work entries", async () => {
+    const repo = await makeScratchRepo("flume-status-goals-capped-", "main");
+    try {
+      // One goal carrying five remaining work entries — more than a row names,
+      // which is the whole case: a listing line owes what comes next and how
+      // much is left, not the inventory.
+      await fileEntries(
+        repo.dir,
+        [
+          group("G-MANY"),
+          unit({ tag: "W-A1", parent: "G-MANY" }),
+          unit({ tag: "W-A2", parent: "G-MANY" }),
+          unit({ tag: "W-A3", parent: "G-MANY" }),
+          unit({ tag: "W-A4", parent: "G-MANY" }),
+          unit({ tag: "W-A5", parent: "G-MANY" }),
+        ],
+        Date.now() - 3 * HOUR_MS,
+      );
+
+      await writeRepoConfig(repo.dir, minimalChainSrc());
+
+      const r = await runCliStreams(repo.dir, ["status"]);
+
+      expect(r.code, r.stderr).toBe(0);
+      // Vacuity: the queue really holds the goal and all five work entries, so
+      // the bound below is a cap over a set larger than it and not an artifact
+      // of a goal with three.
+      expect(r.stdout).toContain("pending: 6");
+      const rows = goalRowsOf(r.stdout);
+      expect(rows).toHaveLength(1);
+      expect(namedWorkOf(rows[0]!)).toHaveLength(3);
+      // The two it did not name are absent from the row, not merely pushed
+      // past the third slot. Read off the one row, never the whole listing.
+      expect(rows[0]).not.toContain("W-A4");
+      expect(rows[0]).not.toContain("W-A5");
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it("a Goals row counts the remaining work entries it did not name", async () => {
+    const repo = await makeScratchRepo("flume-status-goals-counted-", "main");
+    try {
+      // Five remaining work entries, three of them named: the row owes the
+      // operator the size of what it withheld, or a decomposed goal reads the
+      // same as one with exactly three entries left.
+      await fileEntries(
+        repo.dir,
+        [
+          group("G-MANY"),
+          unit({ tag: "W-A1", parent: "G-MANY" }),
+          unit({ tag: "W-A2", parent: "G-MANY" }),
+          unit({ tag: "W-A3", parent: "G-MANY" }),
+          unit({ tag: "W-A4", parent: "G-MANY" }),
+          unit({ tag: "W-A5", parent: "G-MANY" }),
+        ],
+        Date.now() - 3 * HOUR_MS,
+      );
+
+      await writeRepoConfig(repo.dir, minimalChainSrc());
+
+      const r = await runCliStreams(repo.dir, ["status"]);
+
+      expect(r.code, r.stderr).toBe(0);
+      // Vacuity: six entries in the queue and one row over them, and the row
+      // named three — so the count asserted below is over the two it left.
+      expect(r.stdout).toContain("pending: 6");
+      const rows = goalRowsOf(r.stdout);
+      expect(rows).toHaveLength(1);
+      expect(namedWorkOf(rows[0]!)).toHaveLength(3);
+      expect(rows[0]).toContain("and 2 more");
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it("a Goals row names a goal's remaining work entries in the order they will be served", async () => {
+    const repo = await makeScratchRepo("flume-status-goals-served-", "main");
+    try {
+      // Five entries filed in one commit, so the queue's own default order is
+      // the tag order W-A1..W-A5, and a policy that reverses the ready set.
+      // The three a row names are then W-A5, W-A4, W-A3 — the only answer the
+      // chain's order produces, and the opposite end of the list from the one
+      // the queue listing would hand the same bound.
+      await fileEntries(
+        repo.dir,
+        [
+          group("G-MANY"),
+          unit({ tag: "W-A1", parent: "G-MANY" }),
+          unit({ tag: "W-A2", parent: "G-MANY" }),
+          unit({ tag: "W-A3", parent: "G-MANY" }),
+          unit({ tag: "W-A4", parent: "G-MANY" }),
+          unit({ tag: "W-A5", parent: "G-MANY" }),
+        ],
+        Date.now() - 3 * HOUR_MS,
+      );
+
+      await writeRepoConfig(
+        repo.dir,
+        minimalChainSrc({ orderSrc: "(ready) => [...ready].reverse()" }),
+      );
+
+      const r = await runCliStreams(repo.dir, ["status"]);
+
+      expect(r.code, r.stderr).toBe(0);
+      // Vacuity: the chain loaded, so the sequence below is the policy's and
+      // not the fallback's, and the queue held every entry it ordered.
+      expect(r.stdout).not.toContain("chain: failed to load");
+      expect(r.stdout).not.toContain("goals: served order withheld");
+      expect(r.stdout).toContain("pending: 6");
+      const rows = goalRowsOf(r.stdout);
+      expect(rows).toHaveLength(1);
+      expect(namedWorkOf(rows[0]!)).toEqual(["W-A5", "W-A4", "W-A3"]);
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
+  it("a goal with three remaining work entries names all three and counts nothing", async () => {
+    const repo = await makeScratchRepo("flume-status-goals-exact-", "main");
+    try {
+      // Exactly the bound: the row names every entry and has nothing left to
+      // count, so a goal at the edge reads as complete rather than truncated.
+      await fileEntries(
+        repo.dir,
+        [
+          group("G-THREE"),
+          unit({ tag: "W-B1", parent: "G-THREE" }),
+          unit({ tag: "W-B2", parent: "G-THREE" }),
+          unit({ tag: "W-B3", parent: "G-THREE" }),
+        ],
+        Date.now() - 3 * HOUR_MS,
+      );
+      await writeRepoConfig(repo.dir, minimalChainSrc());
+
+      const r = await runCliStreams(repo.dir, ["status"]);
+
+      expect(r.code, r.stderr).toBe(0);
+      // Vacuity: four entries read, one row over them — the three names below
+      // are the goal's whole remaining work.
+      expect(r.stdout).toContain("pending: 4");
+      const rows = goalRowsOf(r.stdout);
+      expect(rows).toHaveLength(1);
+      expect(namedWorkOf(rows[0]!)).toEqual(["W-B1", "W-B2", "W-B3"]);
+      // Reads the one row's own clause, never the listing around it.
+      expect(rows[0]).not.toMatch(/\d+ more/);
     } finally {
       await repo.cleanup();
     }

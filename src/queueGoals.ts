@@ -1,8 +1,9 @@
 /**
  * The queue's goals — the rows `flume status` prints just ahead of its flow
  * row (spec/cli.md, "`flume status` owes exactly this"): one row per goal
- * standing, in the order the queue serves them, each naming the `work` the
- * goal has left and how long it has stood.
+ * standing, in the order the queue serves them, each naming the first few of
+ * the `work` the goal has left, counting the rest, and saying how long it has
+ * stood.
  *
  * One job: fold a queue listing and the ready set it was read with into those
  * rows. Nothing here reads disk and nothing here is stored — a goal's rank is
@@ -13,10 +14,12 @@
  *
  * The order is not computed here either. The ready set arrives in the order
  * one selection serves it (`servedReadyEntries`, `src/selection.ts`), and
- * these rows read positions out of it: a goal's place is the place of its
- * earliest ready work, so the listing cannot rank two goals differently from
- * the dispatch that will pick between them. Where that order could not be
- * taken at all, the rows say so and fall back to the queue's own default —
+ * these rows read positions out of it twice: a goal's place is the place of
+ * its earliest ready work, so the listing cannot rank two goals differently
+ * from the dispatch that will pick between them, and one goal's work is read
+ * in the positions its own entries hold, so the entries a row names are the
+ * ones that dispatch reaches first. Where that order could not be taken at
+ * all, the rows say so and fall back to the queue's own default —
  * declared in the row rather than left looking like the served order
  * (`.claude/rules/engineering.md`, *Loud or nothing*).
  */
@@ -28,10 +31,19 @@ import { formatSpan, spanFrom } from "./queueSpan.js";
 /** What a row says in place of a position, for a goal with no ready work. */
 const NOTHING_READY = "nothing ready";
 
+/**
+ * How many of a goal's remaining `work` entries one row names before it counts
+ * the rest (spec/cli.md, "`flume status` owes exactly this").
+ */
+const NAMED_WORK = 3;
+
 /** What one row is rendered from — one goal, read against one ready set. */
 interface GoalRead {
   goal: PendingEntry;
-  /** Its remaining `work` entries, in the queue's own order. */
+  /**
+   * Its remaining `work` entries, in the order they will be served — which is
+   * what decides which of them the row names ({@link workClause}).
+   */
   work: PendingEntry[];
   /**
    * Where the goal's earliest ready work sits in the set this read was taken
@@ -52,17 +64,28 @@ interface GoalRead {
  * work is ordinary shape, so the descent is the engine's own walk
  * (`descendantsOf`, `src/PendingSchema.ts`) rather than a child lookup that
  * would read a decomposed goal as empty.
+ *
+ * That subtree is ordered by the same positions the goals themselves are
+ * ({@link byServedPosition}), because a row names only its first few entries
+ * and the queue's own default would hand that bound a different three than the
+ * one the chain's policy will serve.
  */
 function readGoals(
   listing: readonly PendingEntry[],
   ready: readonly PendingEntry[],
   queueOrder: (a: PendingEntry, b: PendingEntry) => number,
+  withheld: boolean,
 ): GoalRead[] {
   const readyAt = new Map(ready.map((entry, at) => [entry.tag, at] as const));
+  const servedOrder = byServedPosition(
+    (entry: PendingEntry) => readyAt.get(entry.tag),
+    queueOrder,
+    withheld,
+  );
   return listing.filter(isGoal).map((goal) => {
     const work = descendantsOf(listing, goal.tag)
       .filter((entry) => entry.kind === "work")
-      .sort(queueOrder);
+      .sort(servedOrder);
     let servedAt: number | undefined;
     for (const entry of work) {
       const at = readyAt.get(entry.tag);
@@ -74,32 +97,36 @@ function readGoals(
 }
 
 /**
- * The order the rows print in: each goal by the position of its earliest
- * ready work, goals with nothing ready last, the queue's own default order
+ * The order one set is served in: each subject by the position `servedAt`
+ * answers for it, the subjects it answers nothing for last, `fallback`
  * breaking every tie.
+ *
+ * Both sequences a row set states read this one comparator — the goals by
+ * their earliest ready work, and a goal's remaining work by each entry's own
+ * position — rather than spelling the same ordering twice over two subjects
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*). Sharing
+ * it is also what keeps a truncated row honest: the entries it names are the
+ * first of the sequence the listing itself is ranked by.
  *
  * `withheld` is the selection whose order could not be taken. The positions
  * are then indexes into a set no policy ordered, so they decide nothing and
- * the default order decides the whole sequence — ranking goals by them would
- * be serving an order this read never computed. What survives either way is
- * the nothing-ready partition, because readiness is the gate switch's verdict
+ * `fallback` decides the whole sequence — ranking by them would be serving an
+ * order this read never computed. What survives either way is the
+ * nothing-ready partition, because readiness is the gate switch's verdict
  * over each entry and not a property of the sequence they arrived in.
  */
-function byServedPosition(
+function byServedPosition<T>(
+  servedAt: (subject: T) => number | undefined,
+  fallback: (a: T, b: T) => number,
   withheld: boolean,
-  queueOrder: (a: PendingEntry, b: PendingEntry) => number,
-): (a: GoalRead, b: GoalRead) => number {
+): (a: T, b: T) => number {
   return (a, b) => {
-    if ((a.servedAt === undefined) !== (b.servedAt === undefined))
-      return a.servedAt === undefined ? 1 : -1;
-    if (
-      !withheld &&
-      a.servedAt !== undefined &&
-      b.servedAt !== undefined &&
-      a.servedAt !== b.servedAt
-    )
-      return a.servedAt < b.servedAt ? -1 : 1;
-    return queueOrder(a.goal, b.goal);
+    const at = servedAt(a);
+    const bt = servedAt(b);
+    if ((at === undefined) !== (bt === undefined)) return at === undefined ? 1 : -1;
+    if (!withheld && at !== undefined && bt !== undefined && at !== bt)
+      return at < bt ? -1 : 1;
+    return fallback(a, b);
   };
 }
 
@@ -127,6 +154,26 @@ function standingClause(
   return span === undefined ? "standing unmeasurable" : `stood ${formatSpan(span)}`;
 }
 
+/**
+ * What the row says about the work the goal has left: the entries the queue
+ * serves first, by name, and a count of everything standing behind them.
+ *
+ * A decomposed goal's whole tag list is a row nobody reads — what a listing
+ * line owes is what comes next and how much is left, not the inventory — so
+ * the naming stops at {@link NAMED_WORK} and the remainder is a number. Which
+ * entries fall inside that bound is the served order's answer
+ * ({@link readGoals}) and never the queue listing's: naming three the
+ * dispatcher will not reach for days would be a truncation that misreports
+ * rather than one that summarizes.
+ */
+function workClause(work: readonly PendingEntry[]): string {
+  if (work.length === 0) return "no work entry yet";
+  const named = work.slice(0, NAMED_WORK).map((entry) => entry.tag);
+  const unnamed = work.length - named.length;
+  const names = `work ${named.join(", ")}`;
+  return unnamed === 0 ? names : `${names} and ${unnamed} more`;
+}
+
 /** One goal's row: its position's mark, its remaining work, and its standing. */
 function goalRow(
   read: GoalRead,
@@ -135,9 +182,7 @@ function goalRow(
 ): string {
   const clauses = [
     ...(read.servedAt === undefined ? [NOTHING_READY] : []),
-    read.work.length === 0
-      ? "no work entry yet"
-      : `work ${read.work.map((entry) => entry.tag).join(", ")}`,
+    workClause(read.work),
     standingClause(read.goal.tag, filingTimes, now),
   ];
   return `goal ${read.goal.tag}: ${clauses.join("; ")}`;
@@ -172,15 +217,22 @@ export function goalRows(opts: {
   now: number;
 }): string[] {
   // The queue's own default order (`byFilingThenTag`, `src/filingOrder.ts`),
-  // which is what a tie between two goals falls to and what the whole sequence
-  // falls to where the served order was withheld — the engine's one comparator
-  // over a queue rather than a second one spelled for this row. A filing read
-  // that failed leaves it the tag alone, which is the same degrade that read's
-  // own relocated-ledger answer carries.
+  // which is what a tie falls to and what both sequences — the goals, and the
+  // work inside each row — fall to where the served order was withheld; the
+  // engine's one comparator over a queue rather than a second one spelled for
+  // this row. A filing read that failed leaves it the tag alone, which is the
+  // same degrade that read's own relocated-ledger answer carries.
   const queueOrder = byFilingThenTag(opts.filingTimes ?? new Map());
-  const goals = readGoals(opts.listing, opts.ready, queueOrder);
+  const withheld = opts.orderWithheld !== undefined;
+  const goals = readGoals(opts.listing, opts.ready, queueOrder, withheld);
   if (goals.length === 0) return [];
-  goals.sort(byServedPosition(opts.orderWithheld !== undefined, queueOrder));
+  goals.sort(
+    byServedPosition(
+      (read: GoalRead) => read.servedAt,
+      (a, b) => queueOrder(a.goal, b.goal),
+      withheld,
+    ),
+  );
   const rows = goals.map((read) => goalRow(read, opts.filingTimes, opts.now));
   return opts.orderWithheld === undefined
     ? rows
