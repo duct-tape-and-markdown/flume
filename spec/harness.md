@@ -493,11 +493,11 @@ The judge does not know which test tool a consumer runs. A `runner` is a
 declared value with three operations, each returning structured results rather
 than exit codes the judge would have to interpret:
 
-- **`run(names, cwd)`** — run the whole suite and report, per line in
-  `names`, whether one passing test whose full name contains it carried it and
-  whether a skipped test names it; every failure the run met is reported beside
-  them, which is what the merged-tree regression run and the `base-red` re-run
-  read (*The judges*). The skipped half is what a `laneTests[]` line is owed
+- **`run(names, cwd)`** — run the consumer's suite, as its runner declaration
+  scopes it, and report, per line in `names`, whether one passing test whose
+  full name contains it carried it and whether a skipped test names it; every
+  failure the run met is reported beside them, which is what the merged-tree
+  regression run and the `base-red` re-run read (*The judges*). The skipped half is what a `laneTests[]` line is owed
   on (*The judges*): a runner whose tool cannot report skips reports `false`,
   and its consumer has no `laneTests[]`.
 - **`runAtBase(names, files, baseSha, cwd)`** — lay the merged bytes of `files`
@@ -505,11 +505,20 @@ than exit codes the judge would have to interpret:
   refuses a `tests[]` line that passes here. The checkout is the engine's and is
   reclaimed at the gate boundary, so this operation runs only inside a gate
   invocation; nothing drives it from outside one.
-- **`lanes`** — the runner's declared lanes and which files each excludes. The
-  running lane's exclusions are rendered into plan's `tests[]` and `pins[]`
-  hints, so plan is told at authorship which globs no judge will reach — never
-  refused for a prediction, since an entry's `files` is a prediction build is
-  not held to.
+- **`lanes`** — the runner's declared lanes, by name, and which one `run` and
+  `runAtBase` execute. The running lane's coverage is the test tool's own answer
+  for the declared scope, never a list declared beside it; a runner whose tool
+  cannot answer reports none, and plan is told no coverage is known. The files
+  it leaves out are rendered into plan's `tests[]` and `pins[]` hints, so plan
+  is told at authorship which files no judge will reach — never refused for a
+  prediction, since an entry's `files` is a prediction build is not held to.
+
+What the suite is belongs to the consumer: its runner declaration states the
+scope once, in the tool's own vocabulary, and the runner adds only what reading
+a run needs — where the report is written — never an argument that widens or
+narrows it. The one narrowing is the judge's own: a base run covers the files
+its lines name, within that scope. The judges hold their discipline over
+whatever suite that scope names (*The judges*).
 
 A runner is declared as a factory over what a base checkout needs and cannot
 reach from a static declaration: the engine's API — its lockfile-aware

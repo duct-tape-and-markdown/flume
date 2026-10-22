@@ -1,7 +1,9 @@
 # Rulings: the child deadline, the undeclared install, the runner's `run` (operator, interactive session)
 
 Operator rulings on the three decisions the 2026-10-22 class records left
-open. Each record names the decision; this file settles it.
+open. Each record names the decision; this file settles it. Breaking
+changes to consumer declarations are accepted under all three; the upgrade
+doc guides consumers through them.
 
 ## Child deadline — from `a-spawned-child-cannot-fail-on-its-own.md`
 
@@ -45,11 +47,10 @@ Option (a), with the no-lockfile arm made loud; option (b) not taken.
   if a consumer that declares `setup` is measured resolving from the parent.
 - The worktree base staying inside the checkout is not reopened.
 
-## The runner's `run` — from `a-declared-value-and-the-behavior-it-shapes-live-apart.md`
+## The runner's `run` — from the suite-scope record
 
-**The code is right; the spec sentence is the defect.** `run(names, cwd)`
-runs the whole suite and reports per name — the merged-tree
-regression run and the `base-red` re-run depend on it (`spec/harness.md`,
-*The judges*). The spec edit lands with this record. The cost the consumer
-measured is the lane record's: once a lane states what it runs, the whole
-run is the consumer's own suite and nothing more.
+**Scope is the consumer's; the shipped runner choosing it is the miss.**
+`run(names, cwd)` runs the consumer's suite as its runner declaration scopes
+it and reports per name beside every failure; the merged-tree regression run
+and the `base-red` re-run hold over that scope, whatever its size (`spec/harness.md`, *The runner interface*).
+The target shape is `the-runner-owns-a-scope-that-is-the-consumers.md`.
