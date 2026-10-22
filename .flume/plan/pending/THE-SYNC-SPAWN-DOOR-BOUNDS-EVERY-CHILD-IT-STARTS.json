@@ -1,0 +1,34 @@
+{
+  "tag": "THE-SYNC-SPAWN-DOOR-BOUNDS-EVERY-CHILD-IT-STARTS",
+  "gate": { "kind": "open" },
+  "dependsOnForks": [],
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "harness/exec.ts",
+        "description": "the bound the sync door holds every child to, and the refusal one that outruns it raises"
+      },
+      {
+        "path": "tests/spawnShim.test.ts",
+        "description": "the sync door's cases, which already drive it"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "the package's synchronous spawn door bounds every child it starts: one that outruns the bound is signalled and the call refuses, naming the deadline and the command",
+  "per": { "path": ".claude/rules/engineering.md", "section": "Loud or nothing" },
+  "acceptance": "a child of the package's sync spawn door that outruns the declared bound is signalled and the call throws a refusal naming the deadline and the command — so a wedged forge read, window diff or shell probe ends as a failure its caller already renders instead of holding the tick open with nothing in any log — and the bound is statable at the call, so a case proves it without spending the ceiling",
+  "tests": [
+    "a sync spawn that outruns its bound refuses, naming the deadline and the command"
+  ],
+  "pins": [],
+  "laneTests": [],
+  "interface": {
+    "changes": "a caller of the package's sync spawn door may state the bound its child is held to; the door's own ceiling stands where none is stated",
+    "hides": "that a synchronous child is unbounded, and each caller's own decision about what an unreturning one costs the tick",
+    "rejected": "a chain-declared knob — the door is reached at chain load and inside a synchronous `promptArgs`, where no resolved policy is in hand, and the package already declares its own ceilings for its own children"
+  },
+  "notes": "`captureSync` (`harness/exec.ts:78`) states cwd, env, encoding, maxBuffer and stdio and no `timeout`; execFileSync defaults to none. Its callers — the forge read, the window diffs, the shell probe — run at chain load or inside a synchronous promptArgs, where no timer can fire. Nothing else bounds them: `gateTimeoutMs` reaches gate children through an async-only store, `tickTimeoutMs` the agent, and the supervisor holds no timer over a tick child."
+}
