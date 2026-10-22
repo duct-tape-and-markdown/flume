@@ -1506,6 +1506,14 @@ partitionByFileOverlap(pickable, { maxParallel: 4, listing: queue });
 // => [[entryA, entryC], [entryB]]   // A and C disjoint; B overlaps both
 ```
 
+`maxParallel` is required and must be a positive integer: the helper throws on
+a width below one or a fractional one rather than answering, because the fill
+compares a batch's length against that width and a width below one caps
+nothing — the queue would come back one entry per batch, which reads like a
+partition whose entries all collided. It is the same width `supervisorPolicy`
+declares and the same range the chain load refuses on, so a width your `order`
+hook composes is refused wherever it reaches the engine.
+
 The partition reads `entry.files.new[].path`/`.edit[].path`/`.retire[]`
 (see `touchedPaths()` in `PendingSchema.ts`); declare files truthfully
 when hand-authoring entries. A `work` entry's footprint is its own files

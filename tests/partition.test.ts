@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { WAVE_WIDTH_FLOOR_REASON } from "../src/counted.ts";
 import { partitionByFileOverlap } from "../src/partition.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
 
@@ -275,5 +276,95 @@ describe("partitionByFileOverlap — a work entry's footprint is its steps' too"
         ignore: ["shared-lock.json"],
       }),
     ).toHaveLength(1);
+  });
+});
+
+// ---------- the width below one ----------
+//
+// `.claude/rules/engineering.md`, *Loud or nothing*: the fill's cap check
+// compares a batch's length against the declared width, so a width below one
+// caps nothing and the helper answers with a full serialization of the queue
+// it was asked to partition — a confident wrong answer where the siblings
+// carrying the same width (the chain's `supervisorPolicy.maxParallel` at the
+// load, the embedder's `DispatcherOptions.maxParallel` at construction)
+// already refuse.
+
+/** Four entries with pairwise-disjoint footprints — one wave's worth. */
+const fourDisjoint = (): PendingEntry[] => [
+  makeEntry("A", { edit: ["src/a.ts"] }),
+  makeEntry("B", { edit: ["src/b.ts"] }),
+  makeEntry("C", { edit: ["src/c.ts"] }),
+  makeEntry("D", { edit: ["src/d.ts"] }),
+];
+
+/**
+ * The message `partitionByFileOverlap` refuses `width` with, read off the real
+ * call. Throws when the call answered instead, so a tree where the width is
+ * unguarded reds on the arm rather than on a comparison against undefined.
+ */
+function refusal(width: number, listing: readonly PendingEntry[]): string {
+  try {
+    partitionByFileOverlap(listing, { maxParallel: width, listing });
+  } catch (err) {
+    return (err as Error).message;
+  }
+  throw new Error(
+    `partitionByFileOverlap answered a maxParallel of ${width} instead of ` +
+      `refusing it`,
+  );
+}
+
+describe("partitionByFileOverlap — a wave width below one is refused", () => {
+  it("the partition helper fills a batch to the declared width", () => {
+    const listing = fourDisjoint();
+
+    const batches = partitionByFileOverlap(listing, {
+      maxParallel: 4,
+      listing,
+    });
+
+    // The property the refusal protects, stated in the direction that breaks:
+    // one batch holding all four, not four batches of one. Asserting only
+    // `length <= 4` would read green over the serialization a zero produces.
+    expect(batches.map(tags)).toEqual([["A", "B", "C", "D"]]);
+  });
+
+  it("the partition helper refuses a wave width below one", () => {
+    const listing = fourDisjoint();
+
+    // The fixture's own control: this same queue at a width in range answers,
+    // so each refusal below is the width answering rather than a call refused
+    // for an unrelated reason.
+    expect(() =>
+      partitionByFileOverlap(listing, { maxParallel: 2, listing }),
+    ).not.toThrow();
+
+    // Zero caps nothing, and the sentence is the siblings' own — one width,
+    // one reason, whichever surface the caller reached it through. Compared
+    // whole, because a required argument has no omission to offer and a
+    // refusal inviting the caller to drop it would be advice the signature
+    // refuses.
+    expect(refusal(0, listing)).toBe(
+      `partition called with maxParallel: 0; it must be a positive integer ` +
+        `— ${WAVE_WIDTH_FLOOR_REASON}.`,
+    );
+    // A negative is the same wave one spelling further out.
+    expect(refusal(-1, listing)).toMatch(
+      /maxParallel: -1[\s\S]*must be a positive integer/,
+    );
+  });
+
+  it("the partition helper refuses a fractional wave width", () => {
+    const listing = fourDisjoint();
+
+    expect(() =>
+      partitionByFileOverlap(listing, { maxParallel: 2, listing }),
+    ).not.toThrow();
+
+    // A fraction is the same defect one rung quieter: 1.5 fills a batch to one
+    // and the width the caller asked for is simply gone.
+    expect(refusal(1.5, listing)).toMatch(
+      /maxParallel: 1\.5[\s\S]*must be a positive integer/,
+    );
   });
 });
