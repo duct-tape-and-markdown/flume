@@ -287,7 +287,9 @@ describe("partitionByFileOverlap — a work entry's footprint is its steps' too"
 // it was asked to partition — a confident wrong answer where the siblings
 // carrying the same width (the chain's `supervisorPolicy.maxParallel` at the
 // load, the embedder's `DispatcherOptions.maxParallel` at construction)
-// already refuse.
+// already refuse. An *absent* width is that comparison inverted and the
+// opposite wrong answer: no batch length is ever at `undefined`, so every
+// disjoint entry joins the first batch and the wave runs as wide as the queue.
 
 /** Four entries with pairwise-disjoint footprints — one wave's worth. */
 const fourDisjoint = (): PendingEntry[] => [
@@ -302,9 +304,17 @@ const fourDisjoint = (): PendingEntry[] => [
  * call. Throws when the call answered instead, so a tree where the width is
  * unguarded reds on the arm rather than on a comparison against undefined.
  */
-function refusal(width: number, listing: readonly PendingEntry[]): string {
+function refusal(
+  width: number | undefined,
+  listing: readonly PendingEntry[],
+): string {
   try {
-    partitionByFileOverlap(listing, { maxParallel: width, listing });
+    // `undefined` is a width the signature refuses and a consumer still
+    // reaches: `.flume/chain.ts` is transpiled by `tsx` and never typechecked,
+    // so an `order` hook composing this call ships the absent width with no
+    // compiler between it and the fill. The cast is that call, not a shape
+    // invented here.
+    partitionByFileOverlap(listing, { maxParallel: width as number, listing });
   } catch (err) {
     return (err as Error).message;
   }
@@ -365,6 +375,29 @@ describe("partitionByFileOverlap — a wave width below one is refused", () => {
     // and the width the caller asked for is simply gone.
     expect(refusal(1.5, listing)).toMatch(
       /maxParallel: 1\.5[\s\S]*must be a positive integer/,
+    );
+  });
+
+  it("a partition width of undefined is refused rather than filling one unbounded batch", () => {
+    const listing = fourDisjoint();
+
+    // The fixture's own control, and the cap read in the direction that
+    // breaks: two of these four per batch, so a width the fill never compares
+    // against would show up here as one batch of all four.
+    const capped = partitionByFileOverlap(listing, { maxParallel: 2, listing });
+    expect(capped.map(tags)).toEqual([
+      ["A", "B"],
+      ["C", "D"],
+    ]);
+
+    // Compared whole, and the sentence is the siblings' own: one width, one
+    // reason, whichever surface the caller reached it through. No omission
+    // clause, because a required argument has no default below it to fall
+    // through to — the two surfaces that do keep theirs
+    // (`tests/chain.test.ts`, `tests/Dispatcher.test.ts`).
+    expect(refusal(undefined, listing)).toBe(
+      `partition called with maxParallel: undefined; it must be a positive ` +
+        `integer — ${WAVE_WIDTH_FLOOR_REASON}.`,
     );
   });
 });

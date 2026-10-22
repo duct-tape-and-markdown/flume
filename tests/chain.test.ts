@@ -16,6 +16,7 @@ import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 
 import { loadChainModule } from "../src/chainLoad.ts";
+import { WAVE_WIDTH_FLOOR_REASON } from "../src/counted.ts";
 import { mergeBatchWidth } from "../src/gateBatch.ts";
 import { selectBatch } from "../src/selection.ts";
 import type { Chain, Phase } from "../src/Phase.ts";
@@ -847,6 +848,26 @@ describe("Chain load — supervisorPolicy.maxParallel (spec/worktrees.md 'Fanout
     }
   }
 
+  /**
+   * Three open `work` entries with pairwise-disjoint footprints, through the
+   * real parse the ledger reads with — one more than the width below, so the
+   * cap the omitted declaration falls through to has something to cap.
+   */
+  function threeDisjoint(): QueueFile[] {
+    return ["OPT-A", "OPT-B", "OPT-C"].map((tag) => ({
+      file: entryFileName(tag),
+      raw: JSON.stringify({
+        tag,
+        gate: { kind: "open" },
+        files: {
+          new: [],
+          edit: [{ path: `src/${tag.toLowerCase()}.ts`, description: "e" }],
+          retire: [],
+        },
+      }),
+    }));
+  }
+
   it("a maxParallel below one refuses the chain load rather than leaving every wave with no slot", async () => {
     // Non-vacuity, and the fixture's own control: the same chain text with a
     // width in range loads and carries the declaration, so the refusals below
@@ -871,6 +892,71 @@ describe("Chain load — supervisorPolicy.maxParallel (spec/worktrees.md 'Fanout
       loadWithPolicy("fractional", "maxParallel: 1.5"),
     ).rejects.toThrow(
       /supervisorPolicy\.maxParallel: 1\.5[\s\S]*must be a positive integer/,
+    );
+  });
+
+  it("an omitted optional count still falls through to its caller's own default", async () => {
+    // The shape the counted predicate's no-op arm exists for: the policy is
+    // declared and the width inside it is not, so the load has nothing to
+    // refuse and the value below it decides the wave. Read back through the
+    // consumer that resolves the width — `selectBatch` (`src/selection.ts`),
+    // which reports the width the batches were capped at — rather than off the
+    // resolved object, where an engine that stopped falling through would
+    // still read green (`.claude/rules/engineering.md`, *A seam gate reads
+    // what the real writer wrote*).
+    const chain = await loadWithPolicy("omitted", "mergeBatch: 2");
+    expect(chain.supervisorPolicy?.maxParallel).toBeUndefined();
+
+    const parsed = parsePendingQueue(
+      threeDisjoint(),
+      undefined,
+      chain.maxEntryDepth,
+    );
+    expect(parsed.ok, JSON.stringify(parsed.errors)).toBe(true);
+    // Non-vacuity: the selection below is taken over three entries, so a width
+    // read off it is a verdict over a populated set — and three is one more
+    // than the caller's width, so the cap has something to do.
+    expect(parsed.entries).toHaveLength(3);
+
+    const selection = selectBatch({
+      chain,
+      pending: parsed.entries,
+      filingTimes: new Map([
+        ["OPT-A", 1_700_000_000],
+        ["OPT-B", 1_700_000_001],
+        ["OPT-C", 1_700_000_002],
+      ]),
+      isForkResolved: () => true,
+      refusalFacts: { priorAttempts: new Map(), headSha: "0".repeat(40) },
+      // The caller's own default, and with the declaration omitted the only
+      // width left standing.
+      maxParallel: 2,
+      inFlight: [],
+    });
+
+    expect(selection.maxParallel).toBe(2);
+    // Stated in the direction that breaks: two of the three disjoint entries
+    // in the first batch, not all three. A width that reached the partition as
+    // `undefined` would cap nothing and hand back one batch of all of them.
+    expect(selection.batches.map((b) => b.map((e) => e.tag))).toEqual([
+      ["OPT-A", "OPT-B"],
+      ["OPT-C"],
+    ]);
+
+    // And the refusal an out-of-range declaration takes names that omission,
+    // byte for byte: the clause is where an author reads the fallback this
+    // case just exercised, so it is compared whole rather than matched.
+    let refused = "";
+    try {
+      await loadWithPolicy("omitted-named", "maxParallel: 0");
+    } catch (err) {
+      refused = (err as Error).message;
+    }
+    expect(refused).toContain(
+      `chain declares supervisorPolicy.maxParallel: 0; it must be a positive ` +
+        `integer — ${WAVE_WIDTH_FLOOR_REASON}. Omit it for the default of ` +
+        `the width the embedder passed the dispatcher, which is four under ` +
+        `the CLI.`,
     );
   });
 

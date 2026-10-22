@@ -99,6 +99,7 @@ import type { Agent, AgentEnding } from "../src/Agent.ts";
 import { abortError, extractFinalMessage } from "../src/claudeCode.ts";
 import { withTerminalRenderer } from "../src/terminalRender.ts";
 import { Baton } from "../src/Baton.ts";
+import { WAVE_WIDTH_FLOOR_REASON } from "../src/counted.ts";
 import { superviseLoop } from "../src/loopSupervisor.ts";
 import {
   chainLoadGate,
@@ -3261,8 +3262,23 @@ describe("Dispatcher construction — a maxParallel that opens no slot refuses",
       /maxParallel: -1[\s\S]*must be a positive integer/,
     );
     // And it says what omitting the option would have bound, so an embedder
-    // reads the fallback off the refusal instead of out of the engine.
-    expect(() => construct(0)).toThrow(/Omit it for the default of 4 slots/);
+    // reads the fallback off the refusal instead of out of the engine. Compared
+    // whole: the omission clause is the only place the fallback is written
+    // down, and an arm that stopped offering it would still match a pattern
+    // over the range alone. The declared half of this width is compared the
+    // same way (`tests/chain.test.ts`), and the required argument's — which
+    // offers no omission at all — in `tests/partition.test.ts`.
+    let refused = "";
+    try {
+      construct(0);
+    } catch (err) {
+      refused = (err as Error).message;
+    }
+    expect(refused).toBe(
+      `dispatcher constructed with maxParallel: 0; it must be a positive ` +
+        `integer — ${WAVE_WIDTH_FLOOR_REASON}. Omit it for the default of ` +
+        `4 slots per wave.`,
+    );
   });
 
   it("a dispatcher constructed with a fractional maxParallel refuses", () => {

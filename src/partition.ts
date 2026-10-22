@@ -10,8 +10,10 @@
  *
  * The width the batch fill reads is the fanout wave's, so it refuses here on
  * the same range the chain's declaration and the dispatcher's construction
- * argument refuse on, through the one predicate they share
- * (`assertPositiveCount`, `src/counted.ts`).
+ * argument refuse on, through the one predicate they share — the arm of it
+ * that admits no omission, since the width is this helper's argument rather
+ * than a field below which a default waits
+ * (`assertRequiredPositiveCount`, `src/counted.ts`).
  *
  * Greedy partitioner: walk pending in order, place each entry in the first
  * batch where its paths don't overlap any existing batch entry. This isn't
@@ -19,7 +21,10 @@
  * the queue in (`byFilingThenTag`, `src/filingOrder.ts`).
  */
 
-import { assertPositiveCount, WAVE_WIDTH_FLOOR_REASON } from "./counted.js";
+import {
+  assertRequiredPositiveCount,
+  WAVE_WIDTH_FLOOR_REASON,
+} from "./counted.js";
 import { matchesAny } from "./paths.js";
 import { touchedPaths } from "./PendingSchema.js";
 import type { PendingEntry } from "./PendingSchema.js";
@@ -29,10 +34,11 @@ export interface PartitionOptions {
    * Maximum parallel ticks the harness will spawn. A positive integer, refused
    * at the call: the fill's cap check compares a batch's length against this
    * width, so below one every batch is already at it — each entry opens a
-   * batch of its own and a queue asked for four wide comes back serialized.
-   * The chain's `supervisorPolicy.maxParallel` and the embedder's
-   * `DispatcherOptions.maxParallel` are the same width refused on the same
-   * range, so no spelling of it reaches a wave as a zero.
+   * batch of its own and a queue asked for four wide comes back serialized,
+   * and an absent one is at no batch ever — every disjoint entry lands in one
+   * unbounded batch. The chain's `supervisorPolicy.maxParallel` and the
+   * embedder's `DispatcherOptions.maxParallel` are the same width refused on
+   * the same range, so no spelling of it reaches a wave as a zero.
    */
   maxParallel: number;
   /**
@@ -115,14 +121,18 @@ export function partitionByFileOverlap(
   // no cap at all — the placement test below compares a batch's length against
   // this width, so at zero every batch is already full and the answer handed
   // back is a complete serialization of the queue the caller asked to
-  // partition. Refused here rather than answered
-  // (`.claude/rules/engineering.md`, *Loud or nothing*): this helper ships on
-  // the package's surface (`src/index.ts`) and on the chain api a consumer's
-  // `order` hook is handed (`src/flumeApi.ts`), so the two sibling refusals —
-  // the chain's at the load and the dispatcher's at construction — do not
-  // cover every caller of the width. The argument is required here, so the
-  // refusal names no omission to fall back to.
-  assertPositiveCount("partition called with", {
+  // partition. An absent width is the same comparison inverted: no batch is
+  // ever at `undefined`, so every disjoint entry joins the first batch and a
+  // queue asked for four wide comes back as one wave of all of it. Refused
+  // here rather than answered (`.claude/rules/engineering.md`, *Loud or
+  // nothing*): this helper ships on the package's surface (`src/index.ts`) and
+  // on the chain api a consumer's `order` hook is handed (`src/flumeApi.ts`),
+  // whose module `tsx` transpiles without typechecking, so the required
+  // `number` is a compile-time claim no consumer's build ever makes and the
+  // two sibling refusals — the chain's at the load and the dispatcher's at
+  // construction — do not cover every caller of the width. The argument is
+  // required here, so the refusal names no omission to fall back to.
+  assertRequiredPositiveCount("partition called with", {
     field: "maxParallel",
     value: opts.maxParallel,
     why: WAVE_WIDTH_FLOOR_REASON,
