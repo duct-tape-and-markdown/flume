@@ -1,17 +1,22 @@
 /**
- * spawnShim — the win32 `.cmd`-shim spawn retry, held in one place so every
- * site that spawns a possibly-shimmed binary spells the detection the same
- * way (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
- * Sibling to `fsProbe.ts`: nothing beyond `node:child_process` here, so any
- * module that spawns can reach it without a cycle.
+ * spawnShim — what every spawn in this package settles before the child
+ * runs: the win32 `.cmd`-shim retry, and the end of the stdin the spawn
+ * opened. Held in one place so no site that spawns spells either decision
+ * for itself (`.claude/rules/engineering.md`, "The fix lands at the
+ * mechanism"). Sibling to `fsProbe.ts`: nothing beyond `node:child_process`
+ * here, so any module that spawns can reach it without a cycle.
  *
- * The fact itself — why a win32 spawn of an npm-installed binary ENOENTs,
- * and why the shell retry goes second rather than first — is
+ * The shim fact itself — why a win32 spawn of an npm-installed binary
+ * ENOENTs, and why the shell retry goes second rather than first — is
  * `.claude/rules/platform-facts.md`, "Node refuses to spawn a `.cmd` shim
  * without a shell". This module is where that fact becomes code, once.
  */
 
-import { execFile, type ExecFileOptions } from "node:child_process";
+import {
+  execFile,
+  type ExecFileOptions,
+  type PromiseWithChild,
+} from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileP = promisify(execFile);
@@ -96,6 +101,36 @@ export function shimRetryRefusal(
 }
 
 /**
+ * `spawned`, with the stdin its child was handed already ended — for the
+ * caller to await.
+ *
+ * A capturing spawn gives its child a stdin pipe no one will ever write to,
+ * and the call cannot decline it: `execFile` composes its own spawn options
+ * and forwards no `stdio`, so the pipe is there however the caller spells its
+ * options. A child that falls back to reading stdin when its argv gave it
+ * nothing to do then waits on a writer that cannot arrive — measured as a
+ * declared shell gate running a formatter over an empty file list, which held
+ * two build slots for hours and printed nothing to any log. Ended, the child
+ * reads the EOF and exits, which is a failure a gate reports
+ * (`.claude/rules/engineering.md`, "Loud or nothing").
+ *
+ * Mechanism rather than a knob: nothing on a capturing call's surface can
+ * reach that pipe to write to it — the promise resolves the child's whole
+ * output at once — so there is no caller for whom an open stdin is the
+ * answer. A caller that must write to a child spawns it streaming and owns
+ * the stream (`claudeCode`, `src/claudeCode.ts`).
+ *
+ * The sync door spells the same decision as `stdio` instead, which
+ * `execFileSync` does forward (`captureSync`, `harness/exec.ts`).
+ */
+export function endChildStdin<T>(spawned: PromiseWithChild<T>): Promise<T> {
+  // Optional on the type, present in fact for a capturing spawn; an absent
+  // one is a child holding no pipe, and so nothing to end.
+  spawned.child.stdin?.end();
+  return spawned;
+}
+
+/**
  * `execFile` with the shim fallback applied: direct spawn first, so args
  * keep exact quoting semantics, then one shell retry on
  * `isWin32ShimSpawnFailure` — over an argv `wordShimRetryWouldRewrite` says
@@ -116,11 +151,13 @@ export async function execFileWithShimRetry(
   // instead of the `string | Buffer` union every caller would then narrow.
   const direct = { ...opts, encoding: "utf8" as const };
   try {
-    return await execFileP(cmd, args, direct);
+    return await endChildStdin(execFileP(cmd, args, direct));
   } catch (err) {
     if (!isWin32ShimSpawnFailure(err)) throw err;
     const rewritten = wordShimRetryWouldRewrite([cmd, ...args]);
     if (rewritten !== undefined) throw shimRetryRefusal(cmd, rewritten, err);
-    return await execFileP(cmd, args, { ...direct, shell: true });
+    return await endChildStdin(
+      execFileP(cmd, args, { ...direct, shell: true }),
+    );
   }
 }

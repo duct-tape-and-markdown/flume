@@ -23,6 +23,7 @@ import {
   type StakedPidClaim,
   statedStateRoot,
 } from "./pidClaim.js";
+import { endChildStdin } from "./spawnShim.js";
 import { acquireWaitLock, type WaitLock } from "./waitLock.js";
 import { thrownMessage } from "./thrown.js";
 
@@ -95,6 +96,12 @@ const DEFAULT_CAPTURE_CAP = 16 * 1024 * 1024;
  * signature rather than the call site's, so every caller of that leg is held
  * to the same bound; omitted takes {@link DEFAULT_CAPTURE_CAP}.
  *
+ * The child's stdin is ended as the spawn hands it over (`endChildStdin`,
+ * `src/spawnShim.ts`): no leg here writes to a git child, and a git verb
+ * that reads stdin when its argv names no path reads EOF and exits rather
+ * than holding the tick open with nothing in any log
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
  * Streams come back exactly as git wrote them. `run` below is the trimming
  * form, which is what every caller reading git's own line-oriented output
  * wants; a caller reading a file's committed bytes takes this one.
@@ -104,11 +111,13 @@ async function spawnGit(
   args: string[],
   maxBuffer: number = DEFAULT_CAPTURE_CAP,
 ): Promise<{ stdout: string; stderr: string }> {
-  return exec("git", args, {
-    cwd,
-    env: literalPathspecEnv(),
-    maxBuffer,
-  });
+  return endChildStdin(
+    exec("git", args, {
+      cwd,
+      env: literalPathspecEnv(),
+      maxBuffer,
+    }),
+  );
 }
 
 /** `spawnGit` with git's trailing newline trimmed off both streams. */

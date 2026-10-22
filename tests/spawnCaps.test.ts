@@ -13,6 +13,13 @@
  *
  * The scanner is the same one in both, so the fixture cannot drift into
  * testing a second implementation of the verdict.
+ *
+ * Two verdicts ride that one fixture: the cap each capturing call declares,
+ * and what each spawn *home* leaves its child's stdin as. They are separate
+ * scans over separate judged sets — a cap can be named by whoever calls a
+ * wrapper, a child's stdin only where the child is started — so the cases
+ * below carry both answers, and a case is written for the arm it is named
+ * for.
  */
 
 import { mkdir, rm, writeFile } from "node:fs/promises";
@@ -25,11 +32,14 @@ import { REPO_ROOT, expectNoFindings } from "./helpers/repoProgram.ts";
 import {
   REPO_DOMAIN,
   SHIPPED_SPAWN_HOMES,
+  SPAWN_STDIN_ENDER,
   formatPromisifiedSpawnSite,
   formatSpawnCapSite,
+  formatSpawnStdinSite,
   formatSyncSpawnSite,
   scanPromisifiedSpawns,
   scanSpawnCaps,
+  scanSpawnStdin,
   scanSyncSpawns,
   type SpawnCapScan,
 } from "./helpers/spawnCaps.ts";
@@ -46,6 +56,11 @@ import {
  * own; an `execFileSync` and a `spawnSync` each piping nothing; a `spawnSync`
  * piping and capping nothing; and a streaming spawn, which has no cap to
  * declare.
+ *
+ * Two more carry the stdin verdict's own answers, which no case above
+ * spells: a home that hands its promise to the ender, and one that pipes
+ * stdin in so many words. Each declares a cap, so neither moves the capless
+ * verdict below.
  *
  * One case sits outside the swept tree, at the path this repo's own chain
  * is named by, so the domain's named-file arm is judged by the same verdicts
@@ -138,6 +153,27 @@ const CASES: Record<string, string> = {
     `export const log = (cwd: string) => spawn("git", ["log"], { cwd });`,
     ``,
   ].join("\n"),
+
+  "src/ended.ts": [
+    `import { execFile } from "node:child_process";`,
+    `import { promisify } from "node:util";`,
+    `import { ${SPAWN_STDIN_ENDER} } from "./spawnShim.js";`,
+    `const run = promisify(execFile);`,
+    `export const list = (cwd: string) =>`,
+    `  ${SPAWN_STDIN_ENDER}(run("git", ["log"], { cwd, maxBuffer: 16 << 20 }));`,
+    ``,
+  ].join("\n"),
+
+  "src/pipedStdin.ts": [
+    `import { execFileSync } from "node:child_process";`,
+    `export const list = (cwd: string) =>`,
+    `  execFileSync("git", ["log"], {`,
+    `    cwd,`,
+    `    maxBuffer: 16 << 20,`,
+    `    stdio: "pipe",`,
+    `  });`,
+    ``,
+  ].join("\n"),
 };
 
 /** The tree the fixture's cases are swept as, and the files it names. */
@@ -151,7 +187,9 @@ const JUDGED: readonly string[] = [
   "src/capped.ts",
   "src/cappedConsumer.ts",
   "src/consumer.ts",
+  "src/ended.ts",
   "src/piped.mjs",
+  "src/pipedStdin.ts",
 ];
 
 /**
@@ -168,6 +206,23 @@ const CAPLESS: readonly string[] = [
   "src/capless.ts:4 run",
   "src/consumer.ts:2 capture",
   "src/piped.mjs:3 spawnSync",
+];
+
+/**
+ * The spawn homes that leave their child's stdin open, as
+ * `formatSpawnStdinSite` cites them — the sites with a cap and no stdin
+ * answer, the one that pipes stdin by name, and the wrapper whose options bag
+ * is its caller's, which is no answer this scan can read.
+ *
+ * Rendered rather than named by module, for the reason {@link CAPLESS} is.
+ */
+const OPEN_STDIN: readonly string[] = [
+  ".flume/chain.ts:3 execFileSync",
+  "src/builtOptions.ts:4 execFileSync",
+  "src/capless.ts:4 run",
+  "src/capped.ts:5 run",
+  "src/pipedStdin.ts:3 execFileSync",
+  "src/wrapper.ts:7 execFileSync",
 ];
 
 let fixtureRoot = "";
@@ -201,11 +256,12 @@ it("the scan judges a forwarder's callers and skips what captures nothing", () =
 });
 
 /**
- * The wrapper verdict, over the same fixture: `capless.ts` and `capped.ts`
- * each build one `promisify(execFile)`, so a domain declaring `capped.ts` its
- * home has exactly one finding by construction. The repo pin this backs
- * (`tests/subprocessHelper.test.ts`) asserts an absence, which is green over
- * a needle that reads nothing — this is the run where the needle bites.
+ * The wrapper verdict, over the same fixture: `capless.ts`, `capped.ts` and
+ * `ended.ts` each build one `promisify(execFile)`, so a domain declaring
+ * `capped.ts` its home has exactly two findings by construction. The repo
+ * pin this backs (`tests/subprocessHelper.test.ts`) asserts an absence,
+ * which is green over a needle that reads nothing — this is the run where
+ * the needle bites.
  */
 it("the wrapper scan reds a promisified spawn built outside the declared home", () => {
   const scan = scanPromisifiedSpawns(fixtureRoot, FIXTURE_DOMAIN, [
@@ -214,16 +270,18 @@ it("the wrapper scan reds a promisified spawn built outside the declared home", 
   expect(scan.scanned.map(formatPromisifiedSpawnSite).sort()).toEqual([
     "src/capless.ts:3 promisify(execFile)",
     "src/capped.ts:3 promisify(execFile)",
+    "src/ended.ts:4 promisify(execFile)",
   ]);
-  expect(scan.findings.map(formatPromisifiedSpawnSite)).toEqual([
+  expect(scan.findings.map(formatPromisifiedSpawnSite).sort()).toEqual([
     "src/capless.ts:3 promisify(execFile)",
+    "src/ended.ts:4 promisify(execFile)",
   ]);
 });
 
 /**
- * The sync verdict, over the same fixture: four of its cases reach a sync
+ * The sync verdict, over the same fixture: five of its cases reach a sync
  * capturing API directly, named below rather than here, and a domain
- * declaring one of them its home has exactly three findings by construction.
+ * declaring one of them its home has exactly four findings by construction.
  * The wrapper the case holding the home spells takes its options bag from a
  * caller, which is a forwarder to the cap scan and a capture to this one —
  * the two scans ask different questions of one call.
@@ -238,12 +296,14 @@ it("the sync scan reds a capturing sync spawn written outside the declared home"
     ".flume/chain.ts:3 execFileSync",
     "src/builtOptions.ts:4 execFileSync",
     "src/piped.mjs:3 spawnSync",
+    "src/pipedStdin.ts:3 execFileSync",
     "src/wrapper.ts:7 execFileSync",
   ]);
   expect(scan.findings.map(formatSyncSpawnSite).sort()).toEqual([
     ".flume/chain.ts:3 execFileSync",
     "src/builtOptions.ts:4 execFileSync",
     "src/piped.mjs:3 spawnSync",
+    "src/pipedStdin.ts:3 execFileSync",
   ]);
 });
 
@@ -320,6 +380,56 @@ it("the scan refuses a named file that is not on disk", async () => {
   }
 });
 
+/**
+ * The home verdict's finding, over the same fixture and shown against the cap
+ * verdict that passes the same site: the built-options case names its cap in
+ * an options object built above the call and says nothing about its child's
+ * stdin, which is the shape the two scans answer differently — and the shape
+ * the field instance had, a declared shell gate under a declared cap whose
+ * child sat on an open pipe for hours.
+ */
+it("a spawn home declaring its cap and not its stdin is a finding", () => {
+  const CAPPED_OPEN = "src/builtOptions.ts";
+  const stdin = scanSpawnStdin(fixtureRoot, FIXTURE_DOMAIN);
+
+  expect(stdin.scanned.length).toBeGreaterThan(0);
+  // The cap verdict reads this site and passes it, so the finding below is
+  // the stdin question being asked rather than the cap question restated.
+  expect(fixture.scanned.map((site) => site.module)).toContain(CAPPED_OPEN);
+  expect(fixture.findings.map((site) => site.module)).not.toContain(
+    CAPPED_OPEN,
+  );
+  expect(stdin.findings.map((site) => site.module)).toContain(CAPPED_OPEN);
+  expect(stdin.findings.map(formatSpawnStdinSite).sort()).toEqual([
+    ...OPEN_STDIN,
+  ]);
+});
+
+/**
+ * The two answers a home can give, each on a case built to give it, and the
+ * two exclusions the verdict rests on. Without this the absence asserted over
+ * the shipped trees below is green over a scan that reds everything it reads
+ * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
+ */
+it("the home verdict reads an ended promise and a declared stdio as answers", () => {
+  const stdin = scanSpawnStdin(fixtureRoot, FIXTURE_DOMAIN);
+  const fateOf = (module: string): string | undefined =>
+    stdin.scanned.find((site) => site.module === module)?.fate;
+
+  expect(fateOf("src/ended.ts")).toBe("ended");
+  expect(fateOf("src/piped.mjs")).toBe("closed");
+  expect(fateOf("src/pipedStdin.ts")).toBe("open");
+
+  // A call piping nothing opens no stdin, and a wrapper's call site is not a
+  // home — each module is read, and holds a capturing name, so these are
+  // exclusions rather than a domain that missed them.
+  for (const module of ["src/probe.ts", "src/inherit.mjs", "src/consumer.ts"]) {
+    expect(stdin.modules).toContain(module);
+    expect(CASES[module]).toMatch(/exec|spawn|capture/);
+    expect(fateOf(module)).toBeUndefined();
+  }
+});
+
 // --- this repo's own spawns ---
 
 it("every capturing spawn outside tests/ declares its output cap", () => {
@@ -380,4 +490,28 @@ it("the shipped-tree wrapper scan reads src/git.ts's own promisified spawn", () 
 
 it("no module in the shipped trees promisifies a capturing spawn outside a declared home", () => {
   expectNoFindings(wrappers.findings.map(formatPromisifiedSpawnSite));
+});
+
+/**
+ * The home verdict over this repo's own domain: every site that starts a
+ * capturing child ends that child's stdin, by the ender on the promise or by
+ * `stdio` where the API forwards one.
+ *
+ * The two engine doors are named rather than left to the absence: an absence
+ * is how a domain that read neither door reports, and these two are the ones
+ * every gate, runner operation and git read in this package goes through
+ * (`endChildStdin`, `src/spawnShim.ts`). What they do with a real child is
+ * driven in `tests/spawnStdin.test.ts`; this is the pin that keeps a third
+ * door from being written without either.
+ */
+it("no spawn home in the shipped trees leaves its child's stdin open", () => {
+  const stdin = scanSpawnStdin();
+  const ended = stdin.scanned
+    .filter((site) => site.fate === "ended")
+    .map((site) => site.module);
+
+  expect(stdin.modules.length).toBeGreaterThan(0);
+  expect(stdin.scanned.length).toBeGreaterThan(0);
+  expect(new Set(ended)).toEqual(new Set(SHIPPED_SPAWN_HOMES));
+  expectNoFindings(stdin.findings.map(formatSpawnStdinSite));
 });

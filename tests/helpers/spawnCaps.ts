@@ -1,10 +1,10 @@
 /**
  * Which of the spawns this repo ships or runs capture a child's streams,
- * which of those name the cap they capture under, and — over any domain a
- * caller names — where a capturing API is turned into a spawn wrapper by
- * hand.
+ * which of those name the cap they capture under, what each of them leaves
+ * its child's stdin as, and — over any domain a caller names — where a
+ * capturing API is turned into a spawn wrapper by hand.
  *
- * Three verdicts over three judged sets, so three `Scan`s
+ * Four verdicts over four judged sets, so four `Scan`s
  * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*):
  * {@link scanSpawnCaps} judges calls, while {@link scanPromisifiedSpawns} and
  * {@link scanSyncSpawns} judge where a call is *written* — the
@@ -25,6 +25,15 @@
  * line, so every script, entry and example that spawns one is already its own
  * home, and a home list naming all of them would excuse exactly the sites it
  * names.
+ *
+ * {@link scanSpawnStdin} is the fourth, and it judges neither of those sets:
+ * its subject is every call that reaches a capturing API *by a name its own
+ * module binds* — the home, where the child is actually started. A cap can be
+ * narrowed by whoever calls a wrapper, so the cap verdict follows a
+ * forwarder out to its call sites; a child's stdin cannot. Nothing on a
+ * capturing call's surface hands that pipe to a caller, so the home is the
+ * only site that can end it, and a forwarding wrapper's callers are the one
+ * place the question has no answer.
  *
  * `execFile`, `exec`, their sync forms, and a piped `spawnSync` keep at most
  * `maxBuffer` bytes per stream — 1 MiB unless the call says otherwise — and
@@ -353,21 +362,28 @@ function declaresCap(root: ts.Node): boolean {
 }
 
 /**
- * Whether the call names its cap — in an argument, or in the initializer of
- * an identifier an argument reaches. The second arm is what reads a call
- * handed an options object built a few lines above it, and it follows the
- * chain to a fixed point so a spread of such an object reads the same.
+ * Every node a call's arguments reach: the arguments themselves, plus the
+ * initializer of every identifier found under one, to a fixed point. The
+ * second arm is what reads a call handed an options object built a few lines
+ * above it, and the fixed point is what makes a spread of such an object read
+ * the same.
+ *
+ * Shared by the two readings a site's options bag is put to below — the cap
+ * it names and the fate it declares for its child's stdin — rather than
+ * walked twice (`.claude/rules/engineering.md`, *The fix lands at the
+ * mechanism*).
  */
-function namesCap(
+function argumentReach(
   call: ts.CallExpression,
   locals: ReadonlyMap<string, ts.Expression>,
-): boolean {
+): ts.Node[] {
+  const reached: ts.Node[] = [];
   const pending: ts.Node[] = [...call.arguments];
   const seen = new Set<string>();
   while (pending.length > 0) {
     const node = pending.pop();
     if (!node) continue;
-    if (declaresCap(node)) return true;
+    reached.push(node);
     walk(node, (n) => {
       if (!ts.isIdentifier(n) || seen.has(n.text)) return;
       seen.add(n.text);
@@ -375,7 +391,17 @@ function namesCap(
       if (init) pending.push(init);
     });
   }
-  return false;
+  return reached;
+}
+
+/**
+ * Whether the call names its cap — anywhere its arguments reach.
+ */
+function namesCap(
+  call: ts.CallExpression,
+  locals: ReadonlyMap<string, ts.Expression>,
+): boolean {
+  return argumentReach(call, locals).some(declaresCap);
 }
 
 /**
@@ -452,25 +478,40 @@ function forwardsOptions(
  * stream no `maxBuffer` bounds.
  */
 function pipesNothing(call: ts.CallExpression): boolean {
-  for (const arg of call.arguments) {
-    if (!ts.isObjectLiteralExpression(arg)) continue;
-    for (const prop of arg.properties) {
-      if (
-        !ts.isPropertyAssignment(prop) ||
-        !ts.isIdentifier(prop.name) ||
-        prop.name.text !== STDIO_KEY
-      )
-        continue;
-      const value = prop.initializer;
-      if (ts.isStringLiteralLike(value)) return !PIPING_STDIO.has(value.text);
-      if (ts.isArrayLiteralExpression(value))
-        return value.elements.every(
-          (el) => ts.isStringLiteralLike(el) && !PIPING_STDIO.has(el.text),
-        );
-      return false;
-    }
-  }
+  const value = stdioDeclaredIn(call.arguments);
+  if (!value) return false;
+  if (ts.isStringLiteralLike(value)) return !PIPING_STDIO.has(value.text);
+  if (ts.isArrayLiteralExpression(value))
+    return value.elements.every(
+      (el) => ts.isStringLiteralLike(el) && !PIPING_STDIO.has(el.text),
+    );
   return false;
+}
+
+/**
+ * The `stdio` value declared anywhere under `nodes`, or `undefined` where
+ * none is. The lookup both readings of that option share — whether the call
+ * pipes any stream at all, above, and what it leaves the child's stdin as,
+ * below — so a site cannot declare its `stdio` in a spelling one reader
+ * finds and the other does not.
+ */
+function stdioDeclaredIn(
+  nodes: Iterable<ts.Node>,
+): ts.Expression | undefined {
+  for (const node of nodes) {
+    let found: ts.Expression | undefined;
+    walk(node, (n) => {
+      if (found) return;
+      if (
+        ts.isPropertyAssignment(n) &&
+        ts.isIdentifier(n.name) &&
+        n.name.text === STDIO_KEY
+      )
+        found = n.initializer;
+    });
+    if (found) return found;
+  }
+  return undefined;
 }
 
 /**
@@ -786,6 +827,166 @@ export function scanSyncSpawns(
       scanned.push(site);
       if (!allowed.has(module)) findings.push(site);
     });
+  }
+  return { modules, scanned, findings };
+}
+
+/**
+ * The name a module ends a spawned child's stdin by, for the one spawn form
+ * that cannot declare it as an option: node's `execFile` composes its own
+ * spawn options and forwards no `stdio`, so an async capture's child holds a
+ * stdin pipe however the call spells its options, and the only seam left is
+ * the child riding the promise.
+ *
+ * Read as a name, like every other judgement here (**Names, not scopes**
+ * above), and bounded by that trade in the same direction: the identifier is
+ * the engine's one ender (`endChildStdin`, `src/spawnShim.ts`), and what it
+ * does is pinned where it is driven over a real child rather than here
+ * (`tests/spawnStdin.test.ts`). A module that bound this name to something
+ * else would read as compliant to this scan and red at that one.
+ */
+export const SPAWN_STDIN_ENDER = "endChildStdin";
+
+/** What a spawn home leaves its child's stdin as. */
+export type StdinFate =
+  /** Ended through {@link SPAWN_STDIN_ENDER}, at the child on the promise. */
+  | "ended"
+  /** Declared away in `stdio`, the spelling a sync capture forwards. */
+  | "closed"
+  /** Left as a pipe nothing will write to, or as a spelling unreadable here. */
+  | "open";
+
+/** One spawn home the scan judged, and what it does with its child's stdin. */
+export interface SpawnStdinSite extends ScanSite {
+  /** The callee as the source spells it, e.g. `execFileSync`. */
+  readonly callee: string;
+  /** What the site leaves the child's stdin as. */
+  readonly fate: StdinFate;
+}
+
+/** Every spawn home in the domain, and the ones leaving stdin open. */
+export interface SpawnStdinScan extends Scan<SpawnStdinSite> {
+  /** Every module read, repo-relative and posix-separated, in path order. */
+  readonly modules: readonly string[];
+}
+
+/** A site as a failure message cites it. */
+export const formatSpawnStdinSite = (site: SpawnStdinSite): string =>
+  `${site.module}:${site.line} ${site.callee}`;
+
+/** The expression itself, past the assertions and parentheses around it. */
+function unwrapped(expr: ts.Expression): ts.Expression {
+  let node = expr;
+  while (
+    ts.isAsExpression(node) ||
+    ts.isParenthesizedExpression(node) ||
+    ts.isSatisfiesExpression(node)
+  )
+    node = node.expression;
+  return node;
+}
+
+/**
+ * What the `stdio` a call declares says about fd 0 — one spelling for all
+ * three slots, or the first of a list — read off literals, the one alphabet a
+ * source scan can answer in.
+ *
+ * `"open"` covers three cases on purpose: the call declares a piped stdin,
+ * the call declares none at all, or it declares one in a spelling this cannot
+ * read — an identifier, a conditional, a file descriptor. Reading an
+ * unreadable fate as closed is how a home that pipes stdin ships green
+ * (`.claude/rules/engineering.md`, *Loud or nothing*), and the async door
+ * declares no `stdio` at all because node forwards none, so its answer is the
+ * ender rather than this.
+ */
+function declaredStdin(
+  call: ts.CallExpression,
+  locals: ReadonlyMap<string, ts.Expression>,
+): StdinFate {
+  const declared = stdioDeclaredIn(argumentReach(call, locals));
+  if (!declared) return "open";
+  const value = unwrapped(declared);
+  const slot = ts.isArrayLiteralExpression(value) ? value.elements[0] : value;
+  if (!slot) return "open";
+  const spelled = unwrapped(slot);
+  if (!ts.isStringLiteralLike(spelled)) return "open";
+  return PIPING_STDIO.has(spelled.text) ? "open" : "closed";
+}
+
+/**
+ * Whether the call's result is handed straight to the ender — the spelling
+ * {@link SPAWN_STDIN_ENDER} is written in, and the only one a scan can read:
+ * the child is reached through the promise the call returns, so a site that
+ * ends it does so at the call itself.
+ */
+function endedAtTheCall(call: ts.CallExpression): boolean {
+  const parent = call.parent;
+  return (
+    !!parent &&
+    ts.isCallExpression(parent) &&
+    parent.arguments.includes(call) &&
+    calleeRoot(parent.expression) === SPAWN_STDIN_ENDER
+  );
+}
+
+/**
+ * The names a module reaches a capturing API by, through its own imports and
+ * its own aliases of them — to a fixed point, so an alias of an alias counts.
+ *
+ * Per module, never the domain-wide set {@link scanSpawnCaps} settles: the
+ * subject below is a module *starting* a child, which is local by definition,
+ * and a wrapper's name travelling across modules would put the verdict at
+ * call sites that cannot answer it.
+ */
+function spawnHomeNames(src: ts.SourceFile, module: string): Set<string> {
+  const names = new Set(importedApis(src, module).keys());
+  for (;;) {
+    const before = names.size;
+    for (const alias of aliases(src, names)) names.add(alias);
+    if (names.size === before) return names;
+  }
+}
+
+/**
+ * Every spawn home in the domain — each call that starts a capturing child
+ * through a name its own module binds — and the ones that leave that child's
+ * stdin open.
+ *
+ * A call piping nothing is no subject: it opens no stdin to end, which is the
+ * same exclusion the cap scan makes for the same reading of `stdio`.
+ *
+ * An allowed-home list is nobody's to declare here, unlike the two wrapper
+ * scans above: every site that starts a child answers for that child's
+ * stdin, and a list of exemptions would excuse exactly the sites it names.
+ */
+export function scanSpawnStdin(
+  root: string = REPO_ROOT,
+  domain: ScanDomain = REPO_DOMAIN,
+): SpawnStdinScan {
+  const modules: string[] = [];
+  const scanned: SpawnStdinSite[] = [];
+  const findings: SpawnStdinSite[] = [];
+  for (const path of modulesUnder(root, domain)) {
+    const module = relPath(root, path);
+    modules.push(module);
+    const src = parseScopeless(path);
+    const homes = spawnHomeNames(src, module);
+    if (homes.size === 0) continue;
+    for (const { call, callee } of capturingCalls({ module, src }, homes)) {
+      if (pipesNothing(call)) continue;
+      const locals = localInitializers(src, enclosingFunction(call));
+      const fate: StdinFate = endedAtTheCall(call)
+        ? "ended"
+        : declaredStdin(call, locals);
+      const site: SpawnStdinSite = {
+        module,
+        line: src.getLineAndCharacterOfPosition(call.getStart(src)).line + 1,
+        callee,
+        fate,
+      };
+      scanned.push(site);
+      if (fate === "open") findings.push(site);
+    }
   }
   return { modules, scanned, findings };
 }

@@ -69,12 +69,19 @@ const BUILD_SUBJECT_ATTEMPT = /^build[:(]/;
  * What bounds the read instead is the process's own memory, which fails
  * loudly rather than handing back a truncated log for a human to curate a
  * release from (`.claude/rules/engineering.md`, "Loud or nothing").
+ *
+ * `stdio` ends the child's stdin for the same posture: nothing here writes to
+ * git, and a verb that reads stdin when its argv names no path would block
+ * this script on a writer that never arrives, in the middle of a release
+ * cut. Piped stderr rides the throw, so git's own sentence reaches whoever
+ * ran the cut rather than scrolling past as a bare `Command failed`.
  */
 function git(cwd, args) {
   return execFileSync("git", args, {
     cwd,
     encoding: "utf8",
     maxBuffer: Infinity,
+    stdio: ["ignore", "pipe", "pipe"],
   });
 }
 

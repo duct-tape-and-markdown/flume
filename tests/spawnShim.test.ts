@@ -16,23 +16,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
-  const { promisify } = await import("node:util");
+  const { definePromisifiedExecFile } = await import(
+    "./helpers/execFileMock.ts"
+  );
   const mock = vi.fn();
   const syncMock = vi.fn();
-  // The real `execFile` carries a `promisify.custom` that resolves
-  // `{ stdout, stderr }`. Without it the promisified mock would resolve a
-  // bare stdout string and every caller's destructuring would read
-  // `undefined` — a mock lying about the shape it stands in for
-  // (`.claude/rules/engineering.md`, "A seam gate reads what the real
-  // writer wrote" is the same instinct one layer down).
-  Object.defineProperty(mock, promisify.custom, {
-    value: (cmd: string, args: string[], opts: unknown) =>
-      new Promise((resolve, reject) => {
-        mock(cmd, args, opts, (err: Error | null, stdout: string, stderr: string) =>
-          err ? reject(err) : resolve({ stdout, stderr }),
-        );
-      }),
-  });
+  // The promisified shape the real `execFile` carries, declared at its one
+  // home (`definePromisifiedExecFile`, `tests/helpers/execFileMock.ts`):
+  // `{ stdout, stderr }` resolved off this mock's own callback, and the child
+  // whose stdin the door ends. `stdinEnds` records the command of every
+  // attempt whose stdin was ended, which is how the shelled retry's own leg
+  // is read below on a host that never takes it.
+  const stdinEnds: string[] = [];
+  Object.defineProperty(mock, "stdinEnds", { value: stdinEnds });
+  definePromisifiedExecFile(mock, (command) => stdinEnds.push(command));
   return { ...actual, execFile: mock, execFileSync: syncMock };
 });
 
@@ -54,6 +51,10 @@ vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS });
 
 const execFileMock = vi.mocked(execFile);
 const execFileSyncMock = vi.mocked(execFileSync);
+
+/** The command of every mocked attempt whose child's stdin was ended. */
+const stdinEnds = (execFileMock as unknown as { stdinEnds: string[] })
+  .stdinEnds;
 
 type ExecCb = (err: Error | null, stdout: string, stderr: string) => void;
 
@@ -121,6 +122,7 @@ function withPlatformSync(platform: NodeJS.Platform, fn: () => void): void {
 beforeEach(() => {
   execFileMock.mockReset();
   execFileSyncMock.mockReset();
+  stdinEnds.length = 0;
 });
 
 describe("spawnShim — the shared retry decision", () => {
@@ -141,6 +143,21 @@ describe("spawnShim — the shared retry decision", () => {
       expect(execFileMock.mock.calls[1]![0]).toBe("pnpm");
       expect(execFileMock.mock.calls[1]![1]).toEqual(["install"]);
       expect((optsOf(1) as { cwd?: string }).cwd).toBe("C:\\wt");
+    });
+  }, SPAWN_BUDGET_MS);
+
+  it("both attempts of the shim retry end the stdin they opened", async () => {
+    await withPlatform("win32", async () => {
+      enoentUntilShell("shim-ok");
+
+      await execFileWithShimRetry("pnpm", ["install"], { cwd: "C:\\wt" });
+
+      // The shelled attempt is the leg no run on this host takes, and the
+      // one whose child would otherwise hold the pipe: a retry is reached
+      // only after the direct spawn already failed, so a door ending stdin
+      // on the first leg alone reads as green everywhere but win32.
+      expect(execFileMock).toHaveBeenCalledTimes(2);
+      expect(stdinEnds).toEqual(["pnpm", "pnpm"]);
     });
   }, SPAWN_BUDGET_MS);
 

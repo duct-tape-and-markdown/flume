@@ -173,7 +173,14 @@ export function stepRunner(platform) {
       }
     }
     const result = spawnSync(cmd, args, {
-      stdio: opts.capture ? ["ignore", "pipe", "inherit"] : "inherit",
+      // stdin is this script's to end, in both arms: every step runs
+      // unattended, and a step that falls back to reading stdin — a prompt
+      // on a missing answer, a tool handed an empty argv — would hang the
+      // smoke on a writer nobody is at
+      // (`.claude/rules/engineering.md`, "Loud or nothing").
+      // Spelled per slot rather than as one word so the stdin decision does
+      // not ride on whether this step's stdout is captured.
+      stdio: ["ignore", opts.capture ? "pipe" : "inherit", "inherit"],
       shell,
       cwd: opts.cwd,
       env: CHILD_ENV,

@@ -1110,6 +1110,13 @@ const factory: ChainFactory = (flume) => {
   why all four declare `batches: true`
   ([*Reading a batched merge*](#reading-a-batched-merge)).
   `chainLoadGate`, `writablePathsGate` and `pendingGate` run their own checks.
+  The child's stdin is **ended**, under every one of these and under every
+  other command the engine spawns: a tool that falls back to reading stdin
+  when its argv gave it nothing to do — a formatter handed an empty file list,
+  a git verb handed no path — reads EOF and exits, so the gate gets whatever
+  status it chose, where an open pipe would hold the tick with nothing in any
+  log. A gate of your own that spawns does the same; nothing is written to
+  that stdin, so there is nothing to opt out of.
 
 ### `pendingGate`: composed validation + fence pre-check + claim check
 

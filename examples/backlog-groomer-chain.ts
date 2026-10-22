@@ -249,13 +249,22 @@ const factory: ChainFactory = (api) => {
       const prior = existsSync(shippedPath) ? readFileSync(shippedPath, "utf8") : "";
       writeFileSync(shippedPath, `${prior}- ${pick.tag}: ${reason}\n`);
 
+      // A chain that spawns its own child owns both of a capture's
+      // decisions: the cap above, and what the child's stdin is. `stdio`
+      // ends it — a child that falls back to reading stdin would otherwise
+      // wait on a writer this chain never has, holding the tick open with
+      // nothing in any log (`.claude/rules/engineering.md`, *Loud or
+      // nothing*). Piped stderr rides the throw instead of the parent's
+      // terminal, so git's own sentence reaches whoever reads the tick.
       execFileSync("git", ["add", BACKLOG_PATH, SHIPPED_PATH], {
         cwd,
         maxBuffer: GIT_OUTPUT_CAP_BYTES,
+        stdio: ["ignore", "pipe", "pipe"],
       });
       execFileSync("git", ["commit", "-q", "-m", `groom: ship ${pick.tag}`], {
         cwd,
         maxBuffer: GIT_OUTPUT_CAP_BYTES,
+        stdio: ["ignore", "pipe", "pipe"],
       });
 
       return { exitCode: 0, stdout: say(`shipped ${pick.tag}`), stderr: "" };

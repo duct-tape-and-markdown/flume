@@ -5,9 +5,18 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("node:child_process", () => ({
-  execFile: vi.fn(),
-}));
+vi.mock("node:child_process", async () => {
+  const { definePromisifiedExecFile } = await import(
+    "./helpers/execFileMock.ts"
+  );
+  const execFile = vi.fn();
+  // The promisified shape the real call carries, including the child whose
+  // stdin the spawn door ends (`definePromisifiedExecFile`,
+  // `tests/helpers/execFileMock.ts`). The cases below program the callback;
+  // what the promise is made of is not theirs to re-decide.
+  definePromisifiedExecFile(execFile);
+  return { execFile };
+});
 
 import { setupWorktree } from "../src/setupWorktree.js";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";

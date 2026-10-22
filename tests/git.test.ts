@@ -54,6 +54,7 @@ const injectedRejections: string[][] = [];
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
   const { promisify: nodePromisify } = await import("node:util");
+  const { spawnedPromise } = await import("./helpers/execFileMock.ts");
   const customPromisify = (
     actual.execFile as unknown as Record<symbol, unknown>
   )[nodePromisify.custom] as (
@@ -75,14 +76,21 @@ vi.mock("node:child_process", async (importOriginal) => {
           gitArgs[2] === "localized-stderr-missing-branch");
       if (targetsMissingBranch) {
         injectedRejections.push(gitArgs ?? []);
-        return Promise.reject(
-          Object.assign(
-            new Error("fatal : la référence demandée n'existe pas"),
-            {
-              code: 1,
-              stdout: "",
-              stderr: "fatal : la référence demandée n'existe pas",
-            },
+        // Through `spawnedPromise` (`tests/helpers/execFileMock.ts`), because
+        // the real promisified call carries a child and the spawn door ends
+        // its stdin before anything awaits the rejection: a bare rejected
+        // promise here would answer the door with a TypeError instead of the
+        // localized failure this case is about.
+        return spawnedPromise(
+          Promise.reject(
+            Object.assign(
+              new Error("fatal : la référence demandée n'existe pas"),
+              {
+                code: 1,
+                stdout: "",
+                stderr: "fatal : la référence demandée n'existe pas",
+              },
+            ),
           ),
         );
       }
