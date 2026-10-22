@@ -1,0 +1,43 @@
+{
+  "tag": "THE-MOUNT-DEAD-RE-READ-COVERS-A-BREAK-IN-WHAT-CHAIN-TS-IMPORTS",
+  "gate": {
+    "kind": "parked",
+    "reason": "decision on whether the re-read must see a break in `chain.ts`'s dependency graph, or the two corpus sentences narrow to what `tsImport` was measured to do (`questions/the-human-owned-corpus-owes-a-pass.md`)"
+  },
+  "dependsOnForks": [],
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/chainLoad.ts",
+        "description": "the re-read's reach past the entry module it transforms"
+      },
+      {
+        "path": "src/loopSupervisor.ts",
+        "description": "the mount-dead leg that leans on the re-read, and the wall it names"
+      },
+      {
+        "path": "tests/loopSupervisor.test.ts",
+        "description": "the mount-dead cases over a chain whose entry still compiles"
+      },
+      {
+        "path": "tests/chain.test.ts",
+        "description": "the loader's own re-read cases"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "the supervisor's mount-dead re-read answers over a break in a module `chain.ts` imports, not over `chain.ts` alone, so a dead mount ends the run on its own wall rather than on the repeat backstop",
+  "per": {
+    "path": "spec/chain.md",
+    "section": "Chain resolution is per-tick, and the tick is a fresh process"
+  },
+  "acceptance": "a chain whose `chain.ts` still compiles while a module it imports no longer does is read as a dead mount by the live supervisor's re-read, and the run ends on that wall rather than after three repeated failures",
+  "tests": [
+    "a break in a module chain.ts imports is read as a dead mount by the supervisor's re-read"
+  ],
+  "pins": [],
+  "laneTests": [],
+  "notes": "Measured on tsx 4.21 / node 24.21: `tsImport` re-transforms the entry every call but answers the first evaluation for everything the entry imports. So the re-read sees `chain.ts` gone or no longer compiling and misses a break beneath it, and the exit code is the backstop's `1` where the mount wall's `69` is owed. Parked because the spec sentence the lean cites is itself under review."
+}

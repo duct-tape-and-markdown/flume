@@ -1,0 +1,40 @@
+{
+  "tag": "INIT-NAMES-THE-SETUP-A-LOCKFILE-LESS-REPO-MUST-DECLARE",
+  "gate": {
+    "kind": "open"
+  },
+  "dependsOnForks": [],
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "harness/init.ts",
+        "description": "the verb's read of the target directory's lockfiles, and what it says when the installer reads none of them"
+      },
+      {
+        "path": "tests/harnessInit.test.ts",
+        "description": "the init cases over a repo with and without a lockfile the installer reads"
+      },
+      {
+        "path": "docs/CHAIN-AUTHORING.md",
+        "description": "the `setup` clause's account of what adoption owes a repo the installer cannot read"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "`flume-harness init` over a repo whose lockfiles the shipped installer does not read names `setup` as what the declaration owes, instead of writing a chain whose first load refuses",
+  "per": {
+    "path": "spec/harness.md",
+    "section": "Adoption and upgrade"
+  },
+  "acceptance": "init over a directory holding no lockfile the engine's installer reads says so and names `setup` as what the consumer must declare before a tick can run; init over a directory it does read writes the same skeleton it writes today",
+  "tests": [
+    "init over a repo with no lockfile the installer reads names `setup` as what the declaration owes"
+  ],
+  "pins": [
+    "init over a repo holding a lockfile the installer reads writes its skeleton unchanged"
+  ],
+  "laneTests": [],
+  "notes": "The undeclared-`setup` arm refuses at chain load (`harness/provisioning.ts`) for a tree with no lockfile the installer names, and `installPlan` (`src/setupWorktree.ts`) already reports the whole set it reads \u2014 so the probe is a read, not a second rule. A commented row does not load; the skeleton cannot guess a yarn or bun install, which is why the loud door is at adoption rather than a default."
+}

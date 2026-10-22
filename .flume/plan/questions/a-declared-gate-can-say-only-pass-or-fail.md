@@ -27,3 +27,17 @@ Not plan's to pick: it is the declaration's public surface, and the three
 readers are what a consumer learns once. The owning artifact either way is
 the command-plus-reader shape with one mechanism and three callers
 (`engineering.md`, *A module is one job*), not a fourth gate field.
+
+**Second field instance, from the shipped-runner work.** `parseTestReport`
+(`examples/cascade-chain.ts`) scans a `shellGate`'s captured `details` for
+`{"numTotalTestSuites"` and parses from there — the exact inferred-report-
+location shape the vitest runner just retired in favour of telling the tool
+where to write (`--outputFile`, read out of a file the runner mints). The
+example cannot adopt the runner's fix: it imports `../src/index.ts` only, so
+`harness/`'s runner is out of reach, and a gate hands a chain captured output
+and no place to put a file. So the consumer's choices are a chain-local
+respelling of what the runner now owns, or no structured verdict at all —
+which is this question, measured in a shipped example rather than argued.
+Under (a) the example declares a reader and deletes the scan; under (b) it
+declares a channel. Either way the scan leaves with the ruling, so no entry
+is filed against it meanwhile.

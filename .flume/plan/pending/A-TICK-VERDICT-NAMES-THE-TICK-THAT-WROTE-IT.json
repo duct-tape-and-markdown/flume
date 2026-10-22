@@ -1,0 +1,55 @@
+{
+  "tag": "A-TICK-VERDICT-NAMES-THE-TICK-THAT-WROTE-IT",
+  "gate": {
+    "kind": "open"
+  },
+  "dependsOnForks": [],
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/tickVerdict.ts",
+        "description": "the verdict's own statement of which invocation wrote it, and the read that answers absent for one it did not"
+      },
+      {
+        "path": "src/loopSupervisor.ts",
+        "description": "the identity the supervisor hands each child and checks the verdict it reads against, upstream of the exit stage"
+      },
+      {
+        "path": "src/cliTick.ts",
+        "description": "the child's stamp of what it was handed, beside the early clear"
+      },
+      {
+        "path": "tests/loopSupervisor.test.ts",
+        "description": "the exit-stage and failure-accounting cases over a child that died before the clear"
+      },
+      {
+        "path": "tests/cliVerdict.test.ts",
+        "description": "the verdict reader's cases"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "the supervisor reads a verdict only where the tick it spawned wrote it, so a child that died before clearing the last one is a verdictless exit rather than the previous tick's facts counted again",
+  "per": {
+    "path": "spec/loop.md",
+    "section": "The tick verdict \u2014 one facts artifact"
+  },
+  "acceptance": "a child that exits non-zero without reaching its own verdict write composes an `exit` record and is counted once, whatever the previous tick for that phase left on disk; the verdict the supervisor reads is the one its own child wrote, or it is no verdict at all",
+  "tests": [
+    "a child that dies before clearing its phase's verdict is read as a verdictless exit, not as the previous tick's facts",
+    "a verdict an earlier tick for the same phase left standing adds nothing to this tick's failure signatures"
+  ],
+  "pins": [
+    "the verdict a tick's own child wrote is read as that tick's facts"
+  ],
+  "laneTests": [],
+  "contractTouching": true,
+  "interface": {
+    "changes": "a tick verdict states which invocation wrote it, and the supervisor's read is scoped to the invocation it spawned",
+    "hides": "that a phase's verdict path is the whole identity of a tick's facts, and that finding a file there says anything about whether this tick ran",
+    "rejected": "the supervisor clearing the phase's verdict before it spawns \u2014 a pre-emptive write into the child's own lane, which loses the prior verdict to a crash between the clear and the spawn and still proves nothing about who wrote what it then reads"
+  },
+  "notes": "The condition is `exitCode !== 0 && verdict === undefined`, and `clearTickVerdict` runs inside the child, below the usage refusal \u2014 so a child that never reaches it (node or tsx failing to start) leaves the previous verdict standing and the supervisor reads it as this one's: no `exit` record, that verdict's facts counted a second time into the abort streak. `FLUME_TIP_CLAIM_HELD` is the existing env channel's shape."
+}

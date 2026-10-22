@@ -1,0 +1,32 @@
+{
+  "tag": "THE-SUBPROCESS-VERDICTS-ADOPT-THE-FINDINGS-RENDERING",
+  "gate": {
+    "kind": "open"
+  },
+  "dependsOnForks": [],
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "tests/subprocessHelper.test.ts",
+        "description": "the findings verdicts whose red is cut at 40 characters, and the three lane verdicts spelling their finding line inline"
+      },
+      {
+        "path": "tests/helpers/spawnCaps.ts",
+        "description": "the per-verdict formatters that belong beside the scans, where two already live"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "the subprocess-helper verdicts render findings through the shared rendering and the formatters their scans ship, so a red names every site rather than chai's first 40 characters",
+  "per": {
+    "path": ".claude/rules/platform-facts.md",
+    "section": "chai truncates an inspected value in an assertion message at 40 characters"
+  },
+  "acceptance": "every findings verdict in `tests/subprocessHelper.test.ts` passes its sites through the shared rendering, so a red's message names all of them; each lane verdict renders a site through a formatter beside its own scan rather than a line spelled at the assertion",
+  "tests": [],
+  "pins": [],
+  "laneTests": [],
+  "notes": "Precedent and target shape: LIVE-TREE-VERDICTS-ADOPT-THE-FINDINGS-RENDERING did this for `pageAnchors` and `exportConsumers`; this file was outside it and holds roughly a dozen bare `.toEqual([])` comparisons. `renderFindings`/`expectNoFindings` (`tests/helpers/repoProgram.ts`) is the rendering; `formatSyncSpawnSite`, `formatPromisifiedSpawnSite` and `formatReaching` are the formatters already beside their scans. Claims no property: behavior-free."
+}
