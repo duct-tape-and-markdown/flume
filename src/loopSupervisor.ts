@@ -199,7 +199,8 @@ interface SuperviseLoopOptions {
    * "Repeated identical failures — quarantine, then abort"). `"none"` disables
    * per-entry quarantine outright — a tagged failure at the provision,
    * render, merge, gate or ship stage is never
-   * withheld from later ticks this run, and a platform-stage failure, blamed
+   * withheld from later ticks this run, and a platform- or exit-stage
+   * failure, blamed
    * on no entry, reached this leg under neither value — while the
    * consecutive-identical-failure backstop (`abortThreshold` below) still
    * applies. Defaults to {@link DEFAULT_QUARANTINE_SCOPE}, whose hold is
@@ -213,7 +214,8 @@ interface SuperviseLoopOptions {
   /**
    * Chain-declared override for the consecutive-identical-failure abort
    * threshold — the number of consecutive ticks the same *stage-tagged*
-   * signature (provision, render, merge, gate, ship, or platform) must repeat, with no
+   * signature (provision, render, merge, gate, ship, platform, or exit) must
+   * repeat, with no
    * successful tick between them, before the run aborts. Defaults to {@link DEFAULT_ABORT_THRESHOLD},
    * pinned by tests/loopSupervisor.test.ts's "a chain declaring neither
    * supervisor knob gets both defaults: a run-scoped quarantine and a
@@ -255,7 +257,8 @@ interface SuperviseLoopOptions {
  * Every stage a failure record the accounting reads can come from — the six
  * the tick verdict carries in separate lists (`provisionFailures`,
  * `renderFailures`, `mergeFailures`, `gateFailures`, `shipFailures`,
- * `platformFailures`),
+ * `platformFailures`), and the seventh no verdict can carry, because its
+ * whole evidence is the verdict that was never written,
  * declared once as a runtime value so
  * whatever enumerates the stages — the fold below, a prompt, a test driving
  * every stage through the abort path — names them from the engine rather than
@@ -263,17 +266,23 @@ interface SuperviseLoopOptions {
  * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
  * beside its source*).
  *
- * Five of the six are per-entry records (`StageFailureEntry`,
+ * Five of the seven — provision, render, merge, gate and ship — are
+ * per-entry records (`StageFailureEntry`,
  * `./tickVerdict.js`) a tick may blame on one entry, so they reach both legs.
- * `platform` is the one that cannot: a preempt's wall — an expired login, a
- * spent cap, an OOM kill — belongs to the host, never to the entry the slot
- * happened to be carrying, so `PlatformFailure` declares no tag and the
- * quarantine leg has nothing to hold. It joins the roster for the backstop
- * alone, which is exactly the class quarantine cannot isolate.
+ * `platform` and `exit` are the two that cannot. A preempt's wall — an
+ * expired login, a spent cap, an OOM kill — belongs to the host, never to the
+ * entry the slot happened to be carrying, so `PlatformFailure` declares no
+ * tag and the quarantine leg has nothing to hold. A verdictless non-zero
+ * exit is one rung further out still: the child reported nothing at all, so
+ * which entry it was carrying is not a fact this process holds, and naming
+ * one off the queue would be the engine guessing
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*). Both join the
+ * roster for the backstop alone, which is exactly the class quarantine cannot
+ * isolate.
  *
  * Load-bearing rather than decorative: `superviseLoop`'s per-stage failure
  * fold is keyed by this roster, so a member added here is a compile error
- * until the verdict list it reads is named.
+ * until the list of records it reads is named.
  */
 export const FAILURE_STAGES = [
   "provision",
@@ -282,6 +291,7 @@ export const FAILURE_STAGES = [
   "gate",
   "ship",
   "platform",
+  "exit",
 ] as const;
 
 /**
@@ -326,7 +336,9 @@ export interface SuperviseResult {
   /**
    * One line per child tick that errored — a genuine tick-level failure
    * (`gate-revert` or `platform-preempt`, derived from the tick's {@link
-   * TickVerdict} at the read site) — this run, in tick order, read
+   * TickVerdict} at the read site), or a child that exited non-zero having
+   * written no verdict at all, which is the `exit` stage's own record
+   * ({@link FAILURE_STAGES}) — this run, in tick order, read
    * alongside `shippedTags`. Non-empty even on a 0 exit (partial success:
    * ships landed despite some tick errors) — `flume loop`'s completion
    * summary names these so they never vanish into a silent green exit.
@@ -417,16 +429,16 @@ interface QuarantineHold {
  * The stages whose holds expire with the tip they were placed at (spec/loop.md,
  * *Repeated identical failures — quarantine, then abort*). Deliberately a
  * proper subset of {@link FAILURE_STAGES}: render, merge, gate and ship,
- * leaving out provision and platform. Each of the four judges one tree — a
+ * leaving out provision, platform and exit. Each of the four judges one tree — a
  * gate's verdict is over the tree it ran on, a merge's conflict is against the
  * trunk it picked onto, a render reads the declaration and the host that trunk
  * holds, and a `shipped` predicate that threw is that same declaration one
  * stage later (a chain's own hook fixed on trunk is a new render and a new
  * consult) — so once trunk is not that tree, none of those judgments has been
  * re-made, while nothing landing on trunk changes what a worktree could not
- * provision. `platform` is
- * left out from further up still: a preempt is blamed on no entry, so no hold
- * of that stage is ever placed for this set to expire.
+ * provision. `platform` and `exit` are
+ * left out from further up still: neither is blamed on an entry, so no hold
+ * of either stage is ever placed for this set to expire.
  * Spelled as a membership set over the
  * roster rather than as an inequality against `provision`, so a stage added
  * there keeps the run-scoped default until this line says otherwise.
@@ -638,8 +650,8 @@ export async function superviseLoop(
   let latestTip: string | undefined;
   // spec/loop.md "Repeated identical failures — quarantine, then abort"
   // generalizes both legs past provisioning to the render, merge, gate and
-  // ship stages, and the backstop alone to the platform stage, whose preempts
-  // are blamed on no entry.
+  // ship stages, and the backstop alone to the platform and exit stages,
+  // whose failures are blamed on no entry.
   // The accounting is keyed by *stage-tagged* signature (`${stage}:${signature}`) so a
   // coincidentally-identical message from a different stage never shares a
   // streak with this one, and never shadows it in the quarantine loop either.
@@ -924,11 +936,51 @@ export async function superviseLoop(
       }
     }
 
+    // The `exit` stage, and the one roster member no verdict carries a list
+    // for: its whole evidence is the verdict that was never written. A child
+    // that exited non-zero having written none refused before any account of
+    // the work existed — a CJS-context chain load (2), a harness error (1),
+    // an uncaught throw out of `Dispatcher.tick`, or a 69 whose wall the
+    // mount-dead re-read below could not name among the legs it re-reads.
+    // Keyed by the exit code, which is the whole wall such a refusal states,
+    // and blamed on no entry: the child reported nothing, so which entry it
+    // was carrying is not a fact this process holds, and reading one off the
+    // queue would be the engine guessing
+    // (`.claude/rules/engine-boundary.md`, *Told, not inferred*). So it feeds
+    // the backstop alone, as a platform preempt does. The phase rides the
+    // message rather than the signature the spec names: a record no verdict
+    // file holds has nowhere else to say whose child it was.
+    // Composed here rather than at the non-zero-exit leg below, which is
+    // downstream of the abort this record exists to reach.
+    const exitFailures: readonly { signature: string; message: string }[] =
+      exitCode !== 0 && verdict === undefined
+        ? [
+            {
+              signature: String(exitCode),
+              message:
+                `${child.phase} tick process exited ${exitCode} ` +
+                `with no verdict written to disk`,
+            },
+          ]
+        : [];
+    // LOOP-ERRORED-TICKS-SILENT-EXIT: such a tick is also an errored one —
+    // it failed to do work, and left uncounted `erroredTicks` stays empty
+    // while `loopExitCode` reads a run where nothing succeeded as a clean 0.
+    // Counted here rather than at the non-zero-exit leg below, because the
+    // abort this record can reach sits between the two: a tick whose own
+    // failure ended the run is not a tick the completion summary may leave
+    // unnamed. The record's `message` is the line — one spelling of the fact,
+    // not a second built beside the accounting that keys on it
+    // (`.claude/rules/engineering.md`, *Derived state is computed, never
+    // restated beside its source*).
+    for (const f of exitFailures) erroredTicks.push(f.message);
+
     // Every failure fact the
-    // verdict records, tagged with the stage it came from — a clean exit
-    // never joins this list, since it writes no provision, render, merge,
-    // gate, ship or platform failure record at all.
-    // The one place a roster member meets the verdict list that carries it.
+    // verdict records, tagged with the stage it came from, plus the one the
+    // missing verdict states — a clean exit joins none of this, since it
+    // writes no provision, render, merge, gate, ship or platform failure
+    // record and exits zero.
+    // The one place a roster member meets the list of records that carries it.
     // Keyed by `FailureStage`, so the mapping is exhaustive over
     // `FAILURE_STAGES` by type: a stage added to the roster is a compile
     // error here until its list is named, never a member the fold below
@@ -947,6 +999,9 @@ export async function superviseLoop(
       // skips it by type rather than by a branch on the stage name, and it
       // reaches the streak fold alone.
       platform: verdict?.platformFailures ?? [],
+      // The one member not read off a verdict at all — see `exitFailures`
+      // above, which is empty on every tick that wrote one.
+      exit: exitFailures,
     };
     const failures = FAILURE_STAGES.flatMap((stage) =>
       stageLists[stage].map((f) => ({ stage, ...f })),
@@ -1011,23 +1066,6 @@ export async function superviseLoop(
         abort = { stage: failure.stage, signature: failure.signature, count };
       }
     }
-    if (abort) {
-      const repeated = abort;
-      ending ??= {
-        stop: { hibernated: false, repeatedFailure: repeated },
-        cause: { reason: "abort-threshold" },
-        finish: async () => {
-          log.error(
-            `[flume] the same ${repeated.stage}-stage failure signature repeated on ` +
-              `${repeated.count} consecutive ticks (${repeated.signature}); aborting ` +
-              `after ${ticks} tick(s) instead of burning the remaining ticks ` +
-              `on a signature that has already repeated.`,
-          );
-        },
-      };
-      continue;
-    }
-
     if (exitCode === EX_TERMINAL_MISCONFIG) {
       // Axis-C fail-fast: the child classified a terminal
       // misconfiguration (orphaned awake flags). The decision comes from the
@@ -1102,23 +1140,48 @@ export async function superviseLoop(
           `has been repaired since, so the run is not aborted on it`,
       );
     }
+    // Read after the two exit-code axes above, never before them: a child
+    // that exited 78 or 69 is a verdictless non-zero exit too, so its code is
+    // an `exit`-stage signature that repeats identically every tick, and a
+    // streak reaching the threshold would otherwise end a mount-dead run on
+    // this abort's `1` rather than on the `69` the wall it is still standing
+    // behind owes CI (spec/loop.md, *Exit codes — the run never lies to
+    // CI*). Each of those axes names a specific wall; this one names a
+    // repetition, which is the weaker statement and so the later one.
+    if (abort) {
+      const repeated = abort;
+      ending ??= {
+        stop: { hibernated: false, repeatedFailure: repeated },
+        cause: { reason: "abort-threshold" },
+        finish: async () => {
+          log.error(
+            `[flume] the same ${repeated.stage}-stage failure signature repeated on ` +
+              `${repeated.count} consecutive ticks (${repeated.signature}); aborting ` +
+              `after ${ticks} tick(s) instead of burning the remaining ticks ` +
+              `on a signature that has already repeated.`,
+          );
+        },
+      };
+      continue;
+    }
+
     if (exitCode !== 0) {
       log.warn(
         `[flume] tick process exited with code ${exitCode}; ` +
           `supervisor continuing (next tick is a fresh process)`,
       );
-      // LOOP-ERRORED-TICKS-SILENT-EXIT: a child that exits non-zero without
-      // ever reaching the verdict write — the CJS-context refusal (2), the
-      // detached-HEAD/harness-error refusal (1), an uncaught throw out of
-      // `Dispatcher.tick` — is still a tick that failed to do work. Left
-      // uncounted, `erroredTicks` stays empty and `loopExitCode` reads a run
-      // where nothing succeeded as a clean 0. Guarded on `countedAsErrored`
-      // so a tick whose verdict already flagged it (belt-and-suspenders, not
-      // reachable today since every verdict-errored path exits 0 via
-      // `tickExitCode`) isn't double-counted.
-      if (!countedAsErrored) {
+      // The verdictless case is already counted, at the `exitFailures`
+      // composition above. What is left here is its complement: a non-zero
+      // exit that *did* leave a verdict, which composed no `exit`-stage
+      // record and so reached neither the accounting nor that count. Not
+      // reachable today — every verdict-errored path exits 0 via
+      // `tickExitCode` — and the line says what is true of it, that the
+      // verdict named no failure of its own, rather than that nothing was
+      // written.
+      if (!countedAsErrored && exitFailures.length === 0) {
         erroredTicks.push(
-          `tick process exited ${exitCode} with no verdict written to disk`,
+          `${child.phase} tick process exited ${exitCode}, ` +
+            `its verdict naming no failure of its own`,
         );
       }
     }

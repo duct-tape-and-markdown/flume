@@ -43,8 +43,8 @@ const DECLARED_KEY_HASH_LENGTH = 10;
  * footprint — the merge- and gate-stage holds, never a provision- or
  * render-stage one, since neither ran an agent, never a ship-stage one, whose
  * `not-shipped` outcome records no footprint to merge, and never a
- * platform-stage one, which is blamed on no entry and so places no hold at
- * all — mint a
+ * platform- or exit-stage one, neither of which is blamed on an entry and so
+ * places no hold at all — mint a
  * fresh key on the next read and lift its own hold: the run re-attempts the wall at full
  * agent price, which is the burn the section exists to prevent.
  * A key identifying the work as declared cannot be keyed on the engine's

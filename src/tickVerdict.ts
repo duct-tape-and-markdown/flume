@@ -403,7 +403,12 @@ export interface ReportedGateResult {
   blamesSpan?: false;
 }
 
-/** Bound on a persisted stage-failure signature (provision/render/merge/gate/ship/platform alike) — a comparison key, not a transcript. */
+/**
+ * Bound on a persisted stage-failure signature
+ * (provision/render/merge/gate/ship/platform alike; an exit-stage signature
+ * is a child's exit code, which the supervisor holds and never persists) — a
+ * comparison key, not a transcript.
+ */
 export const MAX_FAILURE_SIGNATURE = 500;
 
 /**
@@ -424,10 +429,14 @@ export function gateFailureSignature(failure: {
 /**
  * The two facts a stage failure reports: the message the wall raised, and the
  * comparison key derived from it ({@link ProvisionFailure.signature}). Every
- * stage that records one — provision, merge, gate, ship, platform — carries
- * this pairing, so the derivation has one home rather than one spelling per
- * leg, where a rewording of either half would diverge silently
- * (`.claude/rules/engineering.md`, *A module is one job*).
+ * stage whose record a verdict carries — provision, render, merge, gate,
+ * ship, platform — carries this pairing, so the derivation has one home
+ * rather than one spelling per leg, where a rewording of either half would
+ * diverge silently (`.claude/rules/engineering.md`, *A module is one job*).
+ * The `exit` stage reports the same two facts and reaches no derivation here:
+ * no verdict carries its record, and its key is a child's exit code rather
+ * than words to bound down to one (`FAILURE_STAGES`,
+ * `src/loopSupervisor.ts`).
  *
  * The key is the trimmed message bounded to {@link MAX_FAILURE_SIGNATURE}: the
  * same deterministic wall yields the same key tick over tick, and a

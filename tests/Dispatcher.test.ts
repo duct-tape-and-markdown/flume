@@ -25252,7 +25252,9 @@ describe("not-shipped PriorAttempt — the chain's empty `shipped` list on the c
     expect(verdict).toBeDefined();
     // Non-vacuity: this run's only queue-unchanged fact is the decline —
     // nothing shipped, no no-commit mode, and no provision-, render-, merge-,
-    // gate-, ship- or platform-stage failure for the derivation to key off instead. The whole
+    // gate-, ship- or platform-stage failure for the derivation to key off instead —
+    // every stage a verdict can carry, the exit stage being the supervisor's
+    // own reading of a child that wrote none. The whole
     // roster is asserted, not the three a reader happens to reach for: a
     // stage left unasserted is one the derivation could have keyed off
     // unseen (`.claude/rules/engineering.md`, *A green verdict is proven

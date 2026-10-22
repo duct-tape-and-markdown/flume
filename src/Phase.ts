@@ -1275,10 +1275,11 @@ export interface Chain {
    * the run-scoped quarantine and the consecutive-identical-failure abort
    * threshold ship as engine defaults; this block lets a chain choose
    * otherwise. Between them the two legs read every failure a tick reported,
-   * whichever stage it came from — provision, render, merge, gate, ship or
-   * platform
+   * whichever stage it came from — provision, render, merge, gate, ship,
+   * platform or exit
    * alike — never provisioning alone. Only the backstop reads a platform
-   * preempt: it is blamed on no entry, so there is nothing to quarantine. Undeclared or omitted fields fall through to the defaults in
+   * preempt or a verdictless exit: neither is blamed on an entry, so there is
+   * nothing to quarantine. Undeclared or omitted fields fall through to the defaults in
    * `src/loopSupervisor.ts`'s
    * `SuperviseLoopOptions.quarantineScope`/`abortThreshold` docs, whose exact
    * byte shape is pinned by the chain-declares-neither-knob case in
@@ -1287,8 +1288,9 @@ export interface Chain {
   supervisorPolicy?: {
     /**
      * `"run"`: a failure a tick blamed on one entry — at the provision,
-     * render, merge, gate or ship stage alike, never the platform stage, whose
-     * preempts name no entry — quarantines that entry's slug for
+     * render, merge, gate or ship stage alike, never the platform stage,
+     * whose preempts name no entry, nor the exit stage, whose child reported
+     * nothing to name one with — quarantines that entry's slug for
      * the rest of the run. `"none"`: quarantine never engages — every entry stays pickable
      * every tick regardless of an earlier failure. The
      * consecutive-identical-failure backstop (`abortThreshold`) applies either
@@ -1299,7 +1301,8 @@ export interface Chain {
      * Number of consecutive ticks the same stage-tagged failure signature
      * must repeat, with no successful tick between them, before the
      * supervisor aborts the run — a provision-, render-, merge-, gate-,
-     * ship- or platform-stage wall alike, each streak counted separately.
+     * ship-, platform- or exit-stage wall alike, each streak counted
+     * separately.
      */
     abortThreshold?: number;
     /**

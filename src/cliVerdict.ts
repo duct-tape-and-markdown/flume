@@ -258,8 +258,8 @@ export function describeRefFailure(
 /**
  * `flume loop`'s completion summary line naming surfaced tick
  * errors, an abort on the consecutive-failure backstop (named by the stage
- * `superviseLoop` reported it against — provision, render, merge, gate, ship
- * or platform — never fixed to any one of them), (spec/loop.md "Graceful stop — the stop flag")
+ * `superviseLoop` reported it against — provision, render, merge, gate, ship,
+ * platform or exit — never fixed to any one of them), (spec/loop.md "Graceful stop — the stop flag")
  * a stop-flag-ended run, a run every standing flag's hold ended (spec/loop.md,
  * *Baton — presence wakes, absence hibernates*), the run's yield, and what the
  * run spent on agents, by phase — undefined when the run had none of these. Printed even on a 0

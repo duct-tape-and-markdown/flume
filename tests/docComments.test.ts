@@ -468,23 +468,28 @@ const ROSTER_TREES: readonly string[] = ["src", "tests"];
  * elided one leaves (`a provision-, render-, merge-, gate-, ship- or
  * platform-stage wall`).
  *
- * `ship` is the one member fenced against its own inflections: this tree
- * spells `shipped`, `shipping` and `ships` everywhere, and a bare `ship`
- * matching inside them would read a sentence about what a wave shipped as the
- * roster naming its stage — green over prose that names nothing.
+ * `ship` and `exit` are the two members fenced against their own
+ * inflections: this tree spells `shipped`, `shipping` and `ships` everywhere,
+ * and `exited`, `exits`, `exitCode` and `tickExitCode` as readily, so a bare
+ * match inside one of those would read a sentence about what a wave shipped
+ * or what code a child exited with as the roster naming the stage — green
+ * over prose that names nothing. `exit`'s fence carries the capitals too,
+ * since the camel-cased spellings are the common ones.
  */
 const stageWord = (stage: FailureStage): string =>
   stage === "provision"
     ? String.raw`provision(?:ing)?`
     : stage === "ship"
       ? String.raw`ship(?![a-z])`
-      : stage;
+      : stage === "exit"
+        ? String.raw`exit(?![a-zA-Z])`
+        : stage;
 const stageToken = (): string =>
   `(?:${FAILURE_STAGES.map(stageWord).join("|")})(?:[-\\s]stages?|-(?=[,\\s]))?`;
 
 /**
  * A run of stage names joined as a list — `provision, render, merge, gate,
- * ship or platform`, `merge/gate`, `render and gate`. The separator alphabet carries only
+ * ship, platform or exit`, `merge/gate`, `render and gate`. The separator alphabet carries only
  * punctuation and the two connectives, never bare whitespace: `after-merge
  * gate` is two words that happen to be adjacent, not a list.
  */

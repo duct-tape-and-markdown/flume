@@ -2648,7 +2648,9 @@ conflict or a dirty trunk refusing the pick), `gate` (a gate revert), `ship`
 never one that deliberately returned `false`, which is a verdict rather than a
 failure), and
 `platform` (an agent that failed for non-work reasons — a crash, an OOM kill,
-an expired login, a spent cap — keyed by its preempt class). The
+an expired login, a spent cap — keyed by its preempt class), and `exit` (a
+child that exited non-zero without writing a verdict at all — a refusal
+raised before any account of the work existed — keyed by its exit code). The
 two legs reach different failures: an entry a failure can be
 **blamed** on is quarantined for the rest of the run, whichever of the first
 five stages it failed at,
@@ -2661,7 +2663,9 @@ since a singleton tick has no entry to blame, *and* every `platform` preempt,
 which belongs to the host rather than to the entry the slot happened to be
 carrying: an expired login fails every tick identically, no retry this run can
 make moves it, and holding the entry it struck first would isolate a healthy
-one for the rest of the run.
+one for the rest of the run. Every verdictless `exit` is non-entry-scoped for
+a blunter reason: the child reported nothing, so which entry it was carrying
+is not a fact the supervisor has.
 
 Beside the net, the block carries the knobs that shape the run and the tick
 themselves and have nowhere else to be set from a chain: how many tick

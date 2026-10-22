@@ -14,7 +14,11 @@ import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { FAILURE_STAGES, superviseLoop } from "../src/loopSupervisor.ts";
+import {
+  DEFAULT_ABORT_THRESHOLD,
+  FAILURE_STAGES,
+  superviseLoop,
+} from "../src/loopSupervisor.ts";
 import type {
   FailureStage,
   SuperviseResult,
@@ -1220,7 +1224,9 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
   // The other side of the two cases above: they stop a run short of its
   // budget because the wall recorded a failure fact for the streak fold to
   // count. A clean exit records none — no provision, render, merge, gate,
-  // ship or platform failure — so the same slice walling every tick is
+  // ship or platform failure in its verdict, and no exit-stage failure
+  // either, that stage keying on a non-zero code — so the same slice walling
+  // every tick is
   // invisible to the backstop, and `tickBudget` is the only thing that ends
   // the run. The budget is the bound `harness/handoff.ts`'s `wakeSet` names,
   // and this is where it is paid.
@@ -1275,8 +1281,8 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
 /**
  * spec/loop.md "Repeated identical failures — quarantine, then abort"
  * generalizes both backstop legs past provisioning to the render, merge and
- * gate stages, and the backstop alone to the platform stage, whose own suite
- * is below — sibling coverage to the provision-only suite above, same `runTick`
+ * gate stages, and the backstop alone to the platform and exit stages, whose
+ * own suites are below — sibling coverage to the provision-only suite above, same `runTick`
  * fixture idiom (a stub writing the verdict file directly, standing in for
  * a real fanout wave/singleton tick whose own mechanism the Dispatcher-level
  * suites above prove).
@@ -2580,41 +2586,98 @@ describe("superviseLoop — the aborting streak's stage is reported, not inferre
     childVerdictPath(join(fx.repo, ".flume"), phase);
 
   /**
-   * How a verdict carries a failure of each stage the roster names — keyed
-   * by {@link FailureStage}, so a stage added to {@link FAILURE_STAGES} is a
-   * compile error here until this fixture says which list carries it, never
-   * a member silently driven as some other stage.
+   * The code the `exit`-stage arm below exits with — any non-zero one, since
+   * what the supervisor keys on is the number itself and not what it means.
+   * Two is the CJS-context chain-load refusal's, which is one real wall of
+   * the class.
    */
-  const verdictCarrying: Record<
-    FailureStage,
-    (record: { signature: string; message: string }) => Partial<TickVerdict>
-  > = {
-    provision: (record) => ({ provisionFailures: [record] }),
-    render: (record) => ({
-      noCommit: "render-refused" as const,
-      renderFailures: [record],
+  const EXIT_WALL = 2;
+
+  /**
+   * What a child leaves behind to record a failure of one stage: the verdict
+   * it wrote, when it wrote one, and the code it exited. Six of the roster's
+   * members are verdict facts over a clean exit; `exit` is neither, so the
+   * drive carries both halves rather than a verdict alone.
+   *
+   * `signature` is what the drive will actually record, which is not always
+   * the wall the case asked for: the exit stage's key is its child's code,
+   * so that arm names its own and the caller reads it back here instead of
+   * assuming the words it handed in survived.
+   */
+  interface StageDrive {
+    readonly signature: string;
+    readonly verdict?: Partial<TickVerdict>;
+    readonly exitCode: number;
+  }
+
+  /** The signature/message pairing a stage-failure record carries. */
+  const facts = (wall: string): { signature: string; message: string } => ({
+    signature: wall,
+    message: wall,
+  });
+
+  /**
+   * How a child records a failure of each stage the roster names — keyed by
+   * {@link FailureStage}, so a stage added to {@link FAILURE_STAGES} is a
+   * compile error here until this fixture says how that stage is produced,
+   * never a member silently driven as some other stage.
+   */
+  const stageCarrying: Record<FailureStage, (wall: string) => StageDrive> = {
+    provision: (wall) => ({
+      signature: wall,
+      verdict: { provisionFailures: [facts(wall)] },
+      exitCode: 0,
     }),
-    merge: (record) => ({
-      mergeFailures: [{ ...blamedOnFixture("STAGED"), ...record }],
+    render: (wall) => ({
+      signature: wall,
+      verdict: {
+        noCommit: "render-refused" as const,
+        renderFailures: [facts(wall)],
+      },
+      exitCode: 0,
     }),
-    gate: (record) => ({
-      noCommit: "gate-revert" as const,
-      gateFailures: [record],
+    merge: (wall) => ({
+      signature: wall,
+      verdict: {
+        mergeFailures: [{ ...blamedOnFixture("STAGED"), ...facts(wall) }],
+      },
+      exitCode: 0,
+    }),
+    gate: (wall) => ({
+      signature: wall,
+      verdict: {
+        noCommit: "gate-revert" as const,
+        gateFailures: [facts(wall)],
+      },
+      exitCode: 0,
     }),
     // Always blamed: `shipped` is consulted only for a span that reached
     // trunk, so a `ShipFailure` (`src/tickVerdict.ts`) always names the entry
     // the pick carried.
-    ship: (record) => ({
-      shipFailures: [{ ...blamedOnFixture("STAGED"), ...record }],
+    ship: (wall) => ({
+      signature: wall,
+      verdict: {
+        shipFailures: [{ ...blamedOnFixture("STAGED"), ...facts(wall) }],
+      },
+      exitCode: 0,
     }),
-    // The one member with no blame half to hand it: a preempt's record
-    // carries the signature and the message alone (`PlatformFailure`,
-    // `src/tickVerdict.ts`), so this arm passes `record` through as the whole
-    // thing rather than spreading a tag fixture over it.
-    platform: (record) => ({
-      noCommit: "platform-preempt" as const,
-      platformFailures: [record],
+    // One of the two members with no blame half to hand it: a preempt's
+    // record carries the signature and the message alone (`PlatformFailure`,
+    // `src/tickVerdict.ts`), so this arm passes the pairing through as the
+    // whole thing rather than spreading a tag fixture over it.
+    platform: (wall) => ({
+      signature: wall,
+      verdict: {
+        noCommit: "platform-preempt" as const,
+        platformFailures: [facts(wall)],
+      },
+      exitCode: 0,
     }),
+    // The other, and the one member no verdict carries at all: a child that
+    // exited non-zero having written none. The wall the case asked for
+    // reaches nothing — such a refusal's whole key is its exit code — so
+    // this arm names the code it exits and reports that as its signature.
+    exit: () => ({ signature: String(EXIT_WALL), exitCode: EXIT_WALL }),
   };
 
   /**
@@ -2624,30 +2687,37 @@ describe("superviseLoop — the aborting streak's stage is reported, not inferre
    */
   async function abortOn(
     stage: FailureStage,
-    signature: string,
+    wall: string,
   ): Promise<{
     res: Awaited<ReturnType<typeof superviseLoop>>;
     errors: string[];
     calls: number;
+    signature: string;
   }> {
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("build"); // never hibernates — the abort comes from the backstop alone
 
-    const record = { signature, message: signature };
+    const drive = stageCarrying[stage](wall);
     let calls = 0;
     const runTick = async ({ phase }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
-      await writeFile(
-        verdictPath(phase),
-        JSON.stringify(
-          verdictFixture({
-            committed: false,
-            ...verdictCarrying[stage](record),
-          }),
-        ),
-        "utf8",
-      );
-      return { exitCode: 0 };
+      // The verdict-carried stages write theirs; the exit stage clears the
+      // path instead, which is what a real child does before its own work
+      // (`clearTickVerdict`, `src/tickVerdict.ts`) and what makes a
+      // verdictless exit verdictless when an earlier tick of this phase
+      // already wrote one.
+      if (drive.verdict !== undefined) {
+        await writeFile(
+          verdictPath(phase),
+          JSON.stringify(
+            verdictFixture({ committed: false, ...drive.verdict }),
+          ),
+          "utf8",
+        );
+      } else {
+        await rm(verdictPath(phase), { force: true });
+      }
+      return { exitCode: drive.exitCode };
     };
 
     const errors: string[] = [];
@@ -2657,7 +2727,7 @@ describe("superviseLoop — the aborting streak's stage is reported, not inferre
       runTick,
       log: { info: () => {}, warn: () => {}, error: (l) => errors.push(l) },
     });
-    return { res, errors, calls };
+    return { res, errors, calls, signature: drive.signature };
   }
 
   it("superviseLoop reports the aborting streak's stage for every FAILURE_STAGES member", async () => {
@@ -2666,16 +2736,12 @@ describe("superviseLoop — the aborting streak's stage is reported, not inferre
     // be left standing in for the rest.
     expect(FAILURE_STAGES.length).toBeGreaterThan(0);
     for (const stage of FAILURE_STAGES) {
-      const { res, calls, errors } = await abortOn(
+      const { res, calls, errors, signature } = await abortOn(
         stage,
         `${stage} wall: EBUSY`,
       );
       expect(calls).toBe(3);
-      expect(res.repeatedFailure).toEqual({
-        stage,
-        signature: `${stage} wall: EBUSY`,
-        count: 3,
-      });
+      expect(res.repeatedFailure).toEqual({ stage, signature, count: 3 });
       // The log line the operator reads names it too, never "provisioning".
       expect(errors.some((e) => e.includes(`${stage}-stage`))).toBe(true);
     }
@@ -3832,20 +3898,55 @@ describe("superviseLoop — a mount-dead 69 aborts only while the mount is still
     await writeMinimalChain(fx.configDir);
     await commitEntry("GOOD", GOOD);
 
-    const { res, calls, warns } = await runOver69(3);
+    // Budgeted one tick short of the backstop's threshold, so what this case
+    // asks is the mount-dead axis alone: a declined 69 is a verdictless
+    // non-zero exit, which is the `exit` stage's own wall and ends a longer
+    // run of its own accord (the case below).
+    expect(DEFAULT_ABORT_THRESHOLD).toBeGreaterThan(1);
+    const budget = DEFAULT_ABORT_THRESHOLD - 1;
+    const { res, calls, warns } = await runOver69(budget);
 
     // The run burned its budget rather than ending on the first 69: the wall
     // the child named is gone, so there is nothing left for the abort to be
     // about.
-    expect(calls).toBe(3);
-    expect(res.ticks).toBe(3);
+    expect(calls).toBe(budget);
+    expect(res.ticks).toBe(budget);
     expect(res.mountDead).toBeUndefined();
+    expect(res.repeatedFailure).toBeUndefined();
     expect(loopExitCode(res)).not.toBe(EX_MOUNT_DEAD);
     // And the supervisor said why it declined the abort, rather than letting
     // a 69 pass as a routine non-zero exit.
     expect(
       warns.filter((l) => l.includes("has been repaired since")),
-    ).toHaveLength(3);
+    ).toHaveLength(budget);
+  });
+
+  /**
+   * The 69 the spec names in the `exit` stage's own bullet: declined on the
+   * mount-dead axis because no leg the re-read reads still fails, and
+   * therefore a refusal with no verdict and no wall anything else can name.
+   * Before the stage existed it repeated to `--max`, every lap declined and
+   * counted, reaching no signature at all.
+   */
+  it("a repeatedly-declined 69 ends the run on the exit-stage backstop rather than at --max", async () => {
+    await writeMinimalChain(fx.configDir);
+    await commitEntry("GOOD", GOOD);
+
+    const { res, calls, warns } = await runOver69(12);
+
+    // Every lap was declined on the mount-dead axis — the arming: this is the
+    // repaired-in-the-gap shape, not a wall still standing.
+    expect(
+      warns.filter((l) => l.includes("has been repaired since")),
+    ).toHaveLength(DEFAULT_ABORT_THRESHOLD);
+    expect(res.mountDead).toBeUndefined();
+    // And the backstop, not the budget, is what ended it.
+    expect(calls).toBe(DEFAULT_ABORT_THRESHOLD);
+    expect(res.repeatedFailure).toEqual({
+      stage: "exit",
+      signature: String(EX_MOUNT_DEAD),
+      count: DEFAULT_ABORT_THRESHOLD,
+    });
   });
 
   it("a child's 69 whose chain still fails to load ends the run and propagates 69", async () => {
@@ -3975,6 +4076,42 @@ describe("superviseLoop — a mount-dead 69 aborts only while the mount is still
     ).toBe(true);
   });
 
+  /**
+   * The precedence the two abort axes stand in. A declined 69 is a
+   * verdictless non-zero exit, so a run of them is an `exit`-stage streak —
+   * and on the tick the wall comes back, the streak is already at the
+   * threshold. Were the backstop read first, a run whose mount is dead right
+   * now would exit `1` for having repeated rather than `69` for the wall it
+   * is standing behind, and CI would read a lost loop as a failed one
+   * (spec/loop.md, *Exit codes — the run never lies to CI*).
+   */
+  it("a 69 whose wall is back on the threshold tick ends the run mount-dead, not on the backstop", async () => {
+    await writeMinimalChain(fx.configDir);
+    await commitEntry("GOOD", GOOD);
+
+    // Declined for every tick but the last, which is what puts the
+    // `exit`-stage streak exactly at the threshold as the wall returns.
+    const { res, calls, warns } = await runOver69(
+      DEFAULT_ABORT_THRESHOLD,
+      async (call) => {
+        if (call !== DEFAULT_ABORT_THRESHOLD) return;
+        await commitEntry("CORRUPT", CORRUPT);
+      },
+    );
+
+    // Arming: the streak really did reach the threshold, every earlier lap
+    // declined, so what follows is a precedence and not a streak that never
+    // formed.
+    expect(calls).toBe(DEFAULT_ABORT_THRESHOLD);
+    expect(
+      warns.filter((l) => l.includes("has been repaired since")),
+    ).toHaveLength(DEFAULT_ABORT_THRESHOLD - 1);
+    // The louder, more specific axis won: the wall, not the repetition.
+    expect(res.mountDead).toBe(true);
+    expect(res.repeatedFailure).toBeUndefined();
+    expect(loopExitCode(res)).toBe(EX_MOUNT_DEAD);
+  });
+
   it("a mount-dead re-read declines the abort on a queue repaired between the child's exit and the read", async () => {
     await writeMinimalChain(fx.configDir);
     await commitEntry("CORRUPT", CORRUPT);
@@ -4011,4 +4148,129 @@ describe("superviseLoop — a mount-dead 69 aborts only while the mount is still
       ),
     ).toHaveLength(0);
   });
+});
+
+/**
+ * spec/loop.md "Repeated identical failures — quarantine, then abort": the
+ * `exit` stage. Every other roster member is a fact a verdict states; this one
+ * is the fact a *missing* verdict states — a child that exited non-zero
+ * without writing one refused before any account of the work existed (a
+ * CJS-context chain load, a harness-error refusal, an uncaught throw out of
+ * `Dispatcher.tick`, or a 69 whose wall the mount-dead re-read could not name
+ * among the legs it re-reads). Keyed by the exit code and blamed on no entry,
+ * so it feeds the backstop alone: without it such a refusal repeated every
+ * tick until `--max` ran out, counted as an errored tick and reaching no
+ * signature at all.
+ *
+ * Each case drives the real `superviseLoop` over a stub that writes no
+ * verdict, which is what a child dying before the write leaves behind
+ * (`clearTickVerdict`, `src/tickVerdict.ts`, having already cleared the
+ * previous tick's).
+ */
+const verdictlessRun = async (opts: {
+  exitCode: number;
+  tickBudget: number;
+  abortThreshold?: number;
+}): Promise<{
+  res: SuperviseResult;
+  calls: number;
+  carried: ReadonlySet<string>[];
+}> => {
+  const baton = new Baton(join(fx.repo, ".flume"));
+  // Never hibernates: whatever ends the run, it is not an empty baton.
+  baton.wake("build");
+  let calls = 0;
+  const carried: ReadonlySet<string>[] = [];
+  const res = await superviseLoop({
+    repoRoot: fx.repo,
+    tickBudget: opts.tickBudget,
+    ...(opts.abortThreshold !== undefined
+      ? { abortThreshold: opts.abortThreshold }
+      : {}),
+    runTick: async ({ quarantinedSlugs }: TickChildRequest) => {
+      calls++;
+      carried.push(quarantinedSlugs);
+      return { exitCode: opts.exitCode };
+    },
+    log: silent,
+  });
+  return { res, calls, carried };
+};
+
+it("a child exiting non-zero with no verdict joins the failure accounting under its exit code", async () => {
+  // One wall is the whole streak at a threshold of one, so this case reads
+  // the record the fold made rather than the abort's own arithmetic: the
+  // stage is `exit` and the signature is the code, with none of the words the
+  // errored-tick line spells around it.
+  const { res, calls } = await verdictlessRun({
+    exitCode: 2,
+    tickBudget: 4,
+    abortThreshold: 1,
+  });
+
+  // Arming: a child really did run and really did exit non-zero, so the
+  // record below is one the fold built from this run's own tick.
+  expect(calls).toBe(1);
+  expect(res.ticks).toBe(1);
+  expect(res.repeatedFailure).toEqual({
+    stage: "exit",
+    signature: "2",
+    count: 1,
+  });
+  // And the tick is still an errored one, named for the operator.
+  expect(res.erroredTicks).toEqual([
+    "build tick process exited 2 with no verdict written to disk",
+  ]);
+});
+
+it("a run aborts on the threshold of identical verdictless exits", async () => {
+  // The burn this stage exists to stop: the same pre-verdict refusal every
+  // tick, under a budget wide enough that spending it would be the
+  // alternative.
+  const { res, calls } = await verdictlessRun({ exitCode: 2, tickBudget: 12 });
+
+  // Aborted on the third identical exit, not on the twelfth tick.
+  expect(calls).toBe(3);
+  expect(res.repeatedFailure).toEqual({
+    stage: "exit",
+    signature: "2",
+    count: 3,
+  });
+  // Non-zero, as every backstop abort is (`loopExitCode`, `src/cliVerdict.ts`).
+  expect(loopExitCode(res)).toBe(1);
+  // The summary names the stage the operator has to go look at.
+  expect(loopCompletionSummary(res)).toContain("exit-stage");
+});
+
+it("a child that exits zero joins no failure accounting", async () => {
+  // The fence the stage keys on: *non-zero*, never the absent verdict alone.
+  // An agent that committed nothing and exited clean is not evidence anything
+  // went wrong (spec/loop.md, *Repeated identical failures — quarantine, then
+  // abort*), so even at a threshold of one it reaches no signature and the
+  // run spends its budget instead of aborting.
+  const { res, calls } = await verdictlessRun({
+    exitCode: 0,
+    tickBudget: 3,
+    abortThreshold: 1,
+  });
+
+  expect(calls).toBe(3);
+  expect(res.repeatedFailure).toBeUndefined();
+  expect(res.erroredTicks).toEqual([]);
+});
+
+it("a verdictless exit places no quarantine hold on any entry", async () => {
+  // Blamed on no entry: the child reported nothing, so which entry it was
+  // carrying is not a fact the supervisor holds, and no key crosses to the
+  // children that follow it (`TickChildRequest.quarantinedSlugs`).
+  const { calls, carried } = await verdictlessRun({
+    exitCode: 2,
+    tickBudget: 3,
+  });
+
+  // Arming: later children ran at all, so an empty set below is a hold never
+  // placed rather than a child that never read one.
+  expect(calls).toBe(3);
+  expect(carried).toHaveLength(3);
+  for (const held of carried) expect([...held]).toEqual([]);
 });
