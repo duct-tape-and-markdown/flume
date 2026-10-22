@@ -48,6 +48,7 @@ import { parsePendingQueue } from "../src/PendingSchema.ts";
 import { readQueueOnDisk } from "../src/pendingLedger.ts";
 import { queueDir } from "../harness/layout.ts";
 import { resolvePendingDir } from "../src/paths.ts";
+import { installPlan } from "../src/setupWorktree.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { commitInto } from "./helpers/scratchRepo.ts";
 import {
@@ -1115,3 +1116,93 @@ it("the chain.ts init writes loads through the engine's chain loader as a valid 
   expect(enabled.length).toBeGreaterThan(0);
   expect([...phases].sort()).toEqual([...enabled, "build"].sort());
 }, SPAWN_BUDGET_MS);
+
+/**
+ * The provisioning clause of adoption (`spec/harness.md`, *Adoption and
+ * upgrade*): the skeleton declares no `setup`, and that silence is the
+ * engine's lockfile-aware install at the root of every tree the package
+ * provisions — refused at chain load where the repository commits no
+ * lockfile that installer reads (`harness/provisioning.ts`). Init reads the
+ * same set before it writes anything and reports which side of it the
+ * repository is on, so an adoption that left a field owed says so where a
+ * consumer is standing rather than hours later at a chain that will not
+ * load.
+ *
+ * An agreement gate on both halves, like the dependency cases above: the set
+ * each one asserts over comes off the engine through the real adoption, never
+ * spelled by the tester's hand, and the second half drives the real renderer
+ * over the real verb.
+ */
+it("init over a repo with no lockfile the installer reads names `setup` as what the declaration owes", async () => {
+  const result = await harnessInit({ repoRoot });
+
+  const outcome = result.provisioning;
+  if (outcome.kind !== "setup-owed") {
+    throw new Error(`expected setup to be owed, got ${outcome.kind}`);
+  }
+
+  // Non-vacuity, both ways: the set reported is the engine's own and is
+  // populated, and nothing in it is on disk here — so this arm is the probe
+  // reading a real absence rather than an empty set passing for one.
+  expect(outcome.lockfiles.length).toBeGreaterThan(0);
+  for (const lockfile of outcome.lockfiles) {
+    expect(existsSync(join(repoRoot, lockfile))).toBe(false);
+  }
+
+  // What a consumer actually reads, over a sibling repository in the same
+  // state: one line naming `setup` and every lockfile the engine named.
+  const sibling = join(repoRoot, "adopter");
+  await mkdir(sibling, { recursive: true });
+  const adopted = await runNodeStreams(sibling, [TSX_CLI, HARNESS_CLI, "init"]);
+  expect({ code: adopted.code, stderr: adopted.stderr }).toEqual({
+    code: 0,
+    stderr: "",
+  });
+  const named = adopted.stdout
+    .split(/\r?\n/)
+    .filter(
+      (line) =>
+        line.includes("`setup`") &&
+        outcome.lockfiles.every((lockfile) => line.includes(lockfile)),
+    );
+  expect(named.length, adopted.stdout).toBeGreaterThan(0);
+}, SPAWN_BUDGET_MS);
+
+it("init over a repo holding a lockfile the installer reads writes its skeleton unchanged", async () => {
+  // Two repositories on either side of the installer's own read, differing
+  // by that one lockfile — and which file to plant is the engine's to say,
+  // asked of the reader whose refusal the report pre-empts rather than
+  // spelled here.
+  const bare = join(repoRoot, "bare");
+  const adopter = join(repoRoot, "adopter");
+  await mkdir(bare, { recursive: true });
+  await mkdir(adopter, { recursive: true });
+  const [lockfile] = installPlan(bare).lockfiles;
+  if (lockfile === undefined) {
+    throw new Error("the engine's installer reads no lockfile to plant");
+  }
+  await writeFile(join(adopter, lockfile), "lockfileVersion: '9.0'\n", "utf8");
+
+  // Non-vacuity, before anything is compared: the real installer reads one
+  // of these trees and not the other, so the comparison below spans both
+  // arms rather than running twice down one.
+  expect(installPlan(adopter).install?.lockfile).toBe(lockfile);
+  expect(installPlan(bare).install).toBeUndefined();
+
+  const read = await harnessInit({ repoRoot: adopter });
+  const unread = await harnessInit({ repoRoot: bare });
+
+  // The skeleton is the same adoption either way: the read changes what init
+  // reports, never what it writes. A declaration guessing a `setup` for a
+  // stack init cannot see would be a default nobody chose, and a commented
+  // row would not load at all — which is why the loud door is the report
+  // and not the file.
+  expect(read.written).toEqual(unread.written);
+  expect(read.written.length).toBeGreaterThan(0);
+  for (const rel of read.written) {
+    expect(
+      await readFile(join(adopter, rel), "utf8"),
+      `${rel} differs across the installer read`,
+    ).toBe(await readFile(join(bare, rel), "utf8"));
+  }
+});

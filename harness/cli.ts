@@ -86,6 +86,19 @@ async function main(argv: readonly string[]): Promise<number> {
         : `  depends   no package.json here — add ${result.packageName}@${result.dependency.range} wherever this repository declares its dependencies`,
   );
 
+  // What the declaration this adoption just wrote still owes about
+  // provisioning, where it owes anything: the skeleton names no `setup`, and
+  // that silence is the engine's lockfile-aware install at the root of every
+  // tree the package provisions — which this repository may carry no
+  // lockfile for. A fact, never a verdict: both fixes are named and which
+  // one this repository wants stays the consumer's, the way the load-time
+  // refusal this line exists to pre-empt names both.
+  lines.push(
+    result.provisioning.kind === "installer"
+      ? `  provision ${result.provisioning.lockfile} here — every tree the package provisions takes the engine's install at its root, so the declaration owes no \`setup\``
+      : `  provision no ${result.provisioning.lockfiles.join(" or ")} here — the engine's installer reads no other, so the declaration owes a \`setup\` whose \`restore\` installs this tree, unless the install below writes one of those lockfiles; the chain refuses to load until one of the two is true`,
+  );
+
   process.stdout.write(
     `flume-harness init — ${result.repoRoot}\n\n${lines.join("\n")}\n\n` +
       `Next: install the dependency, then edit ${result.stateRoot}/declaration.ts — ` +

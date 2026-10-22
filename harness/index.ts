@@ -50,6 +50,7 @@ export {
   type HarnessInitOptions,
   type HarnessInitResult,
   type PlanStateOutcome,
+  type ProvisioningOutcome,
 } from "./init.js";
 
 export {

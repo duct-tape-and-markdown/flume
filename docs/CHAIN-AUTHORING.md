@@ -174,7 +174,12 @@ build worktree, each plan slice's, and the base checkout your runner judges
 at — takes the engine's own lockfile-aware install at its root, so a
 repository committing no lockfile that installer reads while declaring no
 `setup` is refused at chain load, naming both fixes, rather than failing once
-per tree), `slots`
+per tree — and `flume-harness init` asks that same question of the
+repository it is adopting into, before it writes anything, so a tree the
+shipped installer cannot read is told at adoption that `setup` is what the
+declaration owes rather than meeting the refusal at its first chain load; the
+skeleton is the same either way, since nothing can guess the restore a cargo,
+dotnet or yarn tree wants and a commented row would not load), `slots`
 (prompt text — `autonomy`, a dial; `domain`, context; never a directive),
 `capabilities` (the environment facts this repository asserts, passed through
 whole to `Chain.capabilities`, so a `requiresCapability` entry naming one the

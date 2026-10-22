@@ -20,8 +20,9 @@
  * state root that does not exist, or a protocol page beside no declaration —
  * a tree nothing refuses and no re-run can distinguish from a finished one.
  * Every input the adoption reads — the state root's absence, this package's
- * own manifest, the consumer's — is resolved before the first `mkdir`, and
- * nothing on disk is touched until all of them pass
+ * own manifest, the consumer's, and the lockfiles the engine's installer
+ * reads — is resolved before the first `mkdir`, and nothing on disk is
+ * touched until all of them pass
  * (`.claude/rules/engineering.md`, *Loud or nothing*).
  *
  * **What init writes once, it never rewrites.** Everything here is the
@@ -43,6 +44,7 @@ import {
 } from "../src/paths.js";
 import { mergeIgnoreLines } from "../src/runtimeIgnores.js";
 import { readSelfPackage } from "../src/selfPackage.js";
+import { installPlan } from "../src/setupWorktree.js";
 
 import { detailOf } from "./exec.js";
 import { resolvesInTree, tipOf } from "./gitRange.js";
@@ -198,6 +200,50 @@ export type PlanStateOutcome =
    */
   | { readonly kind: "no-commit" };
 
+/**
+ * What became of the provisioning clause of adoption — the third **fact,
+ * never a verdict** beside {@link DependencyOutcome} and
+ * {@link PlanStateOutcome}: init says whether the engine's own installer can
+ * read this repository, and what the declaration should say about it stays
+ * the consumer's.
+ *
+ * The skeleton declares no `setup`, and that silence reduces to the engine's
+ * lockfile-aware install at the root of every tree the package provisions —
+ * refused at chain load where the repository commits no lockfile that
+ * installer reads (`provisioning.ts`). Which is a refusal a fresh adopter
+ * otherwise meets as a chain that will not load, with nothing at adoption
+ * having told them a field was left owed. So init asks the engine the same
+ * question the installer answers, before it writes anything, and reports
+ * which side of it this repository is on
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*).
+ *
+ * Not a refusal of its own, and not a skeleton that differs: adopting a tree
+ * the shipped installer cannot read is a real thing to do — a cargo, dotnet
+ * or script stack declares a `setup.restore` and never wants pnpm or npm,
+ * and a repository running either of those is lockfile-less until its first
+ * install, which the adoption's own next step is. Nothing here can guess
+ * which, and a `setup` written in on a guess would be a default nobody chose
+ * (`.claude/rules/engine-boundary.md`, *Surface, not prescription*).
+ * Degraded but proceeding, and bounded by the load-time refusal named above
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
+export type ProvisioningOutcome =
+  /**
+   * The engine's installer reads a lockfile this repository carries, so the
+   * declaration owes nothing: every tree the package provisions takes that
+   * install at its root.
+   */
+  | { readonly kind: "installer"; readonly lockfile: string }
+  /**
+   * No lockfile the engine's installer reads. `setup` is what the
+   * declaration owes before a tick can run — or one of `lockfiles`, which is
+   * the whole set that installer reads, asked of the engine rather than
+   * spelled here so this report cannot come to name a set it no longer
+   * reads.
+   */
+  | { readonly kind: "setup-owed"; readonly lockfiles: readonly string[] };
+
 export interface HarnessInitResult {
   /** The repository adopted into, absolute. */
   readonly repoRoot: string;
@@ -219,6 +265,8 @@ export interface HarnessInitResult {
   readonly dependency: DependencyOutcome;
   /** What became of the plan-state clause. */
   readonly planState: PlanStateOutcome;
+  /** What became of the provisioning clause. */
+  readonly provisioning: ProvisioningOutcome;
 }
 
 /**
@@ -440,6 +488,16 @@ export async function harnessInit(
   // this adoption read before it touched the tree.
   const tip = tipIfAny(repoRoot);
 
+  // Whether the engine's own installer can read this tree — the question the
+  // chain load asks of a declaration that names no `setup`, asked here
+  // instead of left to that load (`installPlan`, `src/setupWorktree.ts`).
+  // In the preflight with every other read, and for the same two reasons:
+  // the probe refuses on a lockfile that is present but unstattable, and the
+  // report below is part of what this adoption hands back, so a tree it
+  // could not read keeps its files rather than getting a skeleton and a
+  // refusal it was never warned about.
+  const provisioning = readProvisioning(repoRoot);
+
   await mkdir(namespacedJoin(stateRootAbs), { recursive: true });
   const written: string[] = [];
   for (const [rel, body] of [
@@ -511,7 +569,26 @@ export async function harnessInit(
     packageName: self.name,
     dependency: await addDependency(manifest, self.name, `^${self.version}`),
     planState: tip === undefined ? { kind: "no-commit" } : { kind: "seeded", tip },
+    provisioning,
   };
+}
+
+/**
+ * Which side of the engine's installer `repoRoot` falls on
+ * ({@link ProvisioningOutcome}).
+ *
+ * The engine answers both halves — which install this tree implies, and the
+ * whole set it reads either way — so neither is spelled twice
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*). The repository root is the tree probed because it is
+ * the tree every provisioned one is cut from, which is the same reading the
+ * load-time refusal takes (`provisioning.ts`).
+ */
+function readProvisioning(repoRoot: string): ProvisioningOutcome {
+  const { install, lockfiles } = installPlan(repoRoot);
+  return install === undefined
+    ? { kind: "setup-owed", lockfiles }
+    : { kind: "installer", lockfile: install.lockfile };
 }
 
 /**
