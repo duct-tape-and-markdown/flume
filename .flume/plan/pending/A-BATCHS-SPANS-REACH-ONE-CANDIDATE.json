@@ -32,6 +32,22 @@
         "description": "the verdict's bystander checkpoint field and the merge outcome an unwind rowed as"
       },
       {
+        "path": "src/tickLeg.ts",
+        "description": "the leg outcome's own copy of the checkpoint field, which every leg fills"
+      },
+      {
+        "path": "src/waveTick.ts",
+        "description": "the wave leg's lift of the checkpoint onto its outcome"
+      },
+      {
+        "path": "src/singletonTick.ts",
+        "description": "the singleton leg's lift of it onto its verdict"
+      },
+      {
+        "path": "src/Dispatcher.ts",
+        "description": "the tick's pass-through of the checkpoint from the leg outcome into the verdict it builds"
+      },
+      {
         "path": "tests/Dispatcher.test.ts",
         "description": "the batched-merge cases"
       },
