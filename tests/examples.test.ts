@@ -2859,6 +2859,75 @@ describe("docs/CHAIN-AUTHORING.md — §1's tables walk Phase and TickContext", 
 });
 
 /**
+ * Agreement pin (.claude/rules/engineering.md, *Narration is the ladder's
+ * bottom rung*: a `docs/` page stating what a shipped interface does — for a
+ * declaration, down to each field the package ships — may be pinned against
+ * the interface it describes). §12 and §14 are the only standing prose
+ * telling a chain author what `refusesEntry` and `order` are handed, and
+ * each table opens on the claim its interface's own header makes — every
+ * fact the engine already holds at that moment, so the hook reaches for
+ * none of it. That sentence is the whole reason either field set exists
+ * (*A fact the engine holds is reported, never rediscovered*), and it is
+ * false the moment a field is declared and not rowed: the hook author who
+ * cannot find `inFlight` or `declaredAs` on the page rebuilds it — a second
+ * `git log`, a respelt declaration key — which is the failure the surface
+ * was added to end. A row the interface no longer declares is the converse,
+ * an instruction to read a field that is not there. So the claim is equality
+ * in declaration order rather than coverage, as it is for §1's tables, and
+ * either side moving alone reds.
+ *
+ * Neither side is restated here (*Derived state is computed, never restated
+ * beside its source*): the fields come off the declaration through a
+ * checker, the rosters off the page's own tables.
+ */
+describe("docs/CHAIN-AUTHORING.md — §12 and §14's tables walk the contexts their hooks are handed", () => {
+  /**
+   * Each table sits in its own section, so each walk cuts that section and
+   * finds the table by its header cells (`rowNamesOf`,
+   * `tests/helpers/docSections.ts`) — armed by `docWalk`
+   * (`tests/helpers/docWalk.ts`), as the sibling walks over this page are.
+   * Both tables carry the same header, which is why the cut is the section
+   * and not the page. The anchor is each section's own claim of its
+   * interface, which is what proves the cut landed on the section making it.
+   */
+  const REFUSAL: DocWalkRequest = {
+    module: "src/Phase.ts",
+    interface: "EntryRefusalContext",
+    member: "declaredAs",
+    page: "docs/CHAIN-AUTHORING.md",
+    heading: /^## 12\. Declining one entry at selection/m,
+    anchor: "What the predicate is handed (`EntryRefusalContext`)",
+  };
+
+  const ORDER: DocWalkRequest = {
+    module: "src/Phase.ts",
+    interface: "OrderContext",
+    member: "inFlight",
+    page: "docs/CHAIN-AUTHORING.md",
+    heading: /^## 14\. Ordering the queue/m,
+    anchor: "`OrderContext` is every fact the engine already holds",
+  };
+
+  it("the authoring page's refusal-context table rows every field the refusal context declares", () => {
+    const { members: fields, section } = docWalk(REFUSAL);
+
+    expect(
+      rowNamesOf(section, ["Field", "What it carries"]),
+      "docs/CHAIN-AUTHORING.md's refusal-context table rows exactly the fields `EntryRefusalContext` declares, in declaration order",
+    ).toEqual(fields);
+  });
+
+  it("the authoring page's order-context table rows every field the order context declares", () => {
+    const { members: fields, section } = docWalk(ORDER);
+
+    expect(
+      rowNamesOf(section, ["Field", "What it carries"]),
+      "docs/CHAIN-AUTHORING.md's order-context table rows exactly the fields `OrderContext` declares, in declaration order",
+    ).toEqual(fields);
+  });
+});
+
+/**
  * spec/chain.md, *Per-run artifacts belong under `FLUME_DIR`* — "`examples/`
  * shows it". The backlog groomer is the example that does, so the placement
  * is driven rather than read: a real `groom` tick runs, and the transcript
