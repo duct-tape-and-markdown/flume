@@ -1,6 +1,8 @@
 {
   "tag": "THE-PER-GATE-JUDGES-THE-PRODUCERS-ALONE",
-  "gate": { "kind": "open" },
+  "gate": {
+    "kind": "open"
+  },
   "dependsOnForks": [],
   "kind": "work",
   "files": {
@@ -18,7 +20,10 @@
     "retire": []
   },
   "summary": "the `per` gate joins the goal-rank gate in the producer-only arm of the roster, so a build commit is never refused over a cite it cannot repair",
-  "per": { "path": "spec/harness.md", "section": "The gates the discipline needs" },
+  "per": {
+    "path": "spec/harness.md",
+    "section": "The gates the discipline needs"
+  },
   "acceptance": "a build phase's gate set carries no `per` gate, a plan slice's still does, and the roster's doc names the three members it withholds rather than two",
   "tests": [
     "a build commit whose queue carries a stranded per cite is not refused"
@@ -28,5 +33,5 @@
     "a build phase's gate set carries no goal rank gate"
   ],
   "laneTests": [],
-  "notes": "`harnessGates` already gates `goalRankGate` and the merged-tree pending gate on `isQueueProducer`; `perGate` is unconditional. Same files as A-NEW-BLOCKER-NAMES-AN-ENTRY-THE-QUEUE-CARRIES (its sibling out of this section) and as the in-flight THE-RECORDS-GATE-TAKES-THE-STEPS-OFF-ITS-CONTEXT, so all three serialize on the roster they share."
+  "notes": "`harnessGates` already gates `goalRankGate` and the merged-tree pending gate on `isQueueProducer`; `perGate` is unconditional. Same files as A-NEW-BLOCKER-NAMES-AN-ENTRY-THE-QUEUE-CARRIES (its sibling out of this section) and as the in-flight THE-RECORDS-GATE-TAKES-THE-STEPS-OFF-ITS-CONTEXT, so all three serialize on the roster they share. Three build notes measured the cost: one stranded cite reverted every tick in a wave, each reading a failure no tick it reverted could fix."
 }

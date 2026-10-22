@@ -1,0 +1,74 @@
+{
+  "tag": "A-GATE-CHILD-TAKES-A-DEADLINE-FROM-THE-SUPERVISOR-POLICY",
+  "gate": { "kind": "blockedBy", "tags": ["A-SPAWN-HOME-ENDS-THE-STDIN-IT-OPENED"] },
+  "dependsOnForks": [],
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/Phase.ts",
+        "description": "the policy field, beside the per-invocation cap it is read with"
+      },
+      {
+        "path": "src/Dispatcher.ts",
+        "description": "the per-tick read, the shape the invocation cap already takes"
+      },
+      {
+        "path": "src/gateRun.ts",
+        "description": "the bound at the child a gate runs, and the tree kill under the declared grace"
+      },
+      {
+        "path": "src/spawnShim.ts",
+        "description": "the deadline the async door takes beside its cap"
+      },
+      {
+        "path": "harness/declaration.ts",
+        "description": "the declared field on the supervisor block"
+      },
+      {
+        "path": "harness/chain.ts",
+        "description": "the package's own generous default, opted into by adopting it"
+      },
+      {
+        "path": "docs/CHAIN-AUTHORING.md",
+        "description": "the supervisor-policy section's knob roster and when each is bound"
+      },
+      {
+        "path": "tests/helpers/spawnCaps.ts",
+        "description": "the per-site verdict's deadline arm"
+      },
+      {
+        "path": "tests/spawnCaps.test.ts",
+        "description": "the widened verdict's cases"
+      },
+      {
+        "path": "tests/builtinGates.test.ts",
+        "description": "a gate whose child outlives its deadline"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the per-tick policy read"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "an optional `gateTimeoutMs` bounds every child the engine runs on a gate's behalf; the deadline reached kills the tree and the gate fails naming the deadline and the command",
+  "per": { "path": ".claude/rules/engineering.md", "section": "Loud or nothing" },
+  "acceptance": "a declared gate deadline bounds every child the engine spawns for a gate, a runner's operations included; a child that reaches it is killed under the declared grace and its gate fails the way a gate that threw does, naming the deadline and the command — and a chain declaring none gets no cap, as the per-invocation one already does",
+  "tests": [
+    "a gate child that outlives the declared deadline is killed and its gate fails naming the deadline",
+    "a declared gate deadline is read per tick off the tick's own chain"
+  ],
+  "pins": [
+    "a chain declaring no gate deadline bounds no gate child",
+    "the harness package declares a gate deadline for its consumers"
+  ],
+  "laneTests": [],
+  "interface": {
+    "changes": "a chain may declare `supervisorPolicy.gateTimeoutMs`, read per tick beside the per-invocation cap, and the harness package declares one for consumers who adopt it",
+    "hides": "that only the agent invocation was bounded, so every gate, runner operation and restore the engine ran could wait forever with nothing reporting it",
+    "rejected": "a per-gate deadline and a `blamesSpan: false` on timeout — the engine cannot tell a span's runaway test from a gate's own stall, so attributing one would be inferred; a gate that stalls on every span is the abort backstop's to stop"
+  },
+  "notes": "Operator ruling: one optional supervisor knob, no engine default (a default is mechanism only when a tick cannot run without one), and a timed-out gate rides the existing failure path with no new result field. The package's default is generous — a ceiling, not a budget; a merge here was measured at 16 minutes. `spec/chain.md`, *Supervisor policy is a chain-overridable default* enumerates the block and does not carry this field yet: the spec gap is named in this tick's body."
+}

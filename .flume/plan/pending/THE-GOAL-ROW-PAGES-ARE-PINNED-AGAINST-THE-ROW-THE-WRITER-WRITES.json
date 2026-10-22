@@ -1,0 +1,26 @@
+{
+  "tag": "THE-GOAL-ROW-PAGES-ARE-PINNED-AGAINST-THE-ROW-THE-WRITER-WRITES",
+  "gate": { "kind": "open" },
+  "dependsOnForks": [],
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "tests/cliHelp.test.ts",
+        "description": "the page-to-surface pins, beside the tick exit-code precedent that reads the same page against the real range"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "the goal-row sentence on the CLI page and on the status help page is each pinned against the row the real writer writes, never against the other page",
+  "per": { "path": ".claude/rules/engineering.md", "section": "A seam gate reads what the real writer wrote" },
+  "acceptance": "a goal row rendered by the real writer over a queue carrying more remaining work than one row names is read by a pin against each page's own goal-row sentence, so a change to how many entries a row names reds on both pages rather than being moved by hand twice",
+  "tests": [],
+  "pins": [
+    "the CLI page's goal-row sentence names what the real goal row names",
+    "the status help page's goal-row sentence names what the real goal row names"
+  ],
+  "laneTests": [],
+  "notes": "Both statements moved by hand with the row's last change and nothing read either against the writer: the CLI page's status paragraph and the help page's status page both restate \"the first three … and N more\", and `workClause` (`src/queueGoals.ts`) is what renders it. The carve-out admits each page against the interface it describes and never against its neighbour. Collides with THE-INTERRUPTED-MERGE-MARKER-LEAVES-WITH-THE-REWIND on this test file."
+}

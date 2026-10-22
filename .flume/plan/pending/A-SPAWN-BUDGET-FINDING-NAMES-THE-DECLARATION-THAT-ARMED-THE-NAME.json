@@ -1,0 +1,31 @@
+{
+  "tag": "A-SPAWN-BUDGET-FINDING-NAMES-THE-DECLARATION-THAT-ARMED-THE-NAME",
+  "gate": { "kind": "open" },
+  "dependsOnForks": [],
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "tests/helpers/spawnBudget.ts",
+        "description": "the reach the scan folds to a fixed point, which keeps the names and drops the declarations that armed them"
+      },
+      {
+        "path": "tests/subprocessHelper.test.ts",
+        "description": "the lane verdicts' rendered findings"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "a budget finding names the declaration — file and line — that made a name reach a spawn or a timer, so a collision with an unrelated name of the same spelling is read rather than re-derived",
+  "per": { "path": ".claude/rules/engineering.md", "section": "A fact the engine holds is reported, never rediscovered" },
+  "acceptance": "every finding the lane's budget and ceiling verdicts render carries, beside the name, the declaration that made that name reach a spawn or a wall-clock timer; the name-wide reach stays the declared over-approximation and the site states that it is, so a reader of a collision stops re-deriving which declaration armed it",
+  "tests": [
+    "a budget finding names the declaration that armed its reaching name"
+  ],
+  "pins": [
+    "a name declared twice in one module reaches when either declaration does"
+  ],
+  "laneTests": [],
+  "notes": "Operator ruling, option 2 of the scopeless-name-reach question: the over-approximation stays the trade and the finding names the arming declaration so a fifth note reads the answer at the site. The fold returns bare names today; the walk it reads already holds every declaration node per name, so the site is in hand. The scan has no scopes by design — an under-approximation is the one direction it must not take."
+}
