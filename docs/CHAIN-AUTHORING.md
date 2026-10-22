@@ -865,15 +865,18 @@ interface GateResult {
 ```
 
 `afterCommit` runs on the worktree branch; failure drops the commit and the
-entry stays pending. `afterMerge` runs on the trunk after the tick's span
-has been cherry-picked onto it; failure reverts **only the offending
-commit** — under fanout, the wave's clean siblings stay shipped and that one
-entry returns to pending.
+entry stays pending. `afterMerge` runs on the **candidate** the tick's span
+was cherry-picked onto — a tree of its own at the current trunk tip, which
+the trunk fast-forwards to in one move once every gate here is green. Failure
+**discards that candidate**, so the trunk never names the commit; under
+fanout, the siblings the trunk already fast-forwarded to stay shipped and
+that one entry returns to pending.
 
 Both placements are open to both concurrencies. A singleton tick works in
-its own worktree and cherry-picks its span onto the trunk like a wave of
-one (§3, *Singleton*), so its `afterMerge` gate runs on the trunk with the
-span merged — the same tree a fanout entry's sees, minus the siblings.
+its own worktree and carries its span through a candidate like a wave of
+one (§3, *Singleton*), so its `afterMerge` gate runs on a candidate with the
+span picked onto it — the same kind of tree a fanout entry's sees, minus the
+siblings.
 
 `verdict`, `skipped` and `failingFiles` are **facts about the run, not
 engine judgments**: the dispatcher copies them onto the tick verdict and
@@ -1352,21 +1355,22 @@ gate failure, so the harness reverts a commit that was never broken.
 (Observed: a fanout wave where assertions blew vitest's 5 s timeout purely
 under CPU contention, reverting three clean commits.)
 
-`afterMerge` gates do not contend. They run on the trunk one entry at a
-time, after the wave has merged — the expensive suite is paid once per
-entry serially instead of N-at-once, so it gets the resources it needs and
-a timeout means a real hang, not contention noise. And because an
-`afterMerge` failure reverts only the offending entry (not the wave), the
-cost of moving a flaky-under-load gate there is bounded to the one entry
-that actually fails.
+`afterMerge` gates do not contend. They run one entry at a time, each on
+that entry's own candidate, after the wave has merged — the expensive suite
+is paid once per entry serially instead of N-at-once, so it gets the
+resources it needs and a timeout means a real hang, not contention noise.
+And because an `afterMerge` failure discards only the offending entry's
+candidate (never the wave), the cost of moving a flaky-under-load gate
+there is bounded to the one entry that actually fails.
 
-The tradeoff to weigh: an `afterMerge` gate runs _after_ the commit
-reaches the trunk, so a genuinely bad commit is briefly on the trunk
-before it is reverted, whereas an `afterCommit` gate catches it pre-merge.
-Keep structural gates at `afterCommit` for exactly that reason — they are
-cheap enough to run N-wide and you want type errors stopped before merge.
-Split by cost: fast deterministic checks gate the merge; heavy or
-timing-sensitive correctness gates gate the trunk.
+The tradeoff to weigh is cost, not exposure: nothing a gate here condemns
+ever reaches the trunk, but every merge pays for the candidate the gate
+runs in — a fresh tree the phase's `setupWorktree` provisions, once per
+span. Keep cheap structural gates at `afterCommit`, where the provisioning
+is already paid for by the agent's own worktree and a type error is stopped
+before the merge stage is entered at all. Split by cost: fast deterministic
+checks gate the commit; heavy or timing-sensitive correctness gates gate
+the merge.
 
 This is a default, not a law. A suite whose N parallel copies still finish
 well inside their timeout can stay at `afterCommit`, where it buys the
@@ -1378,11 +1382,11 @@ axis: nothing contends with a lone tick, so the question is where the check
 wants to stand rather than what it costs. `afterCommit` runs it in the
 tick's own worktree — a cold tree the phase's `setupWorktree` just
 provisioned — and a failure keeps the commit off the trunk entirely.
-`afterMerge` runs it on the trunk with the span applied, which is the only
+`afterMerge` runs it on a candidate with the span applied, which is the only
 place a check about the *merged* result can run: a cross-cutting suite that
 must see the tick's output alongside whatever else landed on the trunk
-while it worked. The cost is the usual one — a bad commit is briefly on the
-trunk before the revert.
+while it worked. A failure there keeps the commit off the trunk too — the
+candidate is discarded and the trunk stands where it stood.
 
 Moving a builtin costs nothing: `tscGate({ when: "afterMerge" })` is the
 same check at the other point. Don't hand-roll a `shellGate` restating the
@@ -1479,10 +1483,10 @@ admit concurrent edits — plan derives the whole queue from disk.
 Two parallel ticks would step on each other.
 
 A singleton tick runs in its own worktree too — branch
-`flume/<checkout>/<phase>`, a wave of one — and its span is cherry-picked back
-onto the trunk. `afterCommit` gates run in that worktree; `afterMerge`
-gates run on the trunk after the cherry-pick. The operator's checkout is
-never the tick's working tree.
+`flume/<checkout>/<phase>`, a wave of one — and its span is cherry-picked onto
+a candidate at the trunk tip. `afterCommit` gates run in that worktree;
+`afterMerge` gates run on the candidate, which the trunk fast-forwards to once
+they are green. The operator's checkout is never the tick's working tree.
 
 `backlog-groomer-chain.ts`'s single `groom` phase is singleton for the same
 reason plan is: it derives `BACKLOG.json` from disk each tick. It just
@@ -1499,7 +1503,8 @@ The dispatcher uses `partitionByFileOverlap` to group pickable entries
 into maximal disjoint batches, picks the first, and spawns one worktree
 per entry under `<flumeDir>/worktrees/<entry-slug>/` (base overridable via
 `FLUME_WORKTREES_DIR` — see below). Agent + `afterCommit` gates run in
-parallel; the wave then merges to trunk and runs `afterMerge`.
+parallel; the wave then carries each span onto a candidate of its own, runs
+`afterMerge` there, and fast-forwards the trunk to the green result.
 
 ```ts
 partitionByFileOverlap(pickable, { maxParallel: 4, listing: queue });
@@ -1529,9 +1534,9 @@ with even where the declaration under-stated the reach.
 
 Failure modes handled: an `afterCommit` fail drops that worktree's commit
 (siblings continue); a merge cherry-pick conflict leaves that entry in
-pending (others merge); an `afterMerge` fail reverts only the offending
-entry's commit — the clean siblings stay shipped and that entry returns to
-pending. On the success side, ship bookkeeping auto-opens `blockedBy`
+pending (others merge); an `afterMerge` fail discards only the offending
+entry's candidate — the trunk never names its commit, the clean siblings
+stay shipped and that entry returns to pending. On the success side, ship bookkeeping auto-opens `blockedBy`
 gates whose blocker shipped in the same wave, so a chained entry becomes
 pickable without waiting for an interim plan tick.
 
@@ -1542,7 +1547,12 @@ it once per entry, a singleton tick once for the one worktree it runs in
 (`ctx.worktreeKey` is the entry's tag under fanout, the phase name under
 singleton).
 
-A fresh worktree holds only tracked files; provision the gitignored deps
+Every merge calls it too, for the candidate the span is picked onto and
+judged in — same key, same contract, once per span the merge carries. Budget
+the install there as well: an `afterMerge` gate that resolves a tool out of
+`node_modules` needs the candidate provisioned exactly as the worktree was.
+
+A fresh tree holds only tracked files; provision the gitignored deps
 the gates need first. **Default:** the `setupWorktree` helper — sibling to
 the built-in gates precedent (`shellGate`, `tscGate`, …), carried on the
 factory's `api` parameter — inspects the worktree for a lockfile and runs

@@ -125,6 +125,33 @@ export function computeStateRootRel(
 }
 
 /**
+ * A directory resolved against the primary checkout, re-resolved against
+ * `tree` — a second checkout of the same repository at the same tracked
+ * layout: the tick's own worktree under an `afterCommit` gate
+ * (`src/tickAttempt.ts`), the merge's candidate under an `afterMerge` one
+ * (`src/mergeSpan.ts`).
+ *
+ * `rel` is that directory's escape verdict against the primary repo root
+ * ({@link computeStateRootRel}), and it decides both arms. Inside the repo
+ * the tree carries a mirror of the directory at the same offset, so the
+ * rebase is the offset re-joined. Relocated outside it there is no mirror —
+ * a checkout holds tracked files and nothing else — so the directory passes
+ * through verbatim and reaches the primary's own copy.
+ *
+ * One spelling for the two gate points, so a directory a gate reads cannot
+ * be rebased by one of them and not the other
+ * (`.claude/rules/engineering.md`, *The fix lands at the mechanism*). `rel`
+ * arrives already folded, so nothing here re-derives the escape test.
+ */
+export function rebaseOntoTree(
+  tree: string,
+  dir: string,
+  rel: string | undefined,
+): string {
+  return rel === undefined ? dir : join(tree, rel);
+}
+
+/**
  * Shared escape-check for a declared state-root-relative path
  * (`Chain.friction` — `validateFrictionDeclaration`, `src/friction.ts`;
  * `Chain.pendingDir` — `validatePendingDirDeclaration`,

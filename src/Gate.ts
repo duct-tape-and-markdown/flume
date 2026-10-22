@@ -24,10 +24,13 @@ export type GatePhase =
    */
   | "afterCommit"
   /**
-   * Runs after a worktree commit is cherry-picked onto the trunk — a fanout
-   * entry's, or a singleton phase's own (spec/worktrees.md, "Singleton runs
-   * in a worktree"). Failure reverts only that commit; for a fanout wave,
-   * the rest of the wave stays shipped.
+   * Runs over the **candidate** a worktree commit was cherry-picked onto — a
+   * fanout entry's span, or a singleton phase's own (spec/worktrees.md,
+   * "Singleton runs in a worktree"): a tree at the current trunk tip that
+   * trunk fast-forwards to once every gate here is green. Failure discards
+   * that candidate and trunk never names the commit; for a fanout wave, the
+   * siblings trunk already fast-forwarded to stay shipped
+   * (spec/worktrees.md, "Per-entry `afterMerge` revert isolation").
    */
   | "afterMerge";
 
@@ -39,7 +42,7 @@ export type GatePhase =
  * they say about the span (spec/chain.md, "What a gate receives").
  */
 export interface GateSite {
-  /** Absolute path of the worktree (or trunk for afterMerge gates). */
+  /** Absolute path of the worktree (or the merge's candidate for afterMerge gates). */
   cwd: string;
   /**
    * Absolute, resolved flume state root (`flumeDir`) — where the baton,
@@ -82,9 +85,10 @@ export interface GateSite {
    * Absolute path of the chain/prompts dir (`<configDir>/chain.ts`, default
    * `<repoRoot>/.flume`, relocatable via `FLUME_CONFIG_DIR`, spec/cli.md
    * "State-root and config-dir resolution"). Rebased onto the gate's own
-   * `cwd` when that differs from the primary checkout (an `afterCommit`
-   * gate runs inside the tick's worktree, which mirrors the repo's tracked
-   * layout at the same relative offset) — but only while the config dir
+   * `cwd` when that differs from the primary checkout (an `afterCommit` gate
+   * runs inside the tick's worktree and an `afterMerge` gate inside the
+   * merge's candidate, each mirroring the repo's tracked layout at the same
+   * relative offset) — but only while the config dir
    * resolves *inside* the repo. One relocated outside it has no mirror in a
    * checkout that carries only tracked files, so it passes through
    * verbatim; the escape test that picks the branch is
@@ -107,7 +111,9 @@ export interface GateSite {
    * Absolute path of the working-tree root the gate is running in — for an
    * `afterCommit` gate, the worktree root (a fanout entry's, or a singleton
    * phase's own; spec/worktrees.md "Singleton runs in a worktree"); for an
-   * `afterMerge` gate, the trunk.
+   * `afterMerge` gate, the merge's candidate, which is the tree trunk is
+   * about to become (spec/worktrees.md "Per-entry `afterMerge` revert
+   * isolation").
    */
   repoRoot: string;
   /** Phase the gate is running for. */

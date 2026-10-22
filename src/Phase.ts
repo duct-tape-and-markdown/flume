@@ -93,7 +93,8 @@ export interface ShipContext {
   touchedPaths: readonly string[];
   /**
    * This entry's own gate results — `afterCommit` in the worktree, then
-   * `afterMerge` on trunk — as the engine reports them everywhere else
+   * `afterMerge` in the tree {@link ShipContext.repoRoot} names — as the
+   * engine reports them everywhere else
    * ({@link ReportedGateResult}): every optional field the gate itself
    * authored rides along, so a `shipped` predicate keying on a discriminant
    * its own chain authored reads the field instead of pattern-matching
@@ -102,7 +103,15 @@ export interface ShipContext {
   gateResults: readonly ReportedGateResult[];
   /** Absolute path to the entry's worktree, still present. */
   worktreePath: string;
-  /** Repo root — the trunk checkout the commit landed on. */
+  /**
+   * Repo root — the tree {@link mergedSha} landed in, which is the tree a
+   * predicate reading the merged result opens: the merge's **candidate**,
+   * which trunk fast-forwards to once this predicate and the ledger commit
+   * behind it have landed on it (`spec/worktrees.md`, "Per-entry `afterMerge`
+   * revert isolation"), or the primary checkout for a batched merge, which
+   * picks onto trunk. Either way it is a checkout of this repository holding
+   * tracked files at the layout `touchedPaths` names them in.
+   */
   repoRoot: string;
 }
 
@@ -355,10 +364,10 @@ export interface TickContext {
  * `afterCommit` gate — never whether the wave's later cherry-pick/afterMerge
  * stage actually landed it on trunk; `shipped` and `reverted` cover that.
  * A `committed: true` entry with both `shipped` and `reverted` false is a
- * real, reportable state: a cherry-pick conflict, a foreign tip claim, or an
- * afterMerge-gate revert whose own reset was itself refused — the commit
- * exists but neither shipped nor was (successfully) reverted, and the engine
- * never launders that into a claim it can't back.
+ * real, reportable state: a cherry-pick conflict, a foreign tip claim, or a
+ * fast-forward trunk refused — the commit exists on the entry's own branch
+ * but never reached trunk, and the engine never launders that into a claim it
+ * can't back.
  */
 export interface FanoutEntryOutcome {
   /** The entry's tag, as it appears in its queue file. */
@@ -396,7 +405,7 @@ export interface FanoutEntryOutcome {
    * where a step's tag appears beside the entries' own.
    */
   shipped: boolean;
-  /** This entry's merged commit failed an `afterMerge` gate and was reset off trunk. */
+  /** This entry's span failed an `afterMerge` gate over its candidate, which was discarded with it. */
   reverted: boolean;
   /** `phase.shouldRun` declined this entry before the agent was invoked. Absent when it ran. */
   declined?: boolean;
@@ -1061,48 +1070,59 @@ export interface Phase {
   shipped?: (ctx: ShipContext) => readonly string[];
 
   /**
-   * Optional hook invoked after the tick's worktree is created, before the
-   * agent runs. The chain config uses this to materialize gitignored files
-   * the gates need — typically `node_modules` via a real install (the
-   * exported `setupWorktree` helper runs the install a lockfile implies)
-   * and `.env` via a copy. Never symlink `node_modules` from the main
-   * repo: pnpm deletes a symlinked `node_modules` on install, breaking the
-   * pattern the first time a worktree installs. Both concurrencies invoke
-   * it — a fanout wave once per entry, a singleton tick once for the one
-   * worktree it provisions (`spec/worktrees.md`, "Singleton runs in a
-   * worktree").
+   * Optional hook invoked over every tree the tick provisions, once that
+   * tree exists: the worktree the agent runs in, before it runs, and the
+   * **candidate** a finished span is cherry-picked onto, before that span's
+   * `afterMerge` gates judge it (`spec/worktrees.md`, "Per-entry
+   * `afterMerge` revert isolation"). The chain config uses this to
+   * materialize gitignored files the gates need — typically `node_modules`
+   * via a real install (the exported `setupWorktree` helper runs the install
+   * a lockfile implies) and `.env` via a copy. A candidate holds tracked
+   * files only, exactly as a worktree does, and the gates that judge it are
+   * what that install exists for. Never symlink `node_modules` from the
+   * main repo: pnpm deletes a symlinked `node_modules` on install, breaking
+   * the pattern the first time a tree installs. Both concurrencies invoke
+   * it — a fanout wave once per entry and once more per span its merge
+   * carries, a singleton tick once for the one worktree it provisions
+   * (`spec/worktrees.md`, "Singleton runs in a worktree") and once for its
+   * own span's candidate.
    *
    * Returning `{ extraEnv }` injects those vars into the agent invocation
    * for this worktree, layered on top of the harness's `process.env`. Use
    * this when the worktree needs an ephemeral resource handle the chain
    * provisioned at setup time (per-worktree DATABASE_URL, scratch dir,
    * issued credential). A hook with no vars to inject returns `void` — the
-   * result object is only needed to carry `extraEnv`.
+   * result object is only needed to carry `extraEnv`. A candidate's answer
+   * carries no vars anywhere: no agent runs there, and a gate spawns from
+   * the dispatcher's own env ({@link WorktreeSetupResult}).
    */
   setupWorktree?: (
     ctx: WorktreeSetupContext,
   ) => Promise<void | WorktreeSetupResult>;
 
   /**
-   * Optional hook invoked after the agent exits and gates run, before the
-   * worktree is removed. Mirrors `setupWorktree` for resource cleanup —
-   * drop a per-worktree DB, release a lease, etc. Best-effort: failures
-   * are logged but do not block worktree removal. The same ctx fields are
-   * available as at setup time.
+   * Optional hook invoked before each tree its `setupWorktree` provisioned
+   * is removed — the tick's worktree once the agent has exited and its
+   * gates have run, a merge's candidate once that merge has reached its
+   * verdict. Mirrors `setupWorktree` for resource cleanup — drop a
+   * per-worktree DB, release a lease, etc. Best-effort: failures are logged
+   * but do not block removal. The same ctx fields are available as at setup
+   * time.
    */
   teardownWorktree?: (ctx: WorktreeSetupContext) => Promise<void>;
 }
 
-/** Context handed to the worktree hooks once a tick's worktree exists. */
+/** Context handed to the worktree hooks once a tree the tick provisions exists. */
 export interface WorktreeSetupContext {
-  /** Path to the fresh worktree the tick will run in. */
+  /** Path to the fresh tree — the worktree the tick runs in, or a merge's candidate. */
   worktreePath: string;
   /** Path to the main repo root the worktree was created from. */
   repoRoot: string;
   /**
-   * Key of the worktree this context describes: the pending entry's tag on
+   * Key of the tree this context describes: the pending entry's tag on
    * a fanout tick, the phase name on a singleton one, which carries no
-   * entry. `teardownWorktree` receives the same key its `setupWorktree` did.
+   * entry. A merge's candidate carries the same key the span's own worktree
+   * did. `teardownWorktree` receives the same key its `setupWorktree` did.
    * Never absent — distinct from `AgentInvocation.entryTag`, which is.
    */
   worktreeKey: string;

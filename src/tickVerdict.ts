@@ -459,36 +459,6 @@ export function stageFailureFacts(message: string): {
 }
 
 /**
- * The {@link GateFailure} an afterMerge revert leaves behind when the reset
- * back to the pre-cherry-pick tip is itself refused (`ResetKeepRefusedError`,
- * `src/git.ts`): the gate condemned the commit, and now the commit cannot be
- * taken off trunk. The message names both shas, because the operator who
- * inherits the commit is the one who reads it.
- *
- * The one site that can reach this state is the span carry every
- * concurrency's merge runs (`carryMergeSpan`, `src/mergeSpan.ts`), and the
- * words and the key they are compared by are built here rather than there: the
- * pairing is the verdict's own vocabulary, and a key derived beside a copy of
- * the words is the same duplicate one rung down
- * (`.claude/rules/engineering.md`, *A module is one job*).
- *
- * The blame half is the leg's: the wave attributes the refusal to the entry
- * whose gate failed unless that gate disowned the span, and a singleton has no
- * entry to blame at all ({@link GateFailure}).
- */
-export function unrevertableMergeFailure(facts: {
-  /** The refusal's own words — `ResetKeepRefusedError.message`. */
-  refusal: string;
-  /** The commit left on trunk: the tip the cherry-pick produced. */
-  mergedSha: string;
-  /** The tip the refused reset would have returned trunk to. */
-  preCherry: string;
-}): { signature: string; message: string } {
-  const message = `${facts.refusal} — afterMerge-failed commit ${facts.mergedSha} stays on trunk, unrevertable to ${facts.preCherry}`;
-  return stageFailureFacts(message);
-}
-
-/**
  * The one construction of a {@link ReportedGateResult} from the
  * {@link GateResult} a gate just returned. Every reporting surface — the
  * afterCommit loop, the afterMerge loop, and the failure record each hands to
@@ -572,21 +542,15 @@ export function startTiming(): () => number {
  *                            pending, no commit reached trunk. A commit the
  *                            tip already holds is never this: it is skipped,
  *                            and the rest of the span lands.
- *  - `afterMerge-reverted`   landed, then an afterMerge gate failed; that
- *                            entry's commit alone was reset back off trunk.
- *  - `afterMerge-revert-refused` landed, an afterMerge gate failed, and the
- *                            `reset --keep` that would have carried the
- *                            commit back off trunk was itself refused — a
- *                            bystander's uncommitted work collides with the
- *                            paths the revert needs to touch (spec/loop.md
- *                            "Tip verify — one writer per branch, absorption
- *                            at the merge", "dropping it must not take
- *                            bystanders"). The commit stays on trunk, unlike
- *                            `afterMerge-reverted`; the entry stays pending
- *                            regardless, so it is never counted shipped. The
- *                            bounded exception to absorption the same section
- *                            names for a mid-history refusal — evidence left
- *                            for the operator rather than a forced wipe.
+ *  - `afterMerge-reverted`   the span landed on its own candidate and an
+ *                            afterMerge gate over that candidate failed, so
+ *                            the candidate was discarded and trunk never
+ *                            named the commit (spec/worktrees.md "Per-entry
+ *                            `afterMerge` revert isolation"). The entry stays
+ *                            pending, the siblings trunk already
+ *                            fast-forwarded to stay shipped, and the two shas
+ *                            name the judged range while its objects are
+ *                            still in the shared store.
  *  - `afterCommit-reverted`  reverted inside the worktree by an afterCommit
  *                            gate; never reached cherry-pick, so it never
  *                            touched trunk on its own.
@@ -597,17 +561,22 @@ export function startTiming(): () => number {
  *                            entry stays pending. The engine records the
  *                            chain's verdict and holds no vocabulary for its
  *                            reason.
- *  - `tip-moved`             the leg's own commit-onto-trunk step refused
- *                            because a live claim held the ref (a concurrent
- *                            engine instance, spec/loop.md "Tip verify — one
- *                            writer per branch, absorption at the merge") —
- *                            never reached cherry-pick, so under fanout the
- *                            entry stays pending and under singleton the
- *                            phase's span stays unmerged, either way for a
- *                            fresh retry once the claim clears. A
- *                            foreign non-engine commit on the ref, with no
- *                            live claim, is absorbed instead: git's own
- *                            conflict detection is the only content arbiter.
+ *  - `tip-moved`             trunk was not this merge's to move. Either a
+ *                            live claim held the ref before the candidate was
+ *                            built (a concurrent engine instance,
+ *                            spec/loop.md "Tip verify — one writer per
+ *                            branch, absorption at the merge"), or the
+ *                            fast-forward to the judged candidate was
+ *                            declined — the branch moved under it, or the
+ *                            move would have overwritten a bystander's
+ *                            uncommitted work. Trunk stands where it stood
+ *                            and holds nothing of the span, so under fanout
+ *                            the entry stays pending and under singleton the
+ *                            phase's span stays unmerged, either way carried
+ *                            again onto whatever tip it then has. A foreign
+ *                            non-engine commit on the ref, with no live
+ *                            claim, is absorbed instead: git's own conflict
+ *                            detection is the only content arbiter.
  *  - `dropped-work`          the per-entry tip-verify leg's own ancestry
  *                            check refused (spec/loop.md "Tip verify — one
  *                            writer per branch, absorption at the merge",
@@ -645,7 +614,6 @@ export type MergeOutcome =
   | "merged"
   | "cherry-pick-conflict"
   | "afterMerge-reverted"
-  | "afterMerge-revert-refused"
   | "afterCommit-reverted"
   | "not-shipped"
   | "tip-moved"
@@ -677,8 +645,8 @@ export interface TickVerdictMergeOutcome {
   /**
    * The base `headSha` is reachable from, so `baseSha..headSha` is exactly
    * this span and nothing adjacent. Pairs with whichever sha `headSha` holds:
-   * the pre-cherry-pick trunk tip for a span that reached trunk (`merged`,
-   * `afterMerge-reverted`, `afterMerge-revert-refused`, `not-shipped`), else
+   * the tip the candidate was cut at for a span the pick landed (`merged`,
+   * `afterMerge-reverted`, `not-shipped`), else
    * the tip the agent's worktree branched from (`tip-moved`, `dropped-work`,
    * `afterCommit-reverted`, `cherry-pick-conflict`, `wave-walled`). Recovery
    * needs both: a span may hold several commits (spec/loop.md "The check is

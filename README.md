@@ -180,10 +180,12 @@ Per-checkout variation is already served, twice over:
 Phases declared `concurrency: "fanout"` partition their pending entries by
 file overlap (`partitionByFileOverlap`). Disjoint entries spawn parallel
 worktrees; each worktree runs its agent invocation and `afterCommit` gates in
-isolation. When the wave finishes, the dispatcher merges into the trunk in
-commit order and runs `afterMerge` gates against the merged state. A cherry-pick
-conflict keeps that entry in pending; an `afterMerge` failure reverts the
-whole wave.
+isolation. As each entry finishes, the dispatcher cherry-picks its span onto a
+candidate — a tree of its own at the current trunk tip — runs the `afterMerge`
+gates there, and fast-forwards the trunk to the candidate once they are green.
+A cherry-pick conflict keeps that entry in pending; an `afterMerge` failure
+discards that one candidate, so the trunk never names the commit and the
+siblings it already fast-forwarded to stay shipped.
 
 Worktree branches are named `flume/<checkout>/<entry-slug>`, and the engine
 mints no level beneath the worktree base. Two efforts are two checkouts, each

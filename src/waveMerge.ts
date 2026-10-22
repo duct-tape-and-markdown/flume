@@ -362,18 +362,12 @@ interface WaveMerge {
   readonly waiting: WaitingSpan[];
   /** Entries whose span landed on trunk and whose `shipped` consult said so. */
   readonly shipped: PendingEntry[];
-  /** Entries whose `afterMerge` gate failed and whose commit was reverted off trunk. */
-  readonly mergeReverted: PendingEntry[];
   /**
-   * Entries whose afterMerge gate failed AND whose revert-off-trunk was
-   * itself refused by a bystander collision — never added to
-   * {@link WaveMerge.mergeReverted}, since that array's tags feed
-   * `revertedTags` and claiming a revert that never happened would misreport
-   * the tree. Counted alongside it only for {@link waveNoCommitCause}'s
-   * gate-revert classification, which cares that a gate failed, not whether
-   * the follow-up reset landed.
+   * Entries whose `afterMerge` gate failed over their candidate, which was
+   * discarded with their span — trunk never named either
+   * (`spec/worktrees.md`, *Per-entry `afterMerge` revert isolation*).
    */
-  readonly revertRefused: PendingEntry[];
+  readonly mergeReverted: PendingEntry[];
   /** This stage's own afterMerge gate rows, wave-cumulative across entries. */
   readonly mergeGateResults: ReportedGateResult[];
   /** Each merged attempt's own gate rows, in the order they were merged. */
@@ -514,7 +508,6 @@ export function openWaveMerge(setup: WaveMergeSetup): WaveMerge {
     waiting: [],
     shipped: [],
     mergeReverted: [],
-    revertRefused: [],
     mergeGateResults: [],
     attemptGateResults: [],
     timings: [],
@@ -646,60 +639,101 @@ export async function drainWaiting(w: WaveMerge): Promise<void> {
     });
   };
   try {
-    // The rows the folds already produced for the attempts of this drain — an
-    // afterCommit revert's footprint reached no pick, so it rides the first
-    // ledger commit this drain lands rather than waiting for a wave's end
-    // (`.claude/rules/engineering.md`, *Loud or nothing*).
-    let folded: TickVerdictMergeOutcome[] = taken.flatMap((s) => [...s.folded]);
     /**
-     * One ledger commit for what the merge just landed, inside the hold that
-     * landed it, never at the wave's end (`spec/worktrees.md`, *Fanout and
-     * worktrees — provisioning, isolation, teardown*): the lock is released
-     * below, and a queue still listing an entry in that gap would be read as
-     * current by the sibling agents, concurrent ticks and operators looking at
-     * the trunk it is already on.
+     * One ledger commit for what a merge just landed, in the tree that will
+     * carry it to trunk: a green span's own candidate, so the rewrite and the
+     * span reach trunk in one fast-forward (`spec/worktrees.md`, *Per-entry
+     * `afterMerge` revert isolation*), or trunk itself for the commits with no
+     * candidate behind them.
      *
-     * The folds' own rows ride the first commit this drain lands and no later
-     * one, so a footprint reaches trunk exactly once.
+     * Inside the hold that landed it, never at the wave's end
+     * (`spec/worktrees.md`, *Fanout and worktrees — provisioning, isolation,
+     * teardown*): the lock is released below, and a queue still listing an
+     * entry in that gap would be read as current by the sibling agents,
+     * concurrent ticks and operators looking at the trunk it is already on.
+     *
+     * Answers with the rewrite's own result rather than applying it, because
+     * what a rewrite leaves on the stage is only true once trunk holds the
+     * commit ({@link recordLanded}) — and a rewrite written into a candidate is
+     * one refused fast-forward away from being discarded with it.
      */
-    const land = async (
+    const land = (
       shipped: readonly PendingEntry[],
       rows: readonly TickVerdictMergeOutcome[],
+      tree: string,
+    ): Promise<PendingRewriteResult | undefined> =>
+      commitAttemptLedger(w, shipped, rows, tree);
+    /**
+     * What a ledger commit leaves on the stage, applied once trunk holds it.
+     *
+     * spec/loop.md "The tick verdict — one facts artifact": `gatedTip` is the
+     * gated tip this ship left. Read here and nowhere else — inside the hold,
+     * after the span's `afterMerge` gates passed over its candidate, its
+     * `shipped` consult said so, the rewrite retiring it committed and trunk
+     * fast-forwarded to the result — because that is the only instant at which
+     * trunk is a tip every gate has judged *and* no sibling can have moved it.
+     * A read taken after the lock is released, or at the wave's end, would be
+     * the tip some later pick or some sibling tick left, reported as this
+     * ship's.
+     *
+     * Only a land that shipped moves it: a rewrite that recorded a failed
+     * merge's footprint alone lands a ledger commit over a tip nothing shipped
+     * onto, and `headSha` is the field that reports that one.
+     *
+     * A land that shipped *decides* the field, both ways: the `tip-claimed`
+     * exit is the one case where the ref under this hold is not ours — a
+     * concurrent engine instance has claimed the tip, so the sha a read here
+     * would return may name a commit no gate of this tick judged — and it
+     * therefore clears the field rather than skipping the read, or the tip an
+     * earlier pick left would stand as this wave's last ship's, which is the
+     * confident wrong answer the field exists to refuse
+     * (`.claude/rules/engineering.md`, *Loud or nothing*). The exit says so
+     * itself, off the call that took it rather than off a tip comparison
+     * around it — `w.tipMoved` is the wave-level fact and is set by the
+     * per-entry ancestry refusal too, which stops no rewrite
+     * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+     * never rediscovered*).
+     */
+    const recordLanded = async (
+      shipped: readonly PendingEntry[],
+      update: PendingRewriteResult | undefined,
     ): Promise<void> => {
-      const all = [...folded, ...rows];
-      folded = [];
-      const exit = await commitAttemptLedger(w, shipped, all);
-      // spec/loop.md "The tick verdict — one facts artifact": the gated tip
-      // this ship left. Read here and nowhere else — inside the hold, after
-      // the pick's `afterMerge` gates passed, its `shipped` consult said so
-      // and the rewrite retiring it committed — because that is the only
-      // instant at which trunk is a tip every gate has judged *and* no
-      // sibling can have moved it. A read taken after the lock is released,
-      // or at the wave's end, would be the tip some later pick or some
-      // sibling tick left, reported as this ship's.
-      //
-      // Only a land that shipped moves it: a pick whose rewrite recorded a
-      // failed merge's footprint alone lands a ledger commit over a tip
-      // nothing shipped onto, and `headSha` is the field that reports that
-      // one.
-      //
-      // A land that shipped *decides* the field, both ways: the `tip-claimed`
-      // exit is the one case where the ref under this hold is not ours — a
-      // concurrent engine instance has claimed the tip, so the sha a read here
-      // would return may name a commit no gate of this tick judged — and it
-      // therefore clears the field rather than skipping the read, or the tip an
-      // earlier pick left would stand as this wave's last ship's, which is the
-      // confident wrong answer the field exists to refuse
-      // (`.claude/rules/engineering.md`, *Loud or nothing*). The exit says so
-      // itself, off the call that took it rather than off a tip comparison
-      // around it — `w.tipMoved` is the wave-level fact and is set by the
-      // per-entry ancestry refusal too, which stops no rewrite
-      // (`.claude/rules/engineering.md`, *A fact the engine holds is
-      // reported, never rediscovered*).
+      // Appended, never overwritten: a wave lands one of these per pick, and
+      // the handoff reports the set beside the single sha it narrows to
+      // (.claude/rules/engineering.md "A fact the engine holds is reported,
+      // never rediscovered"). Whether there is one to append is the rewrite's
+      // own answer — three of its four exits write no commit, and a tip
+      // comparison around the call cannot tell the wave's own sibling pick
+      // landing beside it from a commit this rewrite made.
+      if (update?.exit === "committed") w.ledgerShas.push(update.commitSha);
+      if (update?.exit === "tip-claimed") w.tipMoved = true;
       if (shipped.length > 0)
         w.gatedTip =
-          exit === "tip-claimed" ? undefined : await git.revParse(leg.repoRoot);
+          update?.exit === "tip-claimed"
+            ? undefined
+            : await git.revParse(leg.repoRoot);
     };
+    /** Both halves at once, for the ledger commits that land on trunk itself. */
+    const landOnTrunk = async (
+      shipped: readonly PendingEntry[],
+      rows: readonly TickVerdictMergeOutcome[],
+    ): Promise<void> =>
+      recordLanded(shipped, await land(shipped, rows, leg.repoRoot));
+    // The rows the folds already produced for the attempts of this drain — an
+    // afterCommit revert's footprint reached no pick, so it rides a ledger
+    // commit of this drain's rather than waiting for a wave's end
+    // (`.claude/rules/engineering.md`, *Loud or nothing*).
+    //
+    // On trunk directly, and ahead of every carry below: a footprint is queue
+    // bookkeeping with no span behind it, so the commit recording it only ever
+    // moves trunk forward and is never taken back off. Riding a candidate's
+    // ledger commit instead would tie it to a fast-forward that can refuse and
+    // discard it with the candidate, and a footprint reaches trunk exactly
+    // once or not at all.
+    await landOnTrunk(
+      [],
+      taken.flatMap((s) => [...s.folded]),
+    );
     // The attempts of this drain that left a span, with each range read where
     // `committed` narrows it ({@link BatchCandidate}).
     const spans: BatchCandidate[] = [];
@@ -715,7 +749,7 @@ export async function drainWaiting(w: WaveMerge): Promise<void> {
     let batched = false;
     if (spans.length > 1) {
       try {
-        batched = await carryBatch(w, spans, land);
+        batched = await carryBatch(w, spans, landOnTrunk);
       } finally {
         // Stamped however the batch left — shipped, unwound or thrown: every
         // way out of it is a merge that happened, and a red batch's one extra
@@ -728,10 +762,20 @@ export async function drainWaiting(w: WaveMerge): Promise<void> {
     if (!batched) {
       for (const s of taken) {
         try {
-          const span = await carrySpan(w, s.attempt);
+          const span = await carrySpan(w, s.attempt, land);
           if (span.outcome) w.mergeOutcomes.push(span.outcome);
           w.shipped.push(...span.shipped);
-          await land(span.shipped, span.outcome ? [span.outcome] : []);
+          // A span trunk fast-forwarded to carried its own ledger commit on
+          // the candidate, so there is nothing left to commit — only what that
+          // rewrite leaves on the stage. Every other exit of the carry leaves
+          // at most a footprint to record, and that commit lands on trunk
+          // directly: there is no candidate left to put it in.
+          if (span.landed) await recordLanded(span.shipped, span.update);
+          else
+            await landOnTrunk(
+              span.shipped,
+              span.outcome ? [span.outcome] : [],
+            );
           // spec/loop.md "Crash equals stop": the queue on disk now accounts
           // for this span, so the marker staked for it has nothing left to warn
           // the next start about — retired with the rewrite that closed its
@@ -1004,7 +1048,14 @@ async function carryBatch(
   const gateResults = w.mergeGateResults.slice(entryMergeGateResultsStart);
   for (const [i, { attempt: r, base }] of spans.entries()) {
     const landed = batch.landed[i]!;
-    const verdict = await consultShipped(w, r, base, landed, gateResults);
+    const verdict = await consultShipped(
+      w,
+      r,
+      base,
+      landed,
+      leg.repoRoot,
+      gateResults,
+    );
     shipped.push(...verdict.shipped);
     w.shipped.push(...verdict.shipped);
     rows.push(verdict.outcome);
@@ -1039,16 +1090,30 @@ async function carryBatch(
 async function carrySpan(
   w: WaveMerge,
   r: EntryAttempt,
+  /** This drain's ledger rewrite, run inside the candidate on the green exit. */
+  land: (
+    shipped: readonly PendingEntry[],
+    rows: readonly TickVerdictMergeOutcome[],
+    tree: string,
+  ) => Promise<PendingRewriteResult | undefined>,
 ): Promise<{
   staked?: string;
   outcome?: TickVerdictMergeOutcome;
   /** The tags this span shipped, as entries — empty on every exit short of a ruled-on land. */
   shipped: readonly PendingEntry[];
+  /**
+   * Whether trunk fast-forwarded to this span's candidate. True is the one
+   * exit on which the ledger commit below is already on trunk; on every other
+   * the candidate was discarded and the drain's own commit has the rows.
+   */
+  landed: boolean;
+  /** What the rewrite inside the candidate answered, present only when `landed`. */
+  update?: PendingRewriteResult | undefined;
 }> {
   // Nothing to carry: the attempt left no span on its branch — declined,
   // render-refused, reverted in its worktree. What it observed is already
   // folded ({@link foldAttemptFacts}).
-  if (!r.committed) return { shipped: [] };
+  if (!r.committed) return { shipped: [], landed: false };
   const { leg, phase } = w.setup;
   const ref = priorAttemptRef(phase, r.entry);
   // `mergeGateResults` is wave-cumulative (never reset per entry —
@@ -1084,6 +1149,25 @@ async function carrySpan(
       w.mergeGateResults.push(row);
       w.timings.push({ kind: "gate", gate: row.gate, ms });
     },
+    // Green: the `shipped` consult and the ledger rewrite that retires what it
+    // named, both inside the candidate, so the span and the commit that ships
+    // it reach trunk in the one fast-forward past this callback. The consult's
+    // verdict rides back out with the rewrite's result and reaches the stage
+    // only if that move takes ({@link carryMergeSpan}'s `land`).
+    land: async (green) => {
+      const verdict = await consultShipped(
+        w,
+        r,
+        r.spanBase,
+        green,
+        green.candidate,
+        w.mergeGateResults.slice(entryMergeGateResultsStart),
+      );
+      return {
+        ...verdict,
+        update: await land(verdict.shipped, [verdict.outcome], green.candidate),
+      };
+    },
     // The wave's own vocabulary: every line names the entry whose span this is
     // and what a refusal leaves it as, because a fanout tick's log is read for
     // which of N entries it is about.
@@ -1095,12 +1179,12 @@ async function carrySpan(
       absorbed: (shas) =>
         `[flume] ${r.entry.tag}: trunk already held ${shas.map((sha) => sha.slice(0, 8)).join(", ")} of ${r.spanBase.slice(0, 8)}..${r.headSha.slice(0, 8)}; absorbed, not a conflict`,
       gateFailed: (gate) =>
-        `[flume] afterMerge gate '${gate}' failed for ${r.entry.tag}; reverting only that entry (clean siblings stay shipped)`,
+        `[flume] afterMerge gate '${gate}' failed for ${r.entry.tag}; discarding only that entry's candidate (clean siblings stay shipped)`,
       // The bare refusal, with both shas short and named once each: the same
       // sentence a singleton's leg reads (`src/singletonTick.ts`), plus the
       // tail only a wave has to say.
-      revertRefused: ({ mergedSha, landedOnSha, refusal }) =>
-        `[flume] ${r.entry.tag}: revert of ${mergedSha.slice(0, 8)} back to ${landedOnSha.slice(0, 8)} refused (${refusal}); commit stays on trunk, left for the operator; other entries continue`,
+      fastForwardRefused: ({ candidateSha, landedOnSha, refusal }) =>
+        `[flume] ${r.entry.tag}: fast-forward of trunk from ${landedOnSha.slice(0, 8)} to candidate ${candidateSha.slice(0, 8)} refused (${refusal}); trunk unchanged, entry stays pending; other entries continue`,
       merged: (mergedSha, landedOnSha) =>
         mergedSha === landedOnSha
           ? `[flume] ${r.entry.tag}: trunk already holds the whole span ${r.spanBase.slice(0, 8)}..${r.headSha.slice(0, 8)}; merged with no commit to add`
@@ -1116,6 +1200,7 @@ async function carrySpan(
     return {
       ...(staked === undefined ? {} : { staked }),
       shipped: [],
+      landed: false,
       outcome: {
         entryTag: r.entry.tag,
         outcome: carried.fate,
@@ -1132,6 +1217,7 @@ async function carrySpan(
     return {
       ...(staked === undefined ? {} : { staked }),
       shipped: [],
+      landed: false,
       outcome: {
         entryTag: r.entry.tag,
         outcome: carried.fate,
@@ -1144,39 +1230,23 @@ async function carrySpan(
       },
     };
   }
-  if (
-    carried.fate === "afterMerge-reverted" ||
-    carried.fate === "afterMerge-revert-refused"
-  ) {
+  if (carried.fate === "afterMerge-reverted") {
     // The gate's own attribution decides the entry-scoped half: a gate
     // declaring `blamesSpan: false` leaves the failure unblamed, so the
     // run-scoped quarantine never holds this entry for a wall it was told
-    // the entry did not build (spec/chain.md "What a gate returns"). Read
-    // once, here, for every stage failure this refusal produced — the gate's
-    // own row and the revert refusal beside it. A revert only happens because
-    // the gate refused, so a span the gate disowned is not answerable for the
-    // collision its revert then hit either; blaming it there would
-    // quarantine, by the back door, the entry the declaration withheld. The
-    // revert itself still happened either way.
+    // the entry did not build (spec/chain.md "What a gate returns").
     const blame = carried.blamesSpan === false ? {} : blamedOn(r.entry);
     w.gateFailures.push({ ...blame, ...carried.gateFailure });
-    if (carried.fate === "afterMerge-revert-refused") {
-      // Never added to {@link WaveMerge.mergeReverted}: that array's tags feed
-      // `revertedTags`, and claiming a revert that never happened would
-      // misreport the tree. The commit stays on trunk for the operator, this
-      // entry is reported refused, and the wave carries on.
-      w.revertRefused.push(r.entry);
-      w.gateFailures.push({ ...blame, ...carried.failure });
-    } else {
-      w.mergeReverted.push(r.entry);
-    }
-    // The span the pick added — the pair the carry's revert was bounded by —
+    w.mergeReverted.push(r.entry);
+    // The span the pick added onto the candidate — the pair the gates judged —
     // and not the entry's own span base, because a span row's two shas always
     // bound the same range. The entry stays pending; its retry carries the
-    // prior-attempt block the carry wrote.
+    // prior-attempt block the carry wrote while the candidate's sha was still
+    // reachable.
     return {
       ...(staked === undefined ? {} : { staked }),
       shipped: [],
+      landed: false,
       outcome: {
         entryTag: r.entry.tag,
         outcome: carried.fate,
@@ -1187,17 +1257,14 @@ async function carrySpan(
     };
   }
 
-  const verdict = await consultShipped(
-    w,
-    r,
-    r.spanBase,
-    carried,
-    w.mergeGateResults.slice(entryMergeGateResultsStart),
-  );
+  // Trunk fast-forwarded to the candidate, so everything the landing step
+  // wrote into it is on trunk now — and only now does it reach the stage.
   return {
     ...(staked === undefined ? {} : { staked }),
-    outcome: verdict.outcome,
-    shipped: verdict.shipped,
+    outcome: carried.landing.outcome,
+    shipped: carried.landing.shipped,
+    landed: true,
+    update: carried.landing.update,
   };
 }
 
@@ -1229,6 +1296,17 @@ async function consultShipped(
   /** The span's base, read where `committed` narrowed it ({@link BatchCandidate}). */
   spanBase: string,
   landed: { mergedSha: string; landedOnSha: string; touchedPaths: string[] },
+  /**
+   * The tree the span's commit landed in, which is what this consult reports
+   * as `ShipContext.repoRoot` (`src/Phase.ts`): a single span's own candidate
+   * — the tree trunk fast-forwards to once this verdict and the rewrite behind
+   * it have landed on it (`spec/worktrees.md`, *Per-entry `afterMerge` revert
+   * isolation*) — and the primary checkout for a batch, which picks onto trunk.
+   * Handed in rather than read off the leg: a predicate inspecting the merged
+   * result must open the tree that holds it, and the primary checkout does not
+   * hold a candidate's span until the fast-forward takes.
+   */
+  tree: string,
   mergeGateResults: readonly ReportedGateResult[],
 ): Promise<{
   shipped: readonly PendingEntry[];
@@ -1261,7 +1339,7 @@ async function consultShipped(
         touchedPaths: landed.touchedPaths,
         gateResults: [...r.gateResults, ...mergeGateResults],
         worktreePath: r.worktreePath,
-        repoRoot: leg.repoRoot,
+        repoRoot: tree,
       }) ?? shippable.map((e) => e.tag);
   } catch (err) {
     threw = thrownMessage(err);
@@ -1429,16 +1507,11 @@ export function closeWaveMerge(w: WaveMerge): WaveMergeResult {
         `one`,
     );
   }
-  // `revertRefused` is this stage's own bookkeeping — an entry whose gate
-  // failed and whose revert off trunk was then refused — so the fold happens
-  // here, beside the refusal verdict that folds the same three inputs, rather
-  // than at a caller that would have to be handed a fourth array to restate
-  // it (.claude/rules/engineering.md "Derived state is computed, never
-  // restated beside its source").
-  const noCommit = waveNoCommitCause(waveCommitted(w), w.attempts, [
-    ...w.mergeReverted,
-    ...w.revertRefused,
-  ]);
+  const noCommit = waveNoCommitCause(
+    waveCommitted(w),
+    w.attempts,
+    w.mergeReverted,
+  );
 
   return {
     shipped: w.shipped,
@@ -1492,17 +1565,23 @@ function waveCommitted(w: WaveMerge): boolean {
  * ({@link waveWallThrow}), which is the wave leg's own throw site
  * (`src/waveTick.ts`).
  *
- * Returns the exit the rewrite reported, so the caller's own tip read turns
+ * Returns the result the rewrite reported, so the caller's own tip read turns
  * on the rewrite's statement rather than on a second reading of the ref
  * (`.claude/rules/engineering.md`, *A fact the engine holds is reported, never
  * rediscovered*). `undefined` is no rewrite at all: this pick shipped nothing
  * and recorded no footprint, so there was nothing for one to write.
+ *
+ * `tree` is where the rewrite is derived, written and committed
+ * (`commitPendingUpdate`'s `landing`, `src/pendingLedger.ts`): a green span's
+ * candidate, so the commit rides the fast-forward that carries the span, or
+ * the primary checkout for the commits with no candidate behind them.
  */
 async function commitAttemptLedger(
   w: WaveMerge,
   shippedNow: readonly PendingEntry[],
   outcomesNow: readonly TickVerdictMergeOutcome[],
-): Promise<PendingRewriteResult["exit"] | undefined> {
+  tree: string,
+): Promise<PendingRewriteResult | undefined> {
   const { leg, phase, partitionIgnore } = w.setup;
   // `commitPendingUpdate` derives the footprints straight off these merge
   // outcomes, the same records this wave's TickVerdict carries — no separate
@@ -1539,6 +1618,7 @@ async function commitAttemptLedger(
       shippedTags,
       outcomesNow,
       partitionIgnore,
+      tree,
     );
   } catch (err) {
     // The verdict for this refusal is built where the wave has settled, not
@@ -1550,16 +1630,7 @@ async function commitAttemptLedger(
     w.refusal = { cause: err };
     throw err;
   }
-  // Appended, never overwritten: a wave lands one of these per pick, and the
-  // handoff reports the set beside the single sha it narrows to
-  // (.claude/rules/engineering.md "A fact the engine holds is reported, never
-  // rediscovered"). Whether there is one to append is the rewrite's own answer
-  // — the same rule, one call down: three of its four exits write no commit,
-  // and a tip comparison around this call cannot tell the wave's own sibling
-  // pick landing beside it from a commit this rewrite made.
-  if (update.exit === "committed") w.ledgerShas.push(update.commitSha);
   if (update.exit === "tip-claimed") {
-    w.tipMoved = true;
     // The refusal's own disk state, from the call that took it rather than
     // from this site's memory of where its tip check sits: the claim is read
     // before the rewrite is written, so the queue at `update.path` is still
@@ -1573,7 +1644,7 @@ async function commitAttemptLedger(
         `${update.path} is unchanged on disk, no rewrite written — ` +
         `shipped entries already on trunk stay shipped`,
     );
-    return update.exit;
+    return update;
   }
   // Same fact again, so the line an operator reads and the sha the handoff
   // carries can never disagree: a no-commit exit says so in words, and a sha
@@ -1592,7 +1663,7 @@ async function commitAttemptLedger(
         : `[flume] footprint commit ${update.commitSha.slice(0, 8)}: ${footprintTags.join(", ")}`
       : noCommitLine(update.exit, shippedTags, footprintTags),
   );
-  return update.exit;
+  return update;
 }
 
 /**
@@ -1834,10 +1905,7 @@ async function settledWaveVerdict(
     phaseName: phase.name,
     tags: provisioned.map((e) => e.tag),
     committed,
-    noCommit: waveNoCommitCause(committed, w.attempts, [
-      ...w.mergeReverted,
-      ...w.revertRefused,
-    ]),
+    noCommit: waveNoCommitCause(committed, w.attempts, w.mergeReverted),
     tipMoved: w.tipMoved,
     declined: w.declined,
     bystanderCheckpointSha: w.checkpoint.sha,

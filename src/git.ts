@@ -216,6 +216,54 @@ export async function resetKeepTo(cwd: string, sha: string): Promise<void> {
 }
 
 /**
+ * Thrown by {@link fastForwardTo} when git declines to fast-forward. Two
+ * causes, one refusal: the target is no longer a descendant of the current
+ * tip — something landed on the branch under the candidate — or the move
+ * would overwrite an uncommitted change on a path it touches. Either way git
+ * has moved nothing, so the branch is exactly where it was and the caller's
+ * candidate is the only thing to discard.
+ *
+ * `gitMessage` carries git's own stderr for the operator's log and is never
+ * parsed to tell the two causes apart (`.claude/rules/engine-boundary.md`,
+ * *Told, not inferred*): what the engine acts on is that trunk did not move.
+ */
+export class FastForwardRefusedError extends Error {
+  constructor(
+    public readonly cwd: string,
+    public readonly targetSha: string,
+    public readonly gitMessage: string,
+  ) {
+    super(
+      `fast-forward to ${targetSha} refused in ${cwd}: ${gitMessage} — ` +
+        `the branch has not moved and the candidate at ${targetSha} is ` +
+        `unreachable from it`,
+    );
+  }
+}
+
+/**
+ * Move the checked-out branch forward to `sha` and nothing else — `git merge
+ * --ff-only`, the one way trunk moves (spec/worktrees.md "Per-entry
+ * `afterMerge` revert isolation").
+ *
+ * `--ff-only` is the whole guarantee: git either advances the ref to a
+ * descendant of the current tip, updating the working tree with it, or it
+ * refuses and changes nothing. No merge commit is ever written, no history is
+ * rewritten, and an uncommitted change that the move would overwrite refuses
+ * exactly as `reset --keep` does, so a bystander's work on the checkout is
+ * never discarded to make room for a span. A `sha` the tip already contains
+ * is already-up-to-date and succeeds having moved nothing, which is a span
+ * trunk absorbed whole.
+ */
+export async function fastForwardTo(cwd: string, sha: string): Promise<void> {
+  try {
+    await run(cwd, ["merge", "--ff-only", sha]);
+  } catch (err) {
+    throw new FastForwardRefusedError(cwd, sha, thrownMessage(err));
+  }
+}
+
+/**
  * Soft reset directly to a specific sha, rather than a commit count back
  * from HEAD. Used by the per-entry tip-verify leg (spec/loop.md "Tip
  * verify — one writer per branch, absorption at the merge"): the target is

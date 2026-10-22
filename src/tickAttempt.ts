@@ -41,6 +41,7 @@ import {
   entryWriteScope,
   fsStamp,
   namespacedJoin,
+  rebaseOntoTree,
   renderedPromptsDir,
 } from "./paths.js";
 import type { PendingEntry } from "./PendingSchema.js";
@@ -752,20 +753,10 @@ async function runAfterCommitGates(
   // `cwd` here is the fanout worktree (or a singleton's own worktree,
   // spec/worktrees.md "Singleton runs in a worktree") — a fresh checkout
   // that holds only tracked files at the same relative layout as the
-  // primary checkout. `ctx.configDir` is resolved against the primary
-  // checkout, so an in-repo configDir is rebased onto `cwd` at its own
-  // relative offset rather than passed through verbatim, or a configDir
-  // relocated *within* the repo would point a gate at the wrong tree
-  // entirely. A configDir relocated *outside* the repo has no worktree
-  // mirror to rebase onto — the checkout carries only tracked files — so it
-  // passes through verbatim, and the escape test that decides which case
-  // this is arrives as `ctx.configDirRel`, folded once by the one owner of
-  // that computation rather than re-derived here
-  // (`.claude/rules/engineering.md` "The fix lands at the mechanism").
-  const configDir =
-    ctx.configDirRel === undefined
-      ? ctx.configDir
-      : join(cwd, ctx.configDirRel);
+  // primary checkout, so the configDir a gate reads is rebased onto it
+  // (`rebaseOntoTree`, `src/paths.ts`) rather than passed through verbatim:
+  // the same fold the merge's candidate takes at the other gate point.
+  const configDir = rebaseOntoTree(cwd, ctx.configDir, ctx.configDirRel);
   const results: ReportedGateResult[] = [];
   const timings: TickVerdictTiming[] = [];
   for (const gate of gates) {

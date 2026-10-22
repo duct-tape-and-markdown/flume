@@ -333,6 +333,30 @@ async function head(cwd: string): Promise<string> {
 }
 
 /**
+ * Every ref update the primary checkout's trunk branch took, newest first —
+ * one `<sha> <reflog subject>` line each, read off git's own log of the ref
+ * rather than off the commits that ref now reaches.
+ *
+ * The two readings differ exactly where the carry's claim lives
+ * (spec/worktrees.md, "Per-entry `afterMerge` revert isolation"): a commit a
+ * candidate holds and trunk never fast-forwarded to leaves no line here at
+ * all, while one picked onto trunk and then reset back off leaves two. A
+ * candidate's own picks cannot reach this log by construction — it is a
+ * detached tree, so nothing it commits moves a branch.
+ */
+async function trunkRefUpdates(repo: string): Promise<string[]> {
+  const branch = await exec("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+    cwd: repo,
+  });
+  const { stdout } = await exec(
+    "git",
+    ["reflog", "show", "--format=%H %gs", branch.stdout.trim()],
+    { cwd: repo },
+  );
+  return stdout.split("\n").filter((line) => line !== "");
+}
+
+/**
  * Every path git registers as a worktree of the fixture repo, the primary
  * checkout aside, sorted — asked of the engine's own registry probe rather
  * than re-spelled here. Every worktree verdict in this file is exact
@@ -1044,12 +1068,18 @@ describe("Dispatcher singleton — runs in a flume/<phase> worktree (WORKTREE-CO
         .filter((n) => n.startsWith("probe-")),
     ).toEqual(["probe-commit", "probe-merge"]);
     // Setup precedes the agent; teardown trails both gate stages, so a
-    // hook releasing a resource cannot pull it out from under a gate.
+    // hook releasing a resource cannot pull it out from under a gate. Two
+    // pairs, not one: the merge's candidate is provisioned the way a build
+    // worktree is (`spec/worktrees.md`, *Per-entry `afterMerge` revert
+    // isolation*), so the hooks bracket the `afterMerge` gates that judge it
+    // exactly as they bracket the agent in the tree it ran in.
     expect(order).toEqual([
       "setup",
       "agent",
       "probe-commit",
+      "setup",
       "probe-merge",
+      "teardown",
       "teardown",
     ]);
   });
@@ -1094,7 +1124,12 @@ describe("Dispatcher singleton — runs in a flume/<phase> worktree (WORKTREE-CO
     expect(outcome.result?.committed).toBe(true);
     // A singleton tick carries no entry, so the key is the phase name —
     // the same key `createWorktree` derived the directory and branch from.
-    expect(setupCtxs).toHaveLength(1);
+    // Two trees take the hooks: the one the agent ran in, and the merge's
+    // candidate, keyed the same way and keyed on the same phase.
+    expect(setupCtxs).toHaveLength(2);
+    expect(setupCtxs.map((c) => c.worktreeKey)).toEqual(["plan", "plan"]);
+    expect(setupCtxs[1]!.worktreePath).toContain("candidate-");
+    expect(setupCtxs[1]!.repoRoot).toBe(fx.repo);
     expect(setupCtxs[0]!.worktreeKey).toBe("plan");
     expect(setupCtxs[0]!.repoRoot).toBe(fx.repo);
     expect(setupCtxs[0]!.worktreePath).toBe(agentCwd);
@@ -1103,8 +1138,9 @@ describe("Dispatcher singleton — runs in a flume/<phase> worktree (WORKTREE-CO
     );
     expect(worktreeExistedAtSetup).toBe(true);
     // Teardown is handed the same key and path, so a hook pair can match
-    // what it provisioned to what it releases.
-    expect(teardownCtxs).toEqual(setupCtxs);
+    // what it provisioned to what it releases — innermost first, the
+    // candidate's pair closing inside the agent worktree's.
+    expect(teardownCtxs).toEqual([setupCtxs[1], setupCtxs[0]]);
   });
 
   it("a singleton setupWorktree's extraEnv reaches the agent invocation", async () => {
@@ -1176,10 +1212,13 @@ describe("Dispatcher singleton — a worktree teardown could not remove reaches 
 
   /** Only the sentence a surviving directory earns, never the branch-delete
    * warning that trails it — the branch is still checked out in the
-   * directory that stood, so its deletion fails too. */
+   * directory that stood, so its deletion fails too — and never the merge
+   * candidate's own discard warning, which the same mock also raises. */
   const survivalWarnings = (warnings: string[], wtPath: string): string[] =>
     warnings.filter(
-      (w) => w.includes("survived removal") && w.includes(wtPath),
+      (w) =>
+        w.includes("worktree(s) survived removal (fallback exhausted)") &&
+        w.includes(wtPath),
     );
 
   it("a singleton whose worktree survives removal names the surviving path", async () => {
@@ -2868,9 +2907,11 @@ describe("Dispatcher — Chain.pendingDir (CHAIN-PENDINGPATH, spec/pending.md 'T
     // Fanout selection picked the entry from the declared location, and the
     // wave-end rewrite ships it there — not at the default plan/pending.
     expect(outcome.result?.shippedTags).toEqual(["CUSTOM-PATH"]);
+    // Absent rather than empty: the entry file left in the fast-forward that
+    // carried the span, and git drops a directory the commit emptied.
     expect(
       readQueueOnDisk(join(fx.repo, ".flume"), join(fx.repo, ".flume", customRel)),
-    ).toEqual([]);
+    ).toBeNull();
     expect(existsSync(join(fx.repo, ".flume", "plan", "pending"))).toBe(false);
 
     // The afterCommit gate saw the same resolved, absolute path.
@@ -5305,9 +5346,18 @@ describe("Dispatcher — dispatch reads resolve from the committed tip, not the 
 
     const outcome = await dispatcher.tick();
 
-    // TIP-A shipped — the working-tree edit that parked it never reached
-    // the decide-read, which resolved the committed tip where it's open.
-    expect(outcome.result?.shippedTags).toEqual(["TIP-A"]);
+    // TIP-A was selected and carried — the working-tree edit that parked it
+    // never reached the decide-read, which resolved the committed tip where
+    // it's open. What it did reach is the fast-forward: the ledger commit
+    // retiring TIP-A rewrites the very file the operator has uncommitted, so
+    // trunk refuses to move and the entry stays pending rather than having
+    // that edit silently overwritten (`spec/worktrees.md`, *Per-entry
+    // `afterMerge` revert isolation*).
+    expect(outcome.verdict?.tags).toEqual(["TIP-A"]);
+    expect(
+      outcome.verdict?.mergeOutcomes.map((m) => m.outcome),
+    ).toEqual(["tip-moved"]);
+    expect(outcome.result?.shippedTags).toEqual([]);
   });
 
   it("PendingParseFailure still throws when the tip's committed content fails to parse", async () => {
@@ -9339,6 +9389,440 @@ describe("readMergingMarkers — the merging dir's absent-vs-unreachable split",
   });
 });
 
+describe("Dispatcher — trunk moves only by fast-forward to a judged candidate", () => {
+  /**
+   * The paths the chain's own provisioning hook was handed, candidates only:
+   * a merge's tree is named `candidate-<tip>-<pid>-<n>` and a build
+   * worktree's is named for its slot, so the hook's own record separates the
+   * two without this file re-deriving either name. A run that provisioned no
+   * candidate at all leaves this empty, which is what every case below
+   * asserts a count against before it rules on one
+   * (`.claude/rules/engineering.md`, *A green verdict is proven
+   * non-vacuous*).
+   */
+  const candidatesAmong = (provisioned: readonly string[]): string[] =>
+    provisioned.filter((p) => basename(p).startsWith("candidate-"));
+
+  /** A phase whose `setupWorktree` records every tree the tick provisioned. */
+  const recordingPhase = (gates: Gate[], provisioned: string[]): Phase =>
+    makePhase({
+      name: "build",
+      concurrency: "fanout",
+      gates,
+      setupWorktree: (ctx: WorktreeSetupContext) => {
+        provisioned.push(ctx.worktreePath);
+        return Promise.resolve();
+      },
+    });
+
+  it("a green candidate carries the span and its ledger commit, and trunk fast-forwards to it in one move", async () => {
+    await writePending(fx.repo, [makeEntry("FF-GREEN", ["src/ff-green.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const before = await trunkRefUpdates(fx.repo);
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [makePhase({ name: "build", concurrency: "fanout" })],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "ff-green": async (cwd) => {
+          await writeAndCommit(
+            cwd,
+            "src/ff-green.ts",
+            "green\n",
+            "build(FF-GREEN): ship",
+          );
+        },
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Vacuity: the span shipped, so there was a fast-forward to read.
+    expect(outcome.result?.shippedTags).toEqual(["FF-GREEN"]);
+
+    // The one move: trunk took exactly one ref update for this merge, and it
+    // was a fast-forward — not a pick that moved it and a ledger commit that
+    // moved it again, with an ungated tip in between.
+    const after = await trunkRefUpdates(fx.repo);
+    const added = after.slice(0, after.length - before.length);
+    expect(added).toHaveLength(1);
+    expect(added[0]).toMatch(/^[0-9a-f]{40} merge [0-9a-f]{40}: Fast-forward$/);
+
+    // And what it moved trunk to carries both: the entry's ledger commit on
+    // top of the span the gates judged under it.
+    const log = await exec("git", ["log", "--format=%s", "-n", "2"], {
+      cwd: fx.repo,
+    });
+    expect(log.stdout.trim().split("\n")).toEqual([
+      "chore(flume): ship FF-GREEN",
+      "build(FF-GREEN): ship",
+    ]);
+    expect(existsSync(join(fx.repo, "src", "ff-green.ts"))).toBe(true);
+    expect(readPendingFromDisk(fx.repo)).toEqual([]);
+  });
+
+  it("a red afterMerge gate discards the candidate and trunk never named the span", async () => {
+    await writePending(fx.repo, [makeEntry("FF-RED", ["src/ff-red.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    let judged: string | undefined;
+    let judgedIn: string | undefined;
+    const veto: Gate = {
+      name: "ff-veto",
+      when: "afterMerge",
+      run(ctx) {
+        judged = ctx.commitSha;
+        judgedIn = ctx.repoRoot;
+        return Promise.resolve({ ok: false, message: "ff veto" });
+      },
+    };
+
+    const before = await trunkRefUpdates(fx.repo);
+    const provisioned: string[] = [];
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [recordingPhase([veto], provisioned)],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "ff-red": async (cwd) => {
+          await writeAndCommit(
+            cwd,
+            "src/ff-red.ts",
+            "red\n",
+            "build(FF-RED): ship",
+          );
+        },
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Vacuity: a span really was picked and really was judged, in a candidate
+    // of its own.
+    expect(judged).toMatch(/^[0-9a-f]{40}$/);
+    expect(candidatesAmong(provisioned)).toEqual([judgedIn]);
+
+    // The candidate is the whole cost of the red.
+    expect(existsSync(judgedIn!)).toBe(false);
+    // And trunk never named what it held: no ref update of the branch carries
+    // that sha, and no commit trunk stands on reaches it. The one update this
+    // tick did take is the footprint record, which has no span behind it.
+    const after = await trunkRefUpdates(fx.repo);
+    const added = after.slice(0, after.length - before.length);
+    expect(added).toHaveLength(1);
+    expect(added[0]).toContain(
+      "chore(flume): record merge-failure footprints for FF-RED",
+    );
+    expect(added.some((line) => line.startsWith(judged!))).toBe(false);
+    expect(await git.isAncestor(fx.repo, judged!, await head(fx.repo))).toBe(
+      false,
+    );
+
+    // The entry stays pending and its content never reached the checkout.
+    expect(outcome.result?.shippedTags ?? []).toEqual([]);
+    expect(readPendingFromDisk(fx.repo).map((e) => e.tag)).toEqual(["FF-RED"]);
+    expect(existsSync(join(fx.repo, "src", "ff-red.ts"))).toBe(false);
+  });
+
+  it("a cherry-pick that conflicts discards the candidate and leaves the entry pending", async () => {
+    // The established conflict vector: two entries whose declared files are
+    // disjoint — so they fan out together — both committing one *undeclared*
+    // path, with the loser's agent held until the winner's span is on trunk.
+    // Its candidate is then cut at a tip already holding the other content,
+    // and the pick of its own commit conflicts there.
+    await writePending(fx.repo, [
+      makeEntry("FF-WIN", ["src/ff-win.ts"]),
+      makeEntry("FF-CLASH", ["src/ff-clash.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const provisioned: string[] = [];
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [recordingPhase([], provisioned)],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "ff-win": async (cwd) => {
+          await mkdir(join(cwd, "src"), { recursive: true });
+          await writeFile(join(cwd, "src", "ff-win.ts"), "win\n");
+          await writeFile(join(cwd, "src", "shared.ts"), "from-win\n");
+          await exec("git", ["add", "."], { cwd });
+          await exec("git", ["commit", "-q", "-m", "build(FF-WIN): ship"], {
+            cwd,
+          });
+        },
+        "ff-clash": async (cwd) => {
+          await awaitOnTrunk(fx.repo, "build(FF-WIN): ship");
+          await mkdir(join(cwd, "src"), { recursive: true });
+          await writeFile(join(cwd, "src", "ff-clash.ts"), "clash\n");
+          await writeFile(join(cwd, "src", "shared.ts"), "from-clash\n");
+          await exec("git", ["add", "."], { cwd });
+          await exec("git", ["commit", "-q", "-m", "build(FF-CLASH): ship"], {
+            cwd,
+          });
+        },
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expectNoFindings(blownWaitsInAgentBodies());
+    // Vacuity: the pick really conflicted, rather than this case having
+    // raced its two spans into some other fate.
+    expect(
+      outcome.verdict?.mergeOutcomes.find((m) => m.entryTag === "FF-CLASH")
+        ?.outcome,
+    ).toBe("cherry-pick-conflict");
+
+    // Both merges built a candidate, and neither survives the carry — the
+    // conflicting one's is discarded exactly as the green one's is.
+    const candidates = candidatesAmong(provisioned);
+    expect(candidates).toHaveLength(2);
+    expect(candidates.filter((p) => existsSync(p))).toEqual([]);
+
+    // The sibling ships, the conflicting entry stays pending, and the
+    // conflict never reached the primary checkout: trunk holds the winner's
+    // content, not a merge in progress over it.
+    expect(outcome.result?.shippedTags).toEqual(["FF-WIN"]);
+    expect(readPendingFromDisk(fx.repo).map((e) => e.tag)).toEqual([
+      "FF-CLASH",
+    ]);
+    expect(await readFile(join(fx.repo, "src", "shared.ts"), "utf8")).toBe(
+      "from-win\n",
+    );
+    expect(existsSync(join(fx.repo, "src", "ff-clash.ts"))).toBe(false);
+  });
+
+  it("a gate that throws discards the candidate and the tick still reports every gate that ran", async () => {
+    await writePending(fx.repo, [makeEntry("FF-BOOM", ["src/ff-boom.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const BOOM = "the merge gate died: ENOENT spawning vitest";
+    let judged: string | undefined;
+    let judgedIn: string | undefined;
+    const first: Gate = {
+      name: "ff-first",
+      when: "afterMerge",
+      run(ctx) {
+        judged = ctx.commitSha;
+        judgedIn = ctx.repoRoot;
+        return Promise.resolve({ ok: true, message: "captured" });
+      },
+    };
+    const explodes: Gate = {
+      name: "ff-explodes",
+      when: "afterMerge",
+      run() {
+        throw new Error(BOOM);
+      },
+    };
+
+    const before = await trunkRefUpdates(fx.repo);
+    const provisioned: string[] = [];
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [recordingPhase([first, explodes], provisioned)],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "ff-boom": async (cwd) => {
+          await writeAndCommit(
+            cwd,
+            "src/ff-boom.ts",
+            "boom\n",
+            "build(FF-BOOM): ship",
+          );
+        },
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Every gate that ran is on the verdict — the one that answered and the
+    // one that raised, with the raise recorded as that gate's own failure.
+    expect(outcome.verdict?.gateResults).toContainEqual({
+      gate: "ff-first",
+      ok: true,
+      message: "captured",
+    });
+    expect(outcome.verdict?.gateResults).toContainEqual({
+      gate: "ff-explodes",
+      ok: false,
+      message: BOOM,
+      details: expect.stringContaining(BOOM),
+    });
+
+    // And the throw cost one directory: the candidate is gone, and trunk
+    // never named the commit the gates were judging in it.
+    expect(judged).toMatch(/^[0-9a-f]{40}$/);
+    expect(candidatesAmong(provisioned)).toEqual([judgedIn]);
+    expect(existsSync(judgedIn!)).toBe(false);
+    const after = await trunkRefUpdates(fx.repo);
+    const added = after.slice(0, after.length - before.length);
+    expect(added.some((line) => line.startsWith(judged!))).toBe(false);
+    expect(await git.isAncestor(fx.repo, judged!, await head(fx.repo))).toBe(
+      false,
+    );
+    expect(outcome.result?.shippedTags ?? []).toEqual([]);
+    expect(readPendingFromDisk(fx.repo).map((e) => e.tag)).toEqual(["FF-BOOM"]);
+  });
+
+  it("a later span's red gate leaves the siblings trunk already fast-forwarded to shipped", async () => {
+    await writePending(fx.repo, [
+      makeEntry("FF-EARLY", ["src/ff-early.ts"]),
+      makeEntry("FF-LATE", ["src/ff-late.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    // The later span's candidate, as its own gate found it: cut at a tip
+    // trunk had already fast-forwarded to the sibling's ship.
+    let lateSawSibling: boolean | undefined;
+    const veto: Gate = {
+      name: "ff-late-veto",
+      when: "afterMerge",
+      run(ctx) {
+        if (!existsSync(join(ctx.cwd, "src", "ff-late.ts"))) {
+          return Promise.resolve({ ok: true, message: "clean" });
+        }
+        lateSawSibling = existsSync(join(ctx.cwd, "src", "ff-early.ts"));
+        return Promise.resolve({ ok: false, message: "late veto" });
+      },
+    };
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [
+          makePhase({ name: "build", concurrency: "fanout", gates: [veto] }),
+        ],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "ff-early": async (cwd) => {
+          await writeAndCommit(
+            cwd,
+            "src/ff-early.ts",
+            "early\n",
+            "build(FF-EARLY): ship",
+          );
+        },
+        "ff-late": async (cwd) => {
+          await awaitOnTrunk(fx.repo, "build(FF-EARLY): ship");
+          await writeAndCommit(
+            cwd,
+            "src/ff-late.ts",
+            "late\n",
+            "build(FF-LATE): ship",
+          );
+        },
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    expectNoFindings(blownWaitsInAgentBodies());
+    // Vacuity: the later span's gate really did run over a candidate, and
+    // really did refuse it.
+    expect(lateSawSibling, "the later span's gate never ran").toBe(true);
+    expect(
+      outcome.verdict?.mergeOutcomes.find((m) => m.entryTag === "FF-LATE")
+        ?.outcome,
+    ).toBe("afterMerge-reverted");
+
+    // The sibling stays shipped: its commit is on trunk, its entry left the
+    // queue, and nothing of the later red reached back for it.
+    expect(outcome.result?.shippedTags).toEqual(["FF-EARLY"]);
+    expect(await readFile(join(fx.repo, "src", "ff-early.ts"), "utf8")).toBe(
+      "early\n",
+    );
+    expect(readPendingFromDisk(fx.repo).map((e) => e.tag)).toEqual(["FF-LATE"]);
+    expect(existsSync(join(fx.repo, "src", "ff-late.ts"))).toBe(false);
+  });
+
+  it("a span taken back off is rowed as an afterMerge-reverted merge outcome with its footprint", async () => {
+    await writePending(fx.repo, [makeEntry("FF-ROW", ["src/ff-row.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    let judged: string | undefined;
+    const veto: Gate = {
+      name: "ff-row-veto",
+      when: "afterMerge",
+      run(ctx) {
+        judged = ctx.commitSha;
+        return Promise.resolve({ ok: false, message: "row veto" });
+      },
+    };
+
+    const trunkBefore = await head(fx.repo);
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [
+          makePhase({ name: "build", concurrency: "fanout", gates: [veto] }),
+        ],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "ff-row": async (cwd) => {
+          // Two paths, one of them undeclared: the row carries what the span
+          // actually touched, which is what the retry's partition reads.
+          await mkdir(join(cwd, "src"), { recursive: true });
+          await writeFile(join(cwd, "src", "ff-row.ts"), "row\n");
+          await writeFile(join(cwd, "src", "ff-row-extra.ts"), "extra\n");
+          await exec("git", ["add", "."], { cwd });
+          await exec("git", ["commit", "-q", "-m", "build(FF-ROW): ship"], {
+            cwd,
+          });
+        },
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Vacuity: the span was judged, so there is a row to read.
+    expect(judged).toMatch(/^[0-9a-f]{40}$/);
+    expect(outcome.verdict?.mergeOutcomes ?? []).not.toHaveLength(0);
+    expect(outcome.verdict?.mergeOutcomes).toContainEqual({
+      entryTag: "FF-ROW",
+      outcome: "afterMerge-reverted",
+      footprint: ["src/ff-row-extra.ts", "src/ff-row.ts"],
+      baseSha: trunkBefore,
+      headSha: judged,
+    });
+    // And the entry keeps that footprint in the queue for its retry.
+    expect(readPendingFromDisk(fx.repo)[0]?.observedFiles).toEqual([
+      "src/ff-row-extra.ts",
+      "src/ff-row.ts",
+    ]);
+  });
+});
+
 describe("Dispatcher fanout — afterMerge gate failure reverts only the offending entry", () => {
   it("ships the N−1 clean siblings, reverts only the offending entry, keeps it pending with the prior-attempt block; per-entry agent fanout stays parallel", async () => {
     // ISO-PASS and ISO-FAIL fan out concurrently (disjoint declared files →
@@ -9864,15 +10348,19 @@ describe("Dispatcher — an afterMerge revert on the primary checkout preserves 
     await writePending(fx.repo, [makeEntry("REVERT-ME", ["src/thing.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
 
+    // The operator stages mid-tick on the **primary checkout**, which is not
+    // the tree this gate runs in: an `afterMerge` gate judges the merge's
+    // candidate (`spec/worktrees.md`, *Per-entry `afterMerge` revert
+    // isolation*), and trunk is what the bystander's work sits on.
     const alwaysVeto: Gate = {
       name: "always-veto",
       when: "afterMerge",
-      async run({ cwd }) {
+      async run() {
         await writeFile(
-          join(cwd, "operator-staged.txt"),
+          join(fx.repo, "operator-staged.txt"),
           "staged work",
         );
-        await exec("git", ["add", "operator-staged.txt"], { cwd });
+        await exec("git", ["add", "operator-staged.txt"], { cwd: fx.repo });
         return { ok: false, message: "veto", details: "REVERT-ME-DETAIL" };
       },
     };
@@ -9905,7 +10393,7 @@ describe("Dispatcher — an afterMerge revert on the primary checkout preserves 
     const outcome = await dispatcher.tick();
 
     // The entry's afterMerge gate always fails, so nothing ships and it
-    // stays pending — the reset carried it back off trunk.
+    // stays pending — the candidate was discarded and trunk never named it.
     expect(outcome.result?.committed).toBe(false);
     expect(existsSync(join(fx.repo, "src/thing.ts"))).toBe(false);
     expect(readPendingFromDisk(fx.repo)).toEqual([
@@ -9913,8 +10401,8 @@ describe("Dispatcher — an afterMerge revert on the primary checkout preserves 
     ]);
 
     // The operator's bystander state — one staged mid-tick, one unstaged
-    // before the tick — survived the revert untouched. A `--hard` reset
-    // would have wiped both.
+    // before the tick — survived untouched. Nothing on this checkout was
+    // reset, because nothing of the span was ever on it.
     expect(
       await readFile(join(fx.repo, "operator-unstaged.txt"), "utf8"),
     ).toBe("unstaged work");
@@ -9936,12 +10424,12 @@ describe("Dispatcher — an afterMerge revert on the primary checkout preserves 
     const alwaysVeto: Gate = {
       name: "always-veto",
       when: "afterMerge",
-      async run({ cwd }) {
+      async run() {
         await writeFile(
-          join(cwd, "operator-staged.txt"),
+          join(fx.repo, "operator-staged.txt"),
           "staged work",
         );
-        await exec("git", ["add", "operator-staged.txt"], { cwd });
+        await exec("git", ["add", "operator-staged.txt"], { cwd: fx.repo });
         return { ok: false, message: "veto" };
       },
     };
@@ -9992,7 +10480,7 @@ describe("Dispatcher — an afterMerge revert on the primary checkout preserves 
 // checkpointed before a pick range begins") ----------
 
 describe("Dispatcher — staged bystander state is checkpointed to a recoverable sha before the merge stage", () => {
-  it("fanout: a staged bystander edit that blocks the wave's own cherry-pick is still recoverable from the verdict's checkpoint sha", async () => {
+  it("fanout: a staged bystander edit no longer reaches the wave's own cherry-pick, and the checkpoint sha still rides the verdict", async () => {
     await writePending(fx.repo, [makeEntry("SHIP-IT", ["src/thing.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
 
@@ -10007,15 +10495,15 @@ describe("Dispatcher — staged bystander state is checkpointed to a recoverable
 
     // The operator has staged unrelated work on the primary checkout before
     // this tick's merge stage begins. Git refuses *any* cherry-pick outright
-    // while the checkout carries staged content, disjoint or not ("your
-    // local changes would be overwritten by cherry-pick") — so the wave's
-    // own pick never lands and the entry stays pending. That pre-flight
-    // refusal still leaves the multi-commit range's sequencer state on disk
-    // (git's own bookkeeping, ahead of applying any commit), so the guarded
-    // `cherryPickAbort` legitimately fires and can still take the staged
-    // file with it. Recovery, not prevention of the abort, is what the
-    // checkpoint buys (spec/loop.md "Crash equals stop", "Never-destroy-
-    // always-leave-a-sha").
+    // while the checkout carries staged content, disjoint or not ("your local
+    // changes would be overwritten by cherry-pick") — and the pick no longer
+    // runs there: it runs in the merge's candidate, a tree of its own
+    // (`spec/worktrees.md`, *Per-entry `afterMerge` revert isolation*), so the
+    // span lands and the fast-forward that carries it leaves the staged file
+    // alone. The checkpoint is still taken, because the fast-forward is a
+    // write to this checkout's working tree, and it is still recovery rather
+    // than prevention (spec/loop.md "Crash equals stop",
+    // "Never-destroy-always-leave-a-sha").
     await writeFile(join(fx.repo, "operator-staged.txt"), "bystander content\n");
     await exec("git", ["add", "operator-staged.txt"], { cwd: fx.repo });
 
@@ -10030,9 +10518,12 @@ describe("Dispatcher — staged bystander state is checkpointed to a recoverable
 
     const outcome = await dispatcher.tick();
 
-    expect(outcome.result?.committed).toBe(false);
-    const onDisk = readPendingFromDisk(fx.repo);
-    expect(onDisk.map((e) => e.tag)).toEqual(["SHIP-IT"]);
+    expect(outcome.result?.shippedTags).toEqual(["SHIP-IT"]);
+    expect(readPendingFromDisk(fx.repo)).toEqual([]);
+    // The staged file is where the operator left it, content intact.
+    expect(
+      await readFile(join(fx.repo, "operator-staged.txt"), "utf8"),
+    ).toBe("bystander content\n");
 
     const sha = outcome.verdict?.bystanderCheckpointSha;
     expect(sha).toEqual(expect.stringMatching(/^[0-9a-f]{40}$/));
@@ -10070,492 +10561,6 @@ describe("Dispatcher — staged bystander state is checkpointed to a recoverable
 
     expect(outcome.result?.committed).toBe(true);
     expect(outcome.verdict?.bystanderCheckpointSha).toBeUndefined();
-  });
-});
-
-// ---------- resetKeepTo collision at the primary-checkout revert site
-// (audit finding against shared-checkout-keep-reset 6cb9948: resetKeepTo's
-// own refusal was left uncaught by both its callers) ----------
-
-describe("Dispatcher — a resetKeepTo collision at the primary-checkout afterMerge-revert site does not crash the tick", () => {
-  it("fanout: a collision reverting one entry does not crash the wave; an already-merged sibling still ships and the pending-ledger rewrite still runs", async () => {
-    // This case turns on SHIP-CLEAN's merge completing ahead of
-    // COLLIDE-BAD's. A wave picks each span as its own agent finishes, so
-    // the order is fixed by holding COLLIDE-BAD's agent until SHIP-CLEAN's
-    // span is on trunk (`awaitOnTrunk`), never by a queue field.
-    const entries = [
-      makeEntry("SHIP-CLEAN", ["src/clean.ts"]),
-      makeEntry("COLLIDE-BAD", ["src/collide.ts"]),
-    ];
-    await writePending(fx.repo, entries);
-    new Baton(join(fx.repo, ".flume")).wake("build");
-
-    const collideVeto: Gate = {
-      name: "collide-veto",
-      when: "afterMerge",
-      async run({ cwd }) {
-        if (!existsSync(join(cwd, "src", "collide.ts"))) {
-          return { ok: true, message: "clean" };
-        }
-        // A bystander editing the exact path the revert needs to touch, in
-        // the window between cherry-pick and this gate's revert —
-        // resetKeepTo's own collision refusal (spec/loop.md "Tip verify —
-        // one writer per branch, absorption at the merge", "dropping it
-        // must not take bystanders").
-        await writeFile(
-          join(cwd, "src", "collide.ts"),
-          "bystander collision\n",
-        );
-        return { ok: false, message: "collide veto" };
-      },
-    };
-    const phase = makePhase({
-      name: "build",
-      concurrency: "fanout",
-      gates: [collideVeto],
-    });
-    const chain: Chain = { phases: [phase], humanOnly: [] };
-
-    const agent = fanoutAgent({
-      "ship-clean": async (cwd) => {
-        await writeAndCommit(cwd, "src/clean.ts", "clean\n", "build(SHIP-CLEAN)");
-      },
-      "collide-bad": async (cwd) => {
-        await awaitOnTrunk(fx.repo, "build(SHIP-CLEAN)");
-        await writeAndCommit(cwd, "src/collide.ts", "collide\n", "build(COLLIDE-BAD)");
-      },
-    });
-
-    const dispatcher = new Dispatcher({
-      chainLoader: staticLoader(chain),
-      repoRoot: fx.repo,
-      configDir: fx.configDir,
-      agent,
-      log: silent,
-      maxParallel: 4,
-    });
-
-    // Must resolve, not reject — the crash this fix closes. `perEntry` is
-    // `Promise.all`-ordered, so SHIP-CLEAN's merge/gate/ship completes ahead
-    // of COLLIDE-BAD's in the loop; only *not* throwing on COLLIDE-BAD's
-    // refused revert lets the loop reach `commitPendingUpdate` at all.
-    const outcome = await dispatcher.tick();
-
-    // Before the verdict: the wait this case's agent body held ended on
-    // its event rather than its ceiling (`runAgentBody`,
-    // `tests/helpers/dispatcherFixture.ts`).
-    expectNoFindings(blownWaitsInAgentBodies());
-    expect(outcome.result?.committed).toBe(true);
-    expect(outcome.result?.shippedTags).toEqual(["SHIP-CLEAN"]);
-    expect(await readFile(join(fx.repo, "src/clean.ts"), "utf8")).toBe(
-      "clean\n",
-    );
-
-    // pending.json rewrite ran despite COLLIDE-BAD's refused revert:
-    // SHIP-CLEAN removed, COLLIDE-BAD stays pending.
-    const onDisk = readPendingFromDisk(fx.repo);
-    expect(onDisk.map((e) => e.tag)).toEqual(["COLLIDE-BAD"]);
-
-    // COLLIDE-BAD's commit stays on trunk — the revert itself was refused,
-    // unlike a clean afterMerge-reverted entry.
-    expect(existsSync(join(fx.repo, "src/collide.ts"))).toBe(true);
-    expect(await readFile(join(fx.repo, "src/collide.ts"), "utf8")).toBe(
-      "bystander collision\n",
-    );
-
-    const mo = outcome.verdict?.mergeOutcomes.find(
-      (m) => m.entryTag === "COLLIDE-BAD",
-    );
-    expect(mo?.outcome).toBe("afterMerge-revert-refused");
-    expect(mo?.footprint).toEqual(["src/collide.ts"]);
-
-    const gf = outcome.verdict?.gateFailures ?? [];
-    expect(
-      gf.some((g) => g.tag === "COLLIDE-BAD" && g.message === "collide veto"),
-    ).toBe(true);
-    expect(
-      gf.some(
-        (g) => g.tag === "COLLIDE-BAD" && g.message.includes("stays on trunk"),
-      ),
-    ).toBe(true);
-  });
-
-  it("singleton: a collision on the tick's own afterMerge revert surfaces as a handled outcome, not an uncaught process crash", async () => {
-    new Baton(join(fx.repo, ".flume")).wake("plan");
-
-    const collideVeto: Gate = {
-      name: "collide-veto",
-      when: "afterMerge",
-      async run({ cwd }) {
-        // Same bystander-collision simulation as the fanout case above, on
-        // the singleton's own primary-checkout revert.
-        await writeFile(
-          join(cwd, "src", "plan-out.ts"),
-          "bystander collision\n",
-        );
-        return { ok: false, message: "collide veto" };
-      },
-    };
-    const phase = makePhase({
-      name: "plan",
-      concurrency: "singleton",
-      gates: [collideVeto],
-    });
-    const chain: Chain = { phases: [phase], humanOnly: [] };
-
-    const agent = singleAgent(async (cwd) => {
-      await writeAndCommit(cwd, "src/plan-out.ts", "content\n", "plan: attempt");
-    });
-
-    const dispatcher = new Dispatcher({
-      chainLoader: staticLoader(chain),
-      repoRoot: fx.repo,
-      configDir: fx.configDir,
-      agent,
-      log: silent,
-    });
-
-    // Must resolve, not reject — an uncaught ResetKeepRefusedError here
-    // would previously crash the whole tick.
-    const outcome = await dispatcher.tick();
-
-    expect(outcome.result?.committed).toBe(false);
-    expect(outcome.noCommit).toBe("gate-revert");
-
-    // The offending commit stays on trunk — the collision refused the
-    // revert, unlike a clean afterMerge revert.
-    expect(existsSync(join(fx.repo, "src/plan-out.ts"))).toBe(true);
-    expect(await readFile(join(fx.repo, "src/plan-out.ts"), "utf8")).toBe(
-      "bystander collision\n",
-    );
-
-    const gf = outcome.verdict?.gateFailures ?? [];
-    expect(gf.some((g) => g.message === "collide veto")).toBe(true);
-    expect(gf.some((g) => g.message.includes("stays on trunk"))).toBe(true);
-  });
-});
-
-// ---------- one revert-refused sentence for both merge legs: the line the
-// carry's narration renders (`SpanNarration.revertRefused`, `src/mergeSpan.ts`)
-// read against the merge row and the failure record the same refusal produced
-// ----------
-
-describe("Dispatcher — a refused afterMerge revert reads as one sentence in both legs", () => {
-  /**
-   * The gate that makes the revert refuse: red over the merged tip, and
-   * leaving an uncommitted change on the very path the reset would have to
-   * touch, which is what `git reset --keep` refuses atomically rather than
-   * discard either writer's work (`resetKeepTo`, `src/git.ts`). That refusal
-   * is the one whose *record* composes the two shas into its own message
-   * (`unrevertableMergeFailure`, `src/tickVerdict.ts`), so a line quoting the
-   * bare refusal is distinguishable here from one quoting the record.
-   */
-  const collideVeto = (path: string): Gate => ({
-    name: "collide-veto",
-    when: "afterMerge",
-    async run({ cwd }) {
-      await writeFile(join(cwd, path), "bystander collision\n");
-      return { ok: false, message: "collide veto" };
-    },
-  });
-
-  /** A logger keeping the warnings, which is the level a refused revert narrates at. */
-  function warnLog(): { log: Logger; warn: string[] } {
-    const warn: string[] = [];
-    return {
-      warn,
-      log: { info: () => {}, warn: (l) => warn.push(l), error: () => {} },
-    };
-  }
-
-  /**
-   * The one revert-refused warning a leg logged, located by the clause every
-   * spelling of it carries. Non-vacuity before wording: a leg that logged
-   * nothing at all cannot pass as one that logged the right sentence
-   * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
-   */
-  function refusedLine(warn: string[]): string {
-    const lines = warn.filter((l) => l.includes(": revert of "));
-    expect(lines).toHaveLength(1);
-    return lines[0]!;
-  }
-
-  /**
-   * The sentence both legs share, read against the merge row and the failure
-   * record the same refusal produced. Each sha is named once and short, and
-   * the parenthetical holds the bare words the wall raised — a strict prefix
-   * of what the record carries, since the record composes the two full shas
-   * onto that same refusal. The line and the row correlate by sha, never by
-   * string.
-   */
-  function expectOneSentence(
-    line: string,
-    span: { baseSha?: string; headSha?: string },
-    recorded: string,
-  ): void {
-    const parsed =
-      /revert of ([0-9a-f]+) back to ([0-9a-f]+) refused \(([\s\S]+)\); commit stays on trunk, left for the operator/.exec(
-        line,
-      );
-    expect(parsed, line).not.toBeNull();
-    const [, merged, landedOn, refusal] = parsed!;
-    expect(merged).toBe(span.headSha?.slice(0, 8));
-    expect(landedOn).toBe(span.baseSha?.slice(0, 8));
-    // Once each, and short: with the quoted refusal lifted out — it names the
-    // reset target in full itself — the frame holds exactly one occurrence of
-    // each short sha, and so no copy of either full one.
-    const frame = line.replace(refusal!, "");
-    expect(frame.split(merged!)).toHaveLength(2);
-    expect(frame.split(landedOn!)).toHaveLength(2);
-    expect(recorded.startsWith(refusal!)).toBe(true);
-    expect(recorded).not.toBe(refusal);
-  }
-
-  it("the wave's revert-refused line names each sha once, short, and quotes the bare refusal", async () => {
-    await writePending(fx.repo, [makeEntry("COLLIDE-BAD", ["src/collide.ts"])]);
-    new Baton(join(fx.repo, ".flume")).wake("build");
-    const chain: Chain = {
-      phases: [
-        makePhase({
-          name: "build",
-          concurrency: "fanout",
-          gates: [collideVeto("src/collide.ts")],
-        }),
-      ],
-      humanOnly: [],
-    };
-    const { log, warn } = warnLog();
-    const outcome = await new Dispatcher({
-      chainLoader: staticLoader(chain),
-      repoRoot: fx.repo,
-      configDir: fx.configDir,
-      agent: fanoutAgent({
-        "collide-bad": async (cwd) => {
-          await writeAndCommit(
-            cwd,
-            "src/collide.ts",
-            "collide\n",
-            "build(COLLIDE-BAD)",
-          );
-        },
-      }),
-      log,
-    }).tick();
-
-    const mo = outcome.verdict?.mergeOutcomes.find(
-      (m) => m.entryTag === "COLLIDE-BAD",
-    );
-    expect(mo?.outcome).toBe("afterMerge-revert-refused");
-    const recorded = (outcome.verdict?.gateFailures ?? []).find(
-      (g) => g.tag === "COLLIDE-BAD" && g.message.includes("unrevertable to"),
-    );
-    expect(recorded).toBeDefined();
-
-    const line = refusedLine(warn);
-    expectOneSentence(line, mo!, recorded!.message);
-    // The wave's own subject and tail, which is all a wave adds to the shared
-    // sentence: the entry whose span this was, and that its siblings carry on.
-    expect(line.startsWith("[flume] COLLIDE-BAD: revert of ")).toBe(true);
-    expect(line.endsWith("; other entries continue")).toBe(true);
-  });
-
-  it("the singleton's revert-refused line names both shas short and quotes the bare refusal", async () => {
-    new Baton(join(fx.repo, ".flume")).wake("plan");
-    const chain: Chain = {
-      phases: [
-        makePhase({
-          name: "plan",
-          concurrency: "singleton",
-          gates: [collideVeto("src/plan-out.ts")],
-        }),
-      ],
-      humanOnly: [],
-    };
-    const { log, warn } = warnLog();
-    const outcome = await new Dispatcher({
-      chainLoader: staticLoader(chain),
-      repoRoot: fx.repo,
-      configDir: fx.configDir,
-      agent: singleAgent(async (cwd) => {
-        await writeAndCommit(
-          cwd,
-          "src/plan-out.ts",
-          "content\n",
-          "plan: attempt",
-        );
-      }),
-      log,
-    }).tick();
-
-    const mo = outcome.verdict?.mergeOutcomes.find(
-      (m) => m.outcome === "afterMerge-revert-refused",
-    );
-    expect(mo).toBeDefined();
-    const recorded = (outcome.verdict?.gateFailures ?? []).find((g) =>
-      g.message.includes("unrevertable to"),
-    );
-    expect(recorded).toBeDefined();
-
-    const line = refusedLine(warn);
-    expectOneSentence(line, mo!, recorded!.message);
-    // The phase names the span, and the sentence ends there: a singleton has
-    // no sibling entries to report on.
-    expect(line.startsWith("[flume] plan: revert of ")).toBe(true);
-    expect(line.endsWith("; commit stays on trunk, left for the operator")).toBe(
-      true,
-    );
-  });
-});
-
-// ---------- AFTERMERGE-REVERT-TIP-CHECK: a foreign commit landing atop the
-// merged span refuses the afterMerge revert instead of resetting over it
-// (spec/loop.md "Tip verify — one writer per branch, absorption at the
-// merge", "one window stays a refusal, deliberately") ----------
-
-describe("Dispatcher — afterMerge revert refuses over a foreign commit landed atop the cherry-pick", () => {
-  it("fanout: a foreign commit landing on trunk while the afterMerge gate runs refuses the revert, naming both shas, and leaves the foreign commit on trunk", async () => {
-    await writePending(fx.repo, [makeEntry("TIP-DRIFT", ["src/tip-drift.ts"])]);
-    new Baton(join(fx.repo, ".flume")).wake("build");
-
-    const foreignCommitVeto: Gate = {
-      name: "foreign-commit-veto",
-      when: "afterMerge",
-      async run({ cwd }) {
-        if (!existsSync(join(cwd, "src", "tip-drift.ts"))) {
-          return { ok: true, message: "clean" };
-        }
-        // Simulate an operator committing directly to trunk in the window
-        // between this entry's cherry-pick and this gate's own revert — a
-        // foreign commit is legal history the wave would otherwise absorb
-        // (spec/loop.md "Tip verify — one writer per branch, absorption
-        // at the merge"), but not something the afterMerge revert may
-        // reset over.
-        await writeFile(join(cwd, "src", "foreign.ts"), "foreign\n");
-        await exec("git", ["add", "."], { cwd });
-        await exec(
-          "git",
-          ["commit", "-q", "-m", "operator: foreign commit"],
-          { cwd },
-        );
-        return { ok: false, message: "foreign veto" };
-      },
-    };
-    const phase = makePhase({
-      name: "build",
-      concurrency: "fanout",
-      gates: [foreignCommitVeto],
-    });
-    const chain: Chain = { phases: [phase], humanOnly: [] };
-
-    const agent = fanoutAgent({
-      "tip-drift": async (cwd) => {
-        await writeAndCommit(
-          cwd,
-          "src/tip-drift.ts",
-          "drift\n",
-          "build(TIP-DRIFT)",
-        );
-      },
-    });
-
-    const dispatcher = new Dispatcher({
-      chainLoader: staticLoader(chain),
-      repoRoot: fx.repo,
-      configDir: fx.configDir,
-      agent,
-      log: silent,
-    });
-
-    const outcome = await dispatcher.tick();
-
-    // Nothing shipped — the entry stays pending, refused rather than reset.
-    expect(outcome.result?.committed).toBe(false);
-
-    // Both the entry's own cherry-picked commit and the foreign commit stay
-    // on trunk — the revert refused instead of resetting either away.
-    expect(existsSync(join(fx.repo, "src/tip-drift.ts"))).toBe(true);
-    expect(existsSync(join(fx.repo, "src/foreign.ts"))).toBe(true);
-
-    const onDisk = readPendingFromDisk(fx.repo);
-    expect(onDisk.map((e) => e.tag)).toEqual(["TIP-DRIFT"]);
-
-    const mo = outcome.verdict?.mergeOutcomes.find(
-      (m) => m.entryTag === "TIP-DRIFT",
-    );
-    expect(mo?.outcome).toBe("afterMerge-revert-refused");
-
-    const gf = outcome.verdict?.gateFailures ?? [];
-    expect(
-      gf.some((g) => g.tag === "TIP-DRIFT" && g.message === "foreign veto"),
-    ).toBe(true);
-    const tipRefusal = gf.find(
-      (g) =>
-        g.tag === "TIP-DRIFT" &&
-        g.message.includes("afterMerge revert refused"),
-    );
-    expect(tipRefusal).toBeDefined();
-    // Names both shas: the merged commit this call expected, and the
-    // foreign trunk tip it actually found.
-    expect(tipRefusal?.message).toMatch(/merged commit [0-9a-f]{7,40}/);
-    expect(tipRefusal?.message).toContain("trunk tip");
-  });
-
-  it("singleton: same refusal on the phase's own primary-checkout revert", async () => {
-    new Baton(join(fx.repo, ".flume")).wake("plan");
-
-    const foreignCommitVeto: Gate = {
-      name: "foreign-commit-veto",
-      when: "afterMerge",
-      async run({ cwd }) {
-        // Same foreign-commit simulation as the fanout case above, on the
-        // singleton's own primary-checkout revert.
-        await writeFile(join(cwd, "src", "foreign.ts"), "foreign\n");
-        await exec("git", ["add", "."], { cwd });
-        await exec(
-          "git",
-          ["commit", "-q", "-m", "operator: foreign commit"],
-          { cwd },
-        );
-        return { ok: false, message: "foreign veto" };
-      },
-    };
-    const phase = makePhase({
-      name: "plan",
-      concurrency: "singleton",
-      gates: [foreignCommitVeto],
-    });
-    const chain: Chain = { phases: [phase], humanOnly: [] };
-
-    const agent = singleAgent(async (cwd) => {
-      await writeAndCommit(cwd, "src/plan-out.ts", "content\n", "plan: attempt");
-    });
-
-    const dispatcher = new Dispatcher({
-      chainLoader: staticLoader(chain),
-      repoRoot: fx.repo,
-      configDir: fx.configDir,
-      agent,
-      log: silent,
-    });
-
-    const outcome = await dispatcher.tick();
-
-    expect(outcome.result?.committed).toBe(false);
-    expect(outcome.noCommit).toBe("gate-revert");
-
-    // Both the agent's own commit and the foreign commit stay on trunk — the
-    // revert refused instead of resetting either away.
-    expect(existsSync(join(fx.repo, "src/plan-out.ts"))).toBe(true);
-    expect(existsSync(join(fx.repo, "src/foreign.ts"))).toBe(true);
-
-    const gf = outcome.verdict?.gateFailures ?? [];
-    expect(gf.some((g) => g.message === "foreign veto")).toBe(true);
-    const tipRefusal = gf.find((g) =>
-      g.message.includes("afterMerge revert refused"),
-    );
-    expect(tipRefusal).toBeDefined();
-    expect(tipRefusal?.message).toMatch(/merged commit [0-9a-f]{7,40}/);
-    expect(tipRefusal?.message).toContain("trunk tip");
   });
 });
 
@@ -12532,7 +12537,7 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
     expect(await readFile(corruptEntry, "utf8")).toBe(corrupt);
   });
 
-  it("LOOP-WAVE-VERDICT-LOST-ON-LEDGER-PARSEFAILURE: a wave that cherry-picks and gates entries clean, then fails commitPendingUpdate's rewrite read, still writes a tick verdict recording the shipped tags", async () => {
+  it("LOOP-WAVE-VERDICT-LOST-ON-LEDGER-PARSEFAILURE: a wave that cherry-picks and gates entries clean, then fails commitPendingUpdate's rewrite read, still writes a tick verdict naming the entry it carried", async () => {
     const entries = [makeEntry("SHIP-A", ["src/a.ts"])];
     await writePending(fx.repo, entries);
     new Baton(join(fx.repo, ".flume")).wake("build");
@@ -12572,11 +12577,14 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
     expect(tickExitCode(outcome)).toBe(EX_MOUNT_DEAD);
     expect(await readFile(corruptEntry, "utf8")).toBe(corrupt);
 
-    // The defect this test pins: the wave's shipped tags used to vanish
-    // with the thrown PendingParseFailure instead of reaching a verdict.
+    // The defect this test pins: the wave's facts used to vanish with the
+    // thrown PendingParseFailure instead of reaching a verdict. Nothing
+    // shipped — the rewrite refused inside the candidate, so the
+    // fast-forward never ran and trunk never named the span — and the
+    // verdict says so while still naming the entry the wave carried.
     expect(outcome.verdict).toBeDefined();
-    expect(outcome.verdict?.shippedTags).toEqual(["SHIP-A"]);
-    expect(outcome.verdict?.committed).toBe(true);
+    expect(outcome.verdict?.shippedTags).toEqual([]);
+    expect(outcome.verdict?.committed).toBe(false);
     expect(outcome.verdict?.tags).toEqual(["SHIP-A"]);
     expect(outcome.verdict?.phaseName).toBe("build");
   });
@@ -12642,11 +12650,11 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
     expect(await readFile(corruptEntry, "utf8")).toBe(corrupt);
 
     // The defect this test pins: a multi-entry wave's mixed outcomes —
-    // one shipped, one declined — must both fold into the verdict carried
+    // one carried, one declined — must both fold into the verdict carried
     // on the thrown `WaveLedgerRefusal`, not just the shipped tag.
     expect(outcome.verdict).toBeDefined();
-    expect(outcome.verdict?.shippedTags).toEqual(["SHIP-A"]);
-    expect(outcome.verdict?.committed).toBe(true);
+    expect(outcome.verdict?.shippedTags).toEqual([]);
+    expect(outcome.verdict?.committed).toBe(false);
     expect(outcome.verdict?.tags).toEqual(
       expect.arrayContaining(["SHIP-A", "DECLINE-B"]),
     );
@@ -12730,7 +12738,7 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
     // summarizes a wave this way, and both halves of the wave reached it —
     // SHIP-A shipped, DECLINE-B was provisioned a worktree.
     expect(verdict?.summary).toContain("pending-ledger rewrite refused");
-    expect(verdict?.shippedTags).toEqual(["SHIP-A"]);
+    expect(verdict?.shippedTags).toEqual([]);
     expect([...(verdict?.tags ?? [])].sort()).toEqual(["DECLINE-B", "SHIP-A"]);
 
     // The defect: the decline is folded behind the refusing pick, so a
@@ -12842,7 +12850,7 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
     // Vacuity and the refusal site, as above: the shipping half really
     // shipped and the refusing half really was provisioned.
     expect(verdict?.summary).toContain("pending-ledger rewrite refused");
-    expect(verdict?.shippedTags).toEqual(["SHIP-A"]);
+    expect(verdict?.shippedTags).toEqual([]);
     expect([...(verdict?.tags ?? [])].sort()).toEqual(["REFUSE-C", "SHIP-A"]);
 
     // The defect: the render refusal is raised behind the refusing pick, into
@@ -12958,14 +12966,16 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
     // Vacuity and the refusal site: only the `WaveLedgerRefusal` leg
     // summarizes a wave this way, and both halves of the wave reached it.
     expect(verdict?.summary).toContain("pending-ledger rewrite refused");
-    expect(verdict?.shippedTags).toEqual(["SHIP-A"]);
+    expect(verdict?.shippedTags).toEqual([]);
     expect([...(verdict?.tags ?? [])].sort()).toEqual(["CARRY-D", "SHIP-A"]);
 
     // The defect: the walled leg folded CARRY-D's facts and recorded no fate
     // for its span, so the row that makes it recoverable was never written.
+    // SHIP-A earns no row at all now — its rewrite is the wall, so its
+    // candidate was discarded before the fast-forward and trunk never named
+    // the span.
     const rows = verdict?.mergeOutcomes ?? [];
     expect(rows.map((m) => `${m.entryTag}:${m.outcome}`)).toEqual([
-      "SHIP-A:merged",
       "CARRY-D:wave-walled",
     ]);
 
@@ -13094,8 +13104,9 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
    * ledger commit git refuses for a reason that is **not** a parse failure.
    *
    * The arming is an afterMerge gate that leaves a paused merge standing in
-   * the primary checkout — a `MERGE_HEAD` beside the tip, exactly the state an
-   * operator's own interrupted `git merge` or `git cherry-pick` leaves behind.
+   * the tree the ledger commit lands in — a `MERGE_HEAD` beside the tip,
+   * exactly the state an operator's own interrupted `git merge` or `git
+   * cherry-pick` leaves behind.
    * `commitPendingUpdate`'s commit is a `git commit --only` over the one named
    * ledger path, and git fatals on a partial commit while a merge is in
    * progress (measured, git 2.43). The queue's own bytes parse on both sides
@@ -13117,13 +13128,22 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
     const pauseMerge: Gate = {
       name: "pause-merge",
       when: "afterMerge",
-      async run() {
+      async run({ cwd }) {
+        // In the tree the ledger commit is made in — the merge's candidate,
+        // which is this gate's own `cwd` — and through git's own answer for
+        // where that tree's admin directory is, since a linked worktree's
+        // `.git` is a file pointing at it rather than the directory itself.
+        const { stdout: gitDir } = await exec(
+          "git",
+          ["rev-parse", "--absolute-git-dir"],
+          { cwd },
+        );
         await writeFile(
-          join(fx.repo, ".git", "MERGE_HEAD"),
-          `${await head(fx.repo)}\n`,
+          join(gitDir.trim(), "MERGE_HEAD"),
+          `${await head(cwd)}\n`,
         );
         armed = true;
-        return { ok: true, message: "merge paused in the primary checkout" };
+        return { ok: true, message: "merge paused in the merge candidate" };
       },
     };
 
@@ -13171,7 +13191,7 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
     return parsed.ok ? parsed.entries.map((e) => e.tag) : [];
   }
 
-  it("a ledger commit refusing outside a parse failure still carries the wave's shipped tags in its verdict", async () => {
+  it("a ledger commit refusing outside a parse failure still carries the wave's facts in its verdict", async () => {
     const { outcome, thrown, armed } = await waveRefusedByPausedMerge();
 
     // Vacuity pins for the arm this case exists to judge: the paused merge
@@ -13183,13 +13203,14 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
     expect(outcome?.failed).toBe(true);
     expect(await tipQueueTags()).toEqual(["SHIP-A"]);
 
-    // The claim: SHIP-A is on trunk — cherry-picked and afterMerge-gated
-    // before the ledger commit was ever attempted — so the verdict says so.
-    expect(existsSync(join(fx.repo, "src", "a.ts"))).toBe(true);
+    // The claim: nothing of SHIP-A is on trunk — its span and its ledger
+    // commit were both going to ride one fast-forward, and the commit refused
+    // first — so the verdict names the entry the wave carried and no ship.
+    expect(existsSync(join(fx.repo, "src", "a.ts"))).toBe(false);
     const verdict = outcome?.verdict;
     expect(verdict).toBeDefined();
-    expect(verdict?.shippedTags).toEqual(["SHIP-A"]);
-    expect(verdict?.committed).toBe(true);
+    expect(verdict?.shippedTags).toEqual([]);
+    expect(verdict?.committed).toBe(false);
     expect(verdict?.tags).toEqual(["SHIP-A"]);
     expect(verdict?.phaseName).toBe("build");
     // …and it is the refusal site's verdict, not a clean completion's.
@@ -13240,7 +13261,7 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
     expect(tickExitCode(outcome!)).not.toBe(EX_MOUNT_DEAD);
   });
 
-  it("a ledger-commit refusal names the queue path whose rewrite stands on disk uncommitted", async () => {
+  it("a ledger-commit refusal names the queue path and the tree whose rewrite stands uncommitted", async () => {
     const { outcome, thrown, armed } = await waveRefusedByPausedMerge();
 
     // Vacuity pins for the arm this case exists to judge. The paused merge
@@ -13250,26 +13271,27 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
     expect(outcome?.failed).toBe(true);
     // …the commit really never landed — SHIP-A is still queued at the tip…
     expect(await tipQueueTags()).toEqual(["SHIP-A"]);
-    // …and the rewrite really is standing in the tree, drained of the tag the
-    // tip still carries. Without this the message asserted below would be a
-    // claim about a file that matches its tip, which is the tip-claim arm's
-    // shape, not this one.
-    expect((readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([]);
+    // …and the primary checkout is byte-for-byte that tip, because the
+    // rewrite was written into the merge's candidate rather than here. Which
+    // is exactly why the message below has to name a tree: a reader told only
+    // the repo-relative path would come looking in this one.
+    expect((readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([
+      "SHIP-A",
+    ]);
 
-    // The claim: the refusal states that divergence itself, at the path it is
-    // standing at, rather than leaving an operator to find a modified queue in
-    // `git status` and attribute it (.claude/rules/engineering.md, "A fact the
-    // engine holds is reported, never rediscovered"). The path is git's own
-    // spelling of the ledger the chain declared — not a name a reader would
-    // have to guess a directory for.
-    expect(outcome?.summary).toContain(
-      "the rewritten queue stands on disk at .flume/plan/pending, uncommitted",
-    );
+    // The claim: the refusal states the divergence itself, at the path *and*
+    // in the tree it is standing in, rather than leaving an operator to find
+    // a modified queue and attribute it (.claude/rules/engineering.md, "A
+    // fact the engine holds is reported, never rediscovered"). The path is
+    // git's own spelling of the ledger the chain declared — not a name a
+    // reader would have to guess a directory for.
+    const refusal =
+      "the rewritten queue stands uncommitted at .flume/plan/pending in ";
+    expect(outcome?.summary).toContain(refusal);
+    expect(outcome?.summary).toContain("candidate-");
     // Both operator-facing surfaces carry it: the tick's summary above, and
     // the verdict written for the next process to read.
-    expect(outcome?.verdict?.summary).toContain(
-      "the rewritten queue stands on disk at .flume/plan/pending, uncommitted",
-    );
+    expect(outcome?.verdict?.summary).toContain(refusal);
     // …and git's own refusal is still quoted inside it, never replaced by it.
     expect(outcome?.summary).toMatch(/partial commit/);
   });
@@ -13824,7 +13846,7 @@ describe("Dispatcher fanout — a recorded ledger refusal outranks a slot leg's 
     // rather than overwriting it from a parse it never trusted.
     expect(thrown).toBeUndefined();
     expect(outcome?.failed).toBe(true);
-    expect(outcome?.verdict?.shippedTags).toEqual(["SHIP-A"]);
+    expect(outcome?.verdict?.shippedTags).toEqual([]);
     expect(await readFile(corruptEntry, "utf8")).toBe(corruptBytes);
     // The slot leg's, pinned on the arming that raised it and then read off
     // the fact the engine reports — never off a row BOOM-B is missing from: an
@@ -13901,7 +13923,7 @@ describe("Dispatcher fanout — a walled wave reports every wall it held", () =>
     // could have left absent with nothing wrong.
     expect(outcome?.failed).toBe(true);
     expect(outcome?.ledgerRefusal).toBe("parse-failure");
-    expect(outcome?.verdict?.shippedTags).toEqual(["SHIP-A"]);
+    expect(outcome?.verdict?.shippedTags).toEqual([]);
     expect(tipDenials).toBeGreaterThan(0);
 
     // The claim: a supervisor reading the handoff sees the second wall
@@ -14920,134 +14942,6 @@ describe("Dispatcher — gate-failure feedback to the retrying tick", () => {
     expect(record.gate).toBe("writable-paths");
     expect(record.failingFiles).toEqual(["outside/d.ts"]);
     expect(record).not.toHaveProperty("blamesSpan");
-  });
-
-  // A refused revert is the same refusal still being reported: the reset only
-  // ran because the gate refused, so a span the gate disowned is not
-  // answerable for the collision its revert then hit. Both refusal legs —
-  // resetKeepTo's textual collision and a foreign trunk tip — read the gate's
-  // own attribution at the one site the gate's own row reads it at.
-
-  /** The disowning refusal, delivered at afterMerge so a revert follows. */
-  const disowningMergeGate = (path: string, collide: boolean): Gate => ({
-    name: "suite",
-    when: "afterMerge",
-    async run({ cwd }) {
-      if (!existsSync(join(cwd, path))) return { ok: true, message: "clean" };
-      if (collide) {
-        // A bystander editing the exact path the revert must touch, between
-        // the cherry-pick and this gate's revert: resetKeepTo refuses.
-        await writeFile(join(cwd, path), "bystander collision\n");
-      } else {
-        // An operator committing directly to trunk in the same window: the
-        // tip moved, so the revert refuses rather than reset over it.
-        await writeFile(join(cwd, "src/foreign.ts"), "foreign\n");
-        await exec("git", ["add", "."], { cwd });
-        await exec("git", ["commit", "-q", "-m", "operator: foreign"], { cwd });
-      }
-      return {
-        ok: false,
-        message: "suite red at the base",
-        verdict: "base-red",
-        blamesSpan: false,
-      };
-    },
-  });
-
-  it("a revert refused after a gate declaring blamesSpan false records an unblamed gate failure", async () => {
-    await writePending(fx.repo, [makeEntry("STUCK", ["src/stuck.ts"])]);
-    new Baton(join(fx.repo, ".flume")).wake("build");
-
-    const outcome = await fanoutOver(
-      "STUCK",
-      disowningMergeGate("src/stuck.ts", true),
-    ).tick();
-
-    // Non-vacuity: the revert really was refused and the commit really is
-    // still on trunk. Over a clean revert both rows below would be the gate's
-    // own, and the withholding would read green with the leg never taken.
-    const mo = outcome.verdict?.mergeOutcomes.find(
-      (m) => m.entryTag === "STUCK",
-    );
-    expect(mo?.outcome).toBe("afterMerge-revert-refused");
-    expect(existsSync(join(fx.repo, "src/stuck.ts"))).toBe(true);
-
-    // Two stage failures — the gate's refusal and the revert's — and the
-    // second is the one this case exists for.
-    const gf = outcome.verdict?.gateFailures ?? [];
-    expect(gf.length).toBe(2);
-    expect(gf[0]?.message).toBe("suite red at the base");
-    expect(gf[1]?.message).toContain("stays on trunk");
-
-    // Both halves withheld on both rows (`StageFailureEntry`,
-    // src/tickVerdict.ts): the run-scoped quarantine holds no entry for a
-    // bystander collision the gate said its span did not build.
-    for (const row of gf) {
-      expect(row).not.toHaveProperty("tag");
-      expect(row).not.toHaveProperty("quarantineKey");
-    }
-
-    // The entry is still queued, exactly as after any refused revert.
-    expect(readPendingFromDisk(fx.repo).map((e) => e.tag)).toEqual(["STUCK"]);
-  });
-
-  it("a foreign trunk tip refusing a disowning gate's revert leaves the same unblamed failure", async () => {
-    await writePending(fx.repo, [makeEntry("DRIFTED", ["src/drifted.ts"])]);
-    new Baton(join(fx.repo, ".flume")).wake("build");
-
-    const outcome = await fanoutOver(
-      "DRIFTED",
-      disowningMergeGate("src/drifted.ts", false),
-    ).tick();
-
-    // Non-vacuity: the tip-moved leg, not the resetKeepTo one — the foreign
-    // commit stands and the refusal names the tip it found.
-    const mo = outcome.verdict?.mergeOutcomes.find(
-      (m) => m.entryTag === "DRIFTED",
-    );
-    expect(mo?.outcome).toBe("afterMerge-revert-refused");
-    expect(existsSync(join(fx.repo, "src/foreign.ts"))).toBe(true);
-
-    const gf = outcome.verdict?.gateFailures ?? [];
-    expect(gf.length).toBe(2);
-    expect(gf[1]?.message).toContain("afterMerge revert refused");
-    for (const row of gf) {
-      expect(row).not.toHaveProperty("tag");
-      expect(row).not.toHaveProperty("quarantineKey");
-    }
-  });
-
-  it("a gate declaring no attribution still blames both halves of a refused revert", async () => {
-    await writePending(fx.repo, [makeEntry("OWNED", ["src/owned.ts"])]);
-    new Baton(join(fx.repo, ".flume")).wake("build");
-
-    const silentMergeGate: Gate = {
-      name: "suite",
-      when: "afterMerge",
-      async run({ cwd }) {
-        if (!existsSync(join(cwd, "src/owned.ts"))) {
-          return { ok: true, message: "clean" };
-        }
-        await writeFile(join(cwd, "src/owned.ts"), "bystander collision\n");
-        return { ok: false, message: "suite red" };
-      },
-    };
-
-    const outcome = await fanoutOver("OWNED", silentMergeGate).tick();
-
-    const mo = outcome.verdict?.mergeOutcomes.find(
-      (m) => m.entryTag === "OWNED",
-    );
-    expect(mo?.outcome).toBe("afterMerge-revert-refused");
-
-    // The undeclared arm is unchanged: both rows carry both halves, so the
-    // supervisor quarantines the entry for the run as it always has.
-    const gf = outcome.verdict?.gateFailures ?? [];
-    expect(gf.length).toBe(2);
-    for (const row of gf) {
-      expect(row.tag).toBe("OWNED");
-      expect(row.quarantineKey).toMatch(/^owned@[0-9a-f]{10}$/);
-    }
   });
 });
 
@@ -18392,7 +18286,7 @@ describe("TickVerdict timings — gate and merge cost, measured not differenced"
     expect(outcome.failed).toBe(true);
     expect(outcome.ledgerRefusal).toBe("parse-failure");
     const verdict = outcome.verdict!;
-    expect(verdict.shippedTags).toEqual(["MINE"]);
+    expect(verdict.shippedTags).toEqual([]);
     expect(verdict.summary).toContain("pending-ledger rewrite refused");
     expect(verdict.gateResults).toHaveLength(3);
 
@@ -21579,12 +21473,14 @@ describe("Dispatcher — GateContext.repoRoot", () => {
     expect(commitRepoRoot).not.toBe(fx.repo);
     expect(commitRepoRoot).toContain("plan");
 
-    // afterMerge runs on the trunk after the cherry-pick lands.
-    expect(mergeRepoRoot).toBe(fx.repo);
+    // afterMerge runs on the merge's candidate, not the primary checkout.
+    expect(mergeRepoRoot).toBeDefined();
     expect(mergeRepoRoot).toBe(mergeCwd);
+    expect(mergeRepoRoot).not.toBe(fx.repo);
+    expect(mergeRepoRoot).toContain("candidate-");
   });
 
-  it("fanout tick: afterCommit gate's repoRoot is the worktree root; afterMerge gate's repoRoot is the trunk", async () => {
+  it("a span's afterMerge gates run in a candidate at the trunk tip, not in the primary checkout", async () => {
     await writePending(fx.repo, [makeEntry("RR-FANOUT", ["src/rr.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
 
@@ -21602,12 +21498,14 @@ describe("Dispatcher — GateContext.repoRoot", () => {
 
     let mergeRepoRoot: string | undefined;
     let mergeCwd: string | undefined;
+    let mergeBaseTip: string | undefined;
     const captureMerge: Gate = {
       name: "capture-merge-reporoot",
       when: "afterMerge",
       run(ctx) {
         mergeRepoRoot = ctx.repoRoot;
         mergeCwd = ctx.cwd;
+        mergeBaseTip = ctx.landedOnSha;
         return Promise.resolve({ ok: true, message: "captured" });
       },
     };
@@ -21630,6 +21528,8 @@ describe("Dispatcher — GateContext.repoRoot", () => {
       },
     });
 
+    const trunkBefore = await head(fx.repo);
+
     const dispatcher = new Dispatcher({
       chainLoader: staticLoader(chain),
       repoRoot: fx.repo,
@@ -21649,9 +21549,20 @@ describe("Dispatcher — GateContext.repoRoot", () => {
     expect(commitRepoRoot).not.toBe(fx.repo);
     expect(commitRepoRoot).toContain("rr-fanout");
 
-    // afterMerge runs on the trunk after the cherry-pick lands.
-    expect(mergeRepoRoot).toBe(fx.repo);
+    // The claim: the afterMerge gate judged a tree of its own — a candidate
+    // at the tip trunk stood at, which trunk then fast-forwarded to
+    // (`spec/worktrees.md`, *Per-entry `afterMerge` revert isolation*) — and
+    // `cwd` and `repoRoot` are that one tree (`spec/chain.md`, *What a gate
+    // receives*). Not the primary checkout, which is where the span used to
+    // be picked and judged.
+    expect(mergeRepoRoot).toBeDefined();
     expect(mergeRepoRoot).toBe(mergeCwd);
+    expect(mergeRepoRoot).not.toBe(fx.repo);
+    expect(mergeRepoRoot).toContain("candidate-");
+    // Cut at the tip trunk held before the pick, and gone by now: the carry
+    // discards the candidate on every exit, including the one that shipped.
+    expect(mergeBaseTip).toBe(trunkBefore);
+    expect(existsSync(mergeRepoRoot!)).toBe(false);
   });
 });
 
@@ -25109,12 +25020,13 @@ describe("not-shipped PriorAttempt — the chain's empty `shipped` list on the c
       log: silent,
     });
 
+    const beforeTick = await head(fx.repo);
     const outcome = await dispatcher.tick();
     const trunkTip = await head(fx.repo);
 
-    // Non-vacuity: the leg under test really ran — the commit landed on trunk
-    // (no ledger commit follows a wave that shipped nothing) and the chain's
-    // predicate declined it.
+    // Non-vacuity: the leg under test really ran — the span reached trunk
+    // through its fast-forward (no ledger commit follows a wave that shipped
+    // nothing) and the chain's predicate declined it.
     expect(outcome.result?.shippedTags).toEqual([]);
     expect(outcome.verdict?.mergeOutcomes).toEqual([
       {
@@ -25134,6 +25046,7 @@ describe("not-shipped PriorAttempt — the chain's empty `shipped` list on the c
     expect(record.mode).toBe("not-shipped");
     expect(record.mergedSha).toBe(trunkTip);
     expect(record.touchedPaths).toEqual(["src/declined.ts"]);
+    expect(beforeTick).not.toBe(trunkTip);
     // Anchored like every other variant (spec/loop.md "Every record is
     // anchored"), and carrying nothing else: the exact key set is the pin on
     // "no reason vocabulary" — a `reason`/`why` field cannot appear without
@@ -25153,7 +25066,10 @@ describe("not-shipped PriorAttempt — the chain's empty `shipped` list on the c
     expect(record.declaredAs).toBe(
       entryDeclaredKey((readPendingFromDisk(fx.repo))[0]!),
     );
-    expect(record.headSha).toBe(trunkTip);
+    // The anchor is trunk as it stood when the record was written, which is
+    // inside the candidate's window and so before the fast-forward that
+    // carried the span — `mergedSha` above is the span's own commit.
+    expect(record.headSha).toBe(beforeTick);
   });
 
   it("the next tick's `TickContext.priorAttempts` carries it, and a later clean ship clears the slot", async () => {
@@ -25201,6 +25117,7 @@ describe("not-shipped PriorAttempt — the chain's empty `shipped` list on the c
       log: silent,
     });
 
+    const beforeFirst = await head(fx.repo);
     await dispatcher.tick(); // attempt 1 → landed, declined
     const declinedSha = await head(fx.repo);
     // The entry the first attempt was declined over is still in the queue,
@@ -25227,7 +25144,10 @@ describe("not-shipped PriorAttempt — the chain's empty `shipped` list on the c
       key: "entry",
       keyedAs: slugify("DECLINED-THEN-SHIPS"),
       declaredAs: entryDeclaredKey(stillQueued[0]!),
-      headSha: declinedSha,
+      // Anchored on trunk as it stood when the record was written — inside
+      // the candidate's window, so before the fast-forward that carried the
+      // span to `mergedSha`.
+      headSha: beforeFirst,
       at: expect.any(String),
     });
     // …and the same record renders into the retry's prompt.
@@ -27570,7 +27490,9 @@ describe("Dispatcher fanout — the per-entry claim", () => {
     expect(outcome.failed).toBe(true);
     expect(outcome.ledgerRefusal).toBe("parse-failure");
     expect(await readFile(corruptEntry, "utf8")).toBe(corrupt);
-    expect(outcome.verdict?.shippedTags).toEqual(["MINE"]);
+    // Nothing shipped: the rewrite refused inside MINE's candidate, so the
+    // fast-forward never ran and trunk never named the span.
+    expect(outcome.verdict?.shippedTags).toEqual([]);
     expect(outcome.verdict?.summary).toContain(
       "pending-ledger rewrite refused",
     );
@@ -27837,13 +27759,12 @@ describe("Dispatcher fanout — the per-entry claim", () => {
     expect(wave.sawSettle).toBe(true);
     expect(wave.outcome.failed).toBe(true);
     expect(wave.outcome.ledgerRefusal).toBeDefined();
-    // Both spans reached trunk — the wall is the rewrite behind WALL-STANDS'
-    // own pick, so that slot was still open when the wave hit it and its
-    // settle is the one the wall skipped.
-    expect(wave.outcome.verdict?.shippedTags).toEqual([
-      "SETTLED-FIRST",
-      "WALL-STANDS",
-    ]);
+    // The wall is the rewrite behind WALL-STANDS' own pick, so that slot was
+    // still open when the wave hit it and its settle is the one the wall
+    // skipped.
+    // Only the first: WALL-STANDS' own rewrite is the wall, so its candidate
+    // was discarded and trunk never fast-forwarded to it.
+    expect(wave.outcome.verdict?.shippedTags).toEqual(["SETTLED-FIRST"]);
   };
 
   it("a wave that throws leaves standing the worktree and claim of a slot that had not settled", async () => {

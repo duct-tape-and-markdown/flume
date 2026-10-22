@@ -540,6 +540,80 @@ export async function withGateCheckouts<T>(
   }
 }
 
+/** Disambiguates two candidates for the same tip in one process. */
+let candidateSeq = 0;
+
+/**
+ * Run `body` over a **merge candidate** — a detached tree at `fromRef`, the
+ * tip trunk currently stands at, which a span is cherry-picked onto and the
+ * phase's `afterMerge` gates judge before trunk fast-forwards to it
+ * (`spec/worktrees.md`, *Per-entry `afterMerge` revert isolation*). The tree
+ * is removed when `body` returns, however it returns: a red gate, a
+ * conflicting pick or a throw all leave the candidate as the only thing
+ * discarded, and trunk as it was.
+ *
+ * Provisioned exactly as a build worktree is, for exactly its reasons: under
+ * the state root's worktree base so a run killed mid-merge leaves residue at
+ * the level {@link sweepStaleWorktrees} reads at the next start, stamped with
+ * the state root that planted it so that sweep removes only its own, and
+ * behind `core.longpaths` because it nests as deep as its siblings do. What
+ * it does not take is a branch: nothing but this merge ever names the
+ * candidate, and the one fast-forward reads its HEAD, so a ref here would be
+ * a second thing the reclamation could fail to remove.
+ *
+ * Reclamation is logged and swallowed, never propagated — like a gate
+ * checkout's ({@link withGateCheckouts}), and for the same reason: the
+ * merge's verdict is the tick's fact, and losing it to a locked handle in the
+ * cleanup would convert dead residue into a lost merge. The removal is
+ * attempted even when provisioning itself failed partway, because a failed
+ * `git worktree add` still leaves a directory.
+ */
+export async function withMergeCandidate<T>(
+  ctx: WorktreeContext,
+  fromRef: string,
+  body: (candidatePath: string) => Promise<T>,
+): Promise<T> {
+  // One resolution for the base, shared with `createWorktree`, the gate
+  // checkout and the startup sweep (`worktreesBase`, src/paths.ts) — the
+  // chain's declared base included.
+  const base = worktreesBase(ctx.flumeDir, ctx.declaredWorktreesBase);
+  // Bounded by construction rather than by `worktreeDirName`: no caller-
+  // supplied identifier reaches this name, so the `git worktree add` path
+  // ceiling is cleared without truncating anything. The pid and sequence are
+  // what keep two candidates for one tip — sibling runs, a wave's successive
+  // merges — in separate directories.
+  const path = join(
+    base,
+    `candidate-${fromRef.slice(0, 7)}-${process.pid}-${candidateSeq++}`,
+  );
+  await mkdir(toNamespacedPath(base), { recursive: true });
+  let planted = false;
+  try {
+    await git.pinLongPaths(ctx.repoRoot);
+    planted = true;
+    await git.addWorktree({
+      repoRoot: ctx.repoRoot,
+      path,
+      fromRef,
+      log: ctx.log,
+    });
+    // The evidence the next start's sweep removes on, written at the first
+    // moment git has an admin directory to hold it.
+    await stampWorktree(path, ctx.flumeDir);
+    return await body(path);
+  } finally {
+    if (planted) {
+      try {
+        await git.removeWorktree(ctx.repoRoot, path, ctx.log);
+      } catch (err) {
+        ctx.log.warn(
+          `[flume] could not discard the merge candidate at ${path}: ${thrownMessage(err)}`,
+        );
+      }
+    }
+  }
+}
+
 /**
  * Provision one worktree, branched `flume/<checkout>/<slug>` from `fromRef`.
  * Shared by fanout (`tag` = the entry's own tag) and singleton (`tag` = the

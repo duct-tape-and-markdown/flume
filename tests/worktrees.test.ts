@@ -356,15 +356,16 @@ describe("worktrees — the base is resolved in one place", () => {
     // defect whether or not it currently spells the same fallback.
     expect(readers).toEqual(["paths.ts"]);
 
-    // And the module's three consumers take the base from there rather than
+    // And the module's four consumers take the base from there rather than
     // rebuilding it: `createWorktree` (whose stale-slug removal runs against
-    // the path it computes), the startup sweep, and `checkoutAt` (which
-    // plants a differential gate's detached tree at the level the sweep
-    // reads). Keyed on the call, not on how the state root is currently
-    // spelled at any of the sites — the claim is that all three reach the
+    // the path it computes), the startup sweep, `checkoutAt` (which plants a
+    // differential gate's detached tree at the level the sweep reads), and
+    // `withMergeCandidate` (which plants a merge's candidate at that same
+    // level). Keyed on the call, not on how the state root is currently
+    // spelled at any of the sites — the claim is that all four reach the
     // resolver, not which field holds their root.
     const worktrees = sources.get("worktrees.ts")!;
-    expect(worktrees.match(/worktreesBase\(/g) ?? []).toHaveLength(3);
+    expect(worktrees.match(/worktreesBase\(/g) ?? []).toHaveLength(4);
 
     // No hand-rolled default survives beside them — read over the module's
     // declarations, with its prose cut out. The module explains the rule in
@@ -377,7 +378,7 @@ describe("worktrees — the base is resolved in one place", () => {
       .replace(/(^|[^:])\/\/.*$/gm, "$1");
     // Vacuity: the cut left every call standing, so the negative runs over the
     // declarations it is about rather than over an emptied string.
-    expect(declarations.match(/worktreesBase\(/g) ?? []).toHaveLength(3);
+    expect(declarations.match(/worktreesBase\(/g) ?? []).toHaveLength(4);
     expect(declarations).not.toMatch(/join\([^)]*[Ff]lumeDir,\s*"worktrees"\)/);
   });
 });

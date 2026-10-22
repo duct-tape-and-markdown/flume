@@ -847,18 +847,14 @@ describe("flume tick — the tick verdict on disk after a ledger-rewrite Pending
         };
 
         expect(verdict.phaseName).toBe("build");
-        expect(verdict.committed).toBe(true);
-        expect(verdict.shippedTags).toEqual(["SHIP-A"]);
+        // Nothing shipped: the rewrite refused inside SHIP-A's candidate, so
+        // the fast-forward never ran and trunk never named the span. Both
+        // entries still reach the artifact, which is what this pins.
+        expect(verdict.committed).toBe(false);
+        expect(verdict.shippedTags).toEqual([]);
         expect([...verdict.tags].sort()).toEqual(["DECLINE-B", "SHIP-A"]);
         expect(verdict.declined).toBe(true);
-        expect(verdict.mergeOutcomes).toEqual([
-          {
-            entryTag: "SHIP-A",
-            outcome: "merged",
-            baseSha: expect.stringMatching(/^[0-9a-f]{40}$/),
-            headSha: expect.stringMatching(/^[0-9a-f]{40}$/),
-          },
-        ]);
+        expect(verdict.mergeOutcomes).toEqual([]);
       } finally {
         await repo.cleanup();
       }

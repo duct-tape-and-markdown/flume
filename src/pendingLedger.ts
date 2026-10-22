@@ -35,7 +35,14 @@ import { isDirectoryOrAbsentUnder } from "./fsProbe.js";
 import type { GateContext } from "./Gate.js";
 import * as git from "./git.js";
 import type { Logger } from "./log.js";
-import { escapesRoot, gitPath, matchesAny, namespacedJoin } from "./paths.js";
+import {
+  computeStateRootRel,
+  escapesRoot,
+  gitPath,
+  matchesAny,
+  namespacedJoin,
+  rebaseOntoTree,
+} from "./paths.js";
 import {
   descendantsOf,
   ENTRY_FILE_EXT,
@@ -154,6 +161,42 @@ function pendingDirRelAt(
 ): string | undefined {
   if (escapesRoot(repoRoot, pendingDir)) return undefined;
   return gitPath(relative(repoRoot, pendingDir));
+}
+
+/**
+ * This ledger context re-resolved against the tree {@link
+ * commitPendingUpdate} is landing its rewrite in: a merge's candidate, the
+ * tree trunk is about to fast-forward to (`spec/worktrees.md`, *Per-entry
+ * `afterMerge` revert isolation*). The rewrite then derives from, writes into
+ * and commits in **that** tree, which is what puts the ledger commit on the
+ * same tip as the span it ships so the two reach trunk in one move.
+ *
+ * The derivation moves with the write, and must: the span that landed on the
+ * candidate may itself have changed the queue — a plan span files entries, a
+ * span may retire its own file — and a rewrite derived from one tree and
+ * committed into another would stage a removal already made or re-file an
+ * entry the span deleted.
+ *
+ * Both roots move or neither does. {@link readQueueOnDisk}'s descent runs
+ * from the state root down to the dock, so rebasing the dock alone would hand
+ * it a descent that no longer reaches; and a dock relocated outside the repo
+ * has no mirror in any checkout and no commit to land either way
+ * ({@link PendingRewriteResult}'s `dock-outside-repo`), so it passes through
+ * untouched and the rewrite writes the dock itself.
+ */
+function ledgerIn(
+  ctx: PendingLedgerContext,
+  landing: string | undefined,
+): PendingLedgerContext {
+  const dockRel = pendingDirRel(ctx);
+  if (landing === undefined || dockRel === undefined) return ctx;
+  const stateRel = computeStateRootRel(ctx.repoRoot, ctx.flumeDir);
+  return {
+    ...ctx,
+    repoRoot: landing,
+    flumeDir: rebaseOntoTree(landing, ctx.flumeDir, stateRel),
+    pendingDir: join(landing, dockRel),
+  };
 }
 
 /**
@@ -668,11 +711,20 @@ export type PendingRewriteResult = {
  * out which happened from a file's own mtime.
  */
 export async function commitPendingUpdate(
-  ctx: PendingLedgerContext,
+  primary: PendingLedgerContext,
   shippedTags: string[],
   mergeOutcomes: readonly TickVerdictMergeOutcome[],
   partitionIgnore: string[],
+  /**
+   * The tree the rewrite is derived from, written into and committed in
+   * ({@link ledgerIn}) — a merge's candidate, so its commit rides the
+   * fast-forward that carries the span it ships. Omitted takes the primary
+   * checkout, which is where a ledger commit with no candidate behind it
+   * lands.
+   */
+  landing?: string,
 ): Promise<PendingRewriteResult> {
+  const ctx = ledgerIn(primary, landing);
   // Footprint content sources from the wave's own TickVerdict
   // record (mergeOutcomes) rather than a separately maintained map — a
   // view over the same facts `tick()` persists, not a second capture.
@@ -776,8 +828,11 @@ export async function commitPendingUpdate(
     // disk, never a write with no commit behind it. Shipped entries this wave
     // already cherry-picked stay shipped regardless — only the ledger update
     // itself is refused.
+    // Asked of the **primary** checkout, never of the landing tree: the claim
+    // is a statement about the ref trunk is on, and a candidate is detached,
+    // so a claim read there would answer "unclaimed" for every merge.
     const foreignClaim = await liveForeignClaimPid(
-      ctx.repoRoot,
+      primary.repoRoot,
       ctx.ownTipClaimPid,
     );
     if (foreignClaim !== null) {
@@ -822,10 +877,13 @@ export async function commitPendingUpdate(
       : `chore(flume): record merge-failure footprints for ${footprintTags.join(", ")}`);
   // The one refusal on this call that is reached **after** the writes, so the
   // only one whose report has a disk state to state: the rewrite is sitting in
-  // the tree with no commit owning it. Every cause git refuses this partial
-  // commit for — a paused merge or cherry-pick in the primary checkout, a lost
-  // `index.lock`, a disk error — leaves those same files there, so the fact is
-  // stated off the ordering in hand rather than keyed on which cause it was
+  // the tree with no commit owning it, and the report names which tree — a
+  // merge's candidate is discarded by its carry, so an operator told only the
+  // dock's repo-relative path would go looking in the wrong checkout. Every
+  // cause git refuses this partial commit for — a paused merge or cherry-pick
+  // in the primary checkout, a lost `index.lock`, a disk error — leaves those
+  // same files there, so the fact is stated off the ordering in hand rather
+  // than keyed on which cause it was
   // (`.claude/rules/engine-boundary.md`, *Told, not inferred*). Without it the
   // refusal reaches an operator as git's sentence alone, and the modified
   // queue in `git status` beside it is theirs to attribute
@@ -837,8 +895,8 @@ export async function commitPendingUpdate(
     sha = await git.commitPaths({ cwd: ctx.repoRoot, message, paths });
   } catch (err) {
     throw new Error(
-      `the rewritten queue stands on disk at ${reportedPendingDir(ctx)}, ` +
-        `uncommitted — the pending-ledger commit refused: ` +
+      `the rewritten queue stands uncommitted at ${reportedPendingDir(ctx)} ` +
+        `in ${ctx.repoRoot} — the pending-ledger commit refused: ` +
         thrownMessage(err),
       { cause: err },
     );

@@ -381,18 +381,20 @@ export async function runSingleton(
   if (attempt.committed) {
     // spec/loop.md "The ship lock and the worktree lock — sibling ticks take
     // turns at git": a singleton's merge span is the wave's over a batch of
-    // one — the pick onto trunk, the `afterMerge` judges over the merged
-    // tree, and the revert that drops it again. No ledger rewrite rides it
-    // (a singleton ships no queue entry), so the span closes where the
-    // afterMerge stage does. A sibling tick holding the lock is waited on,
-    // never refused (`spec/loop.md`, *Tip verify — one writer per branch,
-    // absorption at the merge*).
+    // one — the candidate the span is picked onto, the `afterMerge` judges
+    // over it, and the one fast-forward that moves trunk to it. No ledger
+    // rewrite rides it (a singleton ships no queue entry), so its landing step
+    // has nothing to do and the span closes where the afterMerge stage does. A
+    // sibling tick holding the lock is waited on, never refused
+    // (`spec/loop.md`, *Tip verify — one writer per branch, absorption at the
+    // merge*).
     //
     // spec/loop.md "The tick verdict — one facts artifact": the merge row's
     // milliseconds are this whole span — the lock a sibling may still hold,
-    // the pick, the afterMerge gates, and the revert that may follow — with
-    // the gate rows beside it as its breakdown. No `entryTag`: a singleton
-    // phase carries no entry, exactly as its merge-outcome row carries none.
+    // the candidate, the pick, the afterMerge gates, and the fast-forward —
+    // with the gate rows beside it as its breakdown. No `entryTag`: a
+    // singleton phase carries no entry, exactly as its merge-outcome row
+    // carries none.
     const mergeElapsed = startTiming();
     const shipLock = await git.acquireShipLock(repoRoot, leg.log);
     try {
@@ -416,6 +418,10 @@ export async function runSingleton(
           gateResults.push(row);
           timings.push({ kind: "gate", gate: row.gate, ms });
         },
+        // Nothing to land on the candidate: a singleton ships no queue entry,
+        // so the span itself is the whole of what the fast-forward carries
+        // (spec/worktrees.md, *Singleton runs in a worktree*).
+        land: async () => undefined,
         // This leg's own vocabulary: the phase names the span, and a refusal
         // leaves a commit on a worktree branch rather than an entry in a
         // queue, because a singleton has no entry to report on at all.
@@ -427,9 +433,9 @@ export async function runSingleton(
           absorbed: (shas) =>
             `[flume] ${phase.name}: trunk already held ${shas.map((sha) => sha.slice(0, 8)).join(", ")} of ${spanBase.slice(0, 8)}..${spanHead.slice(0, 8)}; absorbed, not a conflict`,
           gateFailed: (gate) =>
-            `[flume] afterMerge gate '${gate}' failed for ${phase.name}; reverting`,
-          revertRefused: ({ mergedSha, landedOnSha, refusal }) =>
-            `[flume] ${phase.name}: revert of ${mergedSha.slice(0, 8)} back to ${landedOnSha.slice(0, 8)} refused (${refusal}); commit stays on trunk, left for the operator`,
+            `[flume] afterMerge gate '${gate}' failed for ${phase.name}; discarding the candidate, trunk unchanged`,
+          fastForwardRefused: ({ candidateSha, landedOnSha, refusal }) =>
+            `[flume] ${phase.name}: fast-forward of trunk from ${landedOnSha.slice(0, 8)} to candidate ${candidateSha.slice(0, 8)} refused (${refusal}); trunk unchanged, commit stays on the worktree branch, retried next tick`,
           merged: (mergedSha, landedOnSha) =>
             mergedSha === landedOnSha
               ? `[flume] ${phase.name}: trunk already holds the whole span ${spanBase.slice(0, 8)}..${spanHead.slice(0, 8)}; merged with no commit to add`
@@ -458,22 +464,17 @@ export async function runSingleton(
           baseSha: spanBase,
           headSha: spanHead,
         });
-      } else if (
-        carried.fate === "afterMerge-reverted" ||
-        carried.fate === "afterMerge-revert-refused"
-      ) {
-        // Unblamed, both of them: a singleton has no entry to quarantine, so
-        // the records fall to the consecutive-failure backstop alone — the
-        // shape every failure this leg records already takes (`GateFailure`,
+      } else if (carried.fate === "afterMerge-reverted") {
+        // Unblamed: a singleton has no entry to quarantine, so the record
+        // falls to the consecutive-failure backstop alone — the shape every
+        // failure this leg records already takes (`GateFailure`,
         // `src/tickVerdict.ts`).
         noCommit = "gate-revert";
         gateFailures.push(carried.gateFailure);
-        if (carried.fate === "afterMerge-revert-refused")
-          gateFailures.push(carried.failure);
-        // The span that reached trunk, whether the revert landed or was
-        // refused. Its base is the tip the pick landed onto, not the span's own
-        // base — `headSha` names the trunk-side commit, and a span row's two
-        // shas always bound the same range.
+        // The span the pick put on the candidate the gates judged. Its base is
+        // the tip that candidate was cut at, not the span's own base —
+        // `headSha` names the judged commit, and a span row's two shas always
+        // bound the same range.
         mergeOutcomes.push({
           outcome: carried.fate,
           footprint: carried.touchedPaths,
@@ -499,9 +500,9 @@ export async function runSingleton(
         // *and* no sibling can have moved it.
         //
         // The carry's own merged sha rather than a second read of the ref: it
-        // was read off trunk after the pick (`carryMergeSpan`,
-        // `src/mergeSpan.ts`), and a singleton lands no ledger commit behind
-        // it, so nothing has moved the tip since
+        // is the candidate tip the gates judged and trunk fast-forwarded to
+        // (`carryMergeSpan`, `src/mergeSpan.ts`), and a singleton lands no
+        // ledger commit behind it, so nothing has moved the tip since
         // (`.claude/rules/engineering.md`, *Derived state is computed, never
         // restated beside its source*). Set on the absorbed span too, where
         // the two shas are equal and `committed` stays false: the span is on
