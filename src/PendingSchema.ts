@@ -992,14 +992,21 @@ function queueForestErrors(
   }
 
   /**
-   * The `blockedBy` edges the containment arm below refuses, keyed by the
-   * gate field their author wrote — so the cycle arm after it can drop them
-   * rather than refuse one edge twice. A containment edge closes a cycle in
-   * the *effective* graph by construction: the descendant inherits the gate
-   * naming it, which is the half of the containment reason the refusal
-   * already states ({@link CONTAINMENT_BLOCKED_BY_WHY}).
+   * The `blockedBy` edges the scope arms below refuse, keyed by the gate
+   * field their author wrote — so the cycle arm after them can drop them
+   * rather than refuse one edge twice. The key records *that* an arm refused
+   * the edge and never which arm did: a refused edge is one its author must
+   * cut whatever closed on it, and the cut is the same field either way, so
+   * neither arm is the special case (`.claude/rules/engineering.md`, *The fix
+   * lands at the mechanism*).
+   *
+   * Both arms can refuse an edge a cycle also runs through. A containment
+   * edge does so by construction — the descendant inherits the gate naming
+   * it, which is the half of the containment reason the refusal already
+   * states ({@link CONTAINMENT_BLOCKED_BY_WHY}) — and a step reaching outside
+   * its own work entry closes one whenever the step it names reaches back.
    */
-  const containmentRefused = new Set<string>();
+  const refusedEdges = new Set<string>();
   const edgeKey = (declarer: string, index: number): string =>
     `${declarer}\u0000${index}`;
 
@@ -1032,13 +1039,19 @@ function queueForestErrors(
      */
     const own = entry.kind === "step" ? workEntryOf(entry) : undefined;
     entry.gate.tags.forEach((tag, index) => {
-      const path = `gate.tags.${index}`;
+      /**
+       * One edge, one refusal: every arm that refuses this edge withholds it
+       * through the one door, so an author reading the field is handed the
+       * scope it can act on and not that scope and a loop the same cut
+       * already opens.
+       */
+      const refuseEdge = (message: string): void => {
+        refusedEdges.add(edgeKey(entry.tag, index));
+        refuse(entry, `gate.tags.${index}`, message);
+      };
       const relation = containment.get(tag);
       if (relation !== undefined) {
-        containmentRefused.add(edgeKey(entry.tag, index));
-        refuse(
-          entry,
-          path,
+        refuseEdge(
           `${CONTAINMENT_BLOCKED_BY_SCOPE}, and "${tag}" ${relation}; ` +
             `${CONTAINMENT_BLOCKED_BY_WHY}`,
         );
@@ -1046,9 +1059,7 @@ function queueForestErrors(
       }
       if (entry.kind !== "step") return;
       const outside = (what: string): void =>
-        refuse(
-          entry,
-          path,
+        refuseEdge(
           `${STEP_BLOCKED_BY_SCOPE}, and "${tag}" ${what}; ` +
             `${STEP_BLOCKED_BY_ESCAPE}`,
         );
@@ -1094,8 +1105,7 @@ function queueForestErrors(
             : [],
         )
         .filter(
-          (edge) =>
-            !containmentRefused.has(edgeKey(edge.declarer.tag, edge.index)),
+          (edge) => !refusedEdges.has(edgeKey(edge.declarer.tag, edge.index)),
         ),
     ]),
   );
@@ -1167,10 +1177,11 @@ interface BlockerEdge {
  * gates runs through entries whose own gate is open, so a search over
  * declared edges alone leads nowhere back from any of them.
  *
- * An edge *into* its declarer's containment is refused on its own terms
- * ({@link CONTAINMENT_BLOCKED_BY_SCOPE}) and the caller withholds it from the
- * graph, so the one closing edge the containment rule owns is not refused
- * twice.
+ * An edge one of the caller's scope rules already refused — reaching into its
+ * declarer's containment ({@link CONTAINMENT_BLOCKED_BY_SCOPE}), or out of a
+ * step's own work entry ({@link STEP_BLOCKED_BY_SCOPE}) — is withheld from
+ * the graph by the caller, so an edge whose author has already been handed
+ * the cut is not refused a second time here.
  *
  * A tag naming no entry in the queue is **not** an edge here and not a
  * finding: a blocker outside the queue has already shipped by the membership

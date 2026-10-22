@@ -1773,6 +1773,140 @@ describe("the queue's forest — the rules a whole listing keeps (spec/pending.m
     expect(open.entries).toHaveLength(4);
   });
 
+  it("two steps of different work entries blocked on each other draw one refusal per edge", () => {
+    // Each edge reaches outside its declarer's work entry *and* closes a
+    // cycle, and the author has one field to cut either way: the scope
+    // refusal names it, and the cycle search drops every edge a scope arm
+    // already refused rather than naming the same field twice.
+    const crossed = [
+      forestEntry("WORK-ONE", "work"),
+      forestEntry("STEP-ONE", "step", "WORK-ONE", {
+        kind: "blockedBy",
+        tags: ["STEP-TWO"],
+      }),
+      forestEntry("WORK-TWO", "work"),
+      forestEntry("STEP-TWO", "step", "WORK-TWO", {
+        kind: "blockedBy",
+        tags: ["STEP-ONE"],
+      }),
+    ];
+    const result = parseQueue(crossed);
+    expect(result.ok).toBe(false);
+    // All-or-nothing over the directory, as for every other forest defect.
+    expect(result.entries).toEqual([]);
+    // Two edges, two findings, each in the file of the author who wrote the
+    // field — and nothing else, which is the whole claim.
+    expect(
+      result.errors.map((e) => `[${e.file}] ${e.path}: ${e.message}`),
+    ).toHaveLength(2);
+    expect(result.errors.map((e) => `[${e.file}] ${e.path}`).sort()).toEqual([
+      `[${entryFileName("STEP-ONE")}] gate.tags.0`,
+      `[${entryFileName("STEP-TWO")}] gate.tags.0`,
+    ]);
+    // The reason each carries is the scope its author can act on, and the
+    // blocker it names: a producer handed the loop as well would be told to
+    // make the same cut twice.
+    for (const error of result.errors) {
+      expect(error.message).toContain(
+        "a step's blockedBy names only steps of the same work entry",
+      );
+      expect(error.message).toContain("is a step of");
+    }
+
+    // Non-vacuity: the same four entries with each step waiting on a sibling
+    // of its own work entry parse, so what was refused is the reach across
+    // work entries and not two steps carrying a blockedBy at all.
+    const inside = parseQueue([
+      forestEntry("WORK-ONE", "work"),
+      forestEntry("SIBLING-ONE", "step", "WORK-ONE"),
+      forestEntry("STEP-ONE", "step", "WORK-ONE", {
+        kind: "blockedBy",
+        tags: ["SIBLING-ONE"],
+      }),
+      forestEntry("WORK-TWO", "work"),
+      forestEntry("SIBLING-TWO", "step", "WORK-TWO"),
+      forestEntry("STEP-TWO", "step", "WORK-TWO", {
+        kind: "blockedBy",
+        tags: ["SIBLING-TWO"],
+      }),
+    ]);
+    expect(inside.ok, JSON.stringify(inside.errors)).toBe(true);
+    expect(inside.entries).toHaveLength(6);
+  });
+
+  it("a step blocked on a step of another work entry is refused where no cycle closes", () => {
+    // The step scope on its own, with nothing waiting back: one refusal,
+    // stating the scope and where the wider dependency is declared instead.
+    const error = soleForestError([
+      forestEntry("WORK-A", "work"),
+      forestEntry("STEP-A", "step", "WORK-A"),
+      forestEntry("WORK-B", "work"),
+      forestEntry("STEP-B", "step", "WORK-B", {
+        kind: "blockedBy",
+        tags: ["STEP-A"],
+      }),
+    ]);
+    expect(error.file).toBe(entryFileName("STEP-B"));
+    expect(error.path).toBe("gate.tags.0");
+    expect(error.message).toContain(
+      "a step's blockedBy names only steps of the same work entry",
+    );
+    expect(error.message).toContain('"STEP-A" is a step of "WORK-A"');
+
+    // Non-vacuity: the same step waiting on a sibling step of its own work
+    // entry parses, so what was refused is the reach across work entries.
+    expect(
+      parseQueue([
+        forestEntry("WORK-A", "work"),
+        forestEntry("STEP-A", "step", "WORK-A"),
+        forestEntry("WORK-B", "work"),
+        forestEntry("SIBLING-B", "step", "WORK-B"),
+        forestEntry("STEP-B", "step", "WORK-B", {
+          kind: "blockedBy",
+          tags: ["SIBLING-B"],
+        }),
+      ]).ok,
+    ).toBe(true);
+  });
+
+  it("a containment edge that closes a cycle draws one refusal", () => {
+    // A group waiting on its own descendant is refused by the containment
+    // rule, and the very same edge closes a cycle in the effective graph:
+    // the descendant inherits the gate naming it. One field, one refusal.
+    const error = soleForestError([
+      forestEntry("THE-GROUP", "group", undefined, {
+        kind: "blockedBy",
+        tags: ["UNDER-IT"],
+      }),
+      forestEntry("UNDER-IT", "work", "THE-GROUP"),
+    ]);
+    expect(error.file).toBe(entryFileName("THE-GROUP"));
+    expect(error.path).toBe("gate.tags.0");
+    expect(error.message).toContain(
+      "no entry's blockedBy reaches into its own containment",
+    );
+
+    // Non-vacuity on the cycle: the search does read a loop standing in an
+    // inherited gate — the same group waiting on an outside entry that waits
+    // on its descendant draws a cycle refusal at each edge — so the single
+    // refusal above is the withholding and not a search that led nowhere.
+    const seen = parseQueue([
+      forestEntry("THE-GROUP", "group", undefined, {
+        kind: "blockedBy",
+        tags: ["OUTSIDE-WORK"],
+      }),
+      forestEntry("UNDER-IT", "work", "THE-GROUP"),
+      forestEntry("OUTSIDE-WORK", "work", undefined, {
+        kind: "blockedBy",
+        tags: ["UNDER-IT"],
+      }),
+    ]);
+    expect(seen.errors).toHaveLength(2);
+    for (const cycle of seen.errors) {
+      expect(cycle.message).toContain("blocked by");
+    }
+  });
+
   it("a blockedBy edge that crosses containment without closing on itself is admitted", () => {
     // The containment rule bounds an edge into the declarer's *own*
     // containment. An edge reaching into somebody else's is a dependency on
