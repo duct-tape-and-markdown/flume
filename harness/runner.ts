@@ -148,9 +148,12 @@ export interface Runner {
    *
    * What the suite is belongs to the consumer, so this operation takes no
    * selection and adds none: whatever it hands its tool beyond the
-   * consumer's declared scope is what *reading* the run needs, where the
-   * report lands and nothing that widens or narrows the set
-   * (`spec/harness.md`, *The runner interface*).
+   * consumer's declared scope is what *reading* the run needs — where the
+   * report is written, which the runner **tells** its tool rather than finds
+   * afterwards, and nothing that widens or narrows the set
+   * (`spec/harness.md`, *The runner interface*). A location told is a
+   * location that holds when the tool starts printing something else there
+   * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
    */
   run(names: readonly string[], cwd: string): Promise<RunResult>;
   /**

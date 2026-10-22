@@ -34,7 +34,7 @@
 
 import { existsSync } from "node:fs";
 import { chmod, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
-import { basename, dirname, join, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -55,7 +55,7 @@ import {
 } from "../harness/index.ts";
 import { captureRun } from "../harness/toolRun.ts";
 import { buildFlumeApi, type FlumeApi } from "../src/flumeApi.ts";
-import { worktreesBase } from "../src/paths.ts";
+import { escapesRoot, worktreesBase } from "../src/paths.ts";
 import { withGateCheckouts } from "../src/worktrees.ts";
 
 import { filesUnder, relPath } from "./helpers/repoProgram.ts";
@@ -238,6 +238,51 @@ appendFileSync(log, JSON.stringify(args) + "\\n");
 const run = spawnSync(command, args, { stdio: "inherit" });
 process.exit(run.status ?? 1);
 `;
+
+/**
+ * The one line the swallowing stand-in below leaves on stdout, stated here
+ * and interpolated into it, so the premise a case asserts and the script that
+ * produces it are one string (`.claude/rules/engineering.md`, *Derived state
+ * is computed, never restated beside its source*).
+ */
+const SWALLOWED_STDOUT = "a plugin printed this instead of the report\n";
+
+/**
+ * A stand-in for the vitest binary that forwards to the real one and
+ * **swallows its stdout**, printing a line of its own instead — a tool whose
+ * report never reaches the stream the runner captures, which is what a
+ * reporter writing to a file of its own by default, or a plugin printing over
+ * the report, leaves the reader.
+ *
+ * The real vitest behind it, so the report the reader finds at the told file
+ * is one vitest actually wrote (`.claude/rules/engineering.md`, *A seam gate
+ * reads what the real writer wrote*). A failing forward replays its stderr,
+ * so a run that died says why instead of only reddening the assertion below.
+ */
+const SWALLOWING = `import { spawnSync } from "node:child_process";
+
+const [command, ...args] = process.argv.slice(2);
+const run = spawnSync(command, args, { stdio: ["ignore", "pipe", "pipe"], encoding: "utf8" });
+if (run.status !== 0) process.stderr.write(run.stderr ?? "");
+process.stdout.write(${JSON.stringify(SWALLOWED_STDOUT)});
+process.exit(run.status ?? 1);
+`;
+
+/**
+ * The file a recorded spawn told vitest to write its report to. Read off the
+ * spawn, never composed: the path is the runner's own — a temp file it takes
+ * away again once the run has been read — so a case asserting the arguments
+ * asks the recording which file it named.
+ */
+const toldReport = (args: readonly string[]): string => {
+  const flag = args.find((a) => a.startsWith("--outputFile="));
+  if (flag === undefined) {
+    throw new Error(
+      `the recorded spawn named no report file: ${JSON.stringify(args)}`,
+    );
+  }
+  return flag.slice("--outputFile=".length);
+};
 
 /** One recording stand-in: what a case declares, and what it observed. */
 interface Recording {
@@ -596,13 +641,18 @@ describe("the vitest runner", () => {
       expect(base.names[0]!.carried).toBe(true);
 
       // Every run, not just the first: both operations spawn with the scope
-      // the declaration stated, immediately after the one flag the runner
-      // adds for itself.
+      // the declaration stated, immediately after the two flags the runner
+      // adds for its own reading — the reporter, and the file it told vitest
+      // to write the report to.
       const spawns = await rec.spawns();
       expect(spawns).toHaveLength(2);
       for (const args of spawns) {
         const appended = args.slice(rec.reaching.length);
-        expect(appended.slice(0, 1 + SCOPE.length)).toEqual(["--reporter=json", ...SCOPE]);
+        expect(appended.slice(0, 2 + SCOPE.length)).toEqual([
+          "--reporter=json",
+          `--outputFile=${toldReport(appended)}`,
+          ...SCOPE,
+        ]);
       }
     } finally {
       await rm(rec.dir, { recursive: true, force: true });
@@ -635,6 +685,7 @@ describe("the vitest runner", () => {
       expect(spawns).toHaveLength(1);
       expect(spawns[0]!.slice(rec.reaching.length)).toEqual([
         "--reporter=json",
+        `--outputFile=${toldReport(spawns[0]!)}`,
         ...SCOPE,
         "tests/widget.test.ts",
       ]);
@@ -643,7 +694,7 @@ describe("the vitest runner", () => {
     }
   });
 
-  it("the vitest runner appends nothing but the reporter flag to a declared invocation", async () => {
+  it("the vitest runner appends nothing but what reading the run needs to a declared invocation", async () => {
     const rec = await recordingVitest("bare-invocation", fixture);
     try {
       const r = await vitestRunner({ invoke: rec.invoke })(ctx).run(
@@ -656,11 +707,23 @@ describe("the vitest runner", () => {
       expect(r.names[0]!.carried).toBe(true);
 
       // A consumer stating no scope gets the invocation it declared plus the
-      // one flag reading the run needs — nothing that widens or narrows what
+      // two flags reading the run needs — nothing that widens or narrows what
       // its vitest config collects.
       const spawns = await rec.spawns();
       expect(spawns).toHaveLength(1);
-      expect(spawns[0]).toEqual([...rec.reaching, "--reporter=json"]);
+      const file = toldReport(spawns[0]!);
+      expect(spawns[0]).toEqual([
+        ...rec.reaching,
+        "--reporter=json",
+        `--outputFile=${file}`,
+      ]);
+
+      // And the file is the runner's own: absolute, outside the tree the run
+      // happened in — a report written beside the consumer's suite is a file
+      // it never asked for — and gone again now the run has been read.
+      expect(isAbsolute(file)).toBe(true);
+      expect(escapesRoot(fixture, file)).toBe(true);
+      expect(existsSync(file)).toBe(false);
     } finally {
       await rm(rec.dir, { recursive: true, force: true });
     }
@@ -960,6 +1023,47 @@ describe("the vitest runner", () => {
     }
   }, SPAWN_BUDGET_MS);
 
+  it("the vitest runner reads its report from the file it told vitest to write", async () => {
+    const dir = await mkTempDir("flume-harness-runner-swallowed-");
+    try {
+      const script = join(dir, "swallow.mjs");
+      await writeFile(script, SWALLOWING);
+      const invoke = (cwd: string): VitestInvocation => {
+        const real = resolveVitest(cwd);
+        return { command: process.execPath, args: [script, real.command, ...real.args] };
+      };
+
+      // The premise, through the same stand-in the run below goes through and
+      // with the reporter flag the pre-fix runner passed alone: everything
+      // vitest printed is swallowed, so the stream the runner captures holds
+      // the stand-in's own line and no report at all.
+      const probe = invoke(fixture);
+      const captured = await captureRun(
+        probe.command,
+        [...probe.args, "--reporter=json"],
+        fixture,
+      );
+      expect(captured.status).toBe(0);
+      expect(captured.stdout).toBe(SWALLOWED_STDOUT);
+
+      const r = await vitestRunner({ invoke })(ctx).run(
+        ["carries the merged widget"],
+        fixture,
+      );
+
+      // So the only copy of the report left was the one at the file the
+      // runner named, and the facts below came out of it: the line carried,
+      // the counts populated, nothing failed.
+      expect(r.names[0]!.carried).toBe(true);
+      expect(r.names[0]!.files).toEqual(["tests/widget.test.ts"]);
+      expect(r.passed).toBeGreaterThan(0);
+      expect(r.ok).toBe(true);
+      expect(r.failures).toEqual([]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, SPAWN_BUDGET_MS);
+
   it("refuses a run that produced no report rather than reading one as empty", async () => {
     const silent = vitestRunner({
       invoke: () => ({ command: process.execPath, args: ["-e", ""] }),
@@ -967,7 +1071,7 @@ describe("the vitest runner", () => {
     await expect(silent.run(["anything"], fixture)).rejects.toThrow(/wrote no JSON report/);
   }, SPAWN_BUDGET_MS);
 
-  it("refuses a report claiming success when vitest exited non-zero", async () => {
+  it("a report claiming success over a non-zero exit is still refused", async () => {
     // The report is computed from the files that reported; the status is the
     // whole process's. Here they disagree, and reading the report alone would
     // hand a judge a green suite over a run that failed.
@@ -981,14 +1085,14 @@ describe("the vitest runner", () => {
         );
 
       // The arm that fired, read off the refusal rather than assumed: the
-      // status vitest left, the tree it ran in, and a report tail claiming
-      // the success this refusal is about — not a missing report, the other
-      // way this reader throws.
+      // status vitest left, the tree it ran in, and the claim the report it
+      // was told to write made — not a missing report, the other way this
+      // reader throws. The claim is stated rather than quoted, the told file
+      // being taken away with the run it reported on.
       expect(refusal).toBeInstanceOf(Error);
       expect(refusal!.message).toContain("but exited 1");
       expect(refusal!.message).toContain(solo);
-      expect(refusal!.message).toContain('"success":true');
-      expect(refusal!.message).toContain('"numFailedTests":0');
+      expect(refusal!.message).toContain("claims success: 1 passed, 0 failed");
     } finally {
       await rm(solo, { recursive: true, force: true });
     }

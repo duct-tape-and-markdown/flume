@@ -10,11 +10,11 @@
  * the sequence every shipped runner shares (`baseTree`, `harness/toolRun.ts`),
  * so nothing here adds or removes a worktree.
  *
- * What is this module's own is the **reading** half: pure over vitest's own
- * `--reporter=json` output, so a test drives the real reporter through the
- * real reader rather than through a hand-authored report
- * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
- * wrote*).
+ * What is this module's own is the **reading** half: over the JSON report
+ * vitest is told to write, at a file this module names and owns, so a test
+ * drives the real reporter through the real reader rather than through a
+ * hand-authored report (`.claude/rules/engineering.md`, *A seam gate reads
+ * what the real writer wrote*).
  *
  * Nothing here interprets: a run whose report and process disagree about
  * whether anything failed throws at the point of detection, as a run that
@@ -22,11 +22,13 @@
  * `RunResult` for a judge to rule on.
  */
 
+import { mkdtemp, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 
-import { existsLoud } from "../src/fsProbe.js";
-import { gitPath, namespacedJoin } from "../src/paths.js";
+import { existsLoud, readFileLoudUnder } from "../src/fsProbe.js";
+import { gitPath, namespacedJoin, plainPath } from "../src/paths.js";
 
 import { resolveLanes } from "./runner.js";
 import type {
@@ -44,8 +46,9 @@ import { thrownMessage } from "../src/thrown.js";
 /**
  * One run of vitest in `cwd`, through the spawn every shipped runner makes
  * (`captureRun`, `harness/toolRun.ts`): a non-zero exit is vitest's ordinary
- * way of saying "tests failed" and its report is still on stdout, so both the
- * output and the status come back and {@link readRun} reads them together.
+ * way of saying "tests failed" and the report it was told to write is there
+ * either way, so the status comes back beside whatever the run printed and
+ * {@link readRun} reads them together with the file.
  */
 const capture = (
   invocation: VitestInvocation,
@@ -157,19 +160,67 @@ interface Report {
   testResults: FileResult[];
 }
 
+/** What a refusal calls the file below, as a bare noun phrase. */
+const REPORT_SUBJECT = "the JSON report vitest was told to write";
+
 /**
- * The JSON report embedded in a captured run, or undefined when none parses.
- * vitest writes the report to stdout amid whatever else its plugins printed,
- * so the object is found by its first key rather than by assuming it stands
- * alone.
+ * Run `body` against a report file this module owns, and take the file away
+ * again however the run ended.
+ *
+ * Told, never found: both operations name where vitest writes its report and
+ * read it back from exactly there, so what the tool printed around it — a
+ * plugin's banner, a progress line, a release that stops printing the report
+ * at all — cannot decide whether the run is readable
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ *
+ * A fresh directory per run, outside every tree a run happens in: the
+ * merged-tree run's `cwd` is the consumer's own checkout, where a report
+ * written beside the suite is a file the consumer never asked for. And fresh
+ * per run because the one way a told location reads worse than a scanned one
+ * is a leftover: a report from the previous run answering this run's
+ * question, which {@link readRun} cannot tell from the real thing.
+ *
+ * The directory is made in win32's namespaced alphabet and the file told in
+ * its plain one: the told path is an argument another process resolves, not
+ * an fs call of this package's, and the `\\?\` prefix is this package's
+ * fix for its own `fs` calls rather than a spelling a tool has to accept
+ * (`plainPath`, `src/paths.ts`). Every read of the file back is composed
+ * again — here for the directory, and inside the reader for the file
+ * ({@link loadReport}).
  */
-function parseReport(output: string): Report | undefined {
-  const start = output.indexOf('{"numTotalTestSuites"');
-  if (start === -1) return undefined;
+async function withReportFile<T>(body: (file: string) => Promise<T>): Promise<T> {
+  const dir = plainPath(await mkdtemp(namespacedJoin(tmpdir(), "flume-vitest-report-")));
   try {
-    return JSON.parse(output.slice(start, output.lastIndexOf("}") + 1)) as Report;
-  } catch {
-    return undefined;
+    return await body(join(dir, "report.json"));
+  } finally {
+    await rm(namespacedJoin(dir), { recursive: true, force: true });
+  }
+}
+
+/**
+ * The report at the file vitest was told to write, or a refusal naming that
+ * file. Nothing written there and bytes that are not a report are two
+ * different things and say so, since the operator's next move differs: a tool
+ * that ran and reported elsewhere against one whose output is not JSON at all.
+ */
+function loadReport(file: string, run: CapturedRun, root: string): Report {
+  const raw = readFileLoudUnder(REPORT_SUBJECT, dirname(file), file);
+  if (raw === null) {
+    throw new Error(
+      `vitest wrote no JSON report in ${root} — it was told to write one at ` +
+        `${file} and wrote nothing there, so there is nothing to report on. ` +
+        `Last output:\n${run.stdout.slice(-2000)}`,
+    );
+  }
+  try {
+    return JSON.parse(raw) as Report;
+  } catch (err) {
+    throw new Error(
+      `vitest's JSON report in ${root} does not parse: the file it was told ` +
+        `to write, ${file}, held ${raw.length} bytes that are not JSON ` +
+        `(${thrownMessage(err)}). ` +
+        `Its first bytes:\n${raw.slice(0, 2000)}`,
+    );
   }
 }
 
@@ -177,19 +228,19 @@ const firstLine = (s: string | undefined): string | undefined =>
   s === undefined ? undefined : (s.split("\n")[0] ?? undefined);
 
 /**
- * Turn one run into facts. `root` is the tree the run happened in, so every
- * path reported is relative to it — identical strings whether the run was on
- * the merged tree or at the base.
+ * Turn one run into facts, reading the report out of `file` — where this
+ * runner told vitest to write it. `root` is the tree the run happened in, so
+ * every path reported is relative to it — identical strings whether the run
+ * was on the merged tree or at the base.
  */
-function readRun(run: CapturedRun, names: readonly string[], root: string): RunResult {
+function readRun(
+  run: CapturedRun,
+  file: string,
+  names: readonly string[],
+  root: string,
+): RunResult {
   const { stdout, status } = run;
-  const report = parseReport(stdout);
-  if (!report) {
-    throw new Error(
-      `vitest wrote no JSON report in ${root} — nothing to report on. ` +
-        `Last output:\n${stdout.slice(-2000)}`,
-    );
-  }
+  const report = loadReport(file, run, root);
 
   const rel = (p: string): string => gitPath(relative(root, p));
 
@@ -255,7 +306,9 @@ function readRun(run: CapturedRun, names: readonly string[], root: string): RunR
     throw new Error(
       `vitest reported a green suite in ${root} but exited ${status} — the ` +
         `report and the process disagree, so what failed is outside the ` +
-        `report and there is nothing to rule on. Last output:\n` +
+        `report and there is nothing to rule on. The report it was told to ` +
+        `write claims success: ${report.numPassedTests} passed, ` +
+        `${report.numFailedTests} failed. Last output:\n` +
         stdout.slice(-2000),
     );
   }
@@ -288,17 +341,25 @@ export function vitestRunner(options: VitestRunnerOptions = {}): RunnerFactory {
   const invoke = options.invoke ?? resolveVitest;
   const scope = options.scope ?? [];
   // What every spawn here appends to the declared invocation, in one place
-  // because it is one decision: the reporter flag the reader needs, and then
-  // the consumer's declared scope. A base run appends the judge's files after
-  // it, so the narrowing lands inside the scope rather than beside it.
-  const reporterAndScope = ["--reporter=json", ...scope];
+  // because it is one decision: what reading the run needs — the reporter,
+  // and the file it is told to write — and then the consumer's declared
+  // scope. A base run appends the judge's files after it, so the narrowing
+  // lands inside the scope rather than beside it.
+  const readingAndScope = (reportFile: string): string[] => [
+    "--reporter=json",
+    `--outputFile=${reportFile}`,
+    ...scope,
+  ];
 
   return ({ api, provision }: RunnerContext): Runner => {
     return {
       lanes,
 
       async run(names, cwd) {
-        return readRun(await capture(invoke(cwd), reporterAndScope, cwd), names, cwd);
+        return withReportFile(async (reportFile) => {
+          const run = await capture(invoke(cwd), readingAndScope(reportFile), cwd);
+          return readRun(run, reportFile, names, cwd);
+        });
       },
 
       async runAtBase(names, files, baseSha, cwd) {
@@ -306,12 +367,14 @@ export function vitestRunner(options: VitestRunnerOptions = {}): RunnerFactory {
           { api, provision },
           { label: "vitestRunner.runAtBase", files, baseSha, cwd },
         );
-        const run = await capture(
-          invoke(worktree),
-          [...reporterAndScope, ...files],
-          worktree,
-        );
-        return readRun(run, names, worktree);
+        return withReportFile(async (reportFile) => {
+          const run = await capture(
+            invoke(worktree),
+            [...readingAndScope(reportFile), ...files],
+            worktree,
+          );
+          return readRun(run, reportFile, names, worktree);
+        });
       },
     };
   };
