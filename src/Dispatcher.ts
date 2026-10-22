@@ -50,6 +50,7 @@ import {
 } from "./counted.js";
 import { EntryClaimStore } from "./entryClaims.js";
 import type { FlumePaths } from "./flumeApi.js";
+import type { GateBounds } from "./gateDeadline.js";
 import type { GateRunScope } from "./gateRun.js";
 import { consoleLogger, type Logger } from "./log.js";
 import {
@@ -134,6 +135,26 @@ function resolveAgentBounds(
   fallbackTimeoutMs: number | undefined,
 ): AgentBounds {
   const timeoutMs = policy?.tickTimeoutMs ?? fallbackTimeoutMs;
+  const killGraceMs = policy?.killGraceMs;
+  return {
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+    ...(killGraceMs !== undefined ? { killGraceMs } : {}),
+  };
+}
+
+/**
+ * Derive {@link GateBounds} from a chain's declaration. No embedder fallback
+ * beneath it, unlike {@link resolveAgentBounds} above: the deadline is the
+ * chain's to declare and the engine runs without one, so there is no number
+ * for a `DispatcherOptions` field to stand in with
+ * (`.claude/rules/engine-boundary.md`, *Surface, not prescription*).
+ *
+ * The grace is the same field the agent tree's escalation reads — one
+ * declaration for "how long a signalled child gets", whichever child the
+ * engine is signalling.
+ */
+function resolveGateBounds(policy: Chain["supervisorPolicy"]): GateBounds {
+  const timeoutMs = policy?.gateTimeoutMs;
   const killGraceMs = policy?.killGraceMs;
   return {
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
@@ -750,6 +771,13 @@ export class Dispatcher {
    * resolved no chain yet would apply.
    */
   private bounds: AgentBounds;
+  /**
+   * What that chain declared about the children its gates run, reported to
+   * every gate loop through {@link gateScope} and {@link attemptCtxFor}.
+   * Initialized to what a dispatcher that has resolved no chain yet would
+   * apply, which is no cap — the same posture as {@link bounds} beside it.
+   */
+  private gateBounds: GateBounds;
 
   constructor(opts: DispatcherOptions) {
     // Before anything this dispatcher builds: a width below one is a run that
@@ -782,6 +810,7 @@ export class Dispatcher {
     this.maxParallel = opts.maxParallel ?? DEFAULT_MAX_PARALLEL;
     this.tickTimeoutMs = opts.tickTimeoutMs;
     this.bounds = resolveAgentBounds(undefined, this.tickTimeoutMs);
+    this.gateBounds = resolveGateBounds(undefined);
     this.pendingDir = resolvePendingDir(this.flumeDir);
     this.chainLoader = opts.chainLoader ?? diskChainLoader(this.paths);
   }
@@ -836,6 +865,7 @@ export class Dispatcher {
       worktreeCtx: this.worktreeCtx,
       attempts: this.attempts,
       bounds: this.bounds,
+      gateBounds: this.gateBounds,
       ...(this.opts.stopSignal !== undefined
         ? { stopSignal: this.opts.stopSignal }
         : {}),
@@ -845,7 +875,11 @@ export class Dispatcher {
 
   /** What `runGate` (`src/gateRun.ts`) needs from this dispatcher's afterMerge loops. */
   private get gateScope(): GateRunScope {
-    return { worktreeCtx: this.worktreeCtx, log: this.log };
+    return {
+      worktreeCtx: this.worktreeCtx,
+      gateBounds: this.gateBounds,
+      log: this.log,
+    };
   }
 
   /**
@@ -1032,6 +1066,9 @@ export class Dispatcher {
     // read as `entryExtension` and `pendingDir` below, and what
     // `agentKillGraceMs` reports to a caller that has no chain of its own.
     this.bounds = resolveAgentBounds(chain.supervisorPolicy, this.tickTimeoutMs);
+    // The deadline every child this tick's gates run is held to, read at the
+    // same point and off the same block as the bounds above.
+    this.gateBounds = resolveGateBounds(chain.supervisorPolicy);
     // Pending parses compose core + the chain's declared entry extension —
     // remembered here because every ledger read (`src/pendingLedger.ts`) runs
     // downstream of the one place the chain is loaded, and reads it off the

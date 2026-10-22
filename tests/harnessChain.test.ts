@@ -32,7 +32,10 @@ import { isAbsolute, join, relative, sep } from "node:path";
 
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 
-import { harnessChain } from "../harness/chain.ts";
+import {
+  harnessChain,
+  PACKAGE_GATE_TIMEOUT_MS,
+} from "../harness/chain.ts";
 import {
   BUILD_PHASE,
   DEFAULT_SHELL,
@@ -1088,12 +1091,51 @@ it("the factory passes the declared supervisor policy to the chain whole", () =>
   // hold over nothing.
   expect(Object.keys(DECLARATION.supervisor).length).toBeGreaterThan(0);
 
-  expect(chainFor().supervisorPolicy).toEqual(DECLARATION.supervisor);
+  // Whole, over the one knob this factory declares a value for beneath the
+  // copy — every other omitted knob falls through to the engine's own
+  // default rather than to a value this factory chose.
+  expect(chainFor().supervisorPolicy).toEqual({
+    gateTimeoutMs: PACKAGE_GATE_TIMEOUT_MS,
+    ...DECLARATION.supervisor,
+  });
 
-  // Undeclared stays undeclared: an omitted knob falls through to the
-  // engine's own default rather than to a value this factory chose.
   const { supervisor: _omitted, ...withoutPolicy } = DECLARATION;
-  expect(chainFor(withoutPolicy).supervisorPolicy).toBeUndefined();
+  expect(chainFor(withoutPolicy).supervisorPolicy).toEqual({
+    gateTimeoutMs: PACKAGE_GATE_TIMEOUT_MS,
+  });
+});
+
+/**
+ * The gate deadline is the one supervisor knob this factory *decides* rather
+ * than forwards (`PACKAGE_GATE_TIMEOUT_MS`, `harness/chain.ts`): the engine
+ * declares no default, because a tick runs without one
+ * (`.claude/rules/engine-boundary.md`, *Surface, not prescription*), and a
+ * consumer that adopted this factory and never heard of the knob would
+ * otherwise run every gate uncapped.
+ */
+it("the harness package declares a gate deadline for its consumers", () => {
+  // Non-vacuity in the direction that matters: the fixture declares no
+  // deadline of its own, so what the chain carries is the package's and not
+  // a value forwarded through the copy above.
+  expect("gateTimeoutMs" in DECLARATION.supervisor).toBe(false);
+
+  expect(chainFor().supervisorPolicy?.gateTimeoutMs).toBe(
+    PACKAGE_GATE_TIMEOUT_MS,
+  );
+
+  // A ceiling rather than a budget: the slowest leg measured on this
+  // repository is a sixteen-minute `afterMerge` batch, and a default at that
+  // number would kill the next healthy run on a slower host.
+  expect(PACKAGE_GATE_TIMEOUT_MS).toBeGreaterThan(3 * 16 * 60_000);
+
+  // And a consumer that states its own overrides it, which is what makes
+  // this a default rather than the package's opinion imposed.
+  expect(
+    chainFor({
+      ...DECLARATION,
+      supervisor: { ...DECLARATION.supervisor, gateTimeoutMs: 1_234 },
+    }).supervisorPolicy?.gateTimeoutMs,
+  ).toBe(1_234);
 });
 
 it("a declared capabilities list reaches Chain.capabilities whole", () => {

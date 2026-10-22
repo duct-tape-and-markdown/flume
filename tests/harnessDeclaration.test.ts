@@ -106,6 +106,7 @@ const fullDeclaration = (): Record<string, unknown> => ({
     maxParallel: 4,
     mergeBatch: 2,
     tickTimeoutMs: 1_800_000,
+    gateTimeoutMs: 2_700_000,
     abortThreshold: 3,
     maxTicks: 2,
     killGraceMs: 15_000,

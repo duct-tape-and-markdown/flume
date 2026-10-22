@@ -485,28 +485,61 @@ export function harnessChain(options: HarnessChainOptions): Chain {
     ...(declaration.maxEntryDepth !== undefined
       ? { maxEntryDepth: declaration.maxEntryDepth }
       : {}),
-    ...(policy ? { supervisorPolicy: policy } : {}),
+    supervisorPolicy: policy,
   };
 }
 
 // ------------------------------------------------------------- the small
 
 /**
- * The declared supervisor policy as the engine's own block, whole.
+ * How long a child the engine runs on one of this package's gates may take
+ * before the gate fails on the deadline
+ * (`Chain.supervisorPolicy.gateTimeoutMs`, `src/Phase.ts`) — the one knob
+ * this factory declares a value for rather than passing through, because the
+ * engine declares none and a tick with no cap at all has no brake on a gate
+ * whose child never exits.
+ *
+ * **A ceiling, not a budget.** Every gate this package ships runs a
+ * consumer's own tooling — a typecheck, a suite, a judge's base run — on a
+ * host it has never measured, and the deadline a chain wants is the one no
+ * healthy run of that tooling can reach. Sized against the slowest leg
+ * measured on this repository, an `afterMerge` batch at sixteen minutes,
+ * with room for a host several times slower. A consumer whose own tooling is
+ * slower still declares `supervisor.gateTimeoutMs` and this value steps
+ * aside.
+ */
+export const PACKAGE_GATE_TIMEOUT_MS = 90 * 60_000;
+
+/**
+ * The declared supervisor policy as the engine's own block, whole, over the
+ * one default this package supplies beneath it.
  *
  * Copied key by key rather than knob by knob: the declaration's shape is
  * tied to the engine's by type (`declaration.ts`), so a knob the engine adds
  * rides through here without this function being touched. Keys holding
  * nothing are dropped, because the engine reads an omitted field as "use my
  * default" and a present `undefined` as a value.
+ *
+ * {@link PACKAGE_GATE_TIMEOUT_MS} sits under the copy rather than beside it,
+ * so a consumer declaring its own deadline overrides this one and a consumer
+ * declaring no `supervisor` block at all still gets it: adopting this
+ * factory is the opt-in (`spec/harness.md`, *The phases*). Every other knob
+ * stays the engine's — an omitted one falls through to a default this
+ * factory never picked.
  */
 function supervisorPolicy(
   declared: Declaration["supervisor"],
-): Chain["supervisorPolicy"] {
-  if (declared === undefined) return undefined;
-  return Object.fromEntries(
-    Object.entries(declared).filter(([, value]) => value !== undefined),
-  ) as NonNullable<Chain["supervisorPolicy"]>;
+): NonNullable<Chain["supervisorPolicy"]> {
+  const stated =
+    declared === undefined
+      ? {}
+      : Object.fromEntries(
+          Object.entries(declared).filter(([, value]) => value !== undefined),
+        );
+  return {
+    gateTimeoutMs: PACKAGE_GATE_TIMEOUT_MS,
+    ...stated,
+  } as NonNullable<Chain["supervisorPolicy"]>;
 }
 
 /**

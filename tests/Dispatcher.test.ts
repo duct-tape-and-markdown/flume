@@ -102,6 +102,7 @@ import { Baton } from "../src/Baton.ts";
 import { superviseLoop } from "../src/loopSupervisor.ts";
 import {
   chainLoadGate,
+  shellGate,
   // Identity pin: the engine's own gate object, compared by reference
   // against what a chain factory receives.
   tscGate as realTscGate,
@@ -4734,6 +4735,89 @@ describe("Dispatcher — supervisorPolicy.tickTimeoutMs overrides the per-invoca
     // unchanged — the same fallback `maxParallel`'s "declaring nothing"
     // case above pins.
     expect(seenTimeoutMs).toBe(4_242);
+  });
+});
+
+/**
+ * SUPERVISORPOLICY-GATETIMEOUTMS — `Chain.supervisorPolicy.gateTimeoutMs`
+ * (`src/Phase.ts`) joins `tickTimeoutMs` above as a per-tick
+ * chain-overridable default, bounding the children the engine runs on a
+ * gate's behalf rather than the agent invocation
+ * (`src/gateDeadline.ts`). There is no `DispatcherOptions` fallback beneath
+ * it, so the only thing that can put a cap over a gate is the tick's own
+ * resolved chain — which is what this case reads: the same gate under the
+ * same dispatcher fails or passes on the chain's word alone.
+ */
+describe("Dispatcher — supervisorPolicy.gateTimeoutMs bounds a gate's children (SUPERVISORPOLICY-GATETIMEOUTMS)", () => {
+  /** A gate whose child outlives any deadline a case here declares. */
+  const sleeper = () =>
+    shellGate({
+      name: "sleeper",
+      when: "afterCommit",
+      cmd: process.execPath,
+      args: ["-e", "setTimeout(() => {}, 60000)"],
+    });
+
+  it("a declared gate deadline is read per tick off the tick's own chain", async () => {
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const phase = makePhase({
+      name: "plan",
+      concurrency: "singleton",
+      gates: [sleeper()],
+    });
+    const agent = singleAgent(async (cwd) => {
+      await writeAndCommit(cwd, "src/output.ts", "x\n", "plan: derive");
+    });
+    const dispatcher = (chain: Chain) =>
+      new Dispatcher({
+        chainLoader: staticLoader(chain),
+        repoRoot: fx.repo,
+        configDir: fx.configDir,
+        agent,
+        log: silent,
+      });
+
+    const bounded = await dispatcher({
+      phases: [phase],
+      humanOnly: [],
+      supervisorPolicy: { gateTimeoutMs: 150, killGraceMs: 20 },
+    }).tick();
+
+    // The gate lost to the deadline, and the commit went back with it —
+    // a timed-out gate reverts exactly as a gate that threw does.
+    const row = (outcome: typeof bounded) =>
+      (outcome.verdict?.gateResults ?? []).find((g) => g.gate === "sleeper");
+    expect(row(bounded)?.ok).toBe(false);
+    expect(
+      `${row(bounded)?.message}\n${row(bounded)?.details ?? ""}`,
+    ).toContain("150ms");
+    expect(bounded.verdict?.noCommit).toBe("gate-revert");
+
+    // The same gate, the same dispatcher construction, a chain that declares
+    // no deadline: the sleeper's child would still be running had the engine
+    // held a cap of its own, so this leg is what makes the read the chain's.
+    const unbounded = await dispatcher({
+      phases: [
+        makePhase({
+          name: "plan",
+          concurrency: "singleton",
+          gates: [
+            shellGate({
+              name: "sleeper",
+              when: "afterCommit",
+              cmd: process.execPath,
+              args: ["-e", "setTimeout(() => {}, 400)"],
+            }),
+          ],
+        }),
+      ],
+      humanOnly: [],
+    });
+    new Baton(join(fx.repo, ".flume")).wake("plan");
+    const started = Date.now();
+    const outcome = await unbounded.tick();
+    expect(Date.now() - started).toBeGreaterThan(150);
+    expect(row(outcome)?.ok, row(outcome)?.details).toBe(true);
   });
 });
 

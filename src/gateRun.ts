@@ -15,6 +15,7 @@ import type {
   GateContext,
   GateResult,
 } from "./Gate.js";
+import { withGateDeadline, type GateBounds } from "./gateDeadline.js";
 import type { Logger } from "./log.js";
 import { startTiming, type TickVerdictTiming } from "./tickVerdict.js";
 import { throwFacts } from "./thrown.js";
@@ -22,10 +23,19 @@ import { withGateCheckouts, type WorktreeContext } from "./worktrees.js";
 
 /**
  * What a gate run needs from whoever is running it: the worktree context its
- * checkouts are scoped by, and the logger a throw is narrated to.
+ * checkouts are scoped by, the deadline its children are held to, and the
+ * logger a throw is narrated to.
  */
 export interface GateRunScope {
   readonly worktreeCtx: WorktreeContext;
+  /**
+   * What the tick's chain declared about the children the engine runs on this
+   * gate's behalf (`Chain.supervisorPolicy.gateTimeoutMs`, `src/Phase.ts`).
+   * Stated by every caller rather than optional on this type: a leg that
+   * omitted it would run a chain's declared deadline over nothing and read
+   * as compliant.
+   */
+  readonly gateBounds: GateBounds;
   readonly log: Logger;
 }
 
@@ -64,6 +74,16 @@ interface TimedGateResult {
  * (`.claude/rules/engineering.md` "Derived state is computed, never restated
  * beside its source").
  *
+ * It is also the one place a chain's declared **gate deadline** is opened
+ * over (`src/gateDeadline.ts`): every child the engine spawns while this
+ * invocation is in flight — the gate's own command, a shipped runner's tool
+ * spawn, the git a gate drives through the API — is held to it, and a child
+ * that reaches it loses the invocation with a refusal naming the deadline
+ * and the command. That refusal arrives here as a throw, so a timed-out gate
+ * is recorded as the failure above rather than needing a verdict field of
+ * its own. The scope is inside the reclamation below, so a deadline reached
+ * mid-checkout still unwinds through it.
+ *
  * It is also the one **reclamation** point for what a gate checked out:
  * `withGateCheckouts` (`src/worktrees.ts`) scopes the invocation, and any
  * detached tree the gate asked the API for (`api.git.checkoutAt`) is
@@ -83,7 +103,7 @@ export async function runGate(
   const elapsed = startTiming();
   try {
     const result = await withGateCheckouts(scope.worktreeCtx, () =>
-      invoke(gate, ctx),
+      withGateDeadline(scope.gateBounds, () => invoke(gate, ctx)),
     );
     return { result, ms: elapsed() };
   } catch (err) {

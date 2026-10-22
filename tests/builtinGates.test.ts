@@ -52,12 +52,14 @@ import { checkoutAddress } from "../src/git.ts";
 import { renderPidClaim } from "../src/pidClaim.ts";
 import { deadPid } from "./helpers/deadPid.ts";
 import type {
+  BatchGateContext,
   Gate,
   GateBatchSpan,
   GateContext,
   GateSite,
 } from "../src/Gate.ts";
 import { batchGateContext } from "../src/gateBatch.ts";
+import type { GateBounds } from "../src/gateDeadline.ts";
 import { runGate, type GateRunScope } from "../src/gateRun.ts";
 // Barrel-export pin (.claude/rules/engineering.md "An export earns its
 // consumer", CHAIN-EXPORT-GATE-OPTION-TYPES): a consumer can call
@@ -846,6 +848,9 @@ describe("pendingGate — claim check over the merged tree (spec/pending.md 'Cla
         stateRootRel: computeStateRootRel(dir, flumeDir),
         log: silent,
       },
+      // These cases spawn nothing, so a deadline over them would bound
+      // nothing; the gate-deadline cases below declare their own.
+      gateBounds: {},
       log: silent,
     };
   };
@@ -1355,6 +1360,7 @@ describe("the shell-backed builtins read a batch (spec/worktrees.md 'Batched mer
           stateRootRel: ".flume",
           log: silent,
         },
+        gateBounds: {},
         log: silent,
       };
       const { result } = await runGate(gate, batch, scope);
@@ -1679,5 +1685,135 @@ describe("writablePathsGate — the fence seam, both sides real", () => {
 
     // The fence gate's verdict is the tick's: nothing shipped.
     expect(outcome.result?.shippedTags).toEqual([]);
+  });
+});
+
+/**
+ * A gate's own children under `Chain.supervisorPolicy.gateTimeoutMs`
+ * (`src/Phase.ts`): every spawn the engine makes while a gate invocation is
+ * in flight is held to the chain's declared deadline, and a child that
+ * reaches it loses the invocation rather than merely failing its own spawn
+ * (`src/gateDeadline.ts`).
+ *
+ * Driven through `runGate` (`src/gateRun.ts`), because that is where the
+ * scope is opened: calling `shellGate(...).run` directly enters no scope and
+ * would read the undeclared case whatever the chain said. And driven over
+ * `shellGate`, which catches its command's failure and reports it as an
+ * ordinary verdict — so the refusal arriving as this gate's *throw* is the
+ * thing being pinned, not an error the gate chose to re-raise.
+ *
+ * The child is a `node` that sleeps: no shell, no shebang, and no `.cmd`
+ * shim, so the same case runs on every host
+ * (`.claude/rules/platform-facts.md`, *win32 spawns no shebang script*).
+ */
+describe("shellGate under a chain-declared gate deadline", () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = await mkTempDir("flume-gate-deadline-");
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  /** A child that outlives any deadline these cases declare, and exits on a signal. */
+  const sleeper = () =>
+    shellGate({
+      name: "sleeper",
+      when: "afterMerge",
+      cmd: process.execPath,
+      args: ["-e", "setTimeout(() => {}, 60000)"],
+    });
+
+  /** The gate scope, under whatever deadline the case states. */
+  const bounded = (gateBounds: GateBounds): GateRunScope => {
+    const flumeDir = join(dir, ".flume");
+    return {
+      worktreeCtx: {
+        repoRoot: dir,
+        flumeDir,
+        stateRootRel: computeStateRootRel(dir, flumeDir),
+        log: silent,
+      },
+      gateBounds,
+      log: silent,
+    };
+  };
+
+  /**
+   * The merge a `shellGate` reads, in the tree a merge would have left
+   * behind — a batch of one, since that is the only context shape `runGate`
+   * hands a gate declaring `batches: true`.
+   */
+  const at = (): BatchGateContext => {
+    const site: GateSite = {
+      cwd: dir,
+      repoRoot: dir,
+      flumeDir: join(dir, ".flume"),
+      stateRootRel: computeStateRootRel(dir, join(dir, ".flume")),
+      pendingDir: join(dir, ".flume", "plan", "pending"),
+      configDir: join(dir, ".flume"),
+      phaseName: "test-phase",
+      log: () => {},
+    };
+    return batchGateContext(site, [
+      {
+        commitSha: "c1",
+        baseSha: "b1",
+        landedOnSha: "t0",
+        touchedPaths: ["src/a.ts"],
+      },
+    ]);
+  };
+
+  it("a gate child that outlives the declared deadline is killed and its gate fails naming the deadline", async () => {
+    const started = Date.now();
+    const { result } = await runGate(
+      sleeper(),
+      at(),
+      bounded({ timeoutMs: 150, killGraceMs: 20 }),
+    );
+
+    // The gate lost, and it lost on the deadline rather than on the sleeper
+    // exiting: the child is a 60s sleep, so the elapsed wall clock is the
+    // proof the refusal is the deadline's and not the command's.
+    expect(result.ok).toBe(false);
+    expect(Date.now() - started).toBeLessThan(30_000);
+
+    // The row names the deadline and the command — a gate runs more than one
+    // child, and "the gate timed out" names none of them.
+    const said = `${result.message}\n${result.details ?? ""}`;
+    expect(said).toContain("150ms");
+    expect(said).toContain("gateTimeoutMs");
+    expect(said).toContain(process.execPath);
+
+    // `shellGate` catches every failure its command raises and reports it as
+    // a verdict, so a refusal the gate could absorb would arrive as that
+    // gate's own `failHint` instead. This one arrived as a throw, which is
+    // what `runGate` records with the raising frame as `details`.
+    expect(result.message).not.toBe("sleeper failed");
+    expect(result.details).toContain("gateDeadline");
+  });
+
+  it("a chain declaring no gate deadline bounds no gate child", async () => {
+    // The same sleeper the case above kills at 150ms, under a chain that
+    // declared nothing — bounded to a child that exits on its own, so the
+    // case proves the absence of a cap rather than spending a minute on it.
+    const quick = shellGate({
+      name: "quick",
+      when: "afterMerge",
+      cmd: process.execPath,
+      args: ["-e", "setTimeout(() => {}, 400)"],
+    });
+
+    const started = Date.now();
+    const { result } = await runGate(quick, at(), bounded({}));
+    const ms = Date.now() - started;
+
+    // Vacuity: the child really did outlive the deadline the case above
+    // declared, so a cap applied here would have killed it.
+    expect(ms).toBeGreaterThan(150);
+    expect(result.ok, result.details).toBe(true);
   });
 });

@@ -33,6 +33,7 @@ import {
 import { bound } from "./bounds.js";
 import { writablePathsGate } from "./builtinGates.js";
 import type { Gate } from "./Gate.js";
+import type { GateBounds } from "./gateDeadline.js";
 import { runGate } from "./gateRun.js";
 import * as git from "./git.js";
 import type { Logger } from "./log.js";
@@ -113,6 +114,12 @@ export interface AttemptContext {
   readonly attempts: PriorAttemptStore;
   /** What the tick's chain declared about how long an agent invocation runs. */
   readonly bounds: AgentBounds;
+  /**
+   * What it declared about the children the engine runs on a gate's behalf
+   * — read by the afterCommit loop below through `runGate`
+   * (`src/gateRun.ts`), whose `GateRunScope` this context stands in as.
+   */
+  readonly gateBounds: GateBounds;
   /** The tick's own teardown signal, reaching the agent process it started. */
   readonly stopSignal?: AbortSignal;
   readonly log: Logger;

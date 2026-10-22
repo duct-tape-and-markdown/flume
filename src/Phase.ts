@@ -1384,6 +1384,31 @@ export interface Chain {
      */
     tickTimeoutMs?: number;
     /**
+     * Wall-clock timeout, in milliseconds, on **each child the engine runs on
+     * a gate's behalf** — a gate's declared command, a shipped runner's tool
+     * spawn, the provisioning a base run lays down, and every git invocation
+     * a gate drives through the API. Read per tick off the tick's own
+     * resolved chain, the same scope as `tickTimeoutMs` above.
+     *
+     * A child that reaches it is signalled SIGTERM, SIGKILLed `killGraceMs`
+     * later, and its gate fails the way a gate that threw does, naming the
+     * deadline and the command (`src/gateDeadline.ts`). The refusal belongs
+     * to the invocation rather than to the spawn, so a gate that reports its
+     * command's non-zero exit as a verdict cannot absorb it.
+     *
+     * Default unset: **no cap**, as the per-invocation one is. The engine
+     * supplies no number, because a tick runs without one
+     * (`.claude/rules/engine-boundary.md`, *Surface, not prescription*); the
+     * harness package declares a generous one for the consumers that adopt it
+     * (`harness/chain.ts`).
+     *
+     * A ceiling, never a budget: it bounds each child on its own, so a gate
+     * that runs several may take longer than this in total, and a value
+     * derived from one measured suite run has no headroom for the tick that
+     * runs two.
+     */
+    gateTimeoutMs?: number;
+    /**
      * Globs (matched by `matchesAny`, `src/paths.ts`) whose paths never
      * count toward the fanout partition's collision set —
      * `partitionByFileOverlap` (`src/partition.ts`) and the wave-end

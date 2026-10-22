@@ -822,6 +822,9 @@ describe("chainLoadGate / writablePathsGate — consume ctx.touchedPaths, no ind
         stateRootRel: computeStateRootRel(notARepo, join(notARepo, ".flume")),
         log: { info: () => {}, warn: () => {}, error: () => {} },
       },
+      // No deadline over this gate's children: what is under test is the
+      // batch refusal, and a cap would bound a case that spawns nothing.
+      gateBounds: {},
       log: { info: () => {}, warn: () => {}, error: () => {} },
     } satisfies GateRunScope);
 

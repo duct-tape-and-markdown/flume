@@ -297,6 +297,7 @@ describe("runGate — the context shape a gate declared it reads", () => {
       stateRootRel: ".flume",
       log: { info: () => {}, warn: () => {}, error: () => {} },
     },
+    gateBounds: {},
     log: { info: () => {}, warn: () => {}, error: () => {} },
   };
 

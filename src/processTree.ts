@@ -28,6 +28,15 @@
  * paths reach the child alone — the same reach `ChildProcess.kill` already
  * had, never a silently wider one.
  *
+ * A third caller takes the escalation over a child that leads no group at
+ * all: node's `execFile` composes its own spawn options and forwards no
+ * `detached`, so a capturing spawn's child sits in the spawning process's
+ * group whatever the call asked for, and a group signal over it would reach
+ * a group that does not exist. {@link SignalReach} is how that caller states
+ * the narrower reach rather than re-deriving the SIGTERM, the grace and the
+ * SIGKILL beside this module (`.claude/rules/engineering.md`, *The fix lands
+ * at the mechanism*).
+ *
  * Sibling to `fsProbe.ts` and `spawnShim.ts`: nothing beyond
  * `node:child_process` here, so any module that spawns can reach it without
  * a cycle.
@@ -56,6 +65,21 @@ import type { Readable, Writable } from "node:stream";
  * installed a handler and is using it.
  */
 export const DEFAULT_KILL_GRACE_MS = 5_000;
+
+/**
+ * How far one signal reaches: the whole process group
+ * {@link spawnProcessTree} made its child the leader of, or that child
+ * alone.
+ *
+ * `"child"` is the reach a caller states when its child leads no group —
+ * every capturing spawn in this package, since `execFile` forwards no
+ * `detached` — and it is what the group signal already degrades to on win32.
+ * Stated rather than detected: whether a given child is a group leader is a
+ * fact of the call that spawned it, and a module reading it back off the
+ * host would be guessing at the spawn it never saw
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ */
+export type SignalReach = "tree" | "child";
 
 /**
  * Whether this host has process groups to spawn into and to signal. Read at
@@ -122,6 +146,7 @@ export function spawnProcessTree(
 export function signalProcessTree(
   child: ChildProcess,
   signal: NodeJS.Signals,
+  reach: SignalReach = "tree",
 ): boolean {
   const { pid } = child;
   if (pid === undefined) return false;
@@ -131,8 +156,10 @@ export function signalProcessTree(
   if (child.exitCode !== null || child.signalCode !== null) return false;
   try {
     // A negative pid is the process group's, and the child leads its own
-    // because `spawnProcessTree` spawned it detached.
-    process.kill(hasProcessGroups() ? -pid : pid, signal);
+    // because `spawnProcessTree` spawned it detached. A caller whose child
+    // was not spawned that way says so with `reach`, and the signal goes to
+    // the pid itself.
+    process.kill(reach === "tree" && hasProcessGroups() ? -pid : pid, signal);
     return true;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ESRCH") return false;
@@ -153,15 +180,19 @@ export function signalProcessTree(
  *
  * Defaults to {@link DEFAULT_KILL_GRACE_MS}; the dispatcher forwards a
  * chain's `supervisorPolicy.killGraceMs` (`src/Phase.ts`) here through the
- * agent invocation it bounds (`src/claudeCode.ts`).
+ * agent invocation it bounds (`src/claudeCode.ts`), and through the gate
+ * deadline it bounds a gate's own children with (`src/gateDeadline.ts`),
+ * which states the child reach because `execFile` gave its child no group to
+ * signal.
  */
 export function terminateProcessTree(
   child: ChildProcess,
-  opts: { graceMs?: number } = {},
+  opts: { graceMs?: number; reach?: SignalReach } = {},
 ): void {
-  if (!signalProcessTree(child, "SIGTERM")) return;
+  const reach = opts.reach ?? "tree";
+  if (!signalProcessTree(child, "SIGTERM", reach)) return;
   const escalate = setTimeout(() => {
-    signalProcessTree(child, "SIGKILL");
+    signalProcessTree(child, "SIGKILL", reach);
   }, opts.graceMs ?? DEFAULT_KILL_GRACE_MS);
   child.once("exit", () => clearTimeout(escalate));
 }

@@ -2680,7 +2680,8 @@ Beside the net, the block carries the knobs that shape the run and the tick
 themselves and have nowhere else to be set from a chain: how many tick
 children the supervisor holds at once, how wide a fanout wave inside one of
 them runs, how many of that wave's finished spans one merge carries, the
-wall-clock cap on one agent invocation, the paths the fanout partition
+wall-clock cap on one agent invocation, the cap on each child the engine runs
+on a gate's behalf, the paths the fanout partition
 ignores, and the grace a signalled tick gives the agent tree it started
 before it stops waiting. Each knob ships as an engine default;
 `Chain.supervisorPolicy` lets a chain choose otherwise:
@@ -2697,6 +2698,7 @@ const chain: Chain = {
     maxParallel: 2,
     mergeBatch: 4,
     tickTimeoutMs: 45 * 60_000,
+    gateTimeoutMs: 20 * 60_000,
     partitionIgnore: ["pnpm-lock.yaml"],
   },
 };
@@ -2808,6 +2810,22 @@ const chain: Chain = {
   budget is not burned silently against a hung agent. Derive the value from
   measured invocations with headroom over the observed maximum — a cap set at
   the maximum kills the next slow-but-healthy tick. Read **per tick**.
+- **`gateTimeoutMs`** — wall-clock cap on **each child the engine runs on a
+  gate's behalf**, in milliseconds: the command a `shellGate` declares, the
+  tool a shipped runner spawns, the provisioning a base run lays down, and
+  every `git` invocation a gate drives through `api.git`. Default unset:
+  **no cap**, the same posture `tickTimeoutMs` takes, so a gate whose child
+  never exits holds its tick — and the slot, and the worktree lock — until an
+  operator notices. A child that reaches the deadline is signalled `SIGTERM`,
+  `SIGKILL`ed `killGraceMs` later, and its gate fails the way a gate that
+  threw does, with a row naming the deadline and the command that blew it.
+  The refusal belongs to the gate invocation rather than to the spawn, so a
+  gate that reports its command's non-zero exit as an ordinary verdict cannot
+  absorb it and report green over a child the engine killed. A **ceiling,
+  not a budget**: it bounds each child on its own, so a gate running several
+  may take longer than this in total — set it where no healthy run of your
+  tooling can reach it, not at the measured maximum, since the same number
+  has to clear the host that is twice as slow today. Read **per tick**.
 - **`partitionIgnore`** — globs, matched by the same matcher `writablePaths`
   goes through (§1), whose paths never count toward the fanout partition's
   collision set. Default `[]`, byte-identical to no filter. A file every

@@ -1,10 +1,13 @@
 /**
  * spawnShim — what every spawn in this package settles before the child
- * runs: the win32 `.cmd`-shim retry, and the end of the stdin the spawn
- * opened. Held in one place so no site that spawns spells either decision
- * for itself (`.claude/rules/engineering.md`, "The fix lands at the
- * mechanism"). Sibling to `fsProbe.ts`: nothing beyond `node:child_process`
- * here, so any module that spawns can reach it without a cycle.
+ * runs: the win32 `.cmd`-shim retry, the end of the stdin the spawn opened,
+ * and the gate deadline a child started inside a gate invocation is held to.
+ * Held in one place so no site that spawns spells any of them for itself
+ * (`.claude/rules/engineering.md`, "The fix lands at the mechanism").
+ * Sibling to `fsProbe.ts`: nothing beyond `node:child_process` and the two
+ * leaves this reaches for the deadline (`src/gateDeadline.ts`,
+ * `src/processTree.ts`) here, so any module that spawns can reach it without
+ * a cycle.
  *
  * The shim fact itself — why a win32 spawn of an npm-installed binary
  * ENOENTs, and why the shell retry goes second rather than first — is
@@ -18,6 +21,8 @@ import {
   type PromiseWithChild,
 } from "node:child_process";
 import { promisify } from "node:util";
+
+import { underGateDeadline } from "./gateDeadline.js";
 
 const execFileP = promisify(execFile);
 
@@ -122,8 +127,16 @@ export function shimRetryRefusal(
  *
  * The sync door spells the same decision as `stdio` instead, which
  * `execFileSync` does forward (`captureSync`, `harness/exec.ts`).
+ *
+ * Hands back the spawn it was given, child and all, rather than the bare
+ * promise: ending stdin is one of the things a door settles over a child,
+ * and a caller that still has the next one to settle — the gate deadline —
+ * would otherwise have to reach the child before this call instead of after
+ * it.
  */
-export function endChildStdin<T>(spawned: PromiseWithChild<T>): Promise<T> {
+export function endChildStdin<T>(
+  spawned: PromiseWithChild<T>,
+): PromiseWithChild<T> {
   // Optional on the type, present in fact for a capturing spawn; an absent
   // one is a child holding no pipe, and so nothing to end.
   spawned.child.stdin?.end();
@@ -131,8 +144,19 @@ export function endChildStdin<T>(spawned: PromiseWithChild<T>): Promise<T> {
 }
 
 /**
- * `execFile` with the shim fallback applied: direct spawn first, so args
- * keep exact quoting semantics, then one shell retry on
+ * The command line a spawn is named by where something has to name it — a
+ * gate deadline's refusal, so far. The engine's own spelling of a declared
+ * gate's `command` (`src/Gate.ts`), so the two read alike.
+ */
+function commandLine(cmd: string, args: readonly string[]): string {
+  return [cmd, ...args].join(" ");
+}
+
+/**
+ * `execFile` with everything this module settles applied: the child's stdin
+ * ended, the gate deadline in flight armed over it
+ * (`src/gateDeadline.ts`), and the shim fallback around both — direct spawn
+ * first, so args keep exact quoting semantics, then one shell retry on
  * `isWin32ShimSpawnFailure` — over an argv `wordShimRetryWouldRewrite` says
  * `cmd.exe` would hand on unchanged, and a refusal naming the word where it
  * would not. The retry's own failure is what the caller sees.
@@ -150,14 +174,19 @@ export async function execFileWithShimRetry(
   // own default, and naming it is what picks the string-typed overload
   // instead of the `string | Buffer` union every caller would then narrow.
   const direct = { ...opts, encoding: "utf8" as const };
+  const line = commandLine(cmd, args);
   try {
-    return await endChildStdin(execFileP(cmd, args, direct));
+    return await underGateDeadline(
+      endChildStdin(execFileP(cmd, args, direct)),
+      line,
+    );
   } catch (err) {
     if (!isWin32ShimSpawnFailure(err)) throw err;
     const rewritten = wordShimRetryWouldRewrite([cmd, ...args]);
     if (rewritten !== undefined) throw shimRetryRefusal(cmd, rewritten, err);
-    return await endChildStdin(
-      execFileP(cmd, args, { ...direct, shell: true }),
+    return await underGateDeadline(
+      endChildStdin(execFileP(cmd, args, { ...direct, shell: true })),
+      line,
     );
   }
 }

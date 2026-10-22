@@ -23,6 +23,7 @@ import {
   type StakedPidClaim,
   statedStateRoot,
 } from "./pidClaim.js";
+import { underGateDeadline } from "./gateDeadline.js";
 import { endChildStdin } from "./spawnShim.js";
 import { acquireWaitLock, type WaitLock } from "./waitLock.js";
 import { thrownMessage } from "./thrown.js";
@@ -102,6 +103,13 @@ const DEFAULT_CAPTURE_CAP = 16 * 1024 * 1024;
  * than holding the tick open with nothing in any log
  * (`.claude/rules/engineering.md`, *Loud or nothing*).
  *
+ * A git child started inside a gate invocation is held to that gate's
+ * declared deadline (`src/gateDeadline.ts`) — a gate reaching git through
+ * the API is the engine running a child on that gate's behalf, and one that
+ * never returns stalls the tick exactly as a stalled gate command does.
+ * Outside a gate, and under a chain declaring no deadline, the call is
+ * byte-identical to the bare spawn.
+ *
  * Streams come back exactly as git wrote them. `run` below is the trimming
  * form, which is what every caller reading git's own line-oriented output
  * wants; a caller reading a file's committed bytes takes this one.
@@ -111,12 +119,15 @@ async function spawnGit(
   args: string[],
   maxBuffer: number = DEFAULT_CAPTURE_CAP,
 ): Promise<{ stdout: string; stderr: string }> {
-  return endChildStdin(
-    exec("git", args, {
-      cwd,
-      env: literalPathspecEnv(),
-      maxBuffer,
-    }),
+  return underGateDeadline(
+    endChildStdin(
+      exec("git", args, {
+        cwd,
+        env: literalPathspecEnv(),
+        maxBuffer,
+      }),
+    ),
+    ["git", ...args].join(" "),
   );
 }
 
