@@ -3,7 +3,6 @@
   "gate": {
     "kind": "blockedBy",
     "tags": [
-      "TRUNK-MOVES-ONLY-BY-FAST-FORWARD-TO-A-JUDGED-CANDIDATE",
       "A-BATCHS-SPANS-REACH-ONE-CANDIDATE"
     ]
   },
@@ -71,10 +70,10 @@
     "the runtime ignore set names no merging dir"
   ],
   "laneTests": [],
+  "notes": "Marker written and removed in the wave leg, staked through the carry's `stake` window, read at `loop` start, named in `paths.ts`, the ignore set, `cliHelp` and `docs/CLI.md`. No child reads a sibling's marker and nothing reads one mid-run, so this ends no run. `spec/harness.md`'s record-list sentence still names a merging stake — the operator's leftover, and this tick's question names it.",
   "interface": {
     "changes": "nothing a chain calls: `loop` stops refusing at start over a marker, and the engine-owned `merging/` dir leaves the state-root layout",
     "hides": "a reconciliation an operator was asked to perform for a state the engine can no longer reach",
     "rejected": "keeping the refusal as a guard against older residue — a marker a current engine never writes would refuse a run over one commit's history forever, and the startup sweep already reclaims what a dead run left"
-  },
-  "notes": "Marker written and removed in the wave leg, staked through the carry's `stake` window, read at `loop` start, named in `paths.ts`, the ignore set, `cliHelp` and `docs/CLI.md`. No child reads a sibling's marker and nothing reads one mid-run, so this ends no run. `spec/harness.md`'s record-list sentence still names a merging stake — the operator's leftover, and this tick's question names it."
+  }
 }

@@ -1,10 +1,7 @@
 {
   "tag": "A-BATCHS-SPANS-REACH-ONE-CANDIDATE",
   "gate": {
-    "kind": "blockedBy",
-    "tags": [
-      "TRUNK-MOVES-ONLY-BY-FAST-FORWARD-TO-A-JUDGED-CANDIDATE"
-    ]
+    "kind": "open"
   },
   "dependsOnForks": [],
   "kind": "work",
@@ -73,10 +70,10 @@
     "a conflict while picking a batch discards the candidate and the spans are carried serially"
   ],
   "laneTests": [],
+  "notes": "`carryMergeBatch` picks onto trunk and `reset --keep`s back; its `unwound` fate exists only for that reset, and a refused unwind throws and walls the wave. The shared pick also holds the checkpoint and the abort, so converting it frees `resetKeepTo`, `cherryPickAbort`, `checkpointBystanderState` and `checkMergedTipUnmoved` — the export pin reds unless they go in the same commit. Not contract-touching: this repo declares no `mergeBatch`, so the path is dormant and only the suite drives it.",
   "interface": {
     "changes": "nothing a caller calls: the tick verdict stops carrying a bystander checkpoint sha, because no engine write reaches the operator's tree for one to recover",
     "hides": "that an engine merge can touch uncommitted work at all, and the recovery handle an operator was owed for it",
     "rejected": "keeping the checkpoint as cheap insurance — an unreachable recovery handle is dead plumbing, and the verdict field would read as a promise the engine no longer makes"
-  },
-  "notes": "`carryMergeBatch` picks onto trunk and `reset --keep`s back; its `unwound` fate exists only for that reset, and a refused unwind throws and walls the wave. The shared pick also holds the checkpoint and the abort, so converting it frees `resetKeepTo`, `cherryPickAbort`, `checkpointBystanderState` and `checkMergedTipUnmoved` — the export pin reds unless they go in the same commit. Not contract-touching: this repo declares no `mergeBatch`, so the path is dormant and only the suite drives it."
+  }
 }

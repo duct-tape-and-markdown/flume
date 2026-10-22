@@ -3,7 +3,6 @@
   "gate": {
     "kind": "blockedBy",
     "tags": [
-      "TRUNK-MOVES-ONLY-BY-FAST-FORWARD-TO-A-JUDGED-CANDIDATE",
       "A-BATCHS-SPANS-REACH-ONE-CANDIDATE"
     ]
   },

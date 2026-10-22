@@ -1,6 +1,8 @@
 {
   "tag": "THE-FAST-FORWARD-REFUSES-RATHER-THAN-OVERWRITES",
-  "gate": { "kind": "blockedBy", "tags": ["TRUNK-MOVES-ONLY-BY-FAST-FORWARD-TO-A-JUDGED-CANDIDATE"] },
+  "gate": {
+    "kind": "open"
+  },
   "dependsOnForks": [],
   "kind": "work",
   "files": {
@@ -30,7 +32,10 @@
     "retire": []
   },
   "summary": "a trunk that moved under a candidate, or an uncommitted change on a path the span touched, refuses the fast-forward — the span is carried again or stays unshipped",
-  "per": { "path": "spec/loop.md", "section": "Tip verify — one writer per branch, absorption at the merge" },
+  "per": {
+    "path": "spec/loop.md",
+    "section": "Tip verify — one writer per branch, absorption at the merge"
+  },
   "acceptance": "a foreign commit absorbed onto trunk under a candidate refuses the move, discards the candidate and carries the span again onto the new tip; an operator's staged or unstaged change colliding with a path the span touched refuses it with both writers' work in place and the entry retrying",
   "tests": [
     "a trunk that moved under a candidate refuses the fast-forward and the span is carried again onto the new tip",
