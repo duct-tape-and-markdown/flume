@@ -2222,48 +2222,58 @@ describe("gate=blockedBy — pickability against the queue the entry sits in (sp
  * and declares no fork, which is the direction pin the claim needs: nothing
  * about the child itself can account for the verdict.
  */
+/**
+ * A forest of `specs`, through the real parse, with the entry named by
+ * `child` handed back beside the listing it sits in.
+ */
+function childInForest(
+  specs: readonly Record<string, unknown>[],
+  child: string,
+): { entry: PendingEntry; queue: PendingEntry[] } {
+  const result = parseQueue(specs);
+  expect(result.ok, JSON.stringify(result.errors)).toBe(true);
+  expect(result.entries).toHaveLength(specs.length);
+  const entry = result.entries.find((e) => e.tag === child);
+  expect(entry, `no entry named ${child} in the parsed listing`).toBeDefined();
+  // Non-vacuity on the subject: what the cases below judge is a child whose
+  // own gate is open and whose own forks are none, in a listing that really
+  // holds a parent for it.
+  expect(entry!.gate).toEqual({ kind: "open" });
+  expect(entry!.dependsOnForks).toEqual([]);
+  expect(entry!.parent).toBeDefined();
+  return { entry: entry!, queue: result.entries };
+}
+
+/**
+ * A `group` entry carrying `gate`, with no files of its own. `extra` is what
+ * an inheritance case puts *on the ancestor* — a `dependsOnForks` the subject
+ * does not declare.
+ */
+const group = (
+  tag: string,
+  gate: unknown,
+  parent?: string,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> => ({
+  tag,
+  kind: "group",
+  gate,
+  files: {},
+  ...(parent === undefined ? {} : { parent }),
+  ...extra,
+});
+
+/** An open `work` entry under `parent` — the subject of every case here. */
+const workUnder = (tag: string, parent: string): Record<string, unknown> => ({
+  ...baseEntry,
+  tag,
+  parent,
+  gate: { kind: "open" },
+});
+
 describe("isPickableNow — an entry inherits its ancestors' gates (spec/pending.md § Pickability)", () => {
-  /**
-   * A forest of `specs`, through the real parse, with the entry named by
-   * `child` handed back beside the listing it sits in.
-   */
-  function forest(
-    specs: readonly Record<string, unknown>[],
-    child: string,
-  ): { entry: PendingEntry; queue: PendingEntry[] } {
-    const result = parseQueue(specs);
-    expect(result.ok, JSON.stringify(result.errors)).toBe(true);
-    expect(result.entries).toHaveLength(specs.length);
-    const entry = result.entries.find((e) => e.tag === child);
-    expect(entry, `no entry named ${child} in the parsed listing`).toBeDefined();
-    // Non-vacuity on the subject: what the cases below judge is a child whose
-    // own gate is open and whose own forks are none, in a listing that really
-    // holds a parent for it.
-    expect(entry!.gate).toEqual({ kind: "open" });
-    expect(entry!.dependsOnForks).toEqual([]);
-    expect(entry!.parent).toBeDefined();
-    return { entry: entry!, queue: result.entries };
-  }
-
-  /** A `group` entry carrying `gate`, with no files of its own. */
-  const group = (tag: string, gate: unknown, parent?: string): Record<string, unknown> => ({
-    tag,
-    kind: "group",
-    gate,
-    files: {},
-    ...(parent === undefined ? {} : { parent }),
-  });
-
-  /** An open `work` entry under `parent` — the subject of every case here. */
-  const workUnder = (tag: string, parent: string): Record<string, unknown> => ({
-    ...baseEntry,
-    tag,
-    parent,
-    gate: { kind: "open" },
-  });
-
   it("a work entry under an open group stays pickable", () => {
-    const { entry, queue } = forest(
+    const { entry, queue } = childInForest(
       [group("GOAL", { kind: "open" }), workUnder("WORK-UNDER-GOAL", "GOAL")],
       "WORK-UNDER-GOAL",
     );
@@ -2271,7 +2281,7 @@ describe("isPickableNow — an entry inherits its ancestors' gates (spec/pending
   });
 
   it("a work entry under a parked group is not pickable", () => {
-    const { entry, queue } = forest(
+    const { entry, queue } = childInForest(
       [
         group("GOAL", { kind: "parked", reason: "decision on the shape" }),
         workUnder("WORK-UNDER-GOAL", "GOAL"),
@@ -2282,7 +2292,7 @@ describe("isPickableNow — an entry inherits its ancestors' gates (spec/pending
   });
 
   it("a work entry under a group whose blockedBy has not settled is not pickable", () => {
-    const standing = forest(
+    const standing = childInForest(
       [
         group("GOAL", { kind: "blockedBy", tags: ["UPSTREAM"] }),
         workUnder("WORK-UNDER-GOAL", "GOAL"),
@@ -2295,7 +2305,7 @@ describe("isPickableNow — an entry inherits its ancestors' gates (spec/pending
     // Direction: the same forest with the blocker gone from the queue — the
     // settled verdict — picks the child, so the refusal above is the standing
     // blocker and not the `parent` link.
-    const settled = forest(
+    const settled = childInForest(
       [
         group("GOAL", { kind: "blockedBy", tags: ["UPSTREAM"] }),
         workUnder("WORK-UNDER-GOAL", "GOAL"),
@@ -2306,7 +2316,7 @@ describe("isPickableNow — an entry inherits its ancestors' gates (spec/pending
   });
 
   it("a work entry under a group gated on an unasserted capability is not pickable", () => {
-    const { entry, queue } = forest(
+    const { entry, queue } = childInForest(
       [
         group("GOAL", { kind: "requiresCapability", capability: "docker-host" }),
         workUnder("WORK-UNDER-GOAL", "GOAL"),
@@ -2321,7 +2331,7 @@ describe("isPickableNow — an entry inherits its ancestors' gates (spec/pending
   });
 
   it("a work entry two groups below a parked root is not pickable", () => {
-    const { entry, queue } = forest(
+    const { entry, queue } = childInForest(
       [
         group("GOAL", { kind: "parked", reason: "decision on the shape" }),
         group("EPIC", { kind: "open" }, "GOAL"),
@@ -2342,7 +2352,7 @@ describe("isPickableNow — an entry inherits its ancestors' gates (spec/pending
     // from a listing that does hold the group — a one-entry queue naming an
     // absent parent is refused outright, so the climb's missing-ancestor arm
     // is reachable only by narrowing the listing, never by a malformed one.
-    const { entry, queue } = forest(
+    const { entry, queue } = childInForest(
       [
         group("GOAL", { kind: "parked", reason: "decision on the shape" }),
         workUnder("WORK-UNDER-GOAL", "GOAL"),
@@ -2351,6 +2361,83 @@ describe("isPickableNow — an entry inherits its ancestors' gates (spec/pending
     );
     expect(isPickableNow(entry, queue)).toBe(false);
     expect(isPickableNow(entry, [])).toBe(true);
+  });
+});
+
+/**
+ * `spec/pending.md`, *Pickability* — the same inheritance over the foundations
+ * governor: **every `dependsOnForks` slug an entry or any ancestor declares**
+ * is read before any gate, so a fork named once on a goal holds its whole
+ * subtree whatever each descendant's gate says. The subject of every case is
+ * the child `childInForest` pins as open-gated and fork-free, so only the ancestor's
+ * declaration can account for a refusal.
+ */
+describe("isPickableNow — an entry inherits its ancestors' forks (spec/pending.md § Pickability)", () => {
+  it("an unresolved fork declared on an ancestor holds an entry whose own gate is open", () => {
+    const { entry, queue } = childInForest(
+      [
+        group("GOAL", { kind: "open" }, undefined, {
+          dependsOnForks: ["coldstart-2"],
+        }),
+        workUnder("WORK-UNDER-GOAL", "GOAL"),
+      ],
+      "WORK-UNDER-GOAL",
+    );
+    // Non-vacuity on the ancestor: the listing really carries the declaration
+    // the verdict has to come from, and the goal's own gate is open, so the
+    // gate climb decides nothing here.
+    const goal = queue.find((e) => e.tag === "GOAL")!;
+    expect(goal.dependsOnForks).toEqual(["coldstart-2"]);
+    expect(goal.gate).toEqual({ kind: "open" });
+
+    expect(isPickableNow(entry, queue, () => false)).toBe(false);
+    // Direction: the same forest with that fork resolved picks the child, so
+    // the refusal above is the inherited slug and not the `parent` link.
+    expect(isPickableNow(entry, queue, () => true)).toBe(true);
+  });
+
+  it("the fork resolver is asked for every slug the entry's ancestry declares", () => {
+    const { entry, queue } = childInForest(
+      [
+        group("GOAL", { kind: "open" }, undefined, {
+          dependsOnForks: ["goal-fork"],
+        }),
+        group("EPIC", { kind: "open" }, "GOAL", {
+          dependsOnForks: ["epic-fork"],
+        }),
+        workUnder("WORK-UNDER-EPIC", "EPIC"),
+      ],
+      "WORK-UNDER-EPIC",
+    );
+    const asked: string[] = [];
+    const resolver = (slug: string): boolean => {
+      asked.push(slug);
+      return true;
+    };
+    expect(isPickableNow(entry, queue, resolver)).toBe(true);
+    // Every level, not the nearest one: a climb that stopped at the parent
+    // would ask for "epic-fork" alone.
+    expect([...asked].sort()).toEqual(["epic-fork", "goal-fork"]);
+  });
+
+  it("an entry none of whose ancestry declares a fork never invokes the resolver", () => {
+    const { entry, queue } = childInForest(
+      [group("GOAL", { kind: "open" }), workUnder("WORK-UNDER-GOAL", "GOAL")],
+      "WORK-UNDER-GOAL",
+    );
+    // Non-vacuity: the climb really has an ancestor to read, and no level of
+    // it declares a fork — the default `[]` is what spares the resolver.
+    expect(queue).toHaveLength(2);
+    expect(queue.flatMap((e) => e.dependsOnForks)).toEqual([]);
+
+    let calls = 0;
+    // Refusing on every slug: were it asked at all, the verdict would flip.
+    const resolver = (): boolean => {
+      calls += 1;
+      return false;
+    };
+    expect(isPickableNow(entry, queue, resolver)).toBe(true);
+    expect(calls).toBe(0);
   });
 });
 

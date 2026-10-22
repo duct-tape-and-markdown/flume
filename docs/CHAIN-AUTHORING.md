@@ -2465,7 +2465,9 @@ Two pieces wire it up:
    question carries `dependsOnForks: ["slug", ...]` — opaque slugs your project
    uses to key its open questions. The entry is skipped while any slug is
    unresolved, regardless of gate kind, and picked up automatically once they
-   resolve. No new gate state; foundations cross-cut the gate.
+   resolve. No new gate state; foundations cross-cut the gate. The declaration
+   is inherited the way a gate is: a slug named once on a goal holds every
+   entry under it, whatever each descendant's own gate says.
 
 2. **The chain supplies a resolver.** `DispatcherOptions.forkResolver` answers,
    per repo, "is this slug resolved?" The runtime is format-agnostic — it never

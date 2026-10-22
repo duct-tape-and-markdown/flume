@@ -142,11 +142,13 @@ const PendingEntryCore = z.strictObject({
     gate: Gate,
     /**
      * Foundations governor. Fork slugs this entry's foundation rests on.
-     * The dispatcher skips the entry while any slug is unresolved —
-     * a cross-cutting predicate that precedes every gate kind, so an `open`
-     * entry sitting on an undecided fork is not built. Empty (the default)
-     * means no foundational dependency. The slug is opaque to the runtime: it
-     * is keyed and resolved by the consuming project.
+     * The dispatcher skips the entry — and every descendant of it, since the
+     * declaration is inherited the way a gate is ({@link isPickableNow}) —
+     * while any slug is unresolved: a cross-cutting predicate that precedes
+     * every gate kind, so an `open` entry sitting on an undecided fork is not
+     * built. Empty (the default) means no foundational dependency. The slug is
+     * opaque to the runtime: it is keyed and resolved by the consuming
+     * project.
      */
     dependsOnForks: z.array(z.string().min(1)).default([]),
     /**
@@ -1510,20 +1512,21 @@ function gateSettled(
  * "pickable" means.
  *
  * `queue` is the listing the entry sits in, and the two facts it carries are
- * which blockers have settled and which gates stand above the entry: a
- * `blockedBy` declared once on a goal therefore holds its whole subtree
- * ({@link ancestorsOf}). A caller holding an entry it has not queued hands
- * the listing the entry *would* join; a listing that holds none of its
- * ancestors answers over the entry's own gate alone, which is the reading a
- * tooling caller with no forest means literally.
+ * which blockers have settled and what stands above the entry — the gates and
+ * the fork declarations alike: either one declared once on a goal therefore
+ * holds its whole subtree ({@link ancestorsOf}). A caller holding an entry it
+ * has not queued hands the listing the entry *would* join; a listing that
+ * holds none of its ancestors answers over the entry's own declarations alone,
+ * which is the reading a tooling caller with no forest means literally.
  *
  * `isForkResolved` is the foundations governor's injected predicate: it
  * answers "is this fork slug resolved?" for the consuming project. It
  * defaults to always-resolved, so a caller that supplies none — or an entry
- * that declares no `dependsOnForks` — leaves the verdict to the gates. The
- * governor reads the entry's own declaration: `dependsOnForks` is a
- * side-array and not a gate kind (`spec/pending.md`, *Pickability*), so it
- * is not what an ancestor hands down.
+ * none of whose ancestry declares a `dependsOnForks` — leaves the verdict to
+ * the gates. The governor is asked over the same climb the gates take: a fork
+ * declared once on a goal holds its whole subtree whatever each descendant's
+ * gate says (`spec/pending.md`, *Pickability*), which is why a side-array
+ * rather than a gate kind costs the inheritance nothing.
  *
  * `capabilities` is the chain's declared `Chain.capabilities` — the
  * environment facts it asserts. Defaults to empty, so a `requiresCapability`
@@ -1536,11 +1539,15 @@ export function isPickableNow(
   isForkResolved: (slug: string) => boolean = () => true,
   capabilities: ReadonlySet<string> = new Set(),
 ): boolean {
-  // Foundations governor: a settled gate is not enough — every declared fork
-  // must resolve. Cross-cuts every gate kind, so it precedes the switch.
-  if (!entry.dependsOnForks.every(isForkResolved)) return false;
+  const lineage = [entry, ...ancestorsOf(queue, entry)];
+  // Foundations governor: a settled gate is not enough — every fork the
+  // lineage declares must resolve. Cross-cuts every gate kind, so the whole
+  // climb's declarations are read before the switch reads any of its gates.
+  for (const member of lineage) {
+    if (!member.dependsOnForks.every(isForkResolved)) return false;
+  }
   const queuedTags = new Set(queue.map((e) => e.tag));
-  for (const member of [entry, ...ancestorsOf(queue, entry)]) {
+  for (const member of lineage) {
     if (!gateSettled(member, queuedTags, capabilities)) return false;
   }
   return true;

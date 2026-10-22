@@ -155,10 +155,10 @@ function isDispatchUnit(entry: PendingEntry): boolean {
  *
  * The queue goes through whole, as the one argument the exported read
  * resolves both of its queue-shaped facts from: which blockers have settled,
- * and which of this entry's ancestors still gate it (`isPickableNow`,
- * `src/PendingSchema.ts`). Nothing is composed for it here — a set of
- * settled tags assembled on this side would be selection holding a second
- * opinion about what a ship is, and the ancestor climb a second time.
+ * and what this entry's ancestors still hold it on — a gate or a fork
+ * (`isPickableNow`, `src/PendingSchema.ts`). Nothing is composed for it here
+ * — a set of settled tags assembled on this side would be selection holding a
+ * second opinion about what a ship is, and the ancestor climb a second time.
  */
 function gateEligible(
   pending: readonly PendingEntry[],

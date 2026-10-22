@@ -191,9 +191,9 @@ export interface DispatcherOptions {
   /**
    * Foundations governor. Given the repo root, returns a predicate
    * answering "is this fork slug resolved?". Consulted once per tick;
-   * an entry whose `dependsOnForks` contains any unresolved slug is not
-   * pickable, skipped in favour of a foundation-settled sibling (or the tick
-   * idles if none). Default: every fork resolved — a chain that supplies no
+   * an entry whose own or any ancestor's `dependsOnForks` contains an
+   * unresolved slug is not pickable, skipped in favour of a
+   * foundation-settled sibling (or the tick idles if none). Default: every fork resolved — a chain that supplies no
    * resolver never holds an entry back. The runtime stays
    * format-agnostic: how a project records and resolves forks lives in the
    * resolver, not here.
