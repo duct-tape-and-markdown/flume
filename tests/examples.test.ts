@@ -60,6 +60,7 @@ import { makeFixture, silent, type Fixture } from "./helpers/dispatcherFixture.t
 import {
   bulletOf,
   restatementsOf,
+  rowNamesOf,
   sectionOf,
   walkOf,
 } from "./helpers/docSections.ts";
@@ -2783,6 +2784,74 @@ describe("docs/CHAIN-AUTHORING.md — the gate section walks GateContext", () =>
     expect(landedOn).toContain("`afterMerge`");
     expect(landedOn).toContain("Absent under `afterCommit`");
     expect(bulletFor("entry")).toContain("absent on a singleton tick");
+  });
+});
+
+/**
+ * Agreement pin (.claude/rules/engineering.md, *Narration is the ladder's
+ * bottom rung*: a `docs/` page stating what a shipped interface does — for a
+ * declaration, down to each field the package ships — may be pinned against
+ * the interface it describes). §1 is the only standing page that tells a
+ * chain author what a phase declares and what its hooks are handed, and both
+ * its tables say so outright: "every field it declares is below, in
+ * declaration order". A field the interface declares and the table skips is
+ * a capability the author cannot find at all — `promptDataKeys` was the
+ * field paid for, nowhere on the page while every undeclared key ran its
+ * quoted span grammar as a command — and a row the interface no longer
+ * declares is an instruction to set something that is not there. So the
+ * claim is equality in declaration order rather than coverage, and either
+ * side moving alone reds.
+ *
+ * Neither side is restated here (*Derived state is computed, never restated
+ * beside its source*): the fields come off the declaration through a
+ * checker, the rosters off the page's own tables.
+ */
+describe("docs/CHAIN-AUTHORING.md — §1's tables walk Phase and TickContext", () => {
+  /**
+   * Both tables sit under one heading, so each walk cuts §1 whole and finds
+   * its own table by that table's header cells (`rowNamesOf`,
+   * `tests/helpers/docSections.ts`) — armed by `docWalk`
+   * (`tests/helpers/docWalk.ts`), as the sibling walks over this page are.
+   * The anchor is each table's own claim of its interface, which is what
+   * proves the cut landed on the section making it.
+   */
+  const SECTION = {
+    page: "docs/CHAIN-AUTHORING.md",
+    heading: /^## 1\. Declaring a Phase$/m,
+  } as const;
+
+  const PHASE: DocWalkRequest = {
+    ...SECTION,
+    module: "src/Phase.ts",
+    interface: "Phase",
+    member: "promptDataKeys",
+    anchor: "The full interface lives in `src/Phase.ts`",
+  };
+
+  const TICK: DocWalkRequest = {
+    ...SECTION,
+    module: "src/Phase.ts",
+    interface: "TickContext",
+    member: "queueParseFailure",
+    anchor: "It too lives in `src/Phase.ts`",
+  };
+
+  it("docs/CHAIN-AUTHORING.md's phase-declaration section names every field Phase declares", () => {
+    const { members: fields, section } = docWalk(PHASE);
+
+    expect(
+      rowNamesOf(section, ["Field", "Role"]),
+      "docs/CHAIN-AUTHORING.md's phase table rows exactly the fields `Phase` declares, in declaration order",
+    ).toEqual(fields);
+  });
+
+  it("docs/CHAIN-AUTHORING.md's phase-declaration section names every field TickContext declares", () => {
+    const { members: fields, section } = docWalk(TICK);
+
+    expect(
+      rowNamesOf(section, ["Field", "What it carries"]),
+      "docs/CHAIN-AUTHORING.md's tick-context table rows exactly the fields `TickContext` declares, in declaration order",
+    ).toEqual(fields);
   });
 });
 

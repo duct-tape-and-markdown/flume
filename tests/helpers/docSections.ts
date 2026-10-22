@@ -279,6 +279,14 @@ const MENTION = /`([A-Za-z][A-Za-z0-9]*)`/g;
 const BULLET_LEAD = /(?:^|\n)[-*] (?:\*\*)?$/;
 
 /**
+ * The blank line a page separates its blocks with — what ends a list, what
+ * bounds a paragraph, and what closes the bulleted run or the table a read
+ * below is cut to. One spelling, so a block read, a list close and a
+ * per-bullet cut cannot disagree about what a blank line closes.
+ */
+const BLOCK_BREAK = /\n[ \t]*\n/;
+
+/**
  * One block of a section — a heading, a paragraph, a fenced sample, or a run
  * of bullets with no blank line through it — read for the members it names.
  */
@@ -295,7 +303,7 @@ interface SetNaming {
  * declaration the caller resolved is what decides which tokens are namings.
  */
 function setNamingsOf(section: string, members: readonly string[]): SetNaming[] {
-  return section.split(/\n[ \t]*\n/).map((block) => {
+  return section.split(BLOCK_BREAK).map((block) => {
     const leads: string[] = [];
     const mentions: string[] = [];
     for (const mention of block.matchAll(MENTION)) {
@@ -406,6 +414,61 @@ export function leadNamesOf(section: string): string[] {
 }
 
 /**
+ * One markdown row's cells, trimmed, with the pipes the row opens and closes
+ * with dropped — how wide a page pads a cell is the formatter's business, not
+ * the row's. A line that is not a row yields nothing.
+ */
+function cellsOf(row: string): string[] {
+  const split = row.trim().split("|");
+  return split.slice(1, Math.max(split.length - 1, 1)).map((cell) => cell.trim());
+}
+
+/**
+ * Every member one markdown table of a section *claims*: the backticked bare
+ * name opening each row's first cell, in row order, with no declaration to
+ * filter by. {@link leadNamesOf}'s read over a table rather than a bulleted
+ * list, and for the same reason — a caller compares the sequence against the
+ * declaration it resolved, so one equality reds both on a field no row names
+ * and on a row naming a field the declaration dropped, order included where
+ * the table claims one.
+ *
+ * The table is cut by its own header cells, because a section carries more
+ * than one: `docs/CHAIN-AUTHORING.md`'s phase-declaration section tables
+ * `Phase` and `TickContext` under a single heading, and a read of the whole
+ * span would walk both as one roster — green over either table skipping a
+ * field the other happens to declare. The cells rather than the header line,
+ * so re-padding a column is not a rewrite of the cut.
+ *
+ * The first cell only: a row's body names whatever it needs to explain itself
+ * — a sibling field, the type it carries, the section documenting it — and
+ * none of those is a claim about the roster.
+ *
+ * A header no block of the section opens, or one two blocks open, throws
+ * rather than yielding an empty roster: the caller's next act is comparing
+ * one, and an empty answer would red as "the table names nothing" when the
+ * truth is that the cut missed.
+ */
+export function rowNamesOf(section: string, header: readonly string[]): string[] {
+  const headed = section.split(BLOCK_BREAK).filter((block) => {
+    const cells = cellsOf(block.split(/\r?\n/)[0] ?? "");
+    return (
+      cells.length === header.length && cells.every((cell, at) => cell === header[at])
+    );
+  });
+  if (headed.length !== 1) {
+    throw new Error(
+      `the section opens ${headed.length} tables headed ${JSON.stringify(header)}`,
+    );
+  }
+
+  return headed[0]!
+    .split(/\r?\n/)
+    .flatMap((row) =>
+      [...(cellsOf(row)[0] ?? "").matchAll(MENTION)].map((mention) => mention[1]!),
+    );
+}
+
+/**
  * A bullet's opening: the list marker through whatever the page delimits the
  * member's name with — the bold run a walk that emphasizes its leads opens
  * with, or the bare backtick a walk that does not. Derived from the lead the
@@ -413,12 +476,6 @@ export function leadNamesOf(section: string): string[] {
  * finds the bullet is the spelling that ends it at the next one.
  */
 const BULLET_OPENING = /^[-*] +(?:\*\*)?`?/;
-
-/**
- * The blank line that ends a list — the same rule {@link bulletsOf} resets its
- * run on, so the two cuts agree on what closes a bullet.
- */
-const LIST_CLOSE = /\n[ \t]*\n/;
 
 /**
  * One bullet of a section, from its lead through the line before the next
@@ -458,7 +515,7 @@ export function bulletOf(section: string, lead: string): string {
   }
 
   const rest = section.slice(at + lead.length);
-  const closers = [rest.indexOf(`\n${opening}`), rest.search(LIST_CLOSE)].filter(
+  const closers = [rest.indexOf(`\n${opening}`), rest.search(BLOCK_BREAK)].filter(
     (found) => found !== -1,
   );
   const body = closers.length === 0 ? rest : rest.slice(0, Math.min(...closers));
