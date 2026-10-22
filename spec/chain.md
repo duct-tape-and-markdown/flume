@@ -350,17 +350,18 @@ resolved `flumeDir`.
 
 `Chain.supervisorPolicy?: { quarantineScope?: "run" | "none"; abortThreshold?:
 number; maxTicks?: number; maxParallel?: number; mergeBatch?: number;
-tickTimeoutMs?: number; partitionIgnore?: string[]; killGraceMs?: number }`.
+tickTimeoutMs?: number; gateTimeoutMs?: number; partitionIgnore?: string[];
+killGraceMs?: number }`.
 The engine's loop policy — run-scoped quarantine of an
 entry slug whose worktree provisioning failed, abort after three consecutive
 identical failure signatures, how many phase ticks the supervisor runs at once
 (`spec/loop.md`, *Baton — presence wakes, absence hibernates*), fanout batch
-width, how many finished spans of one wave a merge carries, the per-invocation wall-clock cap, the paths the fanout partition
+width, how many finished spans of one wave a merge carries, the per-invocation wall-clock cap, the per-child deadline on every process the engine runs on a gate's behalf, the paths the fanout partition
 ignores, and the grace a signalled tick gives its agent tree before `SIGKILL`
 (`spec/loop.md`, *The loop lock and the tip claim*) — ships as **defaults, not
 behavior** (`superviseLoop`, `quarantineScope ?? "run"`, `abortThreshold ?? 3`,
-`maxTicks ?? 1`; `runFanout`, `maxParallel ?? 4` and `mergeBatch ?? 1`; `tickTimeoutMs` default unset
-— no cap; `partitionIgnore` default `[]`; `killGraceMs ?? 5000`). A chain
+`maxTicks ?? 1`; `runFanout`, `maxParallel ?? 4` and `mergeBatch ?? 1`; `tickTimeoutMs` and
+`gateTimeoutMs` default unset — no cap; `partitionIgnore` default `[]`; `killGraceMs ?? 5000`). A chain
 declaring nothing gets the defaults byte-identically — one phase tick at a
 time, which is the serial loop.
 
@@ -379,8 +380,8 @@ time, which is the serial loop.
   consecutive-failure streak are run-scoped accounting that resets per
   `superviseLoop` call, so a mid-run change would rewrite the rules the
   accumulated counts were gathered under.
-- **`maxParallel`, `tickTimeoutMs`, `partitionIgnore`, and `killGraceMs` are
-  read per tick**, straight off the tick's own resolved chain (`runFanout`,
+- **`maxParallel`, `tickTimeoutMs`, `gateTimeoutMs`, `partitionIgnore`, and
+  `killGraceMs` are read per tick**, straight off the tick's own resolved chain (`runFanout`,
   `chain.supervisorPolicy?.maxParallel ?? this.maxParallel`; `tickTimeoutMs`
   the same shape against `DispatcherOptions.tickTimeoutMs`; `partitionIgnore`
   handed to the partition, `spec/pending.md` *Fanout partition*;
@@ -543,22 +544,22 @@ confines side effects to disk inside `cwd`.
   sibling in a fanout wave shares it, so a gate measured against it inherits
   every sibling's landing; `HEAD^` is right only while a span lands as one
   commit. Set on every dispatcher-built `afterMerge` context.
-- **`entry`** — the pending entry the gated span was provisioned for, as the
-  wave selected it; set at both stages under fanout, absent on a singleton
+- **`assignment`** — the session the gated span was provisioned for, as one
+  value: `entry`, the pending entry as the wave selected it, and `steps`, that
+  entry's steps (`spec/pending.md`, *The queue is a forest*), empty for an
+  entry with none. Set at both stages under fanout, absent on a singleton
   tick, which carries no entry. It is how a chain gate holds a commit to the
   entry's *own* contract — the behaviors its `tests[]` names, an acceptance
-  its extension declares — rather than to the phase's uniform bar alone. The
-  engine reads none of those fields (`.flume/PROTOCOL.md`, *What an entry
-  carries*); a gate the chain declares may, and the dispatcher already holds
-  the entry for the scoped fence union, so it is reported rather than
-  re-read from the queue.
-- **`steps`** — that entry's steps (`spec/pending.md`, *The queue is a forest*),
-  set exactly where `entry` is and empty for an entry with none: an entry and its
-  steps are one session's assignment, so a gate judging paths reads the same
-  footprint the fence enforces.
+  its extension declares — rather than to the phase's uniform bar alone, and
+  how a gate judging paths reads the same footprint the fence enforces. The
+  engine reads none of the entry's fields (`.flume/PROTOCOL.md`, *What an
+  entry carries*); a gate the chain declares may, and the dispatcher already
+  holds the assignment for the scoped fence union, so it is reported rather
+  than re-read from the queue. An entry and its steps are one assignment, so
+  neither is ever handed without the other.
 - **`batch`** — set when one merge carries several spans (`spec/worktrees.md`,
-  *Batched merges*): one record per span — its `entry`, `steps`, `baseSha`, `landedOnSha` and
-  `touchedPaths` — in the order they were picked. Under a batch, `entry`, `baseSha`
+  *Batched merges*): one record per span — its `assignment`, `baseSha`, `landedOnSha` and
+  `touchedPaths` — in the order they were picked. Under a batch, `assignment`, `baseSha`
   and `landedOnSha` are absent, `commitSha` is the batch's last pick, and
   `touchedPaths` is the union, so a gate written for one span never reads one span's
   facts as the batch's. Only a gate that declares `batches: true` is ever handed one.

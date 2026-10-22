@@ -211,6 +211,21 @@ tsx 4.21 under node 22.20, 22.23 and 24.21.
 So an in-process `tsImport` sees the disk as it is now. A re-read that leans
 on that holds only while the load goes through `tsImport`.
 
+## `execFile` forwards no `stdio`; its child always gets a stdin pipe
+
+`execFile` and `exec` compose their own spawn options: a `stdio` option on
+the call is ignored, and the child's stdin is always an open pipe, so a
+`stdio: ["ignore", …]` there is inert while reading as correct. The one seam
+is the child the call returns: end its stdin (`child.stdin.end()`). Measured
+on node 22.20 and 24.21.
+
+## `node -e <code>` parses later `--opts` as node's own
+
+`node -e <code> --reporter=json` exits 9, `bad option`, before the code
+runs: node reads options after `-e` as its own. A fixture standing in for a
+tool as `process.execPath -e …` ends its own arguments with `--`, so the
+flags a runner appends reach the script. Measured on node 24.21.
+
 ## MSYS2 corrupts non-ASCII in argv; use stdin
 
 `execFile("sh", ["-c", cmd])` fails for **any non-ASCII byte anywhere in

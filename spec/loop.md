@@ -680,11 +680,12 @@ beside the gate list the way `invocations[]` sits beside it, **one timing row
 per gate run and per merge**: the gate's name or the entry's tag and the
 milliseconds the engine's own clock measured, never a field on the
 chain-authored `GateResult`, so non-agent time is read off the verdict rather
-than differenced from timestamps. The sha is recovery,
-not decoration: a span that was parked or refused after its gates passed must be
-re-cherry-pickable from the verdict alone, never re-run at full agent price —
-worktree teardown deletes trees and refs, but the objects survive in the shared
-store until gc, and the verdict is the only place their sha outlives the branch.
+than differenced from timestamps. The shas are facts
+for the operator, not a recovery the loop performs: worktree teardown deletes
+trees and refs, but the objects survive in the shared store until gc, and the
+verdict is the only place a span's sha outlives its branch, so a span that was
+parked, refused, or walled after its gates passed can be carried by hand. No
+actor re-picks one; its entry stays pending and re-runs its agent.
 
 - **Gate results stop at the first failure.** Both gate loops — afterCommit and
   afterMerge — return on the first red gate, so `gateResults`, and the `<prior-attempt>` record derived

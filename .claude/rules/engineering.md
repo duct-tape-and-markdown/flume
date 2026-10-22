@@ -36,6 +36,11 @@ Every check lives at the most deterministic layer that can express it — a
   ("for the current line", "until the migration") goes stale the moment the
   window does, and nothing re-reads it. State the condition that would
   change the decision, so a sweep can evaluate it.
+- **A count is a meaning, never a token.** A comment or page that counts
+  or names the target of a set the program holds — "every caller but one",
+  "the two notes" — stays on the bottom rung by construction: no suite arm
+  resolves it, and no sweep files the family. A stale count is corrected in
+  the commit that notices it, and a note about one cites this bullet.
 - **The ladder governs the engine's behavior, and stops there.** Prose about
   the harness itself — a rule page, PROTOCOL, a prompt, `spec/` — is held by
   its authors and is never promoted into the suite. A check on how the
