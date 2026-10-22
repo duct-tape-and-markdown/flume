@@ -51,5 +51,5 @@
     "hides": "a glob list the consumer kept in step with its own test config by hand, checked against nothing the run did",
     "rejected": "keeping the list as an override for a tool that cannot answer — a second source of one truth, and the arm that drifts is the one nothing reads"
   },
-  "notes": "Parked, not blocked: cutting `Lane.excludes` breaks `.flume/declaration.ts`, which declares two lanes with exclusions and sits outside build's fence, so no build commit lands this green. Reads the scope THE-VITEST-RUNNER-TAKES-THE-CONSUMERS-SCOPE declares, so it follows that entry. Build also measures whether `vitest list --filesOnly --json` answers coverage under the declared scope; if no form does, the no-coverage arm is the whole answer."
+  "notes": "Parked, not blocked: cutting `Lane.excludes` breaks `.flume/declaration.ts`, which declares two lanes with exclusions and sits outside build's fence, so no build commit lands this green. The scope it reads has landed, and the gap is live: the hints render `Lane.excludes` alone, so a consumer narrowing with `scope` is told nothing. Build also measures whether `vitest list --filesOnly --json` answers coverage under the declared scope; if no form does, the no-coverage arm is the whole answer."
 }
