@@ -2321,6 +2321,87 @@ describe("flume hold (spec/cli.md §Subcommand surface)", () => {
 });
 
 /**
+ * A verb's usage refusal names the words it declined, beside the line that
+ * states the grammar it read them against (`spec/cli.md`, *Subcommand
+ * surface*). The argv is a fact this process already decoded, so the operator
+ * reads which word was refused rather than rebuilding it from the shell they
+ * typed it in (`.claude/rules/engineering.md`, *A fact the engine holds is
+ * reported, never rediscovered*).
+ *
+ * Driven through the real process, because the claim is the argv read and the
+ * line it produced (`.claude/rules/engineering.md`, *A seam gate reads what
+ * the real writer wrote*).
+ */
+describe("a usage refusal names the words it declined (spec/cli.md §Subcommand surface)", () => {
+  /** The words one refusal quoted, read off the line that quoted them. */
+  const quoted = (stderr: string): string | undefined =>
+    /refused: (.*)$/m.exec(stderr)?.[1];
+
+  it(
+    "a verb refusing an argument it does not take names the word it refused",
+    async () => {
+      const repo = await makeScratchRepo("flume-usage-refusal-", "main");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+
+        // `tick` consumes no positionals at all — which phase to run is said
+        // with `--phase` — so the stray word is the whole of what it
+        // declined.
+        const tick = await runCliStreams(repo.dir, ["tick", "stray"]);
+        expect(tick.code, tick.stderr).toBe(2);
+        expect(tick.stderr).toContain("usage: flume tick [--phase <name>]");
+        // The quoted half read as the one line that carries it, so the case
+        // asserts *which* words were named rather than that the output
+        // happens to hold one of them somewhere
+        // (`.claude/rules/posture-sweep.md`, *Standing lenses*).
+        expect(quoted(tick.stderr)).toBe("'stray'");
+
+        // A second verb, because the sentence is one rendering every
+        // refusing site reaches for rather than one verb's own line — and
+        // this one takes a positional, so what it names is the word past the
+        // phase it was handed, never the phase.
+        const held = await runCliStreams(repo.dir, ["hold", "probe", "extra"]);
+        expect(held.code, held.stderr).toBe(2);
+        expect(held.stderr).toContain("usage: flume hold <phase>");
+        expect(quoted(held.stderr)).toBe("'extra'");
+
+        // And the empty word — the one argv shape a command line shows
+        // nothing of — is readable because the quotes are there.
+        const empty = await runCliStreams(repo.dir, ["check", ""]);
+        expect(empty.code, empty.stderr).toBe(2);
+        expect(quoted(empty.stderr)).toBe("''");
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it(
+    "a verb refusing an argv with no word to name prints its usage line alone",
+    async () => {
+      const repo = await makeScratchRepo("flume-usage-refusal-", "main");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+
+        // The missing-positional arm: the refusal is the absence, and there
+        // is no word to quote — the vacuous-by-design half of the rendering,
+        // spelled rather than inherited (`.claude/rules/engineering.md`, *A
+        // green verdict is proven non-vacuous*).
+        const bare = await runCliStreams(repo.dir, ["wake"]);
+        expect(bare.code, bare.stderr).toBe(2);
+        expect(bare.stderr).toContain("usage: flume wake <phase>");
+        expect(quoted(bare.stderr)).toBeUndefined();
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+});
+
+
+/**
  * THE-REFUSING-LOADS-REPORT-IS-PINNED-AT-BOTH-VERBS — the other leg of the
  * shared chain load. `check` and `friction` can do no work at all without a
  * chain, so each takes `loadChainOrRefuse` (`src/cliChainLoad.ts`) before any
@@ -6630,6 +6711,86 @@ function realStopVerbChainSrc(phaseName: string): string {
 }
 
 describe("state root layout — `flume stop` writes the flag every reader honors", () => {
+  /**
+   * `flume wake <phase>` is one of the flag's readers: the flag it stands up
+   * is a claim about what runs next, and a standing stop flag is what decides
+   * whether any run starts at all (`spec/loop.md`, *Graceful stop — the stop
+   * flag*). So the verb reports the flag in the clause it already speaks about
+   * the markers it moved, rather than leaving the operator to look
+   * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+   * never rediscovered*).
+   */
+  it(
+    "wake over a standing stop flag names the flag that will refuse the next loop",
+    async () => {
+      const repo = await makeScratchRepo("flume-cli-repo-", "main");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+        const flumeDir = join(repo.dir, ".flume");
+
+        // The real writer, through the verb an operator types — this case
+        // plants no file (`.claude/rules/engineering.md`, *A seam gate reads
+        // what the real writer wrote*).
+        const wrote = await runCliStreams(repo.dir, ["stop"]);
+        expect(wrote.code, wrote.stderr).toBe(0);
+        // Non-vacuity: the flag this case is about really stands, so the
+        // clause below names a file rather than a phrase.
+        expect(existsSync(stopFlagPath(flumeDir))).toBe(true);
+
+        const woke = await runCliStreams(repo.dir, ["wake", "probe"]);
+
+        // The wake itself landed: the clause reports what stands beside this
+        // verb's move and never refuses it.
+        expect(woke.code, woke.stderr).toBe(0);
+        expect(new Baton(flumeDir).isAwake("probe")).toBe(true);
+        // The whole line, because the clause is the claim: a `toContain` over
+        // the verb word alone would pass on a sentence that said nothing
+        // about the stop.
+        expect(woke.stdout.trim()).toBe(
+          `woke probe — stop flag present at ${stopFlagPath(flumeDir)}: ` +
+            "the next `loop` refuses to start until it is removed",
+        );
+
+        // And what the clause states is what happens: the run the operator
+        // just scheduled a phase for is the one the flag refuses, read off
+        // the real reader rather than this case's own account of it.
+        const refused = await runCli(repo.dir, ["loop", "--max", "1"]);
+        expect(refused.code, refused.out).toBe(1);
+        expect(refused.out).toContain("stop flag present at");
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it(
+    "wake over a state root with no stop flag says nothing about one",
+    async () => {
+      const repo = await makeScratchRepo("flume-cli-repo-", "main");
+      try {
+        await writeRepoConfig(repo.dir, minimalChainSrc());
+        const flumeDir = join(repo.dir, ".flume");
+        // The arm this case is about: no flag stands, which is the state a
+        // first run is in. Proven before the verb runs, so the silence below
+        // is read against a root that really holds nothing.
+        expect(existsSync(stopFlagPath(flumeDir))).toBe(false);
+
+        const woke = await runCliStreams(repo.dir, ["wake", "probe"]);
+
+        expect(woke.code, woke.stderr).toBe(0);
+        // The whole line: the clause is a report of what stands, never a
+        // fixed suffix, so with nothing standing there is nothing past the
+        // verb's own move.
+        expect(woke.stdout.trim()).toBe("woke probe");
+        expect(new Baton(flumeDir).isAwake("probe")).toBe(true);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
   it(
     "the flag the stop verb wrote refuses the next `flume loop` before any tick",
     async () => {

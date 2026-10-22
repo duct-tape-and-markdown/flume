@@ -11,6 +11,7 @@
  */
 
 import { loadChainOrRefuse } from "./cliChainLoad.js";
+import { usageRefusal } from "./cliArgs.js";
 import { operatorLog } from "./cliLog.js";
 import { EX_DATAERR, EX_IOERR } from "./exitCodes.js";
 import type { FlumePaths } from "./flumeApi.js";
@@ -31,7 +32,7 @@ export async function checkVerb(
   // `check` consumes no positionals (spec/cli.md "Subcommand surface") —
   // refuse before the chain load below, not just before the fence checks.
   if (rest.length > 0) {
-    operatorLog.error("usage: flume check");
+    operatorLog.error(usageRefusal("usage: flume check", rest));
     return 2;
   }
   // The shared refusing load (`loadChainOrRefuse`, src/cliChainLoad.ts):

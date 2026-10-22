@@ -9,7 +9,7 @@
  * two stderr notices that say what the printed prompt is and is not.
  */
 
-import { takeFlagValue } from "./cliArgs.js";
+import { takeFlagValue, usageRefusal } from "./cliArgs.js";
 import { refuseCjsContextHost } from "./cliChainLoad.js";
 import type { CliVerbRun } from "./cliRunContext.js";
 import {
@@ -21,12 +21,23 @@ import { EX_DATAERR, EX_MOUNT_DEAD } from "./exitCodes.js";
 import { RenderRefusal } from "./Prompt.js";
 import { thrownMessage } from "./thrown.js";
 
+/** What this verb refuses an argv it cannot honor as typed with. */
+const RENDER_USAGE = "usage: flume render <phase> [--entry <tag>]";
+
+/** The one flag this verb reads, spelled once for the take and the refusal. */
+const ENTRY_FLAG = "--entry";
+
 export async function renderVerb(run: CliVerbRun): Promise<number> {
   const { rest, dispatcher, log: operatorLog } = run;
   const words = [...rest];
-  const taken = takeFlagValue(words, "--entry");
+  const taken = takeFlagValue(words, ENTRY_FLAG);
   if (taken === null) {
-    operatorLog.error("usage: flume render <phase> [--entry <tag>]");
+    // The flag itself is what was refused — it carried no tag, or a word the
+    // take reads as the next flag rather than a value — so the flag is what
+    // the refusal names, beside the usage line that spells what belongs
+    // behind it (`usageRefusal`, `src/cliArgs.ts`). Not the words standing
+    // beside it: the positional among them is one this verb does take.
+    operatorLog.error(usageRefusal(RENDER_USAGE, [ENTRY_FLAG]));
     return 2;
   }
   const entryTag: string | undefined = taken;
@@ -34,8 +45,10 @@ export async function renderVerb(run: CliVerbRun): Promise<number> {
   // One positional, `<phase>` — same class as `tick`'s stray-arg refusal
   // (spec/cli.md "Subcommand surface", gh#1): rendering a phase other than
   // the one typed is the harm, and it is refused before the chain loads.
+  // What the refusal names is the words past the one this verb consumes, and
+  // nothing where the phase itself is what is missing.
   if (!phaseName || words.length > 1) {
-    operatorLog.error("usage: flume render <phase> [--entry <tag>]");
+    operatorLog.error(usageRefusal(RENDER_USAGE, words.slice(1)));
     return 2;
   }
 

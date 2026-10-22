@@ -24,7 +24,7 @@
 import { spawn } from "node:child_process";
 import { constants } from "node:os";
 
-import { splitAtSeparator } from "./cliArgs.js";
+import { splitAtSeparator, usageRefusal } from "./cliArgs.js";
 import { operatorLog } from "./cliLog.js";
 import { EX_MOUNT_DEAD } from "./exitCodes.js";
 import type { FlumePaths } from "./flumeApi.js";
@@ -133,7 +133,10 @@ export async function exclusiveVerb(
   // run — both are argv it cannot honor as typed.
   const { ahead, behind } = splitAtSeparator(rest);
   if (ahead.length > 0 || behind === undefined || behind.length === 0) {
-    operatorLog.error(USAGE);
+    // A word ahead of the separator is the refusal's to name; a separator
+    // that is missing or names nothing leaves no word to quote, and the line
+    // stands alone (`usageRefusal`, `src/cliArgs.ts`).
+    operatorLog.error(usageRefusal(USAGE, ahead));
     return 2;
   }
 

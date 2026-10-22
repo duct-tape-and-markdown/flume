@@ -10,13 +10,13 @@
  * the run never lies to CI*).
  */
 
-import { takeCountValue } from "./cliArgs.js";
+import { takeCountValue, usageRefusal } from "./cliArgs.js";
 import type { CliVerbRun } from "./cliRunContext.js";
+import { readStopFlag } from "./cliStopFlag.js";
 import { installSignalledTeardown } from "./cliTeardown.js";
 import { describeRefFailure, loopCompletionSummary, loopExitCode } from "./cliVerdict.js";
 import { diskChainLoader } from "./chainLoad.js";
 import { EX_IOERR, EX_TERMINAL_MISCONFIG } from "./exitCodes.js";
-import { existsLoudUnder } from "./fsProbe.js";
 import {
   acquireTipClaim,
   currentRefPath,
@@ -31,7 +31,7 @@ import {
   type SuperviseResult,
 } from "./loopSupervisor.js";
 import { readMergingMarkers } from "./mergingMarkers.js";
-import { loopLockPath, mergingDir, stopFlagPath } from "./paths.js";
+import { loopLockPath, mergingDir } from "./paths.js";
 import type { Chain } from "./Phase.js";
 import { stakePidClaim, type StakedPidClaim } from "./pidClaim.js";
 import { DEFAULT_KILL_GRACE_MS } from "./processTree.js";
@@ -85,7 +85,7 @@ export async function loopVerb(run: CliVerbRun): Promise<number> {
   // left standing by the take, so it is refused here whether it is read as
   // the flag's own failure or as the token it leaves behind.
   if (requested === null || words.length > 0) {
-    operatorLog.error("usage: flume loop [--max N]");
+    operatorLog.error(usageRefusal("usage: flume loop [--max N]", words));
     return 2;
   }
   // The budget this run spends, and the engine default when the operator
@@ -101,30 +101,21 @@ export async function loopVerb(run: CliVerbRun): Promise<number> {
   // spec/loop.md "Graceful stop — the stop flag": presence at start
   // refuses the run before any tick — a stale flag must never silently
   // swallow a scheduled run.
-  // Absent is the only silent reading, and it is proven from the path:
-  // `existsLoudUnder` (src/fsProbe.ts) descends from the state root this run
-  // is about to take its lock in before it stats the flag, so neither a flag
-  // that is present but unstattable nor one under a root a plain file stands
-  // at can start the run — which is the one outcome this guard exists to
-  // rule out, and the one a single stat takes on win32, where an obstructed
-  // ancestor is spelled `ENOENT` (`.claude/rules/platform-facts.md`, *win32
-  // reports a path through a non-directory as not found*;
-  // `.claude/rules/engineering.md`, "Loud or nothing"). The refusal names
-  // the underlying error — the operator must resolve the flag either way
-  // before a run starts.
-  const loopStopPath = stopFlagPath(flumeDir);
-  let loopStopPresent: boolean;
-  try {
-    loopStopPresent = existsLoudUnder("stop flag", flumeDir, loopStopPath);
-  } catch (err) {
-    operatorLog.error(
-      `[flume] loop refuses: stop flag at ${loopStopPath} failed to stat: ${thrownMessage(err)}`,
-    );
+  // Neither a flag that is present but unstattable nor one under a root a
+  // plain file stands at can start the run: the absent arm is proven rather
+  // than statted, and the refusal names the underlying error, because the
+  // operator must resolve the flag either way before a run starts. Which
+  // answers the read gives and why its silence is provable is the shared
+  // read's (`readStopFlag`, `src/cliStopFlag.ts`); what is this verb's own is
+  // that neither of the other two answers lets the run start.
+  const stopRead = readStopFlag(flumeDir);
+  if (stopRead.kind === "unreadable") {
+    operatorLog.error(`[flume] loop refuses: ${stopRead.detail}`);
     return EX_IOERR;
   }
-  if (loopStopPresent) {
+  if (stopRead.kind === "present") {
     operatorLog.error(
-      `[flume] loop refuses: stop flag present at ${loopStopPath} — ` +
+      `[flume] loop refuses: stop flag present at ${stopRead.path} — ` +
         "remove it to acknowledge the stop before starting a new run",
     );
     return 1;

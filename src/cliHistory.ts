@@ -7,7 +7,7 @@
  * opens the wrong one (`.claude/rules/engineering.md`, *A module is one job*).
  */
 
-import { takeCountValue } from "./cliArgs.js";
+import { takeCountValue, usageRefusal } from "./cliArgs.js";
 import { operatorLog } from "./cliLog.js";
 import { formatTickVerdictLine } from "./cliVerdict.js";
 import { EX_IOERR } from "./exitCodes.js";
@@ -36,7 +36,7 @@ export async function logVerb(
   // `log` consumes no positionals either, and a `-n` carrying no count is
   // left standing by the take — so one refusal answers both.
   if (requested === null || words.length > 0) {
-    operatorLog.error("usage: flume log [-n N] [--json]");
+    operatorLog.error(usageRefusal("usage: flume log [-n N] [--json]", words));
     return 2;
   }
   // How many verdicts to read back, and this verb's own default when the

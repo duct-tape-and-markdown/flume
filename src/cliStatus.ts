@@ -18,13 +18,14 @@ import { Baton } from "./Baton.js";
 import { agentUsageLine } from "./cliVerdict.js";
 import { loadChainForObservation } from "./cliChainLoad.js";
 import { operatorLog } from "./cliLog.js";
+import { readStopFlag } from "./cliStopFlag.js";
 import { EX_IOERR } from "./exitCodes.js";
 import type { FilingTimes } from "./filingOrder.js";
 import type { FlumePaths } from "./flumeApi.js";
 import { frictionCountLine } from "./friction.js";
 import { existsLoudUnder } from "./fsProbe.js";
 import { currentRefPath, gitCommonDir, liveTipClaim, tipClaimPath } from "./git.js";
-import { loopLockPath, resolvePendingDir, stopFlagPath } from "./paths.js";
+import { loopLockPath, resolvePendingDir } from "./paths.js";
 import { readLooseFilingTimes, readPendingLoose } from "./pendingLedger.js";
 import type { ParseResult, PendingEntry } from "./PendingSchema.js";
 import { liveLoopClaim, statedStateRoot, type PidClaim } from "./pidClaim.js";
@@ -154,29 +155,24 @@ export async function statusVerb(paths: FlumePaths): Promise<number> {
   // status` owes exactly this" line 4: named right after supervisor
   // liveness, before the tip claim — the ack ritual only works if the
   // operator who forgot the flag finds it where they look first.
-  // Absent is the only silent reading and is proven the same way `loop.pid`
-  // above proves it, from the same state root: a stop flag that is present
-  // but unstattable, or one under a root a plain file stands at, must never
-  // print as no stop line, because that is exactly the reading spec/loop.md
-  // "Graceful stop — the stop flag" promises can never happen — the operator
-  // would relaunch over an unacknowledged stop
-  // (`.claude/rules/engineering.md`, "Loud or nothing").
-  const statusStopPath = stopFlagPath(flumeDir);
-  let stopFlagPresent: boolean;
-  try {
-    stopFlagPresent = existsLoudUnder("stop flag", flumeDir, statusStopPath);
-  } catch (err) {
-    operatorLog.error(
-      `[flume] status: stop flag at ${statusStopPath} failed to stat: ${thrownMessage(err)}`,
-    );
+  // A stop flag that is present but unreadable must never print as no stop
+  // line, because that is exactly the reading spec/loop.md "Graceful stop —
+  // the stop flag" promises can never happen: the operator would relaunch
+  // over an unacknowledged stop. The proof behind the silent arm is the
+  // shared read's, the same read `loop` refuses on (`readStopFlag`,
+  // `src/cliStopFlag.ts`); what stays this verb's own is the code it takes
+  // and the liveness-conditioned phrasing below, which is `status`'s alone.
+  const stopRead = readStopFlag(flumeDir);
+  if (stopRead.kind === "unreadable") {
+    operatorLog.error(`[flume] status: ${stopRead.detail}`);
     return EX_IOERR;
   }
-  if (stopFlagPresent) {
+  if (stopRead.kind === "present") {
     console.log(
       supervisor
-        ? `${statusStopPath} present: the running supervisor will finish ` +
+        ? `${stopRead.path} present: the running supervisor will finish ` +
             "its in-flight tick and end the run"
-        : `${statusStopPath} present: the next \`loop\` refuses to start ` +
+        : `${stopRead.path} present: the next \`loop\` refuses to start ` +
             "until it is removed",
     );
   }

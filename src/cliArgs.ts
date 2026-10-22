@@ -1,13 +1,16 @@
 /**
- * The flag readings more than one verb parses with.
+ * The argv readings more than one verb parses with, and the refusal they all
+ * answer an unhonorable argv with.
  *
  * `src/cli.ts` splits argv into a verb and the words behind it, and what
  * those words mean is each verb's own to read. These are the readings more
  * than one verb reaches for: one sequence that takes a `--flag <value>` pair
  * out of those words, the two decisions about the value behind the flag that
- * sequence runs, and the split at argv's own `--` separator that decides
- * which side of it a word is on — so a reading has one home rather than a
- * spelling per verb (`.claude/rules/engineering.md`, *A module is one job*).
+ * sequence runs, the split at argv's own `--` separator that decides which
+ * side of it a word is on — so a reading has one home rather than a spelling
+ * per verb (`.claude/rules/engineering.md`, *A module is one job*) — and the
+ * one rendering of what every such reading can leave behind: the words the
+ * verb could not honor as typed.
  */
 
 /**
@@ -107,4 +110,31 @@ export function splitAtSeparator(words: readonly string[]): {
   const idx = words.indexOf("--");
   if (idx < 0) return { ahead: [...words], behind: undefined };
   return { ahead: words.slice(0, idx), behind: words.slice(idx + 1) };
+}
+
+/**
+ * A verb's usage refusal, with the words it declined named ahead of the line:
+ * `refused: 'stray'` over `usage: flume tick [--phase <name>]`, and the usage
+ * line alone where there was no word to name — a missing `<phase>`, a
+ * separator carrying no command.
+ *
+ * The words are the half of the refusal the operator cannot reconstruct. A
+ * usage line states the grammar; what the surface read against it is a fact
+ * this process has already decoded and would otherwise keep to itself
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*). An operator whose wrapper expanded `"$PHASE"` over an
+ * unset variable, or whose shell split a path, reads a line about the verb
+ * and nothing about the run that was refused — and the empty word, the one
+ * argv shape that is invisible on a command line, is exactly what the quotes
+ * make readable.
+ *
+ * One rendering for every site, because the class is one class (`spec/cli.md`,
+ * *Subcommand surface*): what each verb supplies is its own usage line and the
+ * words its own reading left standing — a `--flag` whose value was refused
+ * among them, which the take leaves in place for this sentence to name.
+ */
+export function usageRefusal(usage: string, refused: readonly string[]): string {
+  if (refused.length === 0) return usage;
+  const words = refused.map((word) => `'${word}'`).join(" ");
+  return `refused: ${words}\n${usage}`;
 }

@@ -11,7 +11,7 @@
  */
 
 import { installSignalledTeardown } from "./cliTeardown.js";
-import { takeFlagValue } from "./cliArgs.js";
+import { takeFlagValue, usageRefusal } from "./cliArgs.js";
 import { describeRefFailure, tickExitCode } from "./cliVerdict.js";
 import type { CliVerbRun } from "./cliRunContext.js";
 import { type TickOutcome } from "./Dispatcher.js";
@@ -44,7 +44,14 @@ export async function tickVerb(run: CliVerbRun): Promise<number> {
   // refused before any tick runs, not honored as something the operator
   // never typed.
   if (named === null || words.length > 0) {
-    operatorLog.error("usage: flume tick [--phase <name>]");
+    // What is left in `words` is exactly what this verb could not honor —
+    // the stray positional, and the `--phase` whose value was refused, which
+    // the take leaves standing for this sentence to name (`usageRefusal`,
+    // `src/cliArgs.ts`). The operator reads which word was declined rather
+    // than only the grammar it was read against.
+    operatorLog.error(
+      usageRefusal("usage: flume tick [--phase <name>]", words),
+    );
     return 2;
   }
   // The name goes to the dispatcher unchecked: what a chain declares is

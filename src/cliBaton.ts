@@ -4,10 +4,12 @@
  * `flume stop` (spec/cli.md, *Subcommand surface*).
  *
  * One file because that is one job: each takes no flags, writes one path, and
- * prints what it wrote. `wake`, `sleep` and `hold` are the same sequence
- * under three names, so they are one function with a table of what separates
- * them (`.claude/rules/engineering.md`, *A module is one job*) — a validation
- * arm added to one of them cannot go missing from the others.
+ * prints what it wrote — and, where another marker under the same root
+ * decides what that write is worth, what stands beside it. `wake`, `sleep`
+ * and `hold` are the same sequence under three names, so they are one
+ * function with a table of what separates them
+ * (`.claude/rules/engineering.md`, *A module is one job*) — a validation arm
+ * added to one of them cannot go missing from the others.
  *
  * The file is the interface in every case: `touch <flumeDir>/awake/<phase>`,
  * `touch <flumeDir>/held/<phase>` and `touch <flumeDir>/stop` are equally the
@@ -17,8 +19,10 @@
  */
 
 import { Baton } from "./Baton.js";
+import { usageRefusal } from "./cliArgs.js";
 import { loadChainForObservation } from "./cliChainLoad.js";
 import { operatorLog } from "./cliLog.js";
+import { standingStopClause } from "./cliStopFlag.js";
 import type { FlumePaths } from "./flumeApi.js";
 import { stopFlagPath } from "./paths.js";
 import {
@@ -58,25 +62,41 @@ async function chainRefusesPhase(
 }
 
 /**
+ * One of `wake`, `sleep` and `hold`: the word for what it did, and the
+ * mutation itself — handed the state root beside the baton, because what the
+ * clauses report is not always a marker this row moved.
+ *
+ * The clauses are the sentence's tail, in the order they are spoken, and the
+ * empty list is the honest silence: nothing stood beside what the operator
+ * typed, so there is nothing to add to it.
+ */
+interface BatonMutationRow {
+  /** The verb's own word for what it did — `woke`, `slept`, `held`. */
+  readonly said: string;
+  /** Move the markers; answer what the sentence says past the verb's word. */
+  readonly apply: (baton: Baton, phase: string, flumeDir: string) => string[];
+}
+
+/**
  * What separates `wake`, `sleep` and `hold`: the markers the verb moves, the
  * word for what it did, and — where it moved a second marker the operator did
- * not name — the clause that says so.
+ * not name, or where something already standing decides what the move it did
+ * name is worth — the clauses that say so.
  *
  * `hold` is a row here and not a fourth spelling: the usage read, the chain
  * validation and the printed sentence are the same sequence for all three
  * (`.claude/rules/engineering.md`, *A module is one job*).
  *
- * The clause is what makes these verbs each other's undo readable. Two
+ * The clauses are what make these verbs each other's undo readable. Two
  * markers decide one phase — the flag under `awake/` and the hold under
  * `held/` — and the verb that stands one up puts the other down, so a
  * sentence naming only the marker the operator typed leaves the other move
- * unreported. `undefined` is the honest silence: the second marker was not
- * standing, so this call moved nothing but its own.
+ * unreported.
  */
-const BATON_MUTATIONS = {
+const BATON_MUTATIONS: Record<"wake" | "sleep" | "hold", BatonMutationRow> = {
   wake: {
     said: "woke",
-    apply: (baton: Baton, phase: string): string | undefined => {
+    apply: (baton: Baton, phase: string, flumeDir: string): string[] => {
       // Read before the clear, because the clause states what *this* call
       // changed: `flume wake <phase>` removes the hold, wakes the phase and
       // says it did (`spec/loop.md`, *Baton — presence wakes, absence
@@ -94,29 +114,47 @@ const BATON_MUTATIONS = {
       // spells "nothing to run".
       if (wasHeld) baton.unhold(phase);
       baton.wake(phase);
-      return wasHeld ? "hold cleared" : undefined;
+      // The flag this verb just stood up is a claim about what runs next, and
+      // a standing stop flag is the state that decides what that claim is
+      // worth: the next `loop` refuses over it (`spec/loop.md`, *Graceful
+      // stop — the stop flag*), so a wake that printed its own move alone
+      // sends the operator away believing the phase is scheduled. The engine
+      // reads that file on the next run either way — reporting it here is
+      // handing over a fact it already holds rather than leaving the operator
+      // to go looking (`.claude/rules/engineering.md`, *A fact the engine
+      // holds is reported, never rediscovered*).
+      //
+      // `wake`'s alone among the three rows, and not a suffix the table
+      // shares: `sleep` and `hold` claim nothing a pending stop contradicts —
+      // a phase they put down stays down whether a run starts or not — so the
+      // clause would be noise on a line about a marker going away.
+      const stop = standingStopClause("wake", flumeDir);
+      return [
+        ...(wasHeld ? ["hold cleared"] : []),
+        ...(stop !== undefined ? [stop] : []),
+      ];
     },
   },
   sleep: {
     said: "slept",
-    apply: (baton: Baton, phase: string): string | undefined => {
+    apply: (baton: Baton, phase: string): string[] => {
       baton.sleep(phase);
-      return undefined;
+      return [];
     },
   },
   hold: {
     said: "held",
-    apply: (baton: Baton, phase: string): string | undefined => {
+    apply: (baton: Baton, phase: string): string[] => {
       const wasAwake = baton.isAwake(phase);
       // Marker first, flag second, for the reason `Baton.hold`
       // (`src/Baton.ts`) states: no window leaves the phase pickable with the
       // operator's intent recorded nowhere.
       baton.hold(phase);
       baton.sleep(phase);
-      return wasAwake ? "awake flag cleared" : undefined;
+      return wasAwake ? ["awake flag cleared"] : [];
     },
   },
-} as const;
+};
 
 /** Which marker mutation a call of {@link batonVerb} performs. */
 type BatonMutation = keyof typeof BATON_MUTATIONS;
@@ -134,7 +172,13 @@ export async function batonVerb(
 ): Promise<number> {
   const phase = rest[0];
   if (!phase || rest.length > 1) {
-    operatorLog.error(`usage: flume ${mutation} <phase>`);
+    // The words past the one positional are what the refusal names — not the
+    // phase, which is the word this verb does take (`usageRefusal`,
+    // `src/cliArgs.ts`). With no phase at all there is nothing to name and
+    // the line stands alone.
+    operatorLog.error(
+      usageRefusal(`usage: flume ${mutation} <phase>`, rest.slice(1)),
+    );
     return 2;
   }
   if (await chainRefusesPhase(paths, mutation, phase)) {
@@ -144,8 +188,15 @@ export async function batonVerb(
     return 2;
   }
   const { apply, said } = BATON_MUTATIONS[mutation];
-  const also = apply(new Baton(paths.flumeDir), phase);
-  console.log(also === undefined ? `${said} ${phase}` : `${said} ${phase} — ${also}`);
+  const also = apply(new Baton(paths.flumeDir), phase, paths.flumeDir);
+  // One sentence however many clauses the row answered with: the verb's own
+  // move, then everything it has to add about what stands beside it, in the
+  // order the row spoke them.
+  console.log(
+    also.length === 0
+      ? `${said} ${phase}`
+      : `${said} ${phase} — ${also.join("; ")}`,
+  );
   return 0;
 }
 
@@ -156,7 +207,7 @@ export function stopVerb(paths: FlumePaths, rest: string[]): number {
   // stray trailing arg is refused before the flag write below, not run as
   // something other than what the operator typed.
   if (rest.length > 0) {
-    operatorLog.error("usage: flume stop");
+    operatorLog.error(usageRefusal("usage: flume stop", rest));
     return 2;
   }
   // spec/loop.md "Graceful stop — the stop flag": the file is the

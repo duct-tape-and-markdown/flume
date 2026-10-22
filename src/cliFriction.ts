@@ -15,6 +15,7 @@ import type { Stats } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 
 import { loadChainOrRefuse } from "./cliChainLoad.js";
+import { usageRefusal } from "./cliArgs.js";
 import { operatorLog } from "./cliLog.js";
 import { EX_IOERR } from "./exitCodes.js";
 import type { FlumePaths } from "./flumeApi.js";
@@ -29,7 +30,7 @@ export async function frictionVerb(
   const { flumeDir } = paths;
   const name = rest[0];
   if (rest.length > 1) {
-    operatorLog.error("usage: flume friction [name]");
+    operatorLog.error(usageRefusal("usage: flume friction [name]", rest.slice(1)));
     return 2;
   }
 
