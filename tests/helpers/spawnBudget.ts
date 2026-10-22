@@ -4,7 +4,12 @@
  * (`SPAWN_BUDGET_MS`, `tests/helpers/subprocess.ts`), which registrars under
  * such a declaration override it with a ceiling of their own, and which of the
  * spawning sites await a wall-clock timer between the spawn and the assertion
- * downstream of it.
+ * downstream of it. Each reach is reported with the **declaration that armed
+ * it** — the name, and the line the declaration of that name the scan read as
+ * reaching sits on: the scan has no scopes, so a spelling shared with an
+ * unrelated helper is a collision a reader would otherwise re-derive by hand
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported, never
+ * rediscovered*).
  *
  * A source scan rather than a runtime probe, because both properties are what
  * a site *declares*: a budget observable only once a case has already run long
@@ -175,9 +180,23 @@ export interface SpawnSite extends ScanSite {
   /**
    * The name this site awaits that reaches a wall-clock timer — the local
    * wrapper's name where there is one, `setTimeout` where the sleep is
-   * inline — or `null` when it awaits none.
+   * inline — with the declaration that armed it, or `null` when it awaits
+   * none.
    */
-  readonly awaitedTimer: string | null;
+  readonly awaitedTimer: Reaching | null;
+  /**
+   * The name this site references that reaches a process startup, with the
+   * declaration that armed it — or `null` when the site starts none.
+   *
+   * Both the selector and a reported fact: the spawn verdicts take the sites
+   * where it is set, and the ceiling verdict renders it beside a registrar's
+   * own number where that registrar spawns. A chain of them was a boolean
+   * here while the name behind it stayed in the scan's memory, so every
+   * reader of a flagged collision re-derived which declaration armed the
+   * file (`.claude/rules/engineering.md`, *A fact the engine holds is
+   * reported, never rediscovered*).
+   */
+  readonly spawnedVia: Reaching | null;
   /**
    * The ceiling this registrar carries of its own, as the source spells it —
    * or `null` when it carries none, and when the one it carries *names* a
@@ -430,15 +449,19 @@ function awaitedNames(node: ts.Node): Set<string> {
  * value one case built, not a wrapper its siblings call, and treating it as
  * one would hand a budget to every unrelated case that reuses the name.
  */
-function namedFunctions(src: ts.SourceFile): Map<string, ts.Node[]> {
-  const fns = new Map<string, ts.Node[]>();
-  const declare = (name: string, node: ts.Node): void => {
-    const nodes = fns.get(name);
-    if (nodes) nodes.push(node);
-    else fns.set(name, [node]);
+function namedFunctions(src: ts.SourceFile): Map<string, NamedFunction[]> {
+  const fns = new Map<string, NamedFunction[]>();
+  const declare = (name: string, at: ts.Node, body: ts.Node): void => {
+    const decl: NamedFunction = {
+      body,
+      line: src.getLineAndCharacterOfPosition(at.getStart()).line + 1,
+    };
+    const held = fns.get(name);
+    if (held) held.push(decl);
+    else fns.set(name, [decl]);
   };
   const walk = (n: ts.Node): void => {
-    if (ts.isFunctionDeclaration(n) && n.name) declare(n.name.text, n);
+    if (ts.isFunctionDeclaration(n) && n.name) declare(n.name.text, n, n);
     if (
       ts.isVariableDeclaration(n) &&
       ts.isIdentifier(n.name) &&
@@ -446,11 +469,49 @@ function namedFunctions(src: ts.SourceFile): Map<string, ts.Node[]> {
       (ts.isArrowFunction(n.initializer) ||
         ts.isFunctionExpression(n.initializer))
     )
-      declare(n.name.text, n.initializer);
+      // The line is the declaration's, not the arrow function's under it: a
+      // finding cites where a reader finds the name, and the body is what
+      // decides whether that declaration reaches.
+      declare(n.name.text, n, n.initializer);
     ts.forEachChild(n, walk);
   };
   walk(src);
   return fns;
+}
+
+/**
+ * One declaration of a function name: the body whose references decide
+ * whether this declaration reaches, and the line a finding cites it at.
+ */
+interface NamedFunction {
+  readonly body: ts.Node;
+  readonly line: number;
+}
+
+/**
+ * The names `src` imports, by the line of the import that brought each in.
+ *
+ * Read for the seed alone, never for the propagation: an import statement is
+ * one node holding several names, so letting it reach would arm every binding
+ * beside a reaching one — the whole module's named imports, off one spawning
+ * export. What it answers is narrower and decidable: where a name that is
+ * *already* a startup — a helper's spawning export, `renderPrompt` — entered
+ * this module, which is the declaration of that name the scan read.
+ */
+function importedBindings(src: ts.SourceFile): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const st of src.statements) {
+    if (!ts.isImportDeclaration(st) || !st.importClause) continue;
+    const line = src.getLineAndCharacterOfPosition(st.getStart()).line + 1;
+    const take = (name: string): void => {
+      if (!out.has(name)) out.set(name, line);
+    };
+    if (st.importClause.name) take(st.importClause.name.text);
+    const bindings = st.importClause.namedBindings;
+    if (bindings && ts.isNamedImports(bindings))
+      for (const el of bindings.elements) take(el.name.text);
+  }
+  return out;
 }
 
 /**
@@ -464,26 +525,90 @@ function namedFunctions(src: ts.SourceFile): Map<string, ts.Node[]> {
  * the scan has no scopes, so a name shared by a wrapper and an unrelated
  * helper is judged by the wrapper, and the helper's callers pay a ceiling
  * they never needed.
+ *
+ * Valued by **the declaration that armed the name** — the line of the first
+ * of its declarations found to reach, or `null` where the name is a startup's
+ * own spelling that no declaration in this module introduces
+ * (`process.execPath`, a command string). Each declaration is read on its own
+ * rather than as the union of them all, so the reported line is the one that
+ * reaches; the *reach* is unchanged either way, which is what keeps this a
+ * report of the over-approximation rather than a scope resolution pretending
+ * to narrow it. A reader of a collision then reads which `boot` armed the
+ * file instead of re-deriving it
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*).
  */
 function reachingNames(
   src: ts.SourceFile,
   seed: readonly string[],
-): Set<string> {
+): Map<string, number | null> {
   const fns = namedFunctions(src);
-  const reaching = new Set<string>(seed);
+  const bindings = importedBindings(src);
+  const reaching = new Map<string, number | null>();
+  for (const name of seed)
+    if (!reaching.has(name)) reaching.set(name, bindings.get(name) ?? null);
   for (;;) {
     let grew = false;
-    for (const [name, nodes] of fns) {
+    for (const [name, decls] of fns) {
       if (reaching.has(name)) continue;
-      const refs = new Set(nodes.flatMap((node) => [...referenced(node)]));
-      if ([...reaching].some((n) => refs.has(n))) {
-        reaching.add(name);
+      const armed = decls.find((decl) => {
+        const refs = referenced(decl.body);
+        return [...reaching.keys()].some((n) => refs.has(n));
+      });
+      if (armed) {
+        reaching.set(name, armed.line);
         grew = true;
       }
     }
     if (!grew) break;
   }
   return reaching;
+}
+
+/**
+ * A name that reaches a process startup or a wall-clock timer, as a finding
+ * names it: the name, and the line of the declaration that armed it — `null`
+ * for a startup spelled in the body itself.
+ *
+ * `armedAt` rather than a second `declaredAt`: this module's other
+ * declaration is the file-scope budget one ({@link SpawnFile}), and one
+ * spelling for both would read as the same fact at two altitudes.
+ */
+export interface Reaching {
+  readonly name: string;
+  readonly armedAt: number | null;
+}
+
+/**
+ * The first name of `reaching` that `names` holds, with its arming
+ * declaration — or `null` when it holds none.
+ *
+ * First, in the reach's own order: the seed comes before everything the
+ * propagation grew from it, so a body that spells a startup directly is
+ * reported at that spelling and one that only calls a local wrapper is
+ * reported at the wrapper, which is the name a reader of the site sees.
+ */
+function reachingIn(
+  reaching: ReadonlyMap<string, number | null>,
+  names: ReadonlySet<string>,
+): Reaching | null {
+  for (const [name, armedAt] of reaching)
+    if (names.has(name)) return { name, armedAt };
+  return null;
+}
+
+/**
+ * A reaching name as a finding spells it, against the site that reaches it:
+ * the module comes from the site, because every declaration this scan reports
+ * is one the scanned module itself holds — a local function, or the import
+ * that brought a helper's spawning export in
+ * (`.claude/rules/engineering.md`, *Derived state is computed, never restated
+ * beside its source*).
+ */
+export function formatReaching(site: ScanSite, via: Reaching): string {
+  return via.armedAt === null
+    ? `\`${via.name}\` spelled in the body`
+    : `\`${via.name}\` declared at ${site.module}:${via.armedAt}`;
 }
 
 /** The names a module exports. */
@@ -609,7 +734,7 @@ export function helperSpawnExports(
     ...PROCESS_STARTS,
     ...importedSpawnNames(src, [...visiting, name]),
   ]);
-  const names = [...reaching].filter((n) => exported.has(n));
+  const names = [...reaching.keys()].filter((n) => exported.has(n));
   spawnExportCache.set(name, names);
   return names;
 }
@@ -792,8 +917,15 @@ function declaredFileBudget(
 export interface SpawnFile extends ScanSite {
   /** The line of this file's first spawning site — what a finding cites. */
   readonly line: number;
-  /** Every spawning case and hook in it, in source order. */
-  readonly sites: readonly SpawnSite[];
+  /**
+   * Every spawning case and hook in it, in source order — non-empty by type,
+   * because a file enters this set by holding one. So a finding reads the
+   * first site's reaching name and arming declaration off `sites[0]` rather
+   * than off a second copy kept here (`.claude/rules/engineering.md`,
+   * *Derived state is computed, never restated beside its source*), and with
+   * no arm for a spawning file that holds no spawning site.
+   */
+  readonly sites: readonly [SpawningSite, ...SpawningSite[]];
   /**
    * The harness constant each arm of the file-scope declaration names, or
    * `null` where the arm is absent, restates a number, or the declaration
@@ -859,21 +991,28 @@ export interface SpawnScanRequest {
  * rule here, and the number it restates is its own business.
  */
 export interface SpawnScan {
-  readonly sites: Scan<SpawnSite>;
+  readonly sites: Scan<SpawningSite, SleepingSite>;
   readonly files: Scan<SpawnFile>;
   readonly registrars: Scan<SpawnSite>;
 }
 
 /**
- * One registrar as the walk below reads it, before either verdict selects it:
- * the site, and whether its body reaches a process startup. The flag lives
- * here rather than on {@link SpawnSite} because it is the selector, not a
- * property of a site — every site the spawn verdicts see has it set, and the
- * ceiling verdict does not read it at all.
+ * A site the spawn verdicts selected, which is every site they report: the
+ * startup's reaching name is what selected it, so it is non-null here and no
+ * reader of a spawn verdict carries an arm for a site that starts nothing.
  */
-interface Registrar {
-  readonly site: SpawnSite;
-  readonly spawns: boolean;
+export interface SpawningSite extends SpawnSite {
+  readonly spawnedVia: Reaching;
+}
+
+/**
+ * A spawning site that awaits a wall-clock timer, which is the sync-point
+ * verdict's finding: the timer is what the finding is *about*, so it is
+ * non-null here too and the renderer carries no arm for a sleep that is not
+ * one ({@link Scan} takes the finding type for exactly this).
+ */
+export interface SleepingSite extends SpawningSite {
+  readonly awaitedTimer: Reaching;
 }
 
 /**
@@ -885,7 +1024,7 @@ interface Registrar {
 export async function scanSpawns(request: SpawnScanRequest): Promise<SpawnScan> {
   const rule = await laneRule(request.lane);
   const budgets = new Set(harnessBudgets().keys());
-  const sites: SpawnSite[] = [];
+  const sites: SpawningSite[] = [];
   const files: SpawnFile[] = [];
   const registrars: SpawnSite[] = [];
 
@@ -905,7 +1044,7 @@ export async function scanSpawns(request: SpawnScanRequest): Promise<SpawnScan> 
       [...budgets].filter((n) => imports.get(SPAWN_WRAPPERS_NAME)?.has(n)),
     );
 
-    const own: Registrar[] = [];
+    const own: SpawnSite[] = [];
     const visit = (node: ts.Node): void => {
       // The registrar call is the outer one: `it.each(table)(title, fn)` is a
       // call whose callee is itself a call, and only the outer half carries a
@@ -933,18 +1072,16 @@ export async function scanSpawns(request: SpawnScanRequest): Promise<SpawnScan> 
           const first = node.arguments[0];
           const awaited = new Set(body.flatMap((a) => [...awaitedNames(a)]));
           own.push({
-            spawns: [...spawns].some((n) => refs.has(n)),
-            site: {
-              module,
-              line,
-              title:
-                first && ts.isStringLiteralLike(first)
-                  ? first.text
-                  : `${root} at ${module}:${line}`,
-              kind,
-              awaitedTimer: [...timers].find((n) => awaited.has(n)) ?? null,
-              ownCeiling: ownCeiling(node, named),
-            },
+            module,
+            line,
+            title:
+              first && ts.isStringLiteralLike(first)
+                ? first.text
+                : `${root} at ${module}:${line}`,
+            kind,
+            awaitedTimer: reachingIn(timers, awaited),
+            spawnedVia: reachingIn(spawns, refs),
+            ownCeiling: ownCeiling(node, named),
           });
         }
       }
@@ -953,14 +1090,16 @@ export async function scanSpawns(request: SpawnScanRequest): Promise<SpawnScan> 
     visit(src);
     const declared = declaredFileBudget(src, named);
 
-    const spawning = own.filter((r) => r.spawns).map((r) => r.site);
+    const spawning = own.filter(
+      (site): site is SpawningSite => site.spawnedVia !== null,
+    );
     sites.push(...spawning);
-    const first = spawning[0];
+    const [first, ...rest] = spawning;
     if (first)
       files.push({
         module,
         line: first.line,
-        sites: spawning,
+        sites: [first, ...rest],
         arms: declared?.arms ?? { testTimeout: null, hookTimeout: null },
         declaredAt: declared?.line ?? null,
       });
@@ -968,13 +1107,15 @@ export async function scanSpawns(request: SpawnScanRequest): Promise<SpawnScan> 
     // The ceiling verdict's subject is the *declaration*, not the spawn: a
     // file-scope `vi.setConfig` reaches every registrar under it, so every
     // registrar under it can override it.
-    if (declared) registrars.push(...own.map((r) => r.site));
+    if (declared) registrars.push(...own);
   }
 
   return {
     sites: {
       scanned: sites,
-      findings: sites.filter((site) => site.awaitedTimer !== null),
+      findings: sites.filter(
+        (site): site is SleepingSite => site.awaitedTimer !== null,
+      ),
     },
     files: {
       scanned: files,

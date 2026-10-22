@@ -55,6 +55,7 @@ import {
   laneMode,
   laneRule,
   budgetDefect,
+  formatReaching,
   reduceLaneGlobs,
   scanSpawns,
 } from "./helpers/spawnBudget.ts";
@@ -522,8 +523,13 @@ it("every default-lane file that spawns a process declares the shared spawn budg
   expect(sites.scanned.length).toBeGreaterThan(0);
   expect(files.scanned.length).toBeGreaterThan(1);
 
+  // The arming declaration rides every finding: the scan has no scopes, so a
+  // flagged file names which declaration of the reaching spelling armed it
+  // rather than leaving the reader to re-derive that from the file.
   const inheriting = files.findings.map(
-    (f) => `${f.module} — ${budgetDefect(f) ?? ""}`,
+    (f) =>
+      `${f.module} — ${budgetDefect(f) ?? ""}; spawns via ` +
+      formatReaching(f, f.sites[0].spawnedVia),
   );
   expect(
     inheriting,
@@ -585,8 +591,15 @@ it("a file declaring the spawn budget carries no numeric timeout on any registra
   expect(sites.scanned.length).toBeGreaterThan(0);
   expect(registrars.scanned.length).toBeGreaterThan(sites.scanned.length);
 
+  // Where the registrar spawns, the declaration that armed its reaching name
+  // rides the finding too; a registrar that starts nothing has no reaching
+  // name to name, and is flagged on its number alone.
   expect(
-    registrars.findings.map((s) => `${s.module}:${s.line} — ${s.ownCeiling}`),
+    registrars.findings.map(
+      (s) =>
+        `${s.module}:${s.line} — ${s.ownCeiling}` +
+        (s.spawnedVia ? `; spawns via ${formatReaching(s, s.spawnedVia)}` : ""),
+    ),
     `these registrars carry a timeout of their own, which vitest resolves ` +
       `over the file-scope \`vi.setConfig\` budget their file declares: drop ` +
       `the argument so the registrar inherits \`SPAWN_BUDGET_MS\` ` +
@@ -962,6 +975,146 @@ it("a same-named function elsewhere in the file does not hide a spawning case fr
 });
 
 /**
+ * That same collision, read from the other side: the over-approximation is
+ * the trade, so what a finding owes its reader is **which** declaration of
+ * the shared spelling armed it.
+ *
+ * The scan has no scopes and must not grow them — an under-approximation is
+ * the one direction it cannot take (`.claude/rules/engineering.md`, "Loud or
+ * nothing") — so a file can be flagged for a name whose nearest declaration
+ * starts nothing, and the only thing that separates the two `boot`s is the
+ * line. While the reach folded to bare names that line stayed in the scan's
+ * memory and every reader re-derived it by hand, which is a fact the scan
+ * held and did not report (`.claude/rules/engineering.md`, *A fact the engine
+ * holds is reported, never rediscovered*).
+ *
+ * Both spellings a reaching name arrives in ride this fixture: a local
+ * declaration, which has a line, and a startup spelled in the body itself,
+ * which has no declaration in the module to cite.
+ */
+it("a budget finding names the declaration that armed its reaching name", async () => {
+  const FIXTURE = [
+    `describe("the half that reuses the name", () => {`,
+    `  const boot = (n: number) => n + 1;`,
+    ``,
+    `  it("reuses the name for arithmetic", () => {`,
+    `    expect(boot(1)).toBe(2);`,
+    `  });`,
+    `});`,
+    ``,
+    `describe("the half that wraps a spawn", () => {`,
+    `  const boot = (args: string[]) => exec(process.execPath, args);`,
+    ``,
+    `  it("boots the CLI through a file-local wrapper", async () => {`,
+    `    await boot(["--version"]);`,
+    `  });`,
+    `});`,
+    ``,
+    `it("spawns node inline", async () => {`,
+    `  await exec(process.execPath, ["--version"]);`,
+    `});`,
+    ``,
+  ].join("\n");
+
+  const dir = await mkTempDir("flume-budget-armed-");
+  try {
+    await writeFile(join(dir, "fixture.test.ts"), FIXTURE, "utf8");
+    const { files, sites } = await scanSpawns({ lane: "default", dir });
+
+    // Vacuity, and the collision itself: both halves' cases are flagged, so
+    // the declaration named below is the one that armed a name the file's
+    // first flagged case does not even call.
+    expect(sites.scanned.map((s) => s.title)).toEqual([
+      "reuses the name for arithmetic",
+      "boots the CLI through a file-local wrapper",
+      "spawns node inline",
+    ]);
+
+    // Every site's rendering, so the two spellings are pinned together: the
+    // shared name is cited at line 10 — the spawning `boot`, not the
+    // arithmetic one at line 2 — and the inline startup, which no
+    // declaration in the module introduces, says so instead of citing a line.
+    expect(
+      sites.scanned.map((s) => formatReaching(s, s.spawnedVia)),
+    ).toEqual([
+      expect.stringMatching(/^`boot` declared at .*fixture\.test\.ts:10$/),
+      expect.stringMatching(/^`boot` declared at .*fixture\.test\.ts:10$/),
+      "`process.execPath` spelled in the body",
+    ]);
+
+    // And the budget finding the lane's verdict renders, which is where a
+    // reverted tick reads it: the file's defect, and the declaration that
+    // made it a spawning file.
+    expect(
+      files.findings.map(
+        (f) =>
+          `${budgetDefect(f) ?? ""}; spawns via ` +
+          formatReaching(f, f.sites[0].spawnedVia),
+      ),
+    ).toEqual([
+      expect.stringMatching(
+        /^declares no file-scope `vi\.setConfig` budget; spawns via `boot` declared at .*fixture\.test\.ts:10$/,
+      ),
+    ]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+/**
+ * The reach the arming above is read off, in both orders.
+ *
+ * The scan reads each declaration of a name on its own now, rather than the
+ * union of their references, so that the line it reports is a declaration
+ * that actually reaches. That is a narrowing of what is *reported* and must
+ * be none of what is *reached*: a `find` that stopped at the first
+ * declaration walked would be the one-node-per-name under-approximation
+ * again, wearing a line number.
+ *
+ * Two files rather than two describes in one, and a scan each, so neither
+ * verdict depends on the order a directory walk yields its entries.
+ */
+it("a name declared twice in one module reaches when either declaration does", async () => {
+  const SPAWNING = `  const boot = (args: string[]) => exec(process.execPath, args);`;
+  const INNOCENT = `  const boot = (n: number) => n + 1;`;
+  const fixture = (first: string, second: string): string =>
+    [
+      `describe("the first half", () => {`,
+      first,
+      `  it("calls the first boot", async () => { await boot([]); });`,
+      `});`,
+      ``,
+      `describe("the second half", () => {`,
+      second,
+      `  it("calls the second boot", async () => { await boot(1); });`,
+      `});`,
+      ``,
+    ].join("\n");
+
+  for (const [name, text] of [
+    ["the spawning declaration first", fixture(SPAWNING, INNOCENT)],
+    ["the spawning declaration second", fixture(INNOCENT, SPAWNING)],
+  ] as const) {
+    const dir = await mkTempDir("flume-budget-either-");
+    try {
+      await writeFile(join(dir, "fixture.test.ts"), text, "utf8");
+      const { files, sites } = await scanSpawns({ lane: "default", dir });
+
+      // Both cases, whichever half spawns: the name reaches, so every site
+      // referencing it does — and the file is a spawning file either way,
+      // which is what the budget verdict judges.
+      expect(sites.scanned.map((s) => s.title), name).toEqual([
+        "calls the first boot",
+        "calls the second boot",
+      ]);
+      expect(files.scanned.length, name).toBe(1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+/**
  * The per-registrar arm's own sensitivity, over a fixture that declares the
  * budget correctly at file scope and then overrides it six registrars later.
  *
@@ -1332,7 +1485,7 @@ it("no case that starts a node process awaits a timer, in either lane", async ()
     scan.sites.findings.map(
       (s) =>
         `${lane} lane — ${s.module}:${s.line} ${s.kind} "${s.title}" awaits ` +
-        `${s.awaitedTimer ?? ""}`,
+        formatReaching(s, s.awaitedTimer),
     ),
   );
   expect(
@@ -1401,7 +1554,9 @@ it("the timer scan reports an awaited timer in a spawning fixture case", async (
     // The whole list, so the four shapes that must read as event-based — and
     // the sleeping case that spawns nothing, absent entirely — are pinned by
     // their verdicts rather than by a filter that could match nothing.
-    expect(sites.scanned.map((s) => [s.title, s.awaitedTimer])).toEqual([
+    expect(
+      sites.scanned.map((s) => [s.title, s.awaitedTimer?.name ?? null]),
+    ).toEqual([
       ["sleeps a fixed guess after spawning", "setTimeout"],
       // The local wrapper is named at the site, not the timer under it.
       ["sleeps through a file-local wrapper", "settle"],
