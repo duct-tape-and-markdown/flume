@@ -1463,25 +1463,28 @@ it("the package's judge runs after a consumer's declared gates at the same when"
 
   // And the discipline gates still lead every phase's set, the consumer's
   // declaration notwithstanding: the four claims about any commit the chain
-  // produces, then the one member built from the phase's own identity — a
-  // rank moves only where an entry file can be written, so the goal-rank
-  // gate is a producer's and build's lead carries no row for it — then the
-  // `slice-state` gate that trails on its spawn, which reads a touched
-  // slice's whole state file at two refs against that slice's own rules
-  // rather than every cursor the queue holds (`harness/gates.ts`).
+  // produces, then the members built from the phase's own identity — a rank
+  // moves and a `blockedBy` edge is written only where an entry file can be
+  // written, so the goal-rank and new-blocker gates are the producers' and
+  // build's lead carries no row for either — then the `slice-state` gate
+  // that trails on its spawn, which reads a touched slice's whole state file
+  // at two refs against that slice's own rules rather than every cursor the
+  // queue holds (`harness/gates.ts`).
   const SHARED = ["records", "clean-tree", "pending-gate", "per cites resolve"];
+  const PRODUCER_ONLY = ["goal rank", "new blocker resolves"];
   const disciplineOf = (name: string): string[] => [
     ...SHARED,
-    ...(PLAN_SLICES.some((slice) => slice === name) ? ["goal rank"] : []),
+    ...(PLAN_SLICES.some((slice) => slice === name) ? PRODUCER_ONLY : []),
     "slice-state",
   ];
   expect(chain.phases.length).toBeGreaterThan(0);
-  // Vacuity pin on the split: both arms of that one member are reached, so
+  // Vacuity pin on the split: both arms of those members are reached, so
   // neither the producer's roster nor build's is claimed over no phase.
+  expect(PRODUCER_ONLY.length).toBeGreaterThan(0);
   expect(
     new Set(
       chain.phases.map((phase) =>
-        disciplineOf(phase.name).includes("goal rank"),
+        PRODUCER_ONLY.every((gate) => disciplineOf(phase.name).includes(gate)),
       ),
     ),
   ).toEqual(new Set([true, false]));

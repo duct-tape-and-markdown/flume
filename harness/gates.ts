@@ -2,7 +2,8 @@
  * The gates the package's discipline needs (`spec/harness.md`, *The gates the
  * discipline needs*) — the `per` gate, the records gate, the clean-tree gate,
  * the engine's pending gate wired to the consumer's fence, the goal-rank gate
- * over the ranks a plan commit places and moves, and the `slice-state` gate,
+ * over the ranks a plan commit places and moves, the new-blocker gate over
+ * the `blockedBy` edges a plan commit adds, and the `slice-state` gate,
  * which reads a touched slice's whole state file at two refs and judges the
  * move against that slice's own rules rather than every cursor the queue
  * holds — as one ordered set per phase, always ahead of whatever gates the
@@ -16,7 +17,7 @@
  * about *any* commit the package's chain produces, and the ones whose subject
  * a given phase never writes cost a handful of at-ref reads to say so.
  *
- * Two members are not uniform, and neither is a table of where a gate
+ * The members that are not uniform are not a table of where a gate
  * applies — each is the same reasoning read the other way, that build's fence
  * admits no entry file.
  *
@@ -29,14 +30,18 @@
  * between that commit and its cherry-pick — a pre-merge read answers about a
  * tree the collision is not in.
  *
- * The **goal-rank** gate is the other: a rank moves only where an entry file
- * can be written, so build's commit carries no rank for it to place and no
- * rank it could have moved.
+ * The **goal-rank** gate and the **new-blocker** gate are the producers'
+ * alone for the converse of that reasoning: a rank moves and a `blockedBy`
+ * edge is written only where an entry file can be written, so build's commit
+ * carries no rank for one to place, no rank it could have moved, and no edge
+ * for the other to resolve. Refusing build over either would revert delivered
+ * work for a queue defect the build never touched and could not repair.
  *
  * The order they run in is dependency order, not the spec's listing
  * order: the dispatcher stops at the first refusal, so the pending gate —
- * which is what proves the queue parses at all — runs before the `per` gate
- * and the goal-rank gate that read fields out of it. The slice-state gate
+ * which is what proves the queue parses at all — runs before the `per` gate,
+ * the goal-rank gate and the new-blocker gate that read fields out of it. The
+ * slice-state gate
  * trails them, being the one whose probe costs a process rather than a
  * read.
  *
@@ -498,6 +503,152 @@ function goalRankGate(
           moved.length === 0
             ? `${placed}; this commit moves none`
             : `${placed}; ${moved.length} moved by ${phaseName}, which states them: ${moved.join("; ")}`,
+      };
+    },
+  };
+}
+
+/**
+ * One `blockedBy` edge as the queue states it: the entry that declares the
+ * wait, and the tag it waits on.
+ *
+ * The pair is the unit because the rule below is about the pair — the same
+ * blocker tag named by two entries is two edges, each written by whichever
+ * commit wrote that entry's file, and a set keyed on the blocker alone could
+ * not tell a new edge from one standing beside it.
+ */
+interface BlockerEdge {
+  readonly tag: string;
+  readonly blocker: string;
+}
+
+/** An edge as a set membership — the pair, in one key no tag can spell. */
+const edgeKey = (edge: BlockerEdge): string => `${edge.tag}\u0000${edge.blocker}`;
+
+/**
+ * The `blockedBy` edges a listing states, and the tags it carries.
+ *
+ * Read raw, for the reason the `per` gate's listing is: the pending gate
+ * ahead of both is what proves the commit's queue parses, and the only three
+ * values this leg wants — a tag, a gate kind, and that gate's tags — carry no
+ * default the engine's parse would fold in. The base's listing is read the
+ * same way and for one more reason: a base the *current* extension refuses is
+ * history rather than this commit's defect.
+ */
+function blockerEdges(files: readonly QueueFile[]): {
+  readonly queued: Set<string>;
+  readonly edges: BlockerEdge[];
+} {
+  const queued = new Set<string>();
+  const edges: BlockerEdge[] = [];
+  for (const file of files) {
+    const entry = JSON.parse(file.raw) as {
+      tag?: unknown;
+      gate?: { kind?: unknown; tags?: unknown } | null;
+    };
+    const tag = String(entry.tag);
+    queued.add(tag);
+    const gate = entry.gate;
+    if (gate?.kind !== "blockedBy" || !Array.isArray(gate.tags)) continue;
+    for (const blocker of gate.tags) edges.push({ tag, blocker: String(blocker) });
+  }
+  return { queued, edges };
+}
+
+/**
+ * A **new blocker resolves** (`spec/harness.md`, *The gates the discipline
+ * needs*): a `blockedBy` tag a producer's commit adds names an entry the
+ * queue carries at that commit.
+ *
+ * **Nothing else on the tree can say this.** A blocker absent from the queue
+ * has shipped by design — that is how an edge clears at all, and why a
+ * restored or relocated queue stays runnable (`spec/pending.md`,
+ * *Pickability*) — so the dispatcher reads a dangling tag as settled and the
+ * entry declaring it goes pickable with its wait silently dropped. The engine
+ * reports the tags it could not resolve (`unresolvedBlockerTags`,
+ * `src/selection.ts`), which is the fact; what no reader downstream can
+ * recover is *which* of them shipped and which was never filed. Only the
+ * commit that wrote the edge still holds that, which is why the check is here
+ * and at no later point.
+ *
+ * **An edge already standing is never judged again**, and that is the whole
+ * of the base read: a queue restored from an older tree, or relocated under a
+ * new root, carries edges whose blockers shipped long ago, and a gate ruling
+ * on the standing set would wall every tick off a queue no tick can repair
+ * (`spec/harness.md`, *The gates the discipline needs*: no state of the queue
+ * needs a hand edit).
+ *
+ * Wired to the producers alone, with the `per` gate and the goal-rank gate
+ * and for the same reason: build's fence admits no entry file, so a build
+ * commit adds no edge, could repair none, and refusing one would revert
+ * delivered work over a queue defect the build never touched.
+ */
+function newBlockerGate(phaseName: string, engine: GateEngine): Gate {
+  return {
+    name: "new blocker resolves",
+    when: "afterCommit",
+    async run(ctx) {
+      const queue = await engine.readGatedQueue(ctx);
+      if (queue.files === null) {
+        return {
+          ok: false,
+          message: `${queue.rel} missing at ${short(ctx.commitSha)}`,
+        };
+      }
+      const { queued, edges } = blockerEdges(queue.files);
+      if (edges.length === 0) {
+        // Spelled, never inherited: a queue whose every gate is `open` states
+        // no edge, and reporting that as a judged green is the false pass
+        // that hides longest (`.claude/rules/engineering.md`, *A green
+        // verdict is proven non-vacuous*).
+        return {
+          ok: true,
+          message: `${queued.size} entr${queued.size === 1 ? "y" : "ies"} in ${queue.rel} state no \`blockedBy\` edge`,
+          skipped: "the queue declares no blocker",
+        };
+      }
+      const stated = `${edges.length} \`blockedBy\` edge${edges.length === 1 ? "" : "s"} in ${queue.rel}`;
+
+      if (queue.dirRel === undefined) {
+        // Unjudgeable here, and the verdict says so rather than reading as
+        // green: the engine reads a relocated root's queue off the disk at
+        // both ends of the span, so the two listings are one and every edge
+        // below would read as already standing whatever this commit wrote
+        // (`readGatedQueue`, `src/pendingLedger.ts`).
+        return {
+          ok: true,
+          message: `${stated}; no edge can read as new under a relocated state root, where both ends of the span are one disk listing`,
+        };
+      }
+
+      // The base's own listing, through the same engine read. A base holding
+      // no readable queue held no edge, which is what the first commit to
+      // create the queue meets — and the direction that cannot pass silently:
+      // an unreadable base judges every edge rather than excusing one.
+      const before = await engine.readGatedQueue({
+        ...ctx,
+        commitSha: ctx.baseSha,
+      });
+      const standing = new Set(
+        blockerEdges(before.files ?? []).edges.map(edgeKey),
+      );
+      const added = edges.filter((edge) => !standing.has(edgeKey(edge)));
+      const dangling = added.filter((edge) => !queued.has(edge.blocker));
+      if (dangling.length > 0) {
+        return refuse(
+          `${phaseName}'s commit adds ${dangling.length} \`blockedBy\` edge${dangling.length === 1 ? "" : "s"} naming an entry ${queue.rel} does not carry at ${short(ctx.commitSha)}; a blocker the queue does not hold reads as shipped, so the entry waiting on it goes pickable with its wait dropped and nothing downstream can tell the typo from the delivery`,
+          dangling.map(
+            (edge) =>
+              `${edge.tag}: \`blockedBy\` names \`${edge.blocker}\`, which no entry of the queue carries`,
+          ),
+        );
+      }
+      return {
+        ok: true,
+        message:
+          added.length === 0
+            ? `${stated}; this commit adds none`
+            : `${stated}; ${added.length} added by this commit resolve: ${added.map((edge) => `${edge.tag} -> ${edge.blocker}`).join("; ")}`,
       };
     },
   };
@@ -989,10 +1140,10 @@ function isQueueProducer(name: string): boolean {
  * the others read. The dispatcher stops at the first refusal, so that order is
  * what decides which message a tick is handed back.
  *
- * The merged-tree pending gate and the goal-rank gate are the two members the
- * set does not carry for every phase, and the module doc above says why: the
- * queue a commit rewrote is each one's subject, and build's fence admits no
- * entry file.
+ * The merged-tree pending gate, the goal-rank gate and the new-blocker gate
+ * are the members the set does not carry for every phase, and the module doc
+ * above says why: the queue a commit rewrote is each one's subject, and
+ * build's fence admits no entry file.
  */
 export function harnessGates(options: HarnessGatesOptions): Gate[] {
   const { phase, declaration, engine, putDown, entryFields, declared = [] } =
@@ -1045,7 +1196,7 @@ export function harnessGates(options: HarnessGatesOptions): Gate[] {
     engine.pendingGate(queue),
     perGate(declaration, engine),
     ...(producer
-      ? [goalRankGate(phase.name, engine, parse)]
+      ? [goalRankGate(phase.name, engine, parse), newBlockerGate(phase.name, engine)]
       : []),
     sliceStateGate(engine),
     ...(producer

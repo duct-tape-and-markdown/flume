@@ -201,10 +201,14 @@ const queueEntry = (
     kind?: PendingEntry["kind"];
     parent?: string;
     rank?: number;
+    blockedBy?: readonly string[];
   } = {},
 ): PendingEntry => ({
   tag,
-  gate: { kind: "open" },
+  gate:
+    over.blockedBy === undefined
+      ? { kind: "open" }
+      : { kind: "blockedBy", tags: [...over.blockedBy] },
   dependsOnForks: [],
   kind: over.kind ?? "work",
   ...(over.parent === undefined ? {} : { parent: over.parent }),
@@ -725,6 +729,174 @@ it("build's gate set carries no goal-rank row", () => {
   expect(producer).toContain("goal rank");
 
   expect(gates().map((g) => g.name)).not.toContain("goal rank");
+});
+
+/**
+ * A **new blocker resolves** (`spec/harness.md`, *The gates the discipline
+ * needs*), driven over real plan commits through the real factory's gate for
+ * the real slice: the `blockedBy` edges a producer's commit adds name entries
+ * that commit's own queue carries, and an edge the base already held is never
+ * judged again.
+ *
+ * Every queue here is one the engine's own schema admits — a dangling blocker
+ * parses, which is exactly why only the commit that wrote it can be told
+ * (`spec/pending.md`, *Pickability*).
+ */
+const newBlockerGateOf = (slice: PlanSlice): Gate => {
+  const gate = sliceGates(slice).find((g) => g.name === "new blocker resolves");
+  if (!gate) {
+    throw new Error(`${slice}'s set has no gate named "new blocker resolves"`);
+  }
+  return gate;
+};
+
+/** An entry waiting on one tag, as a producer files a dependency. */
+const waitsOn = (tag: string, blocker: string): PendingEntry =>
+  queueEntry(tag, { blockedBy: [blocker] });
+
+it("a producer's commit adding a blockedBy tag no queue entry carries is refused", async () => {
+  const gate = newBlockerGateOf("plan-derive");
+
+  // The base holds the two entries open, so the span below really adds the
+  // edge rather than carrying one that was already standing.
+  await baseQueue([queueEntry("THE-BLOCKER"), queueEntry("THE-WAITER")]);
+
+  await writeQueue([
+    queueEntry("THE-BLOCKER"),
+    waitsOn("THE-WAITER", "NEVER-FILED"),
+  ]);
+  const span = commitAll("plan: derive files a wait on a tag it never filed");
+  // Non-vacuity on the span: git named the entry file the edge arrived in.
+  expect(span.touchedPaths).toEqual([
+    `${STATE_ROOT}/plan/pending/${entryFileName("THE-WAITER")}`,
+  ]);
+
+  const refused = await gate.run(ctxFor(span, { phaseName: "plan-derive" }));
+
+  expect(refused.ok).toBe(false);
+  expect(refused.message).toContain("plan-derive");
+  expect((refused.details ?? "").split("\n")).toHaveLength(1);
+});
+
+it("the refusal names the entry that declared the edge and the tag it named", async () => {
+  const gate = newBlockerGateOf(INBOX_PHASE);
+
+  // A standing dangling edge beside the new one, so the refusal below has to
+  // pick the edge this commit wrote out of two the queue carries.
+  await baseQueue([
+    waitsOn("STANDING-WAITER", "LONG-SHIPPED"),
+    queueEntry("THE-BLOCKER"),
+  ]);
+
+  await writeQueue([
+    waitsOn("STANDING-WAITER", "LONG-SHIPPED"),
+    queueEntry("THE-BLOCKER"),
+    waitsOn("THE-WAITER", "NEVER-FILED"),
+  ]);
+  const refused = await gate.run(
+    ctxFor(commitAll("plan: the drain files a wait on a typo"), {
+      phaseName: INBOX_PHASE,
+    }),
+  );
+
+  expect(refused.ok).toBe(false);
+  // The entry that declared the edge, and the tag it named.
+  expect(refused.details).toContain("THE-WAITER");
+  expect(refused.details).toContain("`NEVER-FILED`");
+  // And the edge the base already held is not swept up in the refusal.
+  expect(refused.details).not.toContain("STANDING-WAITER");
+  expect(refused.details).not.toContain("LONG-SHIPPED");
+});
+
+it("a blockedBy edge already standing at the base is not judged again", async () => {
+  const gate = newBlockerGateOf("plan-sweep");
+
+  // The base carries the dangling edge: a blocker that shipped is absent by
+  // design, which is the queue a restore or a relocation leaves behind.
+  await baseQueue([waitsOn("THE-WAITER", "LONG-SHIPPED"), queueEntry("OTHER")]);
+  // Non-vacuity on the premise: the edge really dangles at the base, so a
+  // gate ruling on the standing set would refuse this very queue.
+  expect(
+    (await readQueueAtRef(
+      repo,
+      git(repo, ["rev-parse", "HEAD"]),
+      `${STATE_ROOT}/plan/pending`,
+    ))?.map((f) => f.file),
+  ).not.toContain(entryFileName("LONG-SHIPPED"));
+
+  // A commit that files unrelated work and leaves the edge exactly as it was.
+  await writeQueue([
+    waitsOn("THE-WAITER", "LONG-SHIPPED"),
+    queueEntry("OTHER"),
+    queueEntry("FRESH-WORK"),
+  ]);
+  const span = commitAll("plan: sweep files work beside a standing wait");
+  expect(span.touchedPaths).toEqual([
+    `${STATE_ROOT}/plan/pending/${entryFileName("FRESH-WORK")}`,
+  ]);
+
+  const verdict = await gate.run(ctxFor(span, { phaseName: "plan-sweep" }));
+
+  expect(verdict, verdict.details ?? verdict.message).toMatchObject({
+    ok: true,
+  });
+  // Non-vacuity on the verdict: the green names the edge it read and passed
+  // over, rather than reporting a queue that stated none.
+  expect(verdict.message).toContain("1 `blockedBy` edge");
+  expect(verdict.message).toContain("this commit adds none");
+  expect(verdict.skipped).toBeUndefined();
+});
+
+it("a blockedBy tag naming an entry the commit's own queue carries is accepted", async () => {
+  const gate = newBlockerGateOf("plan-derive");
+
+  await baseQueue([queueEntry("THE-BLOCKER")]);
+  await writeQueue([
+    queueEntry("THE-BLOCKER"),
+    waitsOn("THE-WAITER", "THE-BLOCKER"),
+  ]);
+  const span = commitAll("plan: derive files work behind its blocker");
+
+  const verdict = await gate.run(ctxFor(span, { phaseName: "plan-derive" }));
+
+  expect(verdict, verdict.details ?? verdict.message).toMatchObject({
+    ok: true,
+  });
+  // Non-vacuity: the green names the edge this commit added, so this is a new
+  // edge admitted rather than a span that wrote none.
+  expect(verdict.message).toContain("THE-WAITER -> THE-BLOCKER");
+  expect(verdict.skipped).toBeUndefined();
+});
+
+it("a queue stating no blockedBy edge is reported skipped, not as a judged green", async () => {
+  const gate = newBlockerGateOf(INBOX_PHASE);
+
+  await baseQueue([queueEntry("THE-WORK")]);
+  await writeQueue([queueEntry("THE-WORK"), queueEntry("MORE-WORK")]);
+  const verdict = await gate.run(
+    ctxFor(commitAll("plan: the drain files open work"), {
+      phaseName: INBOX_PHASE,
+    }),
+  );
+
+  expect(verdict).toMatchObject({ ok: true });
+  expect(verdict.skipped).toBe("the queue declares no blocker");
+  // Vacuous-by-design is spelled over a populated queue: the entries were
+  // there and none of them stated an edge.
+  expect(verdict.message).toContain("2 entries");
+});
+
+/**
+ * Build writes no entry file, so its commit adds no edge and its fence lets
+ * it repair none — the same reasoning the goal-rank gate's wiring rests on
+ * (`harness/gates.ts`).
+ */
+it("build's gate set carries no new-blocker row", () => {
+  const producer = sliceGates(INBOX_PHASE).map((g) => g.name);
+  // Vacuity pin: the row exists to be absent from build's set.
+  expect(producer).toContain("new blocker resolves");
+
+  expect(gates().map((g) => g.name)).not.toContain("new blocker resolves");
 });
 
 it("the records gate refuses a record written outside the tick's own tag", async () => {
