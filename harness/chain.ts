@@ -193,7 +193,7 @@ export function harnessChain(options: HarnessChainOptions): Chain {
   const notes = noteGlobs(stateRoot);
 
   const agentFor = agentFactory(api, declaration);
-  const setup = worktreeSetup(declaration, provision);
+  const setup = worktreeSetup(provision);
 
   /**
    * One phase's shared prompt args, per tick, at the root the tick reports.
@@ -325,7 +325,7 @@ export function harnessChain(options: HarnessChainOptions): Chain {
             : {}),
         }),
       handoff: handoffFor(name),
-      ...(setup ? { setupWorktree: setup } : {}),
+      setupWorktree: setup,
     };
   };
 
@@ -417,7 +417,7 @@ export function harnessChain(options: HarnessChainOptions): Chain {
         : finished;
     },
     handoff: handoffFor(BUILD_PHASE),
-    ...(setup ? { setupWorktree: setup } : {}),
+    setupWorktree: setup,
   };
 
   const policy = supervisorPolicy(declaration.supervisor);

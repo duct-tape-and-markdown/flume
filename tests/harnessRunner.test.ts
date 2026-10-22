@@ -78,6 +78,18 @@ const put = async (repo: string, rel: string, body: string): Promise<void> => {
   await writeFile(join(repo, rel), body);
 };
 
+/**
+ * The lockfile a fixture repository commits beside its manifest.
+ *
+ * A declaration naming no `setup` reduces to the engine's lockfile-aware
+ * installer at every provisioned tree's root, and a chain load over a tree
+ * that installer cannot read is refused (`installPlan`,
+ * `src/setupWorktree.ts`) — so a fixture standing for a consumer whose chain
+ * loads commits one. Nothing runs it here: every case substitutes the
+ * installer on the api it hands the factory.
+ */
+const LOCKFILE = { name: "pnpm-lock.yaml", body: "lockfileVersion: '9.0'\n" };
+
 /** `node_modules` for a tree that has none of its own. */
 const link = async (tree: string): Promise<void> => {
   await symlink(join(REPO_ROOT, "node_modules"), join(tree, "node_modules"), "dir");
@@ -438,6 +450,7 @@ describe("the vitest runner", () => {
     git(fixture, ["config", "commit.gpgsign", "false"]);
 
     await put(fixture, "package.json", `{ "name": "fixture", "private": true, "type": "module" }\n`);
+    await put(fixture, LOCKFILE.name, LOCKFILE.body);
     await put(fixture, ".gitignore", "node_modules\n");
     await put(
       fixture,
@@ -1152,6 +1165,7 @@ describe("the script runner", () => {
     git(fixture, ["config", "commit.gpgsign", "false"]);
 
     await put(fixture, "package.json", `{ "name": "fixture", "private": true, "type": "module" }\n`);
+    await put(fixture, LOCKFILE.name, LOCKFILE.body);
     await put(fixture, "checks/run.mjs", VALIDATOR);
     await put(fixture, "checks/summary.mjs", SUMMARY);
     await put(fixture, "checks/verdict.sh", verdictScript("pass"));
@@ -1503,6 +1517,7 @@ describe("the vitest runner over a span that inherited a red suite", () => {
     git(fixture, ["config", "commit.gpgsign", "false"]);
 
     await put(fixture, "package.json", `{ "name": "fixture", "private": true, "type": "module" }\n`);
+    await put(fixture, LOCKFILE.name, LOCKFILE.body);
     await put(fixture, ".gitignore", "node_modules\n");
     await put(
       fixture,

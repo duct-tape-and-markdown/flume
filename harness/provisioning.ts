@@ -16,6 +16,7 @@ import { resolve } from "node:path";
 
 import type { FlumeApi } from "../src/flumeApi.js";
 import type { Phase } from "../src/Phase.js";
+import { installPlan } from "../src/setupWorktree.js";
 import { execFileWithShimRetry } from "../src/spawnShim.js";
 
 import type { Declaration } from "./declaration.js";
@@ -29,9 +30,11 @@ import { MAX_OUTPUT_BYTES } from "./exec.js";
  * gets the engine's own lockfile-aware install; declared, the command runs
  * in each directory instead — which is what a consumer whose stack has no
  * lockfile the engine reads (cargo, dotnet, a script) declares. With no
- * setup declared at all the root itself gets the engine's installer, which
- * is what a base checkout needs to run a suite and what a build worktree of
- * such a consumer inherits from its own tree.
+ * setup declared at all the root itself gets the engine's installer — one
+ * answer for every tree the package provisions, so a consumer that said
+ * nothing has its build worktrees, its plan slices' worktrees and the base
+ * checkout its runner judges at installed by the same rule
+ * ({@link engineInstaller}).
  *
  * One reduction, two callers: {@link worktreeSetup} below and the runner
  * factory the chain hands it to (`chain.ts`). A second one built beside
@@ -50,7 +53,7 @@ export function provisioning(
   declaration: Declaration,
 ): (root: string) => Promise<void> {
   const setup = declaration.setup;
-  if (setup === undefined) return (root) => api.setupWorktree(root);
+  if (setup === undefined) return engineInstaller(api);
   const install = installing(api, declaration, setup.restore);
   const walk = async (root: string): Promise<void> => {
     for (const directory of setup.directories) {
@@ -66,6 +69,45 @@ export function provisioning(
   if (setup.restore === undefined || setup.serialize !== true) return walk;
   const turn = oneAtATime();
   return (root) => turn(() => walk(root));
+}
+
+/**
+ * The engine's lockfile-aware installer at the root of whatever tree it is
+ * handed — what a consumer that declared no `setup` provisions every tree
+ * with, refused at load where this installer cannot read *this* consumer's
+ * tree.
+ *
+ * Refused here rather than per tree, and at load rather than at the tick
+ * that first needed a worktree, for the reason the declared shell's probe is
+ * refused at load (`declaredShell.ts`): an installer with no lockfile to
+ * read strands every tree the package provisions — a fanout wave's
+ * worktrees, each plan slice's, and the base checkout the runner judges at —
+ * so reporting it once, naming the two declarations that fix it, is the
+ * alternative to the same failure arriving once per tree, hours in
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ *
+ * The tree probed is the repository root, which is the one tree that exists
+ * at load: a worktree is cut from a commit of it, so the lockfile a
+ * provisioned tree will hold is the one committed here. Which lockfiles
+ * those are is the engine's fact, asked rather than spelled
+ * (`installPlan`, `src/setupWorktree.ts`), so this refusal cannot come to
+ * name a set the installer no longer reads
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*).
+ */
+function engineInstaller(api: FlumeApi): (root: string) => Promise<void> {
+  const { install, lockfiles } = installPlan(api.paths.repoRoot);
+  if (install === undefined) {
+    throw new Error(
+      `this declaration names no \`setup\`, so every tree the package ` +
+        `provisions takes the engine's lockfile-aware install at its root, ` +
+        `and ${api.paths.repoRoot} carries no ${lockfiles.join(" or ")} ` +
+        `for it to read: declare a \`setup\` whose \`restore\` installs ` +
+        `this tree, or commit one of those lockfiles ` +
+        `(spec/harness.md, What a consumer declares)`,
+    );
+  }
+  return (root) => api.setupWorktree(root);
 }
 
 /**
@@ -128,19 +170,23 @@ function installing(
 }
 
 /**
- * The hook every provisioned worktree runs, or none when the consumer
- * declared no setup — a tree a consumer said nothing about gets no hook, and
- * the engine skips the step rather than installing on its own authority.
+ * The hook every provisioned worktree runs: the reduction above, over the
+ * tree the tick was handed.
+ *
+ * Every tree, including one a consumer declared no `setup` for — what that
+ * silence reduces to is the engine's installer at the root
+ * ({@link engineInstaller}), which is the same answer the runner's base
+ * checkout takes, so one question has one answer rather than an install for
+ * the tree the suite is judged in and no hook at all for the tree the work
+ * is built in (`spec/harness.md`, *The runner interface*).
  *
  * A throw here parks that one entry rather than the wave
  * (`spec/worktrees.md`, *Every `.git/worktrees` mutation is serialized; the
  * agent fanout is not*).
  */
 export function worktreeSetup(
-  declaration: Declaration,
   provision: (root: string) => Promise<void>,
-): Phase["setupWorktree"] | undefined {
-  if (declaration.setup === undefined) return undefined;
+): NonNullable<Phase["setupWorktree"]> {
   return async ({ worktreePath }) => {
     await provision(worktreePath);
   };

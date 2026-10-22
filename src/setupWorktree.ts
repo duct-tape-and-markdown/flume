@@ -34,19 +34,75 @@ import { execFileWithShimRetry } from "./spawnShim.js";
  */
 const INSTALL_OUTPUT_CAP_BYTES = 64 << 20;
 
+/** One install the shipped installer can run, and the lockfile that names it. */
+interface Install {
+  /** The lockfile whose presence names this install, in the directory read. */
+  readonly lockfile: string;
+  readonly bin: string;
+  readonly args: readonly string[];
+}
+
 /**
- * Runs the install implied by whichever lockfile `dir` contains:
- * `pnpm-lock.yaml` → `pnpm install --frozen-lockfile`; `package-lock.json`
- * → `npm ci`; both present → pnpm wins (flume's own convention); neither →
- * rejects instead of guessing a package manager.
+ * What one directory's lockfiles say about installing it: the install the
+ * first one present names, or none — and either way the whole set this
+ * installer reads, so a caller refusing over the absence names the lockfiles
+ * rather than spelling them a second time
+ * (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*).
+ *
+ * Neither shape is exported: nothing outside names either type, and the one
+ * function below that returns this one is reached by name
+ * (`.claude/rules/engineering.md`, *An export earns its consumer*).
+ */
+interface InstallPlan {
+  readonly install?: Install;
+  /** Every lockfile name this installer reads, in the precedence it reads them. */
+  readonly lockfiles: readonly string[];
+}
+
+/**
+ * The installs this helper can run, in precedence order: both lockfiles
+ * present → pnpm wins (flume's own convention).
+ */
+const INSTALLS: readonly Install[] = [
+  {
+    lockfile: "pnpm-lock.yaml",
+    bin: "pnpm",
+    args: ["install", "--frozen-lockfile"],
+  },
+  { lockfile: "package-lock.json", bin: "npm", args: ["ci"] },
+];
+
+/**
+ * Which install `dir`'s lockfiles imply, read without running anything —
+ * what {@link setupWorktree} decides from, reported so a caller that cannot
+ * afford to learn it by provisioning a tree asks instead of guessing. A
+ * chain declaring no provisioning of its own is the standing caller: it
+ * takes this installer, and whether this installer can read *this* tree is
+ * knowable at load (`harness/provisioning.ts`).
  *
  * Absent is the only silent reading of either probe: `existsLoud`
  * (src/fsProbe.ts) throws on a lockfile that is present but unstattable,
- * where `existsSync` read it as absent and the refusal above became a guess
+ * where `existsSync` read it as absent and the refusal below became a guess
  * — a pnpm repo demoted to `npm ci`, or an npm repo told it committed no
  * lockfile at all. Both answers are confidently wrong about a tree whose
  * lockfile was never read (`.claude/rules/engineering.md`, "Loud or
- * nothing").
+ * nothing"). Every probe runs before any of them decides, so an unreadable
+ * lockfile throws even where one ahead of it in precedence already answered.
+ */
+export function installPlan(dir: string): InstallPlan {
+  const lockfiles = INSTALLS.map((install) => install.lockfile);
+  const present = INSTALLS.filter((install) =>
+    existsLoud(namespacedJoin(dir, install.lockfile)),
+  );
+  const first = present[0];
+  return first === undefined ? { lockfiles } : { install: first, lockfiles };
+}
+
+/**
+ * Runs the install `dir`'s own lockfile implies ({@link installPlan}):
+ * `pnpm-lock.yaml` → `pnpm install --frozen-lockfile`; `package-lock.json`
+ * → `npm ci`; neither → rejects instead of guessing a package manager.
  *
  * Drop into a chain's `setupWorktree` hook, on a phase of either
  * concurrency:
@@ -57,28 +113,18 @@ const INSTALL_OUTPUT_CAP_BYTES = 64 << 20;
  * ```
  */
 export async function setupWorktree(dir: string): Promise<void> {
-  const hasPnpmLock = existsLoud(namespacedJoin(dir, "pnpm-lock.yaml"));
-  const hasNpmLock = existsLoud(namespacedJoin(dir, "package-lock.json"));
+  const { install, lockfiles } = installPlan(dir);
 
-  if (hasPnpmLock) {
-    await execFileWithShimRetry("pnpm", ["install", "--frozen-lockfile"], {
-      cwd: dir,
-      maxBuffer: INSTALL_OUTPUT_CAP_BYTES,
-    });
-    return;
+  if (install === undefined) {
+    throw new Error(
+      `setupWorktree: no ${lockfiles.join(" or ")} found in ${dir} — ` +
+        "refusing to guess a package manager. Commit one of those " +
+        "lockfiles, or write a custom setupWorktree hook for this chain.",
+    );
   }
 
-  if (hasNpmLock) {
-    await execFileWithShimRetry("npm", ["ci"], {
-      cwd: dir,
-      maxBuffer: INSTALL_OUTPUT_CAP_BYTES,
-    });
-    return;
-  }
-
-  throw new Error(
-    `setupWorktree: no pnpm-lock.yaml or package-lock.json found in ${dir} — ` +
-      "refusing to guess a package manager. Commit one of the two " +
-      "lockfiles, or write a custom setupWorktree hook for this chain.",
-  );
+  await execFileWithShimRetry(install.bin, [...install.args], {
+    cwd: dir,
+    maxBuffer: INSTALL_OUTPUT_CAP_BYTES,
+  });
 }

@@ -114,6 +114,18 @@ const SPAN = `documented as !\`${COMMAND}\` in the corpus`;
 /** The state root every case addresses, repo-relative. */
 const STATE_ROOT = ".flume";
 
+/**
+ * The lockfile the fixture repository commits. The base declaration names no
+ * `setup`, which reduces to the engine's lockfile-aware installer at every
+ * provisioned tree's root, and a chain load over a tree that installer
+ * cannot read is refused (`installPlan`, `src/setupWorktree.ts`) — so a
+ * fixture standing for a consumer that loads has to commit one.
+ *
+ * Nothing here runs it: the cases that provision an undeclared setup
+ * substitute the installer on the API they hand the factory.
+ */
+const LOCKFILE = "pnpm-lock.yaml";
+
 /** The section every fixture entry cites, and the file that holds it. */
 const CITE = { path: "spec/harness.md", section: "The phases" };
 
@@ -175,6 +187,7 @@ beforeAll(async () => {
     `# The harness package\n\n### ${CITE.section}\n\nThree plan slices and one fanout build phase.\n`,
   );
   await writeFile(join(repo, "src", "index.ts"), "export const seed = 1;\n");
+  await writeFile(join(repo, LOCKFILE), "lockfileVersion: '9.0'\n");
   await writeFile(join(repo, "rules", "posture.md"), "# Posture\n");
   // The queue directory, present and empty: git holds no empty directory, so
   // the placeholder is what keeps it in the tree (`harness/init.ts`).
@@ -1726,21 +1739,107 @@ function gateContext(cwd: string): GateContext {
   };
 }
 
-it("a declaration with no setup leaves every returned phase without a setupWorktree hook", () => {
+it("a consumer declaring no setup gets the engine's installer at the root of a build worktree", async () => {
   // Non-vacuity: the base declaration genuinely says nothing about setup, so
-  // the absence below is the factory's answer to silence rather than to a
-  // fixture that happened to declare an empty one.
+  // what provisions below is the factory's answer to silence rather than to
+  // a fixture that declared something.
   expect("setup" in DECLARATION).toBe(false);
 
-  const chain = chainFor();
-  expect(chain.phases.length).toBeGreaterThan(0);
+  const installed: string[] = [];
+  const chain = harnessChain({
+    // The engine's installer as a recorder: what it spawns is
+    // `src/setupWorktree.ts`'s subject, and this case is about which tree the
+    // package hands it.
+    api: {
+      ...api,
+      setupWorktree: async (root: string) => {
+        installed.push(root);
+      },
+    },
+    declaration: DECLARATION,
+  });
 
-  // No hook at all, rather than one that installs on the engine's own
-  // authority: a tree the consumer said nothing about is one the engine
-  // skips the step for.
+  // Every phase, as a declared setup already gets: a plan slice runs in a
+  // worktree too, so silence cannot leave one of them judging an
+  // uninstalled tree.
+  expect(chain.phases.length).toBeGreaterThan(0);
   expect(
-    chain.phases.filter((phase) => phase.setupWorktree !== undefined).map((p) => p.name),
+    chain.phases.filter((phase) => phase.setupWorktree === undefined).map((p) => p.name),
   ).toEqual([]);
+
+  const worktreePath = join(repo, "undeclared-setup", BUILD_PHASE);
+  await mkdir(worktreePath, { recursive: true });
+  const hook = phaseNamed(chain, BUILD_PHASE).setupWorktree;
+  await hook!({ worktreePath, repoRoot: repo, worktreeKey: "SOME-ENTRY" });
+
+  // One install, at the build worktree's own root — the same installer the
+  // runner's base checkout takes, over the tree this tick was handed rather
+  // than the checkout the chain was loaded from, whose `node_modules` a
+  // gate in here would resolve only by walking out of its own worktree.
+  expect(installed).toEqual([worktreePath]);
+});
+
+it("a consumer with no lockfile and no declared setup is refused at chain load", async () => {
+  // Non-vacuity on the declaration: it names no setup, and it loads — over
+  // the fixture repo, which commits a lockfile the engine's installer reads.
+  // So the refusal below is attributable to the tree.
+  expect("setup" in DECLARATION).toBe(false);
+  expect(existsSync(join(repo, LOCKFILE))).toBe(true);
+  expect(() => chainFor()).not.toThrow();
+
+  const tree = await mkTempDir("flume-harness-chain-no-lockfile-");
+  try {
+    const stateRoot = join(tree, STATE_ROOT);
+    await mkdir(stateRoot, { recursive: true });
+    const load = (): Chain =>
+      harnessChain({
+        api: buildFlumeApi({
+          repoRoot: tree,
+          configDir: stateRoot,
+          flumeDir: stateRoot,
+        }),
+        declaration: DECLARATION,
+      });
+
+    // Which lockfiles this consumer was owed, read off the engine's own
+    // installer over this same tree — it refuses before it spawns anything,
+    // so the set the refusal below has to name is asked rather than spelled
+    // a second time here.
+    const owed = await api.setupWorktree(tree).then(
+      () => {
+        throw new Error(`the engine's installer provisioned ${tree}`);
+      },
+      (error: unknown) => (error as Error).message.match(/[\w-]+\.(?:yaml|json)/g) ?? [],
+    );
+    expect(owed.length).toBeGreaterThan(1);
+
+    // Refused at load, rather than every worktree in every wave failing to
+    // provision hours in — or, worse, provisioning nothing and leaving each
+    // tick's tools to resolve out of the checkout above it.
+    expect(load).toThrow();
+
+    let message = "";
+    try {
+      load();
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    // Naming the tree it read, every lockfile that would have answered, and
+    // both declarations that fix it.
+    expect({
+      root: message.includes(tree),
+      lockfiles: owed.filter((lockfile) => message.includes(lockfile)),
+      setup: message.includes("`setup`"),
+      restore: message.includes("`restore`"),
+    }).toEqual({ root: true, lockfiles: owed, setup: true, restore: true });
+
+    // And the probe is the lockfile rather than this tree: one in place, the
+    // same load answers.
+    await writeFile(join(tree, LOCKFILE), "lockfileVersion: '9.0'\n");
+    expect(load).not.toThrow();
+  } finally {
+    await rm(tree, { recursive: true, force: true });
+  }
 });
 
 it("a declared setup gives every returned phase a setupWorktree hook that provisions its worktree", async () => {
@@ -1776,6 +1875,37 @@ it("a declared setup gives every returned phase a setupWorktree hook that provis
   // tick was handed, and a reduction anchored to the checkout it was built
   // from would install where no gate runs.
   expect(existsSync(join(repo, marker))).toBe(false);
+});
+
+it("a consumer declaring a setup still provisions each directory it named", async () => {
+  // The declared arm, which silence having gained an answer does not reach:
+  // `directories` says where, and each name is where the restore runs —
+  // never the checkout's root, which is what the undeclared case reduces to
+  // and what a reduction reading that answer into every declaration would
+  // have provisioned here too.
+  const marker = "provisioned-by-the-declared-restore";
+  const named = ["packages/api", "packages/web"];
+  const hook = setupHook({
+    ...DECLARATION,
+    runner: recordingRunner([]),
+    setup: { directories: named, restore: `touch ${marker}` },
+  });
+
+  const worktreePath = join(repo, "declared-directories");
+  await Promise.all(
+    named.map((dir) => mkdir(join(worktreePath, dir), { recursive: true })),
+  );
+  await hook({ worktreePath, repoRoot: repo, worktreeKey: "SOME-ENTRY" });
+
+  // Every directory the declaration named, read as the set rather than one
+  // of them: a walk that stopped at the first would pass on a single-name
+  // claim (`.claude/rules/engineering.md`, *A green verdict is proven
+  // non-vacuous*).
+  expect(named.filter((dir) => existsSync(join(worktreePath, dir, marker)))).toEqual(
+    named,
+  );
+  // And nowhere else: the root was not one of them.
+  expect(existsSync(join(worktreePath, marker))).toBe(false);
 });
 
 it("each registry gate name the package ships constructs that builtin at the declared when", () => {

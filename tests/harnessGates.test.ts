@@ -382,6 +382,12 @@ beforeEach(async () => {
     ].join("\n"),
   );
   await write("src/widget.ts", `export const widget = "base";\n`);
+  // The declarations here name no `setup`, which reduces to the engine's
+  // lockfile-aware installer at every provisioned tree's root — and a chain
+  // load over a tree that installer cannot read is refused (`installPlan`,
+  // `src/setupWorktree.ts`). Nothing installs it: no case here provisions a
+  // worktree.
+  await write("pnpm-lock.yaml", "lockfileVersion: '9.0'\n");
   await writeQueue([]);
   git(repo, ["add", "-A"]);
   git(repo, ["commit", "-q", "-m", "base"]);

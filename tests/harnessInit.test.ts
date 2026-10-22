@@ -1061,6 +1061,12 @@ it("the chain.ts init writes loads through the engine's chain loader as a valid 
     `${JSON.stringify({ name: "consumer", version: "0.0.0" }, null, 2)}\n`,
     "utf8",
   );
+  // And the lockfile `npm install` leaves beside it: the skeleton init
+  // writes declares no `setup`, which reduces to the engine's lockfile-aware
+  // installer at every tree the chain provisions, so a tree carrying no
+  // lockfile that installer reads is a load the package refuses by name
+  // (`installPlan`, `src/setupWorktree.ts`).
+  await writeFile(join(repoRoot, "package-lock.json"), "{}\n", "utf8");
   const result = await harnessInit({ repoRoot });
   await installShim(repoRoot, result.packageName);
   expect(result.written).toContain(`${result.stateRoot}/chain.ts`);

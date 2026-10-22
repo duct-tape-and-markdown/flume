@@ -169,7 +169,12 @@ absent leaves the parse's default of four),
 every provisioned worktree; `serialize`, set where that restore's shared
 cache is not safe to warm from several worktrees at once, which runs it one
 worktree at a time across a fanout wave while the wave's other provisioning
-stays parallel), `slots`
+stays parallel; declare nothing and every tree the package provisions — each
+build worktree, each plan slice's, and the base checkout your runner judges
+at — takes the engine's own lockfile-aware install at its root, so a
+repository committing no lockfile that installer reads while declaring no
+`setup` is refused at chain load, naming both fixes, rather than failing once
+per tree), `slots`
 (prompt text — `autonomy`, a dial; `domain`, context; never a directive),
 `capabilities` (the environment facts this repository asserts, passed through
 whole to `Chain.capabilities`, so a `requiresCapability` entry naming one the
