@@ -1,0 +1,41 @@
+{
+  "tag": "THE-VITEST-RUNNER-TAKES-THE-CONSUMERS-SCOPE",
+  "gate": { "kind": "open" },
+  "dependsOnForks": [],
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "harness/vitestRunner.ts",
+        "description": "the declared scope and the two operations that pass it, and `invoke`'s doc, which carries scope today by accident"
+      },
+      {
+        "path": "harness/runner.ts",
+        "description": "the `run` and `runAtBase` docs on what each adds to a consumer's own run"
+      },
+      {
+        "path": "tests/harnessRunner.test.ts",
+        "description": "the vitest runner's invocation cases"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "the vitest runner takes the consumer's test scope as a declared field in vitest's own argument vocabulary; reaching vitest stays `invoke`'s job and stops being the only door",
+  "per": { "path": "spec/harness.md", "section": "The runner interface" },
+  "acceptance": "a consumer states its scope once, in vitest's own flags, and that scope reaches every `run` and `runAtBase` spawn, while the runner itself adds only the reporter flag and — at the base — the judge's files, nothing that widens or narrows",
+  "tests": [
+    "the vitest runner passes the consumer's declared scope to every run",
+    "the vitest runner passes the declared scope beside the judge's files at the base"
+  ],
+  "pins": [
+    "the vitest runner appends nothing but the reporter flag to a declared invocation"
+  ],
+  "laneTests": [],
+  "interface": {
+    "changes": "a consumer declaring the vitest runner names its suite's scope in a field of its own, read by both run operations",
+    "hides": "that scope and location share one field, so a consumer narrowing its suite has to know `invoke`'s args are the only place a filter can go",
+    "rejected": "a scope argument on `run` itself — the judge would then own what the suite is, which every consumer would want to choose"
+  },
+  "notes": "`vitestRunner` takes `lanes` and `invoke` only; `invoke` is documented as how to reach vitest, so the field that can carry scope does not read as carrying it. `run` already appends `--reporter=json` alone and `runAtBase` that plus the judge's files, so the additive half is the declared field. Additive and optional, so this repo's own declaration keeps compiling with no scope stated."
+}

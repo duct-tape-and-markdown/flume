@@ -1,0 +1,44 @@
+{
+  "tag": "THE-FAST-FORWARD-REFUSES-RATHER-THAN-OVERWRITES",
+  "gate": { "kind": "blockedBy", "tags": ["TRUNK-MOVES-ONLY-BY-FAST-FORWARD-TO-A-JUDGED-CANDIDATE"] },
+  "dependsOnForks": [],
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/mergeSpan.ts",
+        "description": "the two refusals the move can meet, and the fate each answers with"
+      },
+      {
+        "path": "src/git.ts",
+        "description": "the fast-forward's refusal, read as its own class rather than as a message"
+      },
+      {
+        "path": "src/waveMerge.ts",
+        "description": "the leg's re-carry onto the tip the foreign commit left"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the merge-stage cases over a trunk that moved and a dirty checkout"
+      },
+      {
+        "path": "tests/git.test.ts",
+        "description": "the fast-forward's refusal cases"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "a trunk that moved under a candidate, or an uncommitted change on a path the span touched, refuses the fast-forward — the span is carried again or stays unshipped",
+  "per": { "path": "spec/loop.md", "section": "Tip verify — one writer per branch, absorption at the merge" },
+  "acceptance": "a foreign commit absorbed onto trunk under a candidate refuses the move, discards the candidate and carries the span again onto the new tip; an operator's staged or unstaged change colliding with a path the span touched refuses it with both writers' work in place and the entry retrying",
+  "tests": [
+    "a trunk that moved under a candidate refuses the fast-forward and the span is carried again onto the new tip",
+    "an uncommitted change on a path the span touched refuses the fast-forward with both writers' work in place"
+  ],
+  "pins": [
+    "a fast-forward leaves an uncommitted change on a path the span did not touch standing"
+  ],
+  "laneTests": [],
+  "notes": "The refusals come free from `merge --ff-only`; what this entry owes is the disposition — which fate each answers with and that a moved tip re-carries rather than walls. Reads the carry the blocker rewrites, so it cannot be written against the current shape. Same files as its blocker, which is the seam the section couples them through."
+}

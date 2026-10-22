@@ -1,0 +1,55 @@
+{
+  "tag": "THE-RUNNING-LANES-COVERAGE-IS-THE-TOOLS-ANSWER",
+  "gate": {
+    "kind": "parked",
+    "reason": "decision on where a breaking harness-declaration change lands — `.flume/declaration.ts` is outside every phase's fence (`questions/a-breaking-declaration-change-has-no-landing-lane.md`)"
+  },
+  "dependsOnForks": [],
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "harness/runner.ts",
+        "description": "the lane shape, which asks a consumer to restate what its own config says"
+      },
+      {
+        "path": "harness/vitestRunner.ts",
+        "description": "the coverage read for the declared scope, asked of vitest"
+      },
+      {
+        "path": "harness/entryExtension.ts",
+        "description": "the hints rendered from the running lane's complement"
+      },
+      {
+        "path": "tests/harnessRunner.test.ts",
+        "description": "the lane cases"
+      },
+      {
+        "path": "tests/harnessEntryExtension.test.ts",
+        "description": "the hint cases, which declare lane exclusions today"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "a lane carries its name and whether it runs, and nothing else: the running lane's coverage is the test tool's answer for the declared scope, never a list declared beside it",
+  "per": {
+    "path": "spec/harness.md",
+    "section": "The runner interface"
+  },
+  "acceptance": "a lane declares no exclusion list, the running lane's coverage comes from the tool for the declared scope, plan's `tests[]` and `pins[]` hints name what that scope leaves out, and a tool that cannot answer makes the hint say no coverage is known",
+  "tests": [
+    "a running lane's coverage is read from the tool for the declared scope",
+    "a tool that cannot answer coverage makes the hint say none is known"
+  ],
+  "pins": [
+    "the tests[] hint names the files the declared scope leaves out"
+  ],
+  "laneTests": [],
+  "interface": {
+    "changes": "a consumer's lane states a name and which one runs; what a lane covers is asked of its tool",
+    "hides": "a glob list the consumer kept in step with its own test config by hand, checked against nothing the run did",
+    "rejected": "keeping the list as an override for a tool that cannot answer — a second source of one truth, and the arm that drifts is the one nothing reads"
+  },
+  "notes": "Parked, not blocked: cutting `Lane.excludes` breaks `.flume/declaration.ts`, which declares two lanes with exclusions and sits outside build's fence, so no build commit lands this green. Reads the scope THE-VITEST-RUNNER-TAKES-THE-CONSUMERS-SCOPE declares, so it follows that entry. Build also measures whether `vitest list --filesOnly --json` answers coverage under the declared scope; if no form does, the no-coverage arm is the whole answer."
+}
