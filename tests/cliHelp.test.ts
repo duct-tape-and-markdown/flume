@@ -42,7 +42,8 @@ import {
   mergingDir,
   stopFlagPath,
 } from "../src/paths.ts";
-import { entryFileName } from "../src/PendingSchema.ts";
+import { entryFileName, type PendingEntry } from "../src/PendingSchema.ts";
+import { goalRows } from "../src/queueGoals.ts";
 import {
   docCommentFor,
   docProse,
@@ -3303,5 +3304,221 @@ describe("the render-refused class, enumerated whole wherever it is named (THE-R
         asStated(phrase),
       );
     }
+  });
+});
+
+/**
+ * THE-GOAL-ROW-PAGES-ARE-PINNED-AGAINST-THE-ROW-THE-WRITER-WRITES — the two
+ * prose copies of the Goals row's shape, each read against the row the real
+ * writer renders. `docs/CLI.md` § `flume status` and the `status --help` page
+ * both carry a sample row and both spell out how many of a goal's remaining
+ * work entries one row names before it counts the rest; both moved by hand
+ * with the row's last change, and nothing read either against `workClause`
+ * (`src/queueGoals.ts`), which is what decides that count.
+ *
+ * Each page is read against the driven writer and never against its
+ * neighbour: two prose copies compared to each other move together in the
+ * commit that changes the behavior, and agree while both are wrong
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*). Reading a page for what it says is admitted here because each
+ * states what a shipped interface does and is pinned against that interface
+ * (`.claude/rules/engineering.md`, *Narration is the ladder's bottom rung*).
+ */
+describe("the Goals row's two prose copies against the row goalRows renders (THE-GOAL-ROW-PAGES-ARE-PINNED-AGAINST-THE-ROW-THE-WRITER-WRITES)", () => {
+  const GOAL_TAG = "THE-GOAL";
+
+  /** The goal's filing, in the unix seconds a filing read answers in. */
+  const FILED_AT_SECONDS = 1_700_000_000;
+
+  /** How far past that filing the row is measured — a two-unit span. */
+  const STOOD_MS = (2 * 24 + 12) * 3_600_000;
+
+  /**
+   * More remaining work than any row names, so the fixture is the case the
+   * pages describe: a row that truncates and counts what it withheld.
+   */
+  const WORK_TAGS = Array.from(
+    { length: 12 },
+    (_, at) => `W-${String(at + 1).padStart(2, "0")}`,
+  );
+
+  /** How a page spells a small count in prose. */
+  const COUNT_WORDS = [
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+  ];
+
+  /** One entry of the fixture queue, in the engine's own core shape. */
+  function entryOf(
+    tag: string,
+    kind: "group" | "work",
+    parent?: string,
+  ): PendingEntry {
+    return {
+      tag,
+      gate: { kind: "open" },
+      dependsOnForks: [],
+      kind,
+      files: { new: [], edit: [], retire: [] },
+      ...(parent === undefined ? {} : { parent }),
+    };
+  }
+
+  /** Whitespace folded out, since a page wraps one sample row across lines. */
+  const folded = (text: string): string => text.replace(/\s+/g, " ").trim();
+
+  /** What a Goals row reads as, once parsed into the parts a page restates. */
+  const ROW = /^goal ([^:]+): work (.+) and (\S+) more; stood (.+)$/;
+
+  /**
+   * One row with its variable parts blanked: the tags it named, the count it
+   * withheld, the span it stood for. What survives is the row's frame and how
+   * many entries it names — the two facts a page restates — so a page's
+   * sample and the real row compare as one claim rather than through the tags
+   * and numbers each side invented. A row the frame does not match skeletons
+   * to the empty string, which every call site anchors.
+   */
+  function rowSkeleton(row: string): string {
+    const parsed = ROW.exec(folded(row));
+    if (parsed === null) return "";
+    const named = parsed[2]!.split(", ").map(() => "<TAG>");
+    return `goal <TAG>: work ${named.join(", ")} and <N> more; stood <SPAN>`;
+  }
+
+  /**
+   * The one sample Goals row a page carries, delimited the way that page
+   * delimits a rendered line — backticks on a markdown page, quotes inside a
+   * help page. Exactly one, so a page that grew a second sample is read
+   * rather than half-read.
+   */
+  function sampleRow(page: string, what: string): string {
+    const found = [...folded(page).matchAll(/[`"]goal [^`"]+[`"]/g)].map(
+      (match) => match[0].slice(1, -1),
+    );
+    expect(
+      found.length,
+      `${what} carries no single sample goal row: ${found.join(" | ")}`,
+    ).toBe(1);
+    return found[0]!;
+  }
+
+  /**
+   * The row `goalRows` (`src/queueGoals.ts`) really renders over a goal
+   * carrying more remaining work than one row names — the producer `flume
+   * status` prints through, driven over an engine-shaped queue rather than a
+   * hand-written line, with both counts it states read back off it.
+   *
+   * Those two reads are the non-vacuity arm: a writer that stopped truncating
+   * — or a fixture that stopped carrying more work than one row names — reds
+   * here rather than handing the pages below a skeleton with nothing to agree
+   * about (`.claude/rules/engineering.md`, *A green verdict is proven
+   * non-vacuous*).
+   */
+  function drivenRow(): { row: string; named: number } {
+    const listing = [
+      entryOf(GOAL_TAG, "group"),
+      ...WORK_TAGS.map((tag) => entryOf(tag, "work", GOAL_TAG)),
+    ];
+    const rows = goalRows({
+      listing,
+      ready: listing.filter((entry) => entry.kind === "work"),
+      filingTimes: new Map([[GOAL_TAG, FILED_AT_SECONDS]]),
+      now: FILED_AT_SECONDS * 1000 + STOOD_MS,
+    });
+    expect(
+      rows.length,
+      `the writer rendered ${rows.length} rows for one goal: ${rows.join(" | ")}`,
+    ).toBe(1);
+
+    const row = rows[0]!;
+    const parsed = ROW.exec(row);
+    expect(parsed, `the writer's row reads "${row}"`).not.toBeNull();
+    const named = parsed![2]!.split(", ");
+    const withheld = Number(parsed![3]!);
+    expect(named.length, `the row named nothing: "${row}"`).toBeGreaterThan(0);
+    expect(withheld, `the row withheld nothing: "${row}"`).toBeGreaterThan(0);
+    expect(
+      named.length + withheld,
+      `the row accounts for ${named.length + withheld} of ${WORK_TAGS.length} work entries`,
+    ).toBe(WORK_TAGS.length);
+    return { row, named: named.length };
+  }
+
+  /**
+   * One page's copy of the Goals row read against `row`: its sample row
+   * compared skeleton to skeleton, and each count it spells out in prose read
+   * against the count the real row named.
+   */
+  function expectPageStatesTheRow(opts: {
+    page: string;
+    what: string;
+    row: string;
+    named: number;
+    phrases: (word: string) => string[];
+  }): void {
+    const skeleton = rowSkeleton(opts.row);
+    expect(skeleton, `the writer's row reads "${opts.row}"`).not.toBe("");
+    expect(
+      rowSkeleton(sampleRow(opts.page, opts.what)),
+      `${opts.what}'s sample row is not the row the writer renders: ${skeleton}`,
+    ).toBe(skeleton);
+
+    const word = COUNT_WORDS[opts.named - 1];
+    expect(
+      word,
+      `no page spells a row naming ${opts.named} entries — add the word to both`,
+    ).toBeDefined();
+    const phrases = opts.phrases(word!);
+    expect(phrases.length, `${opts.what} is read for no phrase`).toBeGreaterThan(0);
+    const stated = asStated(opts.page);
+    for (const phrase of phrases) {
+      expect(stated, `${opts.what} does not state "${phrase}"`).toContain(
+        asStated(phrase),
+      );
+    }
+  }
+
+  it("the CLI page's goal-row sentence names what the real goal row names", async () => {
+    const { row, named } = drivenRow();
+    const section = sectionOf(await readCliDoc(), "## `flume status`");
+    expect(
+      section.length,
+      "docs/CLI.md has no `flume status` section",
+    ).toBeGreaterThan(0);
+    expectPageStatesTheRow({
+      page: section,
+      what: "docs/CLI.md's flume status section",
+      row,
+      named,
+      phrases: (word) => [
+        `naming the first ${word} of the goal's remaining`,
+        `which ${word} of that work the row names`,
+        `a goal with ${word} or fewer remaining work entries`,
+      ],
+    });
+  });
+
+  it("the status help page's goal-row sentence names what the real goal row names", () => {
+    const { row, named } = drivenRow();
+    const page = helpPageFor("status");
+    expect(page, "there is no status help page").toBeDefined();
+    expectPageStatesTheRow({
+      page: page!,
+      what: "the status --help page",
+      row,
+      named,
+      phrases: (word) => [
+        `the first ${word} of the goal's remaining work entries`,
+        `a goal with ${word} or fewer names them all`,
+      ],
+    });
   });
 });
