@@ -1610,6 +1610,8 @@ describe("the vitest runner over a span that inherited a red suite", () => {
   let baseSha: string;
   /** The span's footprint, asked of git — as in the fixture above. */
   let footprint: string[];
+  /** The context the factory is handed, and the runner declaring no scope. */
+  let ctx: RunnerContext;
   let runner: Runner;
 
   beforeAll(async () => {
@@ -1647,7 +1649,8 @@ describe("the vitest runner over a span that inherited a red suite", () => {
       .filter(Boolean);
 
     await link(fixture);
-    runner = vitestRunner()(contextFrom(apiOver(fixture, flumeDir, link)));
+    ctx = contextFrom(apiOver(fixture, flumeDir, link));
+    runner = vitestRunner()(ctx);
   });
 
   afterAll(async () => {
@@ -1703,5 +1706,48 @@ describe("the vitest runner over a span that inherited a red suite", () => {
     expect(verdict.lines).toEqual([
       { line, lane: "tests", state: "carried", files: ["tests/widget.test.ts"] },
     ]);
+  });
+
+  // Here rather than beside the other scope cases because this is the one
+  // fixture committing a test file no judged line ever names, which is what a
+  // positional filter in a declared scope pulls into a base run — and it is
+  // red at the base, so the verdict the refusal replaces would have been a
+  // `base-red` ruling over a file the span never touched.
+  it("a base run whose report names a file no line asked for refuses naming the declared scope", async () => {
+    const line = "carries the merged widget";
+    const asked = ["tests/widget.test.ts"];
+
+    // The premise, read off a run rather than asserted: narrowed to the file
+    // the line names, the base run reports on that file alone — so the
+    // fixture's second test file reaches a base run only when something
+    // widened it.
+    const narrowed = await inGateScope(() =>
+      runner.runAtBase([line], asked, baseSha, fixture),
+    );
+    expect(narrowed.passed + narrowed.failed).toBeGreaterThan(0);
+    expect(narrowed.failures.map((f) => f.file)).toEqual(["tests/widget.test.ts"]);
+
+    // The same run with a positional filter declared as scope: vitest reads
+    // it beside the judge's own filter as a union, so the report names a file
+    // no line asked for and the runner refuses instead of handing that
+    // verdict over.
+    const widening = ["tests/cite.test.ts"];
+    let refused: unknown;
+    try {
+      await inGateScope(() =>
+        vitestRunner({ scope: widening })(ctx).runAtBase([line], asked, baseSha, fixture),
+      );
+    } catch (err) {
+      refused = err;
+    }
+
+    expect(refused).toBeInstanceOf(Error);
+    const message = (refused as Error).message;
+    // The file the report named, the narrowing it was read against, and the
+    // declared scope that widened it — the three things an operator needs in
+    // order to find the positional in their own declaration.
+    expect(message).toContain("tests/cite.test.ts");
+    expect(message).toContain("tests/widget.test.ts");
+    expect(message).toContain(`[${widening.join(" ")}]`);
   });
 });

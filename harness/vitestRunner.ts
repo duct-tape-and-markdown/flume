@@ -18,7 +18,8 @@
  *
  * Nothing here interprets: a run whose report and process disagree about
  * whether anything failed throws at the point of detection, as a run that
- * produced no report does, and every other observation leaves as a fact on
+ * produced no report does and as a base run covering a file none of its
+ * lines asked for does, and every other observation leaves as a fact on
  * `RunResult` for a judge to rule on.
  */
 
@@ -98,8 +99,12 @@ export interface VitestRunnerOptions {
    * Scoping flags, not a bare path: a positional filter stated here reaches
    * vitest beside the base run's own file filters, where vitest reads the
    * set as a union — a scope that widens the base run rather than bounding
-   * it. Which tokens are positional is not decidable from the outside (a
-   * flag's value is a bare token too), so the field carries no refusal.
+   * it. Which tokens are positional is not decidable from the argument list
+   * (a flag's value is a bare token too), so the refusal is read off the run
+   * that happened instead: a base run whose report names a test file none of
+   * the judge's filters asked for throws, naming that file and this value. A
+   * scope that bounds what the suite collects reaches the base run
+   * unrefused.
    */
   scope?: readonly string[];
   /**
@@ -227,22 +232,86 @@ function loadReport(file: string, run: CapturedRun, root: string): Report {
 const firstLine = (s: string | undefined): string | undefined =>
   s === undefined ? undefined : (s.split("\n")[0] ?? undefined);
 
+/** What a base run was narrowed by, which its own report is read against. */
+interface BaseNarrowing {
+  /** The files the judge's lines named, run-relative, as handed to the run. */
+  readonly files: readonly string[];
+  /** The consumer's declared scope, as it reached that run. */
+  readonly scope: readonly string[];
+}
+
+/**
+ * Refuse a base run whose report names a test file none of the filters it was
+ * given asked for.
+ *
+ * The judge's one narrowing is the files its lines name, within whatever
+ * scope the consumer declared (`spec/harness.md`, *The runner interface*),
+ * and vitest collects a test file through a positional filter only when that
+ * file's path contains the filter — so a reported file no filter is a
+ * substring of is a file no line asked for, whatever else reached the
+ * argument list.
+ *
+ * Read off the run rather than off the arguments: deciding argv-side which
+ * tokens of a declared scope are positional needs vitest's own flag and arity
+ * table, which is the tool's to change and wrong here for every two-token
+ * flag (`.claude/rules/engine-boundary.md`, *Told, not inferred*). The report
+ * states which files ran, `files` states which were asked for, and the
+ * comparison needs nothing else. Loud at the point of detection, because the
+ * alternative is handing the judge a verdict — a base failure, a carried
+ * line — read over files its lines never named
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
+function refuseUnaskedFiles(
+  reported: readonly string[],
+  narrowing: BaseNarrowing,
+  root: string,
+): void {
+  const unasked = [
+    ...new Set(reported.filter((f) => !narrowing.files.some((asked) => f.includes(asked)))),
+  ];
+  if (unasked.length === 0) return;
+  throw new Error(
+    `vitest's base run in ${root} reported on ${unasked.length} test ` +
+      `file(s) no judged line asked for: ${unasked.join(", ")}. The run was ` +
+      `narrowed to ${narrowing.files.join(", ")}, so a verdict read off it ` +
+      `would cover files the judge's lines never named. The declared scope ` +
+      `reached that run as [${narrowing.scope.join(" ")}]: a positional ` +
+      `filter there widens a base run instead of bounding it, since vitest ` +
+      `reads it beside the files above as a union — and with no positional ` +
+      `there, what collected them is the consumer's own vitest config.`,
+  );
+}
+
 /**
  * Turn one run into facts, reading the report out of `file` — where this
  * runner told vitest to write it. `root` is the tree the run happened in, so
  * every path reported is relative to it — identical strings whether the run
  * was on the merged tree or at the base.
+ *
+ * `narrowing` is present for a base run and absent for a merged-tree one:
+ * the base run is the only operation that filters by file, so it is the only
+ * one whose report can name a file nothing asked for
+ * ({@link refuseUnaskedFiles}).
  */
 function readRun(
   run: CapturedRun,
   file: string,
   names: readonly string[],
   root: string,
+  narrowing?: BaseNarrowing,
 ): RunResult {
   const { stdout, status } = run;
   const report = loadReport(file, run, root);
 
   const rel = (p: string): string => gitPath(relative(root, p));
+
+  if (narrowing !== undefined) {
+    refuseUnaskedFiles(
+      report.testResults.map((f) => rel(f.name)),
+      narrowing,
+      root,
+    );
+  }
 
   const passing = report.testResults.flatMap((f) =>
     f.assertionResults
@@ -373,7 +442,7 @@ export function vitestRunner(options: VitestRunnerOptions = {}): RunnerFactory {
             [...readingAndScope(reportFile), ...files],
             worktree,
           );
-          return readRun(run, reportFile, names, worktree);
+          return readRun(run, reportFile, names, worktree, { files, scope });
         });
       },
     };
