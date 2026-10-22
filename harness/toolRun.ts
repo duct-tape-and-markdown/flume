@@ -29,6 +29,16 @@ export interface CapturedRun {
   /** Everything the command wrote to stdout, verbatim. */
   readonly stdout: string;
   /**
+   * Everything it wrote to stderr, verbatim.
+   *
+   * Both streams are piped rather than inherited — a gate's child output is
+   * the engine's to surface, never the operator's terminal — so a tool that
+   * explains a failure on stderr has said it here or nowhere. A reader whose
+   * own subject is missing has nothing else to go on, which is what
+   * {@link lastOutput} exists for.
+   */
+  readonly stderr: string;
+  /**
    * The status it exited with, `0` where it exited clean. A run that never
    * started and a run a signal took down have no status to state, so both
    * throw rather than reporting one.
@@ -36,8 +46,33 @@ export interface CapturedRun {
   readonly status: number;
 }
 
+/** How much of the tail of each stream a refusal quotes. */
+const QUOTED_OUTPUT_CHARS = 2000;
+
+const quoted = (stream: string): string =>
+  stream.trim() === "" ? "(nothing)" : stream.slice(-QUOTED_OUTPUT_CHARS);
+
 /**
- * Spawn `command` in `cwd` and hand back what it wrote to stdout, and the
+ * What one run printed, for a refusal whose subject the runner could not
+ * read — a report that is not there, a report the process contradicts, output
+ * answering no name that was asked about. A tool that failed before it could
+ * write what the runner reads states why on stderr, so the capture holds the
+ * whole account of such a failure and a refusal quoting stdout alone drops
+ * it (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+ * never rediscovered*). The tree these refusals name is reclaimed with the
+ * gate the run was driven inside, so what is in the message is what the
+ * operator gets.
+ *
+ * Both streams are named every time, empty or not: an operator reads "the
+ * child printed nothing" as that, rather than reading an empty quote as one
+ * that went missing.
+ */
+export function lastOutput(run: CapturedRun): string {
+  return `Last stdout:\n${quoted(run.stdout)}\nLast stderr:\n${quoted(run.stderr)}`;
+}
+
+/**
+ * Spawn `command` in `cwd` and hand back both the streams it wrote and the
  * status it exited with.
  *
  * A non-zero exit is an ordinary way for a test tool to say that something
@@ -55,15 +90,24 @@ export async function captureRun(
   cwd: string,
 ): Promise<CapturedRun> {
   try {
-    const { stdout } = await execFileWithShimRetry(command, [...args], {
+    const { stdout, stderr } = await execFileWithShimRetry(command, [...args], {
       cwd,
       maxBuffer: MAX_OUTPUT_BYTES,
     });
-    return { stdout, status: 0 };
+    return { stdout, stderr, status: 0 };
   } catch (err) {
-    const e = err as NodeJS.ErrnoException & { stdout?: string };
-    if (typeof e.code === "number" && typeof e.stdout === "string") {
-      return { stdout: e.stdout, status: e.code };
+    const e = err as NodeJS.ErrnoException & { stdout?: string; stderr?: string };
+    // Both streams or neither: node attaches what it captured of each to the
+    // error together, so an exit carrying one and not the other is not the
+    // shape this arm decodes, and reporting an empty stderr nobody read would
+    // be the silent degradation the refusals downstream are built on not
+    // happening (`.claude/rules/engineering.md`, *Loud or nothing*).
+    if (
+      typeof e.code === "number" &&
+      typeof e.stdout === "string" &&
+      typeof e.stderr === "string"
+    ) {
+      return { stdout: e.stdout, stderr: e.stderr, status: e.code };
     }
     throw err;
   }

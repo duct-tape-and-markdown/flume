@@ -1071,6 +1071,36 @@ describe("the vitest runner", () => {
     await expect(silent.run(["anything"], fixture)).rejects.toThrow(/wrote no JSON report/);
   }, SPAWN_BUDGET_MS);
 
+  it("a vitest run that produced no report refuses naming what its child wrote to stderr", async () => {
+    // The shape a tool that never reached its report leaves behind: an
+    // explanation on stderr, nothing at all on stdout, a non-zero exit. The
+    // report is not there, so the child's own words are the whole account of
+    // why — and the tree the refusal names is reclaimed with the gate the run
+    // was driven inside, so nobody can go back and read them.
+    const explaining = vitestRunner({
+      invoke: () => ({
+        command: process.execPath,
+        // `--` so the two arguments the runner appends for its own reading
+        // reach the child as argv rather than as node options it refuses
+        // before the script runs.
+        args: [
+          "-e",
+          "process.stderr.write('No test files found, exiting with code 1'); process.exit(1)",
+          "--",
+        ],
+      }),
+    })(ctx);
+
+    const refusal = await explaining.run(["anything"], fixture).then(
+      () => undefined,
+      (err: unknown) => err as Error,
+    );
+
+    expect(refusal).toBeInstanceOf(Error);
+    expect(refusal!.message).toContain("wrote no JSON report");
+    expect(refusal!.message).toContain("No test files found, exiting with code 1");
+  }, SPAWN_BUDGET_MS);
+
   it("a report claiming success over a non-zero exit is still refused", async () => {
     // The report is computed from the files that reported; the status is the
     // whole process's. Here they disagree, and reading the report alone would
@@ -1506,6 +1536,28 @@ describe("the script runner", () => {
     ).rejects.toThrow(/where a run-relative file goes/);
   });
 
+  it("a script runner refusing an unreadable report names what its child wrote to stderr", async () => {
+    // A validator that died before printing anything a reader can answer a
+    // name with. It answered nothing, and why is on stderr alone, so the
+    // reconciliation's refusal is the only place that cause is ever read.
+    const broken = scriptRunner({
+      command: process.execPath,
+      args: [
+        "-e",
+        "process.stderr.write('checks/widget.checks: no such file'); process.exit(2)",
+      ],
+    })(ctx);
+
+    const refusal = await broken.run([CARRIED], fixture).then(
+      () => undefined,
+      (err: unknown) => err as Error,
+    );
+
+    expect(refusal).toBeInstanceOf(Error);
+    expect(refusal!.message).toContain("answered nothing for 1 of 1");
+    expect(refusal!.message).toContain("checks/widget.checks: no such file");
+  });
+
   it("the script runner refuses a pass line whose file climbs out of the run tree", async () => {
     // The climb is interior, so a test on the path's leading characters reads
     // it as run-relative; where it resolves is the only thing that answers.
@@ -1570,6 +1622,31 @@ describe("the script runner", () => {
  * an absence verdict over a symbol — so a text scan is the right layer for
  * it here.
  */
+describe("the capture both shipped runners spawn through", () => {
+  it("a captured run hands back the stderr its child wrote beside its stdout", async () => {
+    // The leg that decodes a child's streams off the error node throws for a
+    // non-zero exit — the leg every refusal below it reads, since a tool that
+    // could not produce what the runner reads rarely exits clean.
+    const failed = await captureRun(
+      process.execPath,
+      [
+        "-e",
+        "process.stdout.write('on stdout'); process.stderr.write('on stderr'); process.exit(3)",
+      ],
+      REPO_ROOT,
+    );
+    expect(failed).toEqual({ stdout: "on stdout", stderr: "on stderr", status: 3 });
+
+    // And the leg that decodes them off a spawn that resolved.
+    const clean = await captureRun(
+      process.execPath,
+      ["-e", "process.stdout.write('out, clean'); process.stderr.write('err, clean')"],
+      REPO_ROOT,
+    );
+    expect(clean).toEqual({ stdout: "out, clean", stderr: "err, clean", status: 0 });
+  }, SPAWN_BUDGET_MS);
+});
+
 describe("the harness package boundary", () => {
   it("no module under src/ imports harness/", async () => {
     const srcDir = join(REPO_ROOT, "src");

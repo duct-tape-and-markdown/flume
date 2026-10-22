@@ -41,7 +41,7 @@ import type {
   RunnerFactory,
   TestFailure,
 } from "./runner.js";
-import { baseTree, captureRun, type CapturedRun } from "./toolRun.js";
+import { baseTree, captureRun, lastOutput, type CapturedRun } from "./toolRun.js";
 import { thrownMessage } from "../src/thrown.js";
 
 /**
@@ -214,7 +214,7 @@ function loadReport(file: string, run: CapturedRun, root: string): Report {
     throw new Error(
       `vitest wrote no JSON report in ${root} — it was told to write one at ` +
         `${file} and wrote nothing there, so there is nothing to report on. ` +
-        `Last output:\n${run.stdout.slice(-2000)}`,
+        lastOutput(run),
     );
   }
   try {
@@ -300,7 +300,7 @@ function readRun(
   root: string,
   narrowing?: BaseNarrowing,
 ): RunResult {
-  const { stdout, status } = run;
+  const { status } = run;
   const report = loadReport(file, run, root);
 
   const rel = (p: string): string => gitPath(relative(root, p));
@@ -377,8 +377,8 @@ function readRun(
         `report and the process disagree, so what failed is outside the ` +
         `report and there is nothing to rule on. The report it was told to ` +
         `write claims success: ${report.numPassedTests} passed, ` +
-        `${report.numFailedTests} failed. Last output:\n` +
-        stdout.slice(-2000),
+        `${report.numFailedTests} failed. ` +
+        lastOutput(run),
     );
   }
 

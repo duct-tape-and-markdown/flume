@@ -13,7 +13,12 @@
  * `captureRun` reports beside the output is deliberately unread here — a
  * validator says nothing by it that its report does not say better — and
  * what bounds that is the reconciliation below, which refuses an answer set
- * that is not one answer per name however the command exited.
+ * that is not one answer per name however the command exited. A validator
+ * that died before it could print its report answers no name at all and says
+ * why on stderr, so that refusal names what the run printed on both streams
+ * ({@link lastOutput}, `harness/toolRun.ts`) — it is the whole account of the
+ * failure, and the tree it names is gone with the gate the run was driven
+ * inside.
  *
  * What that report *says* is the consumer's, so {@link ScriptRunnerOptions}
  * carries a reader over the command's whole stdout. A validator that already
@@ -74,7 +79,7 @@ import type {
   RunnerContext,
   RunnerFactory,
 } from "./runner.js";
-import { baseTree, captureRun } from "./toolRun.js";
+import { baseTree, captureRun, lastOutput, type CapturedRun } from "./toolRun.js";
 
 /** The first field of a verdict line, and nothing else on stdout. */
 const MARKER = "flume";
@@ -185,10 +190,16 @@ const readVerdictLines: ScriptReader = ({ stdout, cwd }) =>
  * it" would turn a validator's defect into a refusal build cannot act on, and
  * an unrequested name means the report and the request disagree about what
  * was asked.
+ *
+ * The unanswered arm is the one whose cause is not in anything the reader
+ * saw — the command may never have reached its checks — so it is the arm that
+ * quotes `run`. The other two are about output that did answer, and quote the
+ * answers themselves.
  */
 function answersFor(
   read: readonly NamedResult[],
   names: readonly string[],
+  run: CapturedRun,
   where: string,
 ): NamedResult[] {
   const lead = `scriptRunner: reading the command's report from ${where}`;
@@ -217,7 +228,8 @@ function answersFor(
     throw new Error(
       `${lead} answered nothing for ${missing.length} of ${names.length} name(s): ` +
         `${missing.map((n) => JSON.stringify(n)).join(", ")}. ` +
-        `A name with no answer is not a name nothing carried.`,
+        `A name with no answer is not a name nothing carried. ` +
+        lastOutput(run),
     );
   }
   return names.map((name) => seen.get(name)!);
@@ -302,8 +314,9 @@ export function scriptRunner(options: ScriptRunnerOptions): RunnerFactory {
     pathed && !isAbsolute(options.command) ? resolve(tree, options.command) : options.command;
 
   const runIn = async (tree: string, names: readonly string[]): Promise<RunResult> => {
-    const { stdout } = await captureRun(commandIn(tree), [...args, ...names], tree);
-    return reportOf(answersFor(read({ stdout, names, cwd: tree }), names, tree));
+    const run = await captureRun(commandIn(tree), [...args, ...names], tree);
+    const answers = read({ stdout: run.stdout, names, cwd: tree });
+    return reportOf(answersFor(answers, names, run, tree));
   };
 
   return ({ api, provision }: RunnerContext): Runner => ({
