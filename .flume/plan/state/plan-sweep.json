@@ -1,33 +1,5 @@
 {
-  "sweptThrough": "c82d8506285b718931cbef6503474fa44634b4cc",
-  "rotation": {
-    "kind": "open",
-    "covered": [
-      "src/Gate.ts",
-      "src/cliArgs.ts",
-      "src/cliBaton.ts",
-      "src/cliCheck.ts",
-      "src/cliExclusive.ts",
-      "src/cliFriction.ts",
-      "src/cliHistory.ts",
-      "src/cliRender.ts",
-      "src/cliStopFlag.ts",
-      "src/cliTick.ts",
-      "src/counted.ts",
-      "src/entryKey.ts",
-      "src/gateBatch.ts",
-      "src/gateDeadline.ts",
-      "src/gateRun.ts",
-      "src/partition.ts",
-      "src/processTree.ts",
-      "src/setupWorktree.ts",
-      "src/spawnShim.ts",
-      "harness/judgeGate.ts",
-      "harness/provisioning.ts",
-      "harness/runner.ts",
-      "harness/toolRun.ts",
-      "harness/vitestRunner.ts"
-    ]
-  },
-  "retiredThrough": "dd866ab0b98d1fc5709097b51eba88d7e8e78225"
+  "sweptThrough": "73d74c4b581a091dab38e2da355a70a7571b05d4",
+  "rotation": { "kind": "closed" },
+  "retiredThrough": "73d74c4b581a091dab38e2da355a70a7571b05d4"
 }
