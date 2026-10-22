@@ -28,5 +28,5 @@
     "an entry none of whose ancestry declares a fork never invokes the resolver"
   ],
   "laneTests": [],
-  "notes": "Measured on this tip: `isPickableNow` folds `gateSettled` over the entry and `ancestorsOf`, but reads `entry.dependsOnForks` alone, and its doc states the old ruling outright. Selection reaches the same read through `gateEligible`, so one fold answers both consumers. Collides with ONE-EDGE-EARNS-ONE-REFUSAL on both files, which is the seam the section couples them through."
+  "notes": "Measured on this tip: `isPickableNow` folds `gateSettled` over the entry and `ancestorsOf`, but reads `entry.dependsOnForks` alone, and its doc states the old ruling outright. Selection reaches the same read through `gateEligible`, so one fold answers both consumers."
 }
