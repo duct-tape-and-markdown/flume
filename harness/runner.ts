@@ -143,8 +143,14 @@ export interface RunResult {
 /** The three operations a consumer's `runner` declaration supplies. */
 export interface Runner {
   /**
-   * Run the suite in `cwd` and report, per line in `names`, whether one
-   * passing test carried it.
+   * Run the suite in `cwd` — as the runner's own declaration scopes it — and
+   * report, per line in `names`, whether one passing test carried it.
+   *
+   * What the suite is belongs to the consumer, so this operation takes no
+   * selection and adds none: whatever it hands its tool beyond the
+   * consumer's declared scope is what *reading* the run needs, where the
+   * report lands and nothing that widens or narrows the set
+   * (`spec/harness.md`, *The runner interface*).
    */
   run(names: readonly string[], cwd: string): Promise<RunResult>;
   /**
@@ -152,6 +158,11 @@ export interface Runner {
    * `baseSha` and run the same names there, so a judge can see whether a
    * named behavior already held before the change. `files` is required: a
    * base run over the whole suite judges the wrong thing and costs a suite.
+   *
+   * The one selection any operation adds, and the judge's own: `files`
+   * narrows **within** the declared scope, never past it — a line whose test
+   * the consumer's scope leaves out is a line no base run reaches, which is
+   * what the lane hints tell plan at authorship ({@link Lane.excludes}).
    */
   runAtBase(
     names: readonly string[],

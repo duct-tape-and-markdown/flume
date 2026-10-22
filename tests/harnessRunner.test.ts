@@ -51,6 +51,7 @@ import {
   type RunnerContext,
   type ScriptReader,
   type ScriptReport,
+  type VitestInvocation,
 } from "../harness/index.ts";
 import { captureRun } from "../harness/toolRun.ts";
 import { buildFlumeApi, type FlumeApi } from "../src/flumeApi.ts";
@@ -204,6 +205,66 @@ describe("widget", () => {
   });
 });
 `;
+
+/**
+ * A stand-in for the vitest binary that records the arguments it was spawned
+ * with and then spawns the real one with exactly those, stdio inherited so
+ * the reporter's own output reaches the capture untouched.
+ *
+ * What the cases driving it are about is the arguments the runner *appends*
+ * to a declared invocation, which no report states. Forwarding rather than
+ * answering keeps the report those cases read vitest's own
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*), and keeps every flag they assert on one a real vitest accepted —
+ * a run the tool refused would reach the reader with no report at all.
+ */
+const RECORDER = `import { appendFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+
+const [log, command, ...args] = process.argv.slice(2);
+appendFileSync(log, JSON.stringify(args) + "\\n");
+const run = spawnSync(command, args, { stdio: "inherit" });
+process.exit(run.status ?? 1);
+`;
+
+/** One recording stand-in: what a case declares, and what it observed. */
+interface Recording {
+  /** The temp directory holding the stand-in and its log. */
+  readonly dir: string;
+  /** The `invoke` a case declares, over whatever tree an operation runs in. */
+  readonly invoke: (cwd: string) => VitestInvocation;
+  /**
+   * What reaching vitest itself takes, which every recorded spawn opens
+   * with — asked of the same resolver the stand-in forwards through, so the
+   * assertions below read the appended tail and never re-spell the head.
+   */
+  readonly reaching: readonly string[];
+  /** The arguments each spawn was handed, in spawn order. */
+  readonly spawns: () => Promise<string[][]>;
+}
+
+const recordingVitest = async (slug: string, tree: string): Promise<Recording> => {
+  const dir = await mkTempDir(`flume-harness-runner-${slug}-`);
+  const script = join(dir, "recorder.mjs");
+  const log = join(dir, "spawns.jsonl");
+  await writeFile(script, RECORDER);
+  return {
+    dir,
+    reaching: resolveVitest(tree).args,
+    invoke: (cwd: string): VitestInvocation => {
+      const real = resolveVitest(cwd);
+      return {
+        command: process.execPath,
+        args: [script, log, real.command, ...real.args],
+      };
+    },
+    spawns: async (): Promise<string[][]> =>
+      (existsSync(log) ? await readFile(log, "utf8") : "")
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as string[]),
+  };
+};
 
 /**
  * A declaration a consumer could write, minus the `setup` each case states
@@ -492,6 +553,104 @@ describe("the vitest runner", () => {
     expect(r.ok).toBe(false);
     expect(r.failures).toHaveLength(1);
     expect(r.failures[0]!.file).toBe("tests/widget.test.ts");
+  });
+
+  // A scope a consumer could really declare, and one that cannot widen what a
+  // base run collects: vitest reads `--exclude` as an addition to its config's
+  // own exclusions. The fixture's suite holds no file it names, so the scope
+  // narrows nothing here and every verdict below is the suite's own.
+  const SCOPE = ["--exclude", "**/*.integration.test.ts"];
+
+  it("the vitest runner passes the consumer's declared scope to every run", async () => {
+    const rec = await recordingVitest("declared-scope", fixture);
+    try {
+      const declared = vitestRunner({ scope: SCOPE, invoke: rec.invoke })(ctx);
+
+      const merged = await declared.run(["carries the merged widget"], fixture);
+      const base = await inGateScope(() =>
+        declared.runAtBase(
+          ["runs wherever it is laid down"],
+          ["tests/widget.test.ts"],
+          baseSha,
+          fixture,
+        ),
+      );
+
+      // Vacuity, on both halves: each operation reached a real vitest through
+      // the stand-in and read a real report off it, so the spawns below are a
+      // scope the tool accepted rather than two runs that died on an argument.
+      expect(merged.names[0]!.carried).toBe(true);
+      expect(base.names[0]!.carried).toBe(true);
+
+      // Every run, not just the first: both operations spawn with the scope
+      // the declaration stated, immediately after the one flag the runner
+      // adds for itself.
+      const spawns = await rec.spawns();
+      expect(spawns).toHaveLength(2);
+      for (const args of spawns) {
+        const appended = args.slice(rec.reaching.length);
+        expect(appended.slice(0, 1 + SCOPE.length)).toEqual(["--reporter=json", ...SCOPE]);
+      }
+    } finally {
+      await rm(rec.dir, { recursive: true, force: true });
+    }
+  });
+
+  it("the vitest runner passes the declared scope beside the judge's files at the base", async () => {
+    const rec = await recordingVitest("scope-at-base", fixture);
+    try {
+      const r = await inGateScope(() =>
+        vitestRunner({ scope: SCOPE, invoke: rec.invoke })(ctx).runAtBase(
+          ["carries the merged widget"],
+          ["tests/widget.test.ts"],
+          baseSha,
+          fixture,
+        ),
+      );
+
+      // Vacuity: the base run collected the file it was given and the base's
+      // own bytes decided its verdict — the whole claim `runAtBase` makes,
+      // unchanged by the scope the declaration added to it.
+      expect(r.passed + r.failed).toBeGreaterThan(0);
+      expect(r.names[0]!.carried).toBe(false);
+      expect(r.failures.map((f) => f.file)).toEqual(["tests/widget.test.ts"]);
+
+      // Beside, in one order and with nothing else: the judge's files still
+      // reach vitest, after the declared scope rather than instead of it, so
+      // the narrowing lands inside the consumer's suite.
+      const spawns = await rec.spawns();
+      expect(spawns).toHaveLength(1);
+      expect(spawns[0]!.slice(rec.reaching.length)).toEqual([
+        "--reporter=json",
+        ...SCOPE,
+        "tests/widget.test.ts",
+      ]);
+    } finally {
+      await rm(rec.dir, { recursive: true, force: true });
+    }
+  });
+
+  it("the vitest runner appends nothing but the reporter flag to a declared invocation", async () => {
+    const rec = await recordingVitest("bare-invocation", fixture);
+    try {
+      const r = await vitestRunner({ invoke: rec.invoke })(ctx).run(
+        ["carries the merged widget"],
+        fixture,
+      );
+
+      // Vacuity: the stand-in reached the real vitest and its report was the
+      // one read, so the argument list below is a run that happened.
+      expect(r.names[0]!.carried).toBe(true);
+
+      // A consumer stating no scope gets the invocation it declared plus the
+      // one flag reading the run needs — nothing that widens or narrows what
+      // its vitest config collects.
+      const spawns = await rec.spawns();
+      expect(spawns).toHaveLength(1);
+      expect(spawns[0]).toEqual([...rec.reaching, "--reporter=json"]);
+    } finally {
+      await rm(rec.dir, { recursive: true, force: true });
+    }
   });
 
   it("the judge proves a named line over the real vitest runner's merged-tree and base reports", async () => {

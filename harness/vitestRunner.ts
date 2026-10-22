@@ -58,7 +58,13 @@ const capture = (
 export interface VitestInvocation {
   /** The binary to spawn. */
   readonly command: string;
-  /** Its arguments, before the reporter flag and any file selection. */
+  /**
+   * The arguments reaching vitest takes — the entry point and the
+   * subcommand — before everything an operation appends. What the suite *is*
+   * is not one of them: a filter spelled here would be read as part of how
+   * the binary is reached and so could not be stated without restating the
+   * binary, which is what {@link VitestRunnerOptions.scope} is for.
+   */
   readonly args: readonly string[];
 }
 
@@ -73,7 +79,29 @@ export interface VitestRunnerOptions {
    */
   lanes?: readonly Lane[];
   /**
-   * How to reach vitest from a given tree. Defaults to `resolveVitest` —
+   * What the consumer's suite is, in vitest's own argument vocabulary — the
+   * flags a run of it is scoped by (`--dir`, `--exclude`, `--project`, a
+   * `--config` that is not the root one). Stated once here and passed to
+   * every spawn both operations make, so a consumer narrowing its suite
+   * states the narrowing where it declares the runner rather than inside
+   * {@link invoke}, whose job is reaching the binary.
+   *
+   * Defaults to nothing stated, which is the suite the consumer's vitest
+   * config already describes. The runner adds no argument of its own beyond
+   * what reading a run needs — the reporter flag, and at the base the files
+   * the judge's lines name, which narrow within this scope and never past it
+   * (`spec/harness.md`, *The runner interface*).
+   *
+   * Scoping flags, not a bare path: a positional filter stated here reaches
+   * vitest beside the base run's own file filters, where vitest reads the
+   * set as a union — a scope that widens the base run rather than bounding
+   * it. Which tokens are positional is not decidable from the outside (a
+   * flag's value is a bare token too), so the field carries no refusal.
+   */
+  scope?: readonly string[];
+  /**
+   * How to reach vitest from a given tree: the binary and the arguments that
+   * reaching it takes, never what to run. Defaults to `resolveVitest` —
    * vitest's own entry point under this process's node. Takes the tree
    * because `runAtBase` runs in a checkout that is not the caller's cwd.
    */
@@ -243,8 +271,11 @@ function readRun(run: CapturedRun, names: readonly string[], root: string): RunR
 
 /**
  * Declare the vitest runner. Every field of `options` is optional, and the
- * defaults describe the unsplit single-lane project — a consumer whose suite
- * splits states its own lanes rather than inheriting one implementation's.
+ * defaults describe the unsplit single-lane project whose suite is whatever
+ * its vitest config already describes — a consumer whose suite splits states
+ * its own lanes, and one whose suite is a slice of what that config collects
+ * states its own `scope`, rather than either inheriting one
+ * implementation's.
  *
  * Returns the factory, not the runner: what the returned function does with
  * the context it is called with is the whole reason `runner` is declared as one
@@ -255,13 +286,19 @@ function readRun(run: CapturedRun, names: readonly string[], root: string): RunR
 export function vitestRunner(options: VitestRunnerOptions = {}): RunnerFactory {
   const lanes = resolveLanes("vitestRunner", options.lanes);
   const invoke = options.invoke ?? resolveVitest;
+  const scope = options.scope ?? [];
+  // What every spawn here appends to the declared invocation, in one place
+  // because it is one decision: the reporter flag the reader needs, and then
+  // the consumer's declared scope. A base run appends the judge's files after
+  // it, so the narrowing lands inside the scope rather than beside it.
+  const reporterAndScope = ["--reporter=json", ...scope];
 
   return ({ api, provision }: RunnerContext): Runner => {
     return {
       lanes,
 
       async run(names, cwd) {
-        return readRun(await capture(invoke(cwd), ["--reporter=json"], cwd), names, cwd);
+        return readRun(await capture(invoke(cwd), reporterAndScope, cwd), names, cwd);
       },
 
       async runAtBase(names, files, baseSha, cwd) {
@@ -269,7 +306,11 @@ export function vitestRunner(options: VitestRunnerOptions = {}): RunnerFactory {
           { api, provision },
           { label: "vitestRunner.runAtBase", files, baseSha, cwd },
         );
-        const run = await capture(invoke(worktree), ["--reporter=json", ...files], worktree);
+        const run = await capture(
+          invoke(worktree),
+          [...reporterAndScope, ...files],
+          worktree,
+        );
         return readRun(run, names, worktree);
       },
     };
