@@ -921,6 +921,50 @@ it("a blockedBy edge already standing at the base is not judged again", async ()
   expect(verdict.skipped).toBeUndefined();
 });
 
+it("a fresh dangling edge is refused though a standing entry waits on the same absent tag", async () => {
+  const gate = newBlockerGateOf("plan-sweep");
+
+  // The base already waits on the shipped tag, so the exemption is live on
+  // this very blocker before the span writes anything.
+  await baseQueue([
+    waitsOn("STANDING-WAITER", "LONG-SHIPPED"),
+    queueEntry("OTHER"),
+  ]);
+  // Non-vacuity on the premise: the blocker is absent at the base, so the
+  // standing edge is the exempted one and not an edge that resolves.
+  expect(
+    (await readQueueAtRef(
+      repo,
+      git(repo, ["rev-parse", "HEAD"]),
+      `${STATE_ROOT}/plan/pending`,
+    ))?.map((f) => f.file),
+  ).not.toContain(entryFileName("LONG-SHIPPED"));
+
+  // A second entry naming the same absent tag — the typo that arrives behind
+  // a sibling's standing wait.
+  await writeQueue([
+    waitsOn("STANDING-WAITER", "LONG-SHIPPED"),
+    queueEntry("OTHER"),
+    waitsOn("FRESH-WAITER", "LONG-SHIPPED"),
+  ]);
+  const span = commitAll("plan: sweep files a second wait on the shipped tag");
+  // Non-vacuity on the span: git named the one entry file the edge arrived
+  // in, so the standing edge's file is untouched.
+  expect(span.touchedPaths).toEqual([
+    `${STATE_ROOT}/plan/pending/${entryFileName("FRESH-WAITER")}`,
+  ]);
+
+  const refused = await gate.run(ctxFor(span, { phaseName: "plan-sweep" }));
+
+  expect(refused.ok).toBe(false);
+  // The exemption is keyed on the pair, so only this commit's edge is named:
+  // one line, the entry this commit wrote, and the tag it reached for.
+  expect((refused.details ?? "").split("\n")).toHaveLength(1);
+  expect(refused.details).toContain("FRESH-WAITER");
+  expect(refused.details).toContain("`LONG-SHIPPED`");
+  expect(refused.details).not.toContain("STANDING-WAITER");
+});
+
 it("a blockedBy tag naming an entry the commit's own queue carries is accepted", async () => {
   const gate = newBlockerGateOf("plan-derive");
 
