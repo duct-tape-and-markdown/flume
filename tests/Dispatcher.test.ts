@@ -21038,12 +21038,14 @@ describe("Dispatcher — TickResult.noCommit reaches phase.handoff", () => {
 // ---------- per-tick chain re-resolution ----------
 
 describe("Dispatcher — per-tick chain re-resolution", () => {
-  // The cross-tick rewrite guarantee is a *process boundary*, not an
-  // in-process re-eval (Node's ESM registry is non-evictable; see
-  // loadChainModule). A fake/closure loader cannot exercise it and is
-  // explicitly insufficient for the re-resolution claim — that leg is covered
-  // by the real integration test in tests/loop-process-boundary.test.ts (two
-  // real `flume tick` subprocesses vs a chain.ts mutated on disk between
+  // The cross-tick rewrite guarantee is a *process boundary*, and its reasons
+  // are the contract's (spec/chain.md, *Chain resolution is per-tick, and the
+  // tick is a fresh process*). A fake/closure loader is insufficient for the
+  // re-resolution claim whatever a real load answers a second time, for a
+  // reason of its own: it never reads chain.ts at all, so there is no disk
+  // state for a rewrite to change. That leg is covered by the real
+  // integration test in `tests/loop-process-boundary.integration.test.ts`
+  // (two real `flume tick` subprocesses vs a chain.ts mutated on disk between
   // them). The unit-level guarantee here is narrower: a `Dispatcher`
   // constructed with only `configDir` resolves the on-disk chain.ts itself,
   // in-process, with no subprocess.

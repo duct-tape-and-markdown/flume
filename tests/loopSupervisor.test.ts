@@ -4047,14 +4047,16 @@ describe("superviseLoop — a mount-dead 69 aborts only while the mount is still
     const chainPath = join(fx.configDir, "chain.ts");
 
     // The mount dies under the second child: a `.flume` the operator moved, a
-    // checkout that took chain.ts with it. Removal rather than a rewrite
-    // because a rewrite is unreadable in one process by construction — Node's
-    // ESM registry is keyed by resolved URL and cannot be evicted
-    // (`.claude/rules/platform-facts.md`), so a second `tsImport` of a path
-    // already evaluated answers the first evaluation whatever is on disk
-    // (measured on this tree). The absence probe `loadChainModule` takes
-    // before it imports is the chain leg a live process can still decide, and
-    // the production re-read is a fresh child's load either way.
+    // checkout that took chain.ts with it. Removal, because `runTick` is
+    // stubbed here and the re-read under test is this process's own second
+    // load: the absence probe that load takes before it imports is a chain
+    // leg a live process decides whatever the loader answers for an
+    // already-evaluated path (`loadChainModule` (`src/chainLoad.ts`)). A
+    // rewrite to a chain that still compiles is the leg a live process does
+    // not decide, so the rewritten-chain half of the boundary is carried over
+    // real child processes instead
+    // (`tests/loop-process-boundary.integration.test.ts`). In production the
+    // re-read is a fresh child's load either way.
     const { res, calls, errors, warns } = await runOver69(4, async (call) => {
       if (call === 2) await rm(chainPath);
     });

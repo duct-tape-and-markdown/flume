@@ -494,11 +494,12 @@ interface SettledChild {
  * awake phase that has none of its own in flight, started in the chain's
  * declared order until `maxTicks` are running — each a fresh process told
  * which phase it is, carrying no in-memory chain or phase state across them:
- * the only correct re-resolution mechanism (Node's ESM registry is
- * non-evictable, so an in-process loop is pinned to chain.ts's first
- * evaluation; see `loadChainModule`). At every child boundary it re-reads the
- * baton and the stop flag off disk (disk-is-truth), and the run ends once no
- * flag stands and no child is in flight.
+ * the re-resolution mechanism, for the reasons the contract states
+ * (spec/chain.md, *Chain resolution is per-tick, and the tick is a fresh
+ * process*) rather than any this header argues from the loader. At every
+ * child boundary it re-reads the baton and the stop flag off disk
+ * (disk-is-truth), and the run ends once no flag stands and no child is in
+ * flight.
  *
  * A child that exits a plain tick failure (agent-level, per-entry) is logged
  * and the run proceeds — the supervisor never crashes — except

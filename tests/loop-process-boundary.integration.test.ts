@@ -2,11 +2,13 @@
  * The process-boundary chain-reload guarantee.
  *
  * This is deliberately NOT a `Dispatcher` unit test with an injected loader:
- * a fake/closure loader cannot exercise the real guarantee (Node's ESM module
- * registry is keyed by resolved URL and non-evictable, so the only thing that
- * re-evaluates a rewritten `.flume/chain.ts` is a fresh OS process). It spawns
- * two *real* `flume tick` subprocesses against a real on-disk chain.ts mutated
- * between them and asserts the second process is governed by the new chain.
+ * a fake/closure loader never reads `.flume/chain.ts`, so a rewrite of it
+ * changes nothing such a loader could answer — and the guarantee itself is
+ * the fresh OS process, not anything a loader does on a second call
+ * (spec/chain.md, *Chain resolution is per-tick, and the tick is a fresh
+ * process*). It spawns two *real* `flume tick` subprocesses against a real
+ * on-disk chain.ts mutated between them and asserts the second process is
+ * governed by the new chain.
  */
 
 import { spawn } from "node:child_process";
@@ -240,9 +242,11 @@ describe("process-boundary chain reload — real `flume tick` ×2", () => {
       expect(t1.out).not.toMatch(/tick → beta/);
       expect(t1.out).toMatch(/unknown phases: beta/);
 
-      // Rewrite chain.ts on disk: v2 renames the phase to "beta". A fresh
-      // `flume tick` *process* is the only thing that can pick this up —
-      // Node's ESM registry is non-evictable in-process.
+      // Rewrite chain.ts on disk: v2 renames the phase to "beta". A rewrite
+      // to a chain that still compiles is precisely the shape a second load
+      // inside one process does not answer with (`loadChainModule`
+      // (`src/chainLoad.ts`)), so a fresh `flume tick` *process* is what
+      // picks it up and nothing short of this spawn carries the claim.
       await writeFile(chainPath, chainSrc("beta"), "utf8");
 
       const t2 = await runTick(repo.dir);

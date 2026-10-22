@@ -4760,12 +4760,15 @@ describe("flume tick — a signalled bare tick takes its agent down (spec/loop.m
  * A chain that records every application of its factory: one byte appended to
  * `countPath` per call, so a process's count is that file's length.
  *
- * The append sits in the factory body rather than at module scope. A module is
- * evaluated once per process whatever the engine does with it
- * (`.claude/rules/platform-facts.md`, "A plain `import()` is pinned; `tsImport`
- * re-reads"), so a module-scope append would read 1
- * however many times the factory was applied — the count this case exists to
- * see.
+ * The append sits in the factory body because *factory applications* are the
+ * count this case exists to see, and that is the number the engine decides:
+ * `loadChainModule` (`src/chainLoad.ts`) applies the factory on every call it
+ * completes, so a second resolve in one process reads 2 here and the arm
+ * stays reachable. A module-scope append would count module evaluations
+ * instead — the loader's answer, not the engine's — and on this tree a second
+ * load of a chain.ts that still compiles re-evaluates nothing, so that
+ * spelling would read 1 over the very second resolve this case is here to
+ * catch.
  */
 function factoryCountingChainSrc(countPath: string): string {
   return (

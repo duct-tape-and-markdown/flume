@@ -408,13 +408,23 @@ function isCjsContextLoadFailure(err: unknown): err is Error {
  * (plain `await import()` would fail: node refuses .ts under node_modules,
  * and consumer .flume/chain.ts is a .ts file regardless of where flume lives).
  *
- * In-process this returns a *pinned* evaluation — see
- * .claude/rules/platform-facts.md, "A plain `import()` is pinned; `tsImport`
- * re-reads". That is *why* per-tick re-resolution is a
- * process boundary rather than in-process re-eval: `flume loop` spawns one
- * `flume tick` per iteration, each a fresh process that loads chain.ts
- * exactly once. A rewritten chain.ts governs the next tick because the next
- * tick is a new process — not because anything re-imports it in-process.
+ * Why a rewritten chain.ts governs the *next* tick is the contract's own
+ * reasoning and is argued nowhere here (spec/chain.md, *Chain resolution is
+ * per-tick, and the tick is a fresh process*): a tick's freshness rests on
+ * being a new process, never on what a second load in one process answers.
+ *
+ * What a second load *does* answer is this function's fact, so it is stated
+ * here and pointed at from the callers that lean on it. Two legs refuse on
+ * every call, so a live process sees a chain that stopped being loadable: the
+ * absence probe below, and `tsImport` re-transforming chain.ts itself
+ * (`.claude/rules/platform-facts.md`, *A plain `import()` is pinned;
+ * `tsImport` re-reads*) — a deleted or no-longer-compiling chain.ts refuses
+ * here rather than answering an earlier load. A chain.ts that still compiles
+ * is the leg a live process does not see: measured on this tree under tsx
+ * 4.21, a second load answers the evaluation the process already took, and a
+ * break in a module chain.ts *imports* is not re-read at all. So no caller
+ * treats a second load as a re-resolution — the factory below is re-applied
+ * per call either way, which is what a caller counting resolutions reads.
  */
 export async function loadChainModule(
   paths: FlumePaths,
