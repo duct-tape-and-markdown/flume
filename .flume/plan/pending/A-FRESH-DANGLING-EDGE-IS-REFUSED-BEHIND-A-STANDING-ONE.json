@@ -1,0 +1,25 @@
+{
+  "tag": "A-FRESH-DANGLING-EDGE-IS-REFUSED-BEHIND-A-STANDING-ONE",
+  "gate": { "kind": "open" },
+  "dependsOnForks": [],
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "tests/harnessGates.test.ts",
+        "description": "the new-blocker gate's standing-edge cases, every one of which pairs a blocker tag no sibling edge names"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "the standing-edge exemption is pinned on the pair it keys, so a fresh dangling edge behind a sibling's standing one on the same tag is still refused",
+  "per": { "path": "spec/harness.md", "section": "The gates the discipline needs" },
+  "acceptance": "a case where the base already carries a dangling edge and the span adds a second entry naming that same absent blocker refuses, naming only the entry this commit wrote, so the exemption cannot be widened from the pair to the blocker tag alone with the suite green",
+  "tests": [],
+  "pins": [
+    "a fresh dangling edge is refused though a standing entry waits on the same absent tag"
+  ],
+  "laneTests": [],
+  "notes": "`edgeKey` (`harness/gates.ts`) keys the exemption on the pair — declaring tag and blocker tag — which the shipping note records as the site's call, unspelled by the section. Every standing-edge case pairs a blocker tag no other edge names, so both readings pass them and a key narrowed to the blocker alone would ship green: the arm that lets a fresh typo in behind a sibling's standing edge. Collides with THE-PER-GATE-JUDGES-THE-PRODUCERS-ALONE on this file."
+}

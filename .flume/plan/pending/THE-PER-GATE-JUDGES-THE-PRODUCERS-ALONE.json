@@ -10,11 +10,15 @@
     "edit": [
       {
         "path": "harness/gates.ts",
-        "description": "the gate roster's producer-only arm, and the module doc naming which members it withholds"
+        "description": "the gate roster's producer-only arm, and the two docs naming which members it withholds — the module's, and the new-blocker gate's, which already states the `per` gate as the producers'"
       },
       {
         "path": "tests/harnessGates.test.ts",
         "description": "the roster's per-phase membership cases"
+      },
+      {
+        "path": "tests/harnessChain.test.ts",
+        "description": "the discipline roster's shared-and-producer-only split, which spells the `per` gate as every phase's"
       }
     ],
     "retire": []
@@ -33,5 +37,5 @@
     "a build phase's gate set carries no goal rank gate"
   ],
   "laneTests": [],
-  "notes": "`harnessGates` already gates `goalRankGate` and the merged-tree pending gate on `isQueueProducer`; `perGate` is unconditional. Same files as A-NEW-BLOCKER-NAMES-AN-ENTRY-THE-QUEUE-CARRIES (its sibling out of this section) and as the in-flight THE-RECORDS-GATE-TAKES-THE-STEPS-OFF-ITS-CONTEXT, so all three serialize on the roster they share. Three build notes measured the cost: one stranded cite reverted every tick in a wave, each reading a failure no tick it reverted could fix."
+  "notes": "`harnessGates` already gates `goalRankGate` and the merged-tree pending gate on `isQueueProducer`; `perGate` is unconditional. Two readers hold the split: the chain test's roster names the `per` gate as shared and reds on the move; the authoring page's roster unions every phase's set and needs no edit (read this tick). Three build notes measured the cost: one stranded cite reverted every tick in a wave, each reading a failure no tick it reverted could fix."
 }
