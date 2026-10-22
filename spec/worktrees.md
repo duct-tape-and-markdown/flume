@@ -237,22 +237,29 @@ agent runs rather than as post-agent module-resolution noise).
 
 ## Per-entry `afterMerge` revert isolation
 
-Each entry's worktree commit is cherry-picked onto the tip individually and gated individually.
-The first failing `afterMerge` gate attributes the failure to
-*that* entry — it is the only delta between the pre-cherry-pick tip and the merged sha — and
-the engine resets to the pre-cherry-pick tip, dropping **only that entry's commit**.
+Trunk only ever moves forward, to a tip every `afterMerge` gate has judged. Each entry's span
+is cherry-picked onto a **candidate** — a tree of its own at the current trunk tip, provisioned
+the way a build worktree is — and the gates judge the candidate. Green: the entry's ledger
+commit lands on the candidate too, and trunk fast-forwards to it in one move. Red: the
+candidate is discarded and trunk never named the commit. Nothing is rewound, so nothing that
+copied trunk — an operator's push, a CI checkout, a sibling's worktree — ever holds history
+trunk later drops.
 
-- The N−1 clean siblings already on the tip **stay shipped**. Later siblings are evaluated
-  against the tip without the reverted commit.
-- The offending entry stays pending, and its retry carries the prior-attempt record built while
-  the cherry-picked sha was still reachable (`spec/loop.md`).
+- The failing gate's verdict belongs to *that* entry — the only delta between the trunk tip
+  and the candidate — and the N−1 siblings already fast-forwarded **stay shipped**. Later
+  siblings build their candidates on the tip without the failed span.
+- The offending entry stays pending, and its retry carries the prior-attempt record built
+  while the candidate's sha was still reachable (`spec/loop.md`).
 - Its `git show --name-only` footprint is recorded as an `afterMerge-reverted` merge outcome.
-- A cherry-pick that conflicts is `--abort`ed so the tree is clean for the next tick, the entry
-  stays pending, and its footprint is captured best-effort.
+- A cherry-pick that conflicts discards the candidate, the entry stays pending, and its
+  footprint is captured best-effort.
+- A trunk that moved under a candidate — a foreign commit absorbed under *Tip verify*
+  (`spec/loop.md`) — is never overwritten: the fast-forward refuses, the candidate is
+  discarded, and the span is carried again onto the new tip.
 
 This is what makes "expensive correctness gates at `afterMerge`" safe as default guidance
-(`spec/chain.md`): without it, one flaky merge-time gate reverts a whole wave of clean commits
-and the retry wave starts cold.
+(`spec/chain.md`): one flaky merge-time gate costs one entry's candidate, never a wave of
+clean commits.
 
 ## Batched merges
 
@@ -263,12 +270,11 @@ sibling tick's spans merge on their own. Batching is off unless the chain raises
 `batches: true`. A gate that does not declare it holds the phase to one span per merge,
 because a gate written for one entry would read a batch's facts as one entry's.
 
-- The batch's spans are cherry-picked onto the tip in order, and the `afterMerge` gates
-  run once over the result.
-- Green ships every span in one ledger commit.
-- Red, or a conflict while picking, resets to the tip before the batch and merges its
-  spans one at a time, gated individually, as above, so blame and revert stay per
-  entry. A red batch costs one gate run more than merging serially would have.
+- The batch's spans are cherry-picked in order onto one candidate, and the `afterMerge`
+  gates run once over it.
+- Green ships every span in one ledger commit and one fast-forward.
+- Red, or a conflict while picking, discards the candidate and merges its spans one at
+  a time, gated individually, as above, so blame stays per entry. A red batch costs one gate run more than merging serially would have.
 
 ## An in-worktree revert still leaves a trunk footprint
 

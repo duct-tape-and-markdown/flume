@@ -9597,8 +9597,7 @@ describe("Dispatcher — a gate that throws is a gate that failed", () => {
     // The marker window: this gate runs between THROW-M's pick onto trunk
     // and the wave's queue rewrite, so a throw escaping here is exactly the
     // death that would strand `merging/throw-m.json` and refuse the next
-    // `loop` start (spec/loop.md "A merge the crash interrupted is refused,
-    // never resumed").
+    // `loop` start (spec/loop.md "Crash equals stop").
     let staked: string[] = [];
     const probeThenThrow: Gate = {
       name: "merge-explodes",

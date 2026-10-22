@@ -54,3 +54,22 @@ Option (a), with the no-lockfile arm made loud; option (b) not taken.
 it and reports per name beside every failure; the merged-tree regression run
 and the `base-red` re-run hold over that scope, whatever its size (`spec/harness.md`, *The runner interface*).
 The target shape is `the-runner-owns-a-scope-that-is-the-consumers.md`.
+
+## Trunk moves only by fast-forward — from `trunk-holds-ungated-commits-so-undoing-one-rewrites-history.md`
+
+**Adopted.** Picks and `afterMerge` gates run on a candidate at the trunk tip;
+trunk fast-forwards to a judged candidate carrying the span and its ledger
+commit, in one move, and is never rewound. The spec carries it as of the
+commit that files this text: `spec/worktrees.md`, *Per-entry `afterMerge`
+revert isolation* and *Batched merges*; `spec/loop.md`, *The ship lock and
+the worktree lock*, *Crash equals stop*, *Tip verify*; `spec/chain.md`, the
+`afterMerge` gate's `cwd`. What it retires, for plan to cut as deletions:
+the merge marker and its exit-78 start refusal, the shared-checkout
+`reset --keep` and the cherry-pick handling on the primary checkout, the
+bystander checkpoint and the verdict's `bystanderCheckpointSha`, the
+foreign-tip guard before a rewind, and the `afterMerge-revert-refused` fate.
+Comments and test titles that quote the retired passages move with the
+deletions. Docs that describe the marker (`docs/CLI.md`) follow.
+
+`one-spans-merge-throw-walls-every-sibling.md` is unblocked: re-read its
+wall list against this shape first, since the marker and rewind causes go.

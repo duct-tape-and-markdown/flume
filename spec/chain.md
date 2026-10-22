@@ -494,9 +494,10 @@ confines side effects to disk inside `cwd`.
 - **`cwd` and `repoRoot` are the same value — the working tree the gate runs
   in.** For an `afterCommit` gate that is the tick's ephemeral worktree, both
   concurrencies alike (`spec/worktrees.md`, *Singleton runs in a worktree*);
-  for an `afterMerge` gate it is the primary checkout. No field reaches the
-  primary checkout from inside a worktree, so a gate that needs the trunk
-  belongs at `afterMerge`.
+  for an `afterMerge` gate it is the merge's candidate — the trunk tip with
+  the span picked onto it, which trunk fast-forwards to when every gate is
+  green (`spec/worktrees.md`, *Per-entry `afterMerge` revert isolation*). A
+  gate that needs the tree trunk is about to become belongs at `afterMerge`.
 - **`flumeDir`** is the absolute, resolved state root — how a gate reaches
   state-relative paths without hardcoding `.flume/` or reading `process.env`.
   It is the **primary checkout's** state root at both gate points, never
@@ -574,8 +575,9 @@ skipped?, verdict?, blamesSpan? }`.
   details: <its stack> }` for it — the stack is the `details` a returned
   refusal would have carried — and completes the tick — verdict written, merge bookkeeping done —
   exactly as it would for a refusal the gate returned. A gate's exception is
-  a fact about the gate, never a reason to lose the tick's facts or to strand
-  a merge behind the crash marker (`spec/loop.md`, *Crash equals stop*).
+  a fact about the gate, never a reason to lose the tick's facts: the
+  candidate it judged is discarded, as for a red (`spec/worktrees.md`,
+  *Per-entry `afterMerge` revert isolation*).
 - **`verdict?: string`** — a chain-authored discriminant for *why* the gate
   ruled as it did, persisted verbatim onto the tick verdict's gate result and
   onto a `gate-revert` prior-attempt record beside `message`. The engine

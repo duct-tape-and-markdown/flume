@@ -224,11 +224,11 @@ a run. Neither substitutes for the tip claim: the claim says which engine run ow
 the tip; these say which of that run's ticks is touching git right now. Under a
 `maxTicks` of one both are uncontended and cost a file create.
 
-- **The ship lock — one merge at a time.** Every cherry-pick onto the trunk, the
-  `afterMerge` gates over the merged tree, and the ledger commit that ships the span
-  run under `<git-common-dir>/flume/ship.lock`, taken by exclusive create with the
-  same pid-and-instant contents as the claim, released when the bookkeeping the
-  merge marker covers has landed. A tick that finds it held by a live pid **waits**,
+- **The ship lock — one merge at a time.** Building a candidate, the `afterMerge`
+  gates over it, and the fast-forward that moves trunk to it run under
+  `<git-common-dir>/flume/ship.lock`, taken by exclusive create with the same
+  pid-and-instant contents as the claim, released once trunk has moved or the
+  candidate is discarded. A tick that finds it held by a live pid **waits**,
   polling, and says so on its log; a dead holder is reclaimed by the same liveness
   probe as the claim. Refusal is the claim's leg, never this one's: a sibling tick
   merging is the run's own writer, and tip verify absorbs the tip it moved
@@ -313,11 +313,9 @@ defect rather than a workaround the operator owes the engine:
   verdict left nothing a fresh supervisor can misread as current (*The tick
   verdict*).
 - **No engine mutation destroys uncommitted state it did not author.** The
-  shared-checkout revert carries keep-semantics and refuses on collision rather
-  than wiping (*Tip verify*, "dropping it must not take bystanders") — the tree an
-  engine revert touches may be the only home of two writers' work, including work
-  the engine itself declined to sequence seconds earlier. Crash-equals-stop is
-  hollow if the recovery a crash leaves intact is one the next merge deletes.
+  engine's one mutation of the shared checkout is the fast-forward, which updates
+  only the paths that differ and refuses, moving nothing, when an uncommitted
+  change collides (*Tip verify*, "trunk is never dropped from").
 - **A run records how it ended.** When the supervisor ends a run it writes
   `<flumeDir>/run-end.json`: the reason — hibernation, the stop flag, the tick
   budget, the abort threshold, or a signal — the signal or exit code, and the time.
@@ -332,21 +330,12 @@ defect rather than a workaround the operator owes the engine:
   stale-slug removal only ever covered entries being re-provisioned; an abandoned
   entry that left the queue leaked its worktree indefinitely, which was the one
   observed gap between this guarantee and the tree.
-- **A merge the crash interrupted is refused, never resumed.** Before the merge stage
-  picks an entry's span onto trunk the dispatcher writes `<flumeDir>/merging/<slug>.json`
-  — the branch, the base sha, the entry tag — and removes it only after the ship
-  bookkeeping the hazard covers has landed: the ledger rewrite and the records.
-  (The verdict is the CLI's, written after `tick()` returns; a marker is not held for
-  it.) A file
-  surviving at the next `loop` start is a merge that died between the pick
-  and the bookkeeping: the commit may sit on trunk ungated with its entry still `open`,
-  and a second run would pick it again (field-traced once, 0.12.0, gh#19). The run
-  refuses to start (exit `EX_CONFIG`), naming the file, the branch, and the entry, and
-  touches nothing — the startup sweep runs after this check, so the branch survives for
-  the operator. The operator reconciles (reverts the commit, or marks the entry
-  shipped) and removes the file; as with the stop flag, removal is the acknowledgement
-  and no engine verb performs it. The fact is the marker the engine wrote, never commit
-  shape or authorship (`engine-boundary.md`, *Told, not inferred*).
+- **A merge moves trunk once.** The span and the ledger commit that ships it reach
+  trunk in a single fast-forward from a judged candidate (`spec/worktrees.md`,
+  *Per-entry `afterMerge` revert isolation*). A death before that move leaves trunk as
+  it was and the candidate for the startup sweep; a death after it leaves the span
+  shipped and its entry retired. No state between the two exists, so nothing marks
+  one and nothing waits on an operator to reconcile it.
 
 The guarantee is bounded by git's own: a child killed inside a git mutation can
 leave `index.lock` or an in-progress cherry-pick behind, which git refuses loudly
@@ -356,19 +345,9 @@ inference, so it does not try (`engine-boundary.md`, *Told, not inferred*). The
 claim is narrower and holds: the engine adds no state of its own that a crash can
 corrupt into silent misbehavior.
 
-Two consequences for the engine's own cherry-pick handling on the primary checkout:
-
-- **An abort is issued only against a sequence that started.** `cherry-pick --abort`
-  runs iff the sequencer state (`CHERRY_PICK_HEAD`, `sequencer/`) is present, never
-  blind — a blind abort after a pick that failed *before* starting a sequence would
-  reset the operator's index and working tree, taking bystanders the pick never
-  touched.
-- **Staged bystander state is checkpointed before a pick range begins.** Anything
-  staged on the primary checkout when the merge stage starts is captured as a dangling
-  commit (`git stash create`'s shape — object written, no ref moved, nothing reset) and
-  its sha recorded on the tick verdict. Never-destroy-always-leave-a-sha is the same
-  idiom span recovery rides: the operator's work is recoverable from the verdict alone
-  even if a later abort or reset disturbs it.
+The primary checkout hosts no cherry-pick, abort, or reset of the engine's: picks happen
+in candidates, and the fast-forward is the only engine write that reaches the operator's
+tree.
 
 ## Tip verify — one writer per branch, absorption at the merge
 
@@ -509,17 +488,13 @@ current tip is the sha the caller itself created. Dropping another writer's comm
 blind is the defect; the refusal leaves recovery to the operator with the evidence in
 hand. Tip verify is the same idiom at wave scale.
 
-**And dropping it must not take bystanders.** On the shared checkout the same revert
-preserves uncommitted state it did not author: the reset carries keep-semantics
-(`reset --keep`, never `--hard`), so an operator's staged or unstaged work survives
-any engine revert whose diff does not touch it — and a textual collision refuses
-loudly with both writers' work left in place, instead of wiping a tree that may be
-the only home of state the engine itself declined to sequence moments earlier
-(field-paid downstream: one wave-merge reset destroyed staged operator content and a
-refused tick's unstaged writes together, recoverable only from an operator-side
-snapshot). Inside an ephemeral worktree the engine is the only writer and `--hard`
-stays correct — the distinction is authorship of the tree, not squeamishness about
-the flag.
+**And trunk is never dropped from.** A commit reaches trunk only by a fast-forward to a
+judged tip, so no failure undoes one there: a red merge discards its candidate. The
+fast-forward preserves uncommitted state it did not author — it updates only the paths
+that differ, and an operator's staged or unstaged change on one of them refuses the move
+with both writers' work in place. The span stays unshipped and its entry retries. Inside
+an ephemeral worktree the engine is the only writer and `--hard` stays correct — the
+distinction is authorship of the tree.
 
 ## Declining a tick before the invocation
 
@@ -747,11 +722,6 @@ store until gc, and the verdict is the only place their sha outlives the branch.
   rewrite a foreign tip claim stopped, since the tip may then name a commit no gate of
   this tick judged; `tipMoved` says which. `headSha` is read without the ship lock and
   promises nothing about gating.
-- **`bystanderCheckpointSha`** is the dangling commit that captured whatever was staged
-  or unstaged on the primary checkout when the tick's merge stage began (*Crash equals
-  stop*). Absent when the tree was clean at that point, or when no merge stage began.
-  It is the recovery handle for the operator's own work, the same way a span's
-  `headSha` is the recovery handle for the agent's.
 - **Every agent invocation leaves a usage row.** `invocations[]` carries one row per
   agent run in the tick — one for a singleton, one per provisioned entry under fanout —
   with the entry's `entryTag` (absent for a singleton), the agent's model id, turn count,
