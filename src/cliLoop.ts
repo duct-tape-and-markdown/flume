@@ -4,10 +4,9 @@
  * that spends its budget of `flume tick` children.
  *
  * Every refusal here is taken before the run writes anything — the stop flag,
- * a HEAD that names no ref, a lock another supervisor holds, an unreconciled
- * merge marker — and each is its own exit code, so a caller classifies the
- * outcome from the status without reading logs (spec/loop.md, *Exit codes —
- * the run never lies to CI*).
+ * a HEAD that names no ref, a lock another supervisor holds — and each is its
+ * own exit code, so a caller classifies the outcome from the status without
+ * reading logs (spec/loop.md, *Exit codes — the run never lies to CI*).
  */
 
 import { takeCountValue, usageRefusal } from "./cliArgs.js";
@@ -16,7 +15,7 @@ import { readStopFlag } from "./cliStopFlag.js";
 import { installSignalledTeardown } from "./cliTeardown.js";
 import { describeRefFailure, loopCompletionSummary, loopExitCode } from "./cliVerdict.js";
 import { diskChainLoader } from "./chainLoad.js";
-import { EX_IOERR, EX_TERMINAL_MISCONFIG } from "./exitCodes.js";
+import { EX_IOERR } from "./exitCodes.js";
 import {
   acquireTipClaim,
   currentRefPath,
@@ -30,8 +29,7 @@ import {
   superviseLoop,
   type SuperviseResult,
 } from "./loopSupervisor.js";
-import { readMergingMarkers } from "./mergingMarkers.js";
-import { loopLockPath, mergingDir } from "./paths.js";
+import { loopLockPath } from "./paths.js";
 import type { Chain } from "./Phase.js";
 import { stakePidClaim, type StakedPidClaim } from "./pidClaim.js";
 import { DEFAULT_KILL_GRACE_MS } from "./processTree.js";
@@ -246,61 +244,6 @@ export async function loopVerb(run: CliVerbRun): Promise<number> {
       return 1;
     }
     throw err;
-  }
-  // spec/loop.md "Crash equals stop": a merge marker still standing is a
-  // pick that died before its ship bookkeeping — the picked commit may sit
-  // on trunk ungated with its entry still `open`, and starting would pick
-  // it again. Refuse here: under the tip claim (so no concurrent engine is
-  // mid-merge against this root) and ahead of both the ignore merge and the
-  // startup sweep below, so the run touches nothing and the abandoned
-  // branch each marker names survives for the operator. Removal is the
-  // acknowledgement — as with the stop flag, no engine verb performs it.
-  //
-  // The listing's own non-ENOENT failure is classified here, not left to
-  // escape: `readMergingMarkers` rethrows anything but absence
-  // (src/mergingMarkers.ts), and uncaught the throw reached `main().catch` as a
-  // raw stack and an exit 1 — indistinguishable from a harness error, when
-  // it is the same unreadable-state refusal every other stat failure this
-  // CLI maps (`.claude/rules/platform-facts.md`, "Exit codes come
-  // from `sysexits.h`"). EX_IOERR, not EX_TERMINAL_MISCONFIG: nothing was
-  // read, so whether a marker stands is unknown — the operator must make
-  // the dir readable before that question can even be asked.
-  const mergingPath = mergingDir(flumeDir);
-  let interrupted: Awaited<ReturnType<typeof readMergingMarkers>>;
-  try {
-    interrupted = await readMergingMarkers(flumeDir);
-  } catch (err) {
-    operatorLog.error(
-      `[flume] loop refuses: merging markers at ${mergingPath} failed to list: ${thrownMessage(err)}`,
-    );
-    operatorLog.error(
-      "[flume] an unreadable merging dir is not an empty one — a marker " +
-        "standing behind it would mean a merge interrupted before its ship " +
-        "bookkeeping. Nothing was touched and the startup sweep has not " +
-        "run. Make the directory readable, then start again.",
-    );
-    return EX_IOERR;
-  }
-  if (interrupted.length > 0) {
-    operatorLog.error(
-      "[flume] loop refuses: a merge interrupted before its ship " +
-        "bookkeeping is unreconciled",
-    );
-    for (const { path, marker } of interrupted) {
-      operatorLog.error(
-        marker
-          ? `[flume]   ${path}: entry ${marker.tag} on branch ${marker.branch} (span ${marker.baseSha}..${marker.branch})`
-          : `[flume]   ${path}: unreadable marker — the interrupted merge it names cannot be identified`,
-      );
-    }
-    operatorLog.error(
-      "[flume] the picked commit may already sit on trunk ungated with its " +
-        "entry still open; reconcile (revert the commit, or mark the entry " +
-        "shipped), then remove the file to acknowledge. Nothing was " +
-        "touched and the startup sweep has not run, so each branch above " +
-        "still stands.",
-    );
-    return EX_TERMINAL_MISCONFIG;
   }
   // Best-effort read of the chain, for the two consumers below — the
   // `friction` dir the ignore merge folds in, and the `supervisorPolicy`

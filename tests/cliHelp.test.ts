@@ -18,12 +18,7 @@ import { fileURLToPath } from "node:url";
 
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
-import {
-  EX_DATAERR,
-  EX_IOERR,
-  EX_MOUNT_DEAD,
-  EX_TERMINAL_MISCONFIG,
-} from "../src/exitCodes.ts";
+import { EX_DATAERR, EX_IOERR, EX_MOUNT_DEAD } from "../src/exitCodes.ts";
 import {
   RENDER_REFUSED_PHRASES,
   TICK_RENDER_REFUSED_PHRASES,
@@ -39,7 +34,6 @@ import {
   awakeDir,
   STATE_ROOT_NAMES,
   loopLockPath,
-  mergingDir,
   stopFlagPath,
 } from "../src/paths.ts";
 import { entryFileName, type PendingEntry } from "../src/PendingSchema.ts";
@@ -223,11 +217,7 @@ const TICK_PROCESS_LEVEL_EXIT_CODES = new Map<number, string>([
  */
 const LOOP_PROCESS_LEVEL_EXIT_CODES = new Map<number, string>([
   [2, "a bad --max value, or a stray positional past --max <value>"],
-  [
-    74,
-    "the stop flag, the loop lock, or the merging-marker dir exists but " +
-      "could not be read",
-  ],
+  [74, "the stop flag or the loop lock exists but could not be read"],
 ]);
 
 /** Candidate standing for "this field is not set on the outcome". */
@@ -2058,7 +2048,7 @@ const STATE_ROOT_ARTIFACTS: readonly string[] = Object.values(STATE_ROOT_NAMES);
 
 /**
  * The state-root artifacts a passage of prose names. A page names one as a
- * backticked path — `` `.flume/stop` ``, `` `loop.pid` ``, `` `.flume/merging/` ``
+ * backticked path — `` `.flume/stop` ``, `` `loop.pid` ``, `` `.flume/awake/` ``
  * — so the read takes the last segment of every backticked token and keeps
  * whatever the engine has a name for. A bare word is never read: "the stop
  * flag" and "a graceful stop" are prose about an artifact, and a passage that
@@ -2094,9 +2084,9 @@ interface StartupIoRefusal {
 
 /**
  * Every arm of `flume loop`'s start-up 74, in the order the run reaches them
- * — the stop-flag probe, the lock's liveness read, the merging-marker listing.
- * Each is driven by {@link driveStartupIoRefusals} below; a fourth arm added
- * to the run and not here is the bound this pin declares, not a silent pass.
+ * — the stop-flag probe, then the lock's liveness read. Each is driven by
+ * {@link driveStartupIoRefusals} below; a third arm added to the run and not
+ * here is the bound this pin declares, not a silent pass.
  */
 const LOOP_STARTUP_IO_REFUSALS: readonly StartupIoRefusal[] = [
   {
@@ -2116,21 +2106,14 @@ const LOOP_STARTUP_IO_REFUSALS: readonly StartupIoRefusal[] = [
     failed: "failed to read",
     deny: denyFile,
   },
-  {
-    artifact: STATE_ROOT_NAMES.merging,
-    path: mergingDir,
-    failed: "failed to list",
-    deny: denyDirectory,
-  },
 ];
 
 /**
  * Drive every arm above for real, one `flume loop` run each over one scratch
  * repository, and return the artifacts those refusals reported.
  *
- * A real repository on a named branch, because two of the three arms sit past
- * refusals that need one: the lock read is past the detached-HEAD refusal, and
- * the marker listing is past the tip claim.
+ * A real repository on a named branch, because one of the two arms sits past a
+ * refusal that needs one: the lock read is past the detached-HEAD refusal.
  *
  * Each arm pins its own non-vacuity: a run that never reached the read — a
  * refusal taken ahead of it, a denial armed at the wrong path — exits some
@@ -2240,17 +2223,18 @@ describe("the loop 74 row's cause list, against the start-up refusals that reall
     expect(ioSentences.length).toBeGreaterThan(1);
 
     // The window is scoped to this code rather than to the section: the
-    // terminal-misconfiguration arm names an artifact too, and names fewer of
-    // them, so a reader handing back the whole section cannot pass here.
-    const misconfigured = artifactsNamedIn(
-      sentencesNamingExitCode(section, EX_TERMINAL_MISCONFIG).join("\n"),
+    // refusal arm names an artifact too — the stop flag it declines to start
+    // over when the flag is merely present — and names fewer of them, so a
+    // reader handing back the whole section cannot pass here.
+    const refused = artifactsNamedIn(
+      sentencesNamingExitCode(section, 1).join("\n"),
     );
     expect(
-      misconfigured.length,
-      `the ${EX_TERMINAL_MISCONFIG} window names no state-root artifact`,
+      refused.length,
+      "the exit-1 window names no state-root artifact",
     ).toBeGreaterThan(0);
     expect(
-      misconfigured,
+      refused,
       "the per-code read handed back the same set for two codes",
     ).not.toEqual(reported);
 

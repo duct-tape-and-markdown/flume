@@ -5094,190 +5094,57 @@ describe("flume loop — stop flag refuses at start (spec/loop.md \"Graceful sto
   );
 });
 
-// spec/loop.md "Crash equals stop", "A merge the crash interrupted is refused,
-// never resumed". The marker's writer is the dispatcher's merge stage
-// (tests/Dispatcher.test.ts, "the merge-stage crash marker"); these hold the
-// reader — the startup refusal, which must fire under the tip claim and ahead
-// of the startup sweep, so the branch the marker names survives for the
-// operator to recover from.
-describe("flume loop — an interrupted merge refuses at start (spec/loop.md \"Crash equals stop\")", () => {
-  /**
-   * A state root left as a crash between the pick and the ship bookkeeping
-   * leaves it: the marker, plus the abandoned wave's `flume/**` branch — the
-   * residue the startup sweep deletes, which is what makes its survival below
-   * evidence the sweep never ran.
-   */
-  async function seedInterruptedMerge(
-    repoDir: string,
-    stateRoot: string,
-  ): Promise<{ markerPath: string; baseSha: string }> {
-    const { stdout } = await exec("git", ["rev-parse", "HEAD"], {
-      cwd: repoDir,
-    });
-    const baseSha = stdout.trim();
-    await exec("git", ["branch", "flume/interrupted", baseSha], {
-      cwd: repoDir,
-    });
-    const markerPath = join(stateRoot, "merging", "interrupted.json");
-    await mkdir(join(stateRoot, "merging"), { recursive: true });
-    await writeFile(
-      markerPath,
-      JSON.stringify({
-        tag: "INTERRUPTED-ENTRY",
-        branch: "flume/interrupted",
-        baseSha,
-      }),
-      "utf8",
-    );
-    return { markerPath, baseSha };
-  }
-
-  const branchExists = async (repoDir: string): Promise<boolean> => {
-    const { stdout } = await exec(
-      "git",
-      ["branch", "--list", "flume/interrupted"],
-      { cwd: repoDir },
-    );
-    return stdout.trim() !== "";
-  };
-
+// spec/loop.md "Crash equals stop", *A merge moves trunk once*: the span and
+// the ledger commit that ships it reach trunk in one fast-forward from a
+// judged candidate, so a death mid-merge leaves either trunk untouched with a
+// candidate for the startup sweep or the span shipped. No state exists between
+// the two, so nothing marks one — the merge stage staked
+// `<flumeDir>/merging/<slug>.json` around each pick and `flume loop` refused
+// to start over a survivor (exit `78`), and both are gone. A marker a current
+// engine never writes can only be residue of an older one, and refusing over
+// it would wall every run in that state root forever while the startup sweep
+// already reclaims what a dead run left.
+describe("flume loop — a stale merging dir is not a refusal (spec/loop.md \"Crash equals stop\")", () => {
   it(
-    "a surviving merging marker refuses the next loop start with EX_CONFIG",
+    "a loop start over a state root holding a stale merging dir runs rather than refusing",
     async () => {
       const repo = await makeScratchRepo("flume-cli-repo-", "main");
       try {
         await writeRepoConfig(repo.dir, stubbedAgentChainSrc());
         const flumeDir = join(repo.dir, ".flume");
-        // Awake, so absent the refusal this run would tick — "touches
-        // nothing" is only a claim about a run that otherwise had work.
+        // Awake, so the run has work to do: "runs rather than refusing" is
+        // only a claim about a start that would otherwise tick.
         new Baton(flumeDir).wake("probe");
-        const { markerPath, baseSha } = await seedInterruptedMerge(
-          repo.dir,
-          flumeDir,
+        // The state root exactly as an older engine's interrupted merge left
+        // it — the marker an engine of that vintage wrote, in the layout it
+        // wrote it in, spelled here because no accessor composes it any more.
+        const stale = join(flumeDir, "merging");
+        const markerPath = join(stale, "interrupted.json");
+        await mkdir(stale, { recursive: true });
+        await writeFile(
+          markerPath,
+          JSON.stringify({
+            tag: "INTERRUPTED-ENTRY",
+            branch: "flume/interrupted",
+            baseSha: "0".repeat(40),
+          }),
+          "utf8",
         );
 
-        const r = await runCli(repo.dir, ["loop", "--max", "3"]);
+        const r = await runCli(repo.dir, ["loop", "--max", "1"]);
 
-        expect(r.code).toBe(EX_TERMINAL_MISCONFIG);
-        // The refusal names the file, the branch and the entry.
-        expect(r.out).toContain(markerPath);
-        expect(r.out).toContain("flume/interrupted");
-        expect(r.out).toContain("INTERRUPTED-ENTRY");
-        expect(r.out).toContain(baseSha);
-        // No tick ran, and the baton is where the operator left it.
-        expect(r.out).not.toMatch(/tick → probe/);
-        expect(existsSync(join(flumeDir, "awake", "probe"))).toBe(true);
-        // Removal is the operator's acknowledgement — no engine verb performs
-        // it, exactly as with the stop flag.
+        // The run happened: a tick was dispatched past the point the refusal
+        // used to be taken, which is ahead of both the ignore merge and the
+        // startup sweep.
+        expect(r.code).toBe(0);
+        expect(r.out).toMatch(/tick → probe/);
+        // And nothing about the residue reached the operator: no refusal
+        // line, and no exit `78` for a state the engine cannot reach.
+        expect(r.code).not.toBe(EX_TERMINAL_MISCONFIG);
+        expect(r.out).not.toContain("loop refuses");
+        // Nor did any verb touch it. The engine neither reads this directory
+        // nor owns it any more, so it is the operator's to delete.
         expect(existsSync(markerPath)).toBe(true);
-        // The check precedes the startup sweep, so the abandoned branch the
-        // marker names is still there to recover the span from.
-        expect(await branchExists(repo.dir)).toBe(true);
-      } finally {
-        await repo.cleanup();
-      }
-    },
-    SPAWN_BUDGET_MS,
-  );
-
-  it(
-    "a relocated state root refuses at start too, on its own marker",
-    async () => {
-      const repo = await makeScratchRepo("flume-cli-repo-", "main");
-      try {
-        await writeRepoConfig(repo.dir, stubbedAgentChainSrc());
-        const relocated = join(repo.dir, "state");
-        await mkdir(relocated, { recursive: true });
-        const { markerPath } = await seedInterruptedMerge(
-          repo.dir,
-          relocated,
-        );
-
-        const r = await runCli(repo.dir, ["loop", "--max", "3"], {
-          ...hermeticEnv(),
-          FLUME_DIR: relocated,
-        });
-
-        expect(r.code).toBe(EX_TERMINAL_MISCONFIG);
-        expect(r.out).toContain(markerPath);
-        expect(r.out).toContain("INTERRUPTED-ENTRY");
-        expect(existsSync(markerPath)).toBe(true);
-        expect(await branchExists(repo.dir)).toBe(true);
-      } finally {
-        await repo.cleanup();
-      }
-    },
-    SPAWN_BUDGET_MS,
-  );
-
-  it(
-    "a marker too corrupt to parse still refuses, naming the file",
-    async () => {
-      // .claude/rules/engineering.md "Loud or nothing": the presence of the
-      // file is the fact. Degrading an unreadable marker to "no interrupted
-      // merge" would proceed over exactly the state this refusal exists to
-      // stop.
-      const repo = await makeScratchRepo("flume-cli-repo-", "main");
-      try {
-        await writeRepoConfig(repo.dir, stubbedAgentChainSrc());
-        const flumeDir = join(repo.dir, ".flume");
-        new Baton(flumeDir).wake("probe");
-        const markerPath = join(flumeDir, "merging", "truncated.json");
-        await mkdir(join(flumeDir, "merging"), { recursive: true });
-        await writeFile(markerPath, '{"tag":"HALF-WRI', "utf8");
-
-        const r = await runCli(repo.dir, ["loop", "--max", "3"]);
-
-        expect(r.code).toBe(EX_TERMINAL_MISCONFIG);
-        expect(r.out).toContain(markerPath);
-        expect(r.out).not.toMatch(/tick → probe/);
-        expect(existsSync(markerPath)).toBe(true);
-      } finally {
-        await repo.cleanup();
-      }
-    },
-    SPAWN_BUDGET_MS,
-  );
-
-  it(
-    "`flume loop` exits EX_IOERR naming the merging dir when its listing fails for a reason other than absence",
-    async () => {
-      // The listing's ENOENT-vs-other split is held at the reader
-      // (tests/Dispatcher.test.ts, "the merging dir's ENOENT/EACCES split");
-      // this holds what the operator sees when the non-ENOENT leg fires at a
-      // loop start. An unclassifiable exit 1 and a raw stack is the one
-      // outcome ruled out (`.claude/rules/platform-facts.md`, "Exit codes
-      // come from `sysexits.h`").
-      const repo = await makeScratchRepo("flume-cli-repo-", "main");
-      const mergingPath = join(repo.dir, ".flume", "merging");
-      try {
-        await writeRepoConfig(repo.dir, stubbedAgentChainSrc());
-        const flumeDir = join(repo.dir, ".flume");
-        new Baton(flumeDir).wake("probe");
-        const { markerPath } = await seedInterruptedMerge(repo.dir, flumeDir);
-
-        // Vacuity: unsealed, this very dir is the one the startup refusal
-        // reads — it refuses on the marker it found. So the EX_IOERR below is
-        // the seal talking, not a path the CLI never looked at.
-        const readable = await runCli(repo.dir, ["loop", "--max", "3"]);
-        expect(readable.code).toBe(EX_TERMINAL_MISCONFIG);
-        expect(readable.out).toContain(markerPath);
-
-        // Deny the merging dir structurally (`tests/helpers/denial.ts`): the
-        // path is there but is not a dir the listing can read, so the read
-        // refuses rather than reporting ENOENT — on win32 and under a
-        // root-run as well as here.
-        denyDirectory(mergingPath);
-
-        const r = await runCli(repo.dir, ["loop", "--max", "3"]);
-
-        expect(r.code).toBe(EX_IOERR);
-        expect(r.out).toContain(mergingPath);
-        // No tick ran, the baton is where the operator left it, and the
-        // abandoned branch the unseen marker names still stands.
-        expect(r.out).not.toMatch(/tick → probe/);
-        expect(existsSync(join(flumeDir, "awake", "probe"))).toBe(true);
-        expect(await branchExists(repo.dir)).toBe(true);
       } finally {
         await repo.cleanup();
       }

@@ -750,9 +750,7 @@ Exit codes:
       the lock file (\`.flume/loop.pid\`) exists but could not be read
       (a directory at the path, permission denied, ...): a lock whose
       holder is unknown is not a free one, so the run refuses instead of
-      claiming it. Also, the merging-marker dir (\`.flume/merging/\`)
-      exists but could not be listed: whether a marker stands is
-      unknown, so the run refuses rather than reading it as none.
+      claiming it.
       ${sharedRootRefusal(6)}
   69  Mount-dead: the chain never resolved. The supervisor resolves it in
       its own process before the first child, so a chain that will not load
@@ -763,14 +761,7 @@ Exit codes:
   78  Stopped on a terminal misconfiguration: a child tick classified one
       (see \`flume tick --help\`), or every flag still standing names a
       phase the chain does not declare and no child is left to run — either
-      way the orphaned awake flags are left on disk. Also, at start:
-      a merge interrupted before its ship bookkeeping is unreconciled — a
-      \`.flume/merging/<slug>.json\` marker survived a crash between the
-      cherry-pick and the queue rewrite, so the picked commit may sit on
-      trunk ungated with its entry still open (docs/CLI.md, "flume loop
-      [--max N]"). The refusal names the file, the branch and the entry;
-      nothing is touched and the startup sweep does not run, so the branch
-      survives — reconcile, then remove the file to acknowledge.
+      way the orphaned awake flags are left on disk.
   2   Bad --max: missing, or not a decimal integer — the empty string,
       whitespace, a signed, fractional, hex or exponent literal, and a
       digit run past what a finite number holds are each refused rather

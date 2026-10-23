@@ -33,17 +33,8 @@
  * each finishing agent, and tears the worktrees down after them.
  */
 
-import { mkdir, rm, writeFile } from "node:fs/promises";
-
 import * as git from "./git.js";
 import { carryMergeBatch, carryMergeSpan } from "./mergeSpan.js";
-import type { MergingMarker } from "./mergingMarkers.js";
-import {
-  mergingDir,
-  mergingMarkerPath,
-  namespacedJoin,
-  slugify,
-} from "./paths.js";
 import {
   commitPendingUpdate,
   type PendingRewriteNoCommitExit,
@@ -746,12 +737,6 @@ export async function drainWaiting(w: WaveMerge): Promise<void> {
           await recordLanded(batch.shipped, batch.update);
         else if (batch.fate === "tip-moved")
           await landOnTrunk([], batch.rows);
-        // spec/loop.md "Crash equals stop": retired at whichever exit closed
-        // their hazard — the queue on disk accounts for a shipped batch, and a
-        // discarded or refused one left nothing on trunk to warn the next start
-        // about. Before the serial pass below re-stakes them, because a crash
-        // in between would otherwise refuse that start over spans no tip holds.
-        for (const slug of batch.staked) await retireMergingMarker(leg, slug);
       } finally {
         // Stamped however the batch left — shipped, discarded or thrown: every
         // way out of it is a merge that happened, and a red batch's one extra
@@ -778,14 +763,6 @@ export async function drainWaiting(w: WaveMerge): Promise<void> {
               span.shipped,
               span.outcome ? [span.outcome] : [],
             );
-          // spec/loop.md "Crash equals stop": the queue on disk now accounts
-          // for this span, so the marker staked for it has nothing left to warn
-          // the next start about — retired with the rewrite that closed its
-          // hazard, never held for a wave that may still be running hours of
-          // agents. A refusal above throws past this line, leaving the marker
-          // standing exactly as a crash would.
-          if (span.staked !== undefined)
-            await retireMergingMarker(leg, span.staked);
         } finally {
           chargeMerge(s.attempt.entry.tag);
         }
@@ -939,12 +916,8 @@ async function foldAttemptFacts(
   return rows;
 }
 
-/**
- * What a batched merge leaves its drain to do, beside the merge markers it
- * staked: those are the drain's to retire at every exit, because a batch that
- * reached its picks has one standing per span whichever way it left.
- */
-type BatchLanding = { staked: readonly string[] } & (
+/** What a batched merge leaves its drain to do. */
+type BatchLanding =
   | {
       /** Trunk fast-forwarded to the candidate, so the ledger commit is already there. */
       fate: "merged";
@@ -957,8 +930,7 @@ type BatchLanding = { staked: readonly string[] } & (
       rows: readonly TickVerdictMergeOutcome[];
     }
   /** The candidate was discarded: the same spans are the drain's to carry one at a time. */
-  | { fate: "discarded" }
-);
+  | { fate: "discarded" };
 
 /**
  * Carry several finished spans in one merge (spec/worktrees.md, *Batched
@@ -991,9 +963,6 @@ async function carryBatch(
 ): Promise<BatchLanding> {
   const { leg, phase } = w.setup;
   const entryMergeGateResultsStart = w.mergeGateResults.length;
-  // The merge markers this batch stakes, one per span as its own pick begins,
-  // handed back for the drain to retire however the batch left.
-  const staked: string[] = [];
   /** Every entry this batch carries, for the lines that name all of them. */
   const tags = spans.map((s) => s.attempt.entry.tag).join(", ");
   const batch = await carryMergeBatch({
@@ -1007,13 +976,6 @@ async function carryBatch(
       base,
       head,
       assignment: { entry: r.entry, steps: r.steps },
-      stake: async () => {
-        // spec/loop.md "Crash equals stop": each span's marker goes down before
-        // its own pick, so a death anywhere inside the batch leaves a marker
-        // for every span already picked and none for a span not yet reached.
-        staked.push(slugify(r.entry.tag));
-        await writeMergingMarker(leg, r.entry, r.branch, base);
-      },
       narrate: {
         pickFailed: (message) =>
           `[flume] cherry-pick failed for ${r.entry.tag}: ${message}; the batch's candidate is discarded and its spans merge one at a time`,
@@ -1092,9 +1054,9 @@ async function carryBatch(
       }),
     );
     w.mergeOutcomes.push(...rows);
-    return { fate: "tip-moved", staked, rows };
+    return { fate: "tip-moved", rows };
   }
-  if (batch.fate === "discarded") return { fate: "discarded", staked };
+  if (batch.fate === "discarded") return { fate: "discarded" };
   // Trunk fast-forwarded to the candidate, so everything the landing step
   // wrote into it is on trunk now — and only now does any of it reach the
   // stage, exactly as a single span's own landing does ({@link carrySpan}).
@@ -1102,7 +1064,6 @@ async function carryBatch(
   w.mergeOutcomes.push(...batch.landing.rows);
   return {
     fate: "merged",
-    staked,
     shipped: batch.landing.shipped,
     update: batch.landing.update,
   };
@@ -1116,15 +1077,15 @@ async function carryBatch(
  * {@link foldAttemptFacts}'s.
  *
  * The carry itself is the sequence a singleton phase's span takes too, so what
- * is left here is what only a wave has: a marker the next `loop` start reads,
- * rows and records under this entry's tag, the blame each failure it recorded
- * carries, and the consult that decides whether landing on trunk shipped.
+ * is left here is what only a wave has: rows and records under this entry's
+ * tag, the blame each failure it recorded carries, and the consult that
+ * decides whether landing on trunk shipped.
  *
- * Answers with what this span leaves its drain to do: the merge-marker slug it
- * staked, if any; the one merge outcome it earned, if any; and the entries its
- * span shipped, empty where it shipped none. Returned rather than pushed onto the stage's arrays
- * alone, because the drain's ledger commit needs exactly this span's own rows
- * and those arrays are wave-cumulative.
+ * Answers with what this span leaves its drain to do: the one merge outcome it
+ * earned, if any, and the entries its span shipped, empty where it shipped
+ * none. Returned rather than pushed onto the stage's arrays alone, because the
+ * drain's ledger commit needs exactly this span's own rows and those arrays
+ * are wave-cumulative.
  */
 async function carrySpan(
   w: WaveMerge,
@@ -1136,7 +1097,6 @@ async function carrySpan(
     tree: string,
   ) => Promise<PendingRewriteResult | undefined>,
 ): Promise<{
-  staked?: string;
   outcome?: TickVerdictMergeOutcome;
   /** The tags this span shipped, as entries — empty on every exit short of a ruled-on land. */
   shipped: readonly PendingEntry[];
@@ -1162,9 +1122,6 @@ async function carrySpan(
   // never an earlier sibling's (spec/pending.md "Ship detection trusts the
   // agent's own account").
   const entryMergeGateResultsStart = w.mergeGateResults.length;
-  // Set by the stake below, so it names a marker exactly when one is standing:
-  // a carry that refuses ahead of the pick never reaches its stake window.
-  let staked: string | undefined;
   const carried = await carryMergeSpan({
     leg,
     phase,
@@ -1175,14 +1132,6 @@ async function carrySpan(
     // session's footprint is both (`GateContext.assignment`, `src/Gate.ts`).
     assignment: { entry: r.entry, steps: r.steps },
     ref,
-    stake: async () => {
-      // spec/loop.md "Crash equals stop": the marker goes down before the
-      // pick — a death anywhere past it leaves the marker standing, and the
-      // next `loop` start refuses over it rather than picking the same span
-      // onto trunk a second time.
-      staked = slugify(r.entry.tag);
-      await writeMergingMarker(leg, r.entry, r.branch, r.spanBase);
-    },
     onGateRow: (row, ms) => {
       w.mergeGateResults.push(row);
       w.timings.push({ kind: "gate", gate: row.gate, ms });
@@ -1246,7 +1195,6 @@ async function carrySpan(
     // entry stays pending and its commits outlive the branch teardown deletes.
     w.tipMoved = true;
     return {
-      ...(staked === undefined ? {} : { staked }),
       shipped: [],
       landed: false,
       outcome: {
@@ -1263,7 +1211,6 @@ async function carrySpan(
     // tagged provisioning failure.
     w.mergeFailures.push({ ...blamedOn(r.entry), ...carried.failure });
     return {
-      ...(staked === undefined ? {} : { staked }),
       shipped: [],
       landed: false,
       outcome: {
@@ -1292,7 +1239,6 @@ async function carrySpan(
     // prior-attempt block the carry wrote while the candidate's sha was still
     // reachable.
     return {
-      ...(staked === undefined ? {} : { staked }),
       shipped: [],
       landed: false,
       outcome: {
@@ -1308,7 +1254,6 @@ async function carrySpan(
   // Trunk fast-forwarded to the candidate, so everything the landing step
   // wrote into it is on trunk now — and only now does it reach the stage.
   return {
-    ...(staked === undefined ? {} : { staked }),
     outcome: carried.landing.outcome,
     shipped: carried.landing.shipped,
     landed: true,
@@ -1988,52 +1933,5 @@ async function settledWaveVerdict(
     // fresh read rather than the pre-throw sha the caller holds, so this
     // stays correct if a future revision moves the read point.
     headSha: await git.revParse(leg.repoRoot),
-  });
-}
-
-/**
- * spec/loop.md "Crash equals stop": stake this entry's merge before the
- * pick runs. The marker is the engine's own statement that a span is
- * mid-flight — what makes an interrupted merge a fact the next start reads
- * off disk instead of an inference from commit shape
- * (`.claude/rules/engine-boundary.md`, "Told, not inferred"; "Evidence
- * must be durable").
- */
-async function writeMergingMarker(
-  leg: TickLegContext,
-  entry: PendingEntry,
-  branch: string,
-  baseSha: string,
-): Promise<void> {
-  const marker: MergingMarker = { tag: entry.tag, branch, baseSha };
-  await mkdir(namespacedJoin(mergingDir(leg.flumeDir)), { recursive: true });
-  await writeFile(
-    namespacedJoin(mergingMarkerPath(leg.flumeDir, slugify(entry.tag))),
-    JSON.stringify(marker),
-    "utf8",
-  );
-}
-
-/**
- * Retire one pick's marker, once the hazard it names is closed.
- *
- * The wait point is the ship bookkeeping spec/loop.md "Crash equals stop"
- * names — this entry's ledger rewrite and the prior-attempt record clear that
- * rides with it, both inside the same ship-lock hold as the pick itself. The
- * verdict is not part of it and no marker is held for it: `Dispatcher.tick()`
- * never writes the verdict, the CLI's `tick` command does, after `tick()` has
- * returned (`writeTickVerdict` (`src/tickVerdict.ts`)). The ledger rewrite is
- * also where the hazard closes — once the queue no longer carries a picked
- * entry as `open`, a crash before the verdict write leaves nothing a second
- * run would pick again, and refusing over it would be a false refusal. A
- * ledger rewrite that *refused* (`WaveLedgerRefusal`) throws past this call,
- * so its marker survives exactly as a crash's would.
- */
-async function retireMergingMarker(
-  leg: TickLegContext,
-  slug: string,
-): Promise<void> {
-  await rm(namespacedJoin(mergingMarkerPath(leg.flumeDir, slug)), {
-    force: true,
   });
 }

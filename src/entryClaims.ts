@@ -126,7 +126,7 @@ export class EntryClaimStore {
    * tells one host's selection that nothing is in flight and lets two ticks
    * carry one entry — and tells the pending gate's claim check to pass over
    * an entry a build tick holds. So the same descent
-   * `PriorAttemptStore.readAll` and `readMergingMarkers` run
+   * `PriorAttemptStore.readAll` and `renderedPromptNames` run
    * ({@link isDirectoryOrAbsentUnder}, `src/fsProbe.ts`), from the common dir
    * git just resolved down to the directory being listed; the listing past it
    * keeps no absent arm of its own, because every ancestor is proven by then.

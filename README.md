@@ -231,11 +231,6 @@ Harness-managed state — every name here is one the runtime spells itself
   fanout, the phase's own under singleton. The base dir is relocatable — by
   the operator via `FLUME_WORKTREES_DIR`, by the chain via
   `Chain.worktreesBase` (below).
-- `.flume/merging/<entry-slug>.json` — one marker per entry whose span the
-  merge stage is mid-way through putting on trunk, written before the
-  cherry-pick and removed once the queue rewrite lands. A survivor is a merge
-  a crash interrupted: `flume loop` refuses to start over it (exit 78) until
-  the operator reconciles and removes the file.
 - `.flume/loop.pid` — cross-process loop lock, present while a `flume loop`
   runs against this state root (below).
 - `.flume/stop` — graceful-stop flag: `flume stop` writes it, a live loop

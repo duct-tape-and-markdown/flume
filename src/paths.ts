@@ -585,7 +585,6 @@ export const STATE_ROOT_NAMES = {
   priorAttempts: "prior-attempts",
   renderedPrompts: "rendered-prompts",
   worktrees: "worktrees",
-  merging: "merging",
   loopLock: "loop.pid",
   stopFlag: "stop",
   runEnd: "run-end.json",
@@ -692,30 +691,6 @@ export function worktreesBase(flumeDir: string, declared?: string): string {
 }
 
 /**
- * spec/loop.md "Crash equals stop": where the merge stage leaves one marker
- * per entry whose span it is mid-way through putting on trunk —
- * `<flumeDir>/merging/<slug>.json`. Written before the pick and removed once
- * the ship bookkeeping has landed, so a file here at the next `loop` start
- * is a merge a crash interrupted and the run refuses.
- *
- * Same split as {@link tickVerdictDir}: this module owns the name so the
- * CLI's startup refusal can reach it without importing the marker's reader,
- * and `src/mergingMarkers.ts` owns what the file carries and when.
- */
-export function mergingDir(flumeDir: string): string {
-  return join(flumeDir, STATE_ROOT_NAMES.merging);
-}
-
-/**
- * One entry's marker under {@link mergingDir}, keyed by its `slugify`d tag —
- * the same slug the entry's worktree and prior-attempt record use, so an
- * operator reconciling a survivor reads one identity across all three.
- */
-export function mergingMarkerPath(flumeDir: string, slug: string): string {
-  return join(mergingDir(flumeDir), `${slug}.json`);
-}
-
-/**
  * The cross-process loop lock — one supervisor per state root. `flume loop`
  * stakes it here (`stakePidClaim`, `src/pidClaim.ts`); `liveLoopClaim` and
  * `flume status` read it back.
@@ -750,8 +725,8 @@ export function runEndPath(flumeDir: string): string {
  * single path would have every child but the last one overwritten before the
  * supervisor read it.
  *
- * Same split as {@link mergingDir}: this module owns the name so the runtime
- * ignore set can reach it without importing the verdict's I/O, and
+ * Split as every runtime path here is: this module owns the name so the
+ * runtime ignore set can reach it without importing the verdict's I/O, and
  * `src/tickVerdict.ts` owns what each file carries and when.
  */
 export function tickVerdictDir(flumeDir: string): string {

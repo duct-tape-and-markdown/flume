@@ -21,7 +21,6 @@
   "gc.autoDetach": "a git config key, spelled in git's own namespace",
   "hookTimeout": "vitest's own option, named in no module of these trees",
   "judgedByEntryTests": "a declaration of `examples/cascade-chain.ts`",
-  "merging/throw-m.json": "the state root's layout — `<flumeDir>`-relative",
   "nextPhase": "a declaration of `examples/cascade-chain.ts`",
   "notes/journal.md": "the journal `examples/minimal-chain.ts` appends to — written in a consumer's repo, never in this one",
   "plan-sweep.json": "a record filename a run writes under the state root",

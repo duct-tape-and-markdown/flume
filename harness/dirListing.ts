@@ -90,7 +90,7 @@ export function listUnderStateRoot(
  * "nothing open" and "no records waiting" over an obstructed state root on
  * exactly one host — which would tell a plan tick that a question it cannot
  * see is closed. Hence the descent that `PriorAttemptStore.readAll` and
- * `readMergingMarkers` run: the state root, then each segment of `rel`,
+ * `renderedPromptNames` run: the state root, then each segment of `rel`,
  * every one asserted a directory before the next is probed
  * ({@link isDirectoryOrAbsentUnder}, `src/fsProbe.ts`, which composes those
  * rungs for every reader that runs this descent), so both hosts answer

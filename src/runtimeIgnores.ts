@@ -48,7 +48,6 @@ export const RUNTIME_IGNORES = [
   `${STATE_ROOT_NAMES.priorAttempts}/`,
   `${STATE_ROOT_NAMES.renderedPrompts}/`,
   `${STATE_ROOT_NAMES.worktrees}/`,
-  `${STATE_ROOT_NAMES.merging}/`,
   `${STATE_ROOT_NAMES.tickVerdict}/`,
   `${STATE_ROOT_NAMES.invocations}/`,
   "node_modules/",

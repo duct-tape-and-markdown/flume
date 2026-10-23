@@ -26,9 +26,8 @@
  * call site a declared gate runs through (`src/gateRun.ts`), the facts
  * artifact it builds and the vocabularies that artifact carries
  * (`src/tickVerdict.ts`), the two checks it takes around the trunk it moves
- * (`src/tipVerify.ts`), the interrupted-merge markers a wave stakes around a
- * cherry-pick (`src/mergingMarkers.ts`), the chain resolution that starts a
- * tick (`src/chainLoad.ts`), the logging seam it narrates through
+ * (`src/tipVerify.ts`), the chain resolution that starts a tick
+ * (`src/chainLoad.ts`), the logging seam it narrates through
  * (`src/log.ts`), and the exit codes the `flume tick` process boundary
  * carries (`src/exitCodes.ts`).
  *

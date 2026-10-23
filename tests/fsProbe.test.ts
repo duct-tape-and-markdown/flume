@@ -91,8 +91,8 @@ describe("fsProbe — the ENOENT-vs-everything-else split, on the raw call", () 
    * through a non-directory as not found*). The host is declared and the case
    * skips rather than asserting a refusal that host cannot make; the
    * cross-host proof is a descent, which `isDirectoryOrAbsent` runs for the
-   * two readers that need it (`PriorAttemptStore.readAll`,
-   * `readMergingMarkers`) and which `tests/priorAttempts.test.ts` and
+   * readers that need it (`PriorAttemptStore.readAll`,
+   * `renderedPromptNames`) and which `tests/priorAttempts.test.ts` and
    * `tests/Dispatcher.test.ts` cover at their obstructed-ancestor arms.
    */
   const posixOnly = it.runIf(process.platform !== "win32");
@@ -154,8 +154,8 @@ describe("fsProbe — the ENOENT-vs-everything-else split, on the raw call", () 
 });
 
 /**
- * The descent both directory readers take their absence from
- * (`PriorAttemptStore.readAll`, `readMergingMarkers`), on the raw call. Its
+ * The descent every directory reader takes its absence from
+ * (`PriorAttemptStore.readAll`, `renderedPromptNames`), on the raw call. Its
  * whole reason for existing is the arm the probes above declare they cannot
  * make: an obstructed *ancestor*, which a single stat reads as absent on
  * win32. So this cover runs on every host — the walk stats each ancestor

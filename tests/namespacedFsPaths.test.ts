@@ -187,11 +187,11 @@ describe("examples/ — win32 MAX_PATH fix (.claude/rules/platform-facts.md)", (
  */
 const DESCENT_SOURCE = `
 import { isDirectoryOrAbsent } from "./fsProbe.js";
-import { mergingDir } from "./paths.js";
+import { renderedPromptsDir } from "./paths.js";
 
-export function markerDir(flumeDir: string): string | undefined {
-  const dir = mergingDir(flumeDir);
-  return isDirectoryOrAbsent("merging-marker dir", flumeDir, dir) ? dir : undefined;
+export function promptsDir(flumeDir: string): string | undefined {
+  const dir = renderedPromptsDir(flumeDir);
+  return isDirectoryOrAbsent("rendered prompts", flumeDir, dir) ? dir : undefined;
 }
 `;
 

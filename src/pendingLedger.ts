@@ -291,7 +291,7 @@ const QUEUE_SUBJECT = "pending queue";
  * posix (`.claude/rules/platform-facts.md`, *win32 reports a path through a
  * non-directory as not found*), so an errno-keyed silent arm dispatches one
  * host's tick over an obstructed queue as though nothing were planned. So the
- * same descent `PriorAttemptStore.readAll` and `readMergingMarkers` run
+ * same descent `PriorAttemptStore.readAll` and `renderedPromptNames` run
  * ({@link isDirectoryOrAbsentUnder}, `src/fsProbe.ts`), from `stateRoot` down
  * to `dir`; the listing past it keeps no absent arm of its own, because every
  * ancestor is proven by then. `stateRoot` is where the descent starts: the

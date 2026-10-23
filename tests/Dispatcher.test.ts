@@ -44,7 +44,6 @@ import { PendingParseFailure as realPendingParseFailure } from "../src/PendingSc
 import { entryClaimPath, entryClaimSlug } from "../src/entryClaims.ts";
 import { entryDeclaredKey } from "../src/entryKey.ts";
 import type { Logger } from "../src/log.ts";
-import { readMergingMarkers } from "../src/mergingMarkers.ts";
 import {
   MAX_TICK_VERDICTS,
   appendInvocationRow,
@@ -81,10 +80,9 @@ import {
   defaultStateRoot,
   invocationsPath,
   loopLockPath,
-  mergingDir,
-  mergingMarkerPath,
   renderedPromptsDir,
   slugify,
+  STATE_ROOT_NAMES,
   stopFlagPath,
   worktreesBase,
 } from "../src/paths.ts";
@@ -217,7 +215,7 @@ import {
   priorAttemptPath as indexPriorAttemptPath,
 } from "../src/index.ts";
 import { deadPid } from "./helpers/deadPid.ts";
-import { denyDirectory, denyFile } from "./helpers/denial.ts";
+import { denyFile } from "./helpers/denial.ts";
 import {
   blownWaitsInAgentBodies,
   forgetBlownWaits,
@@ -513,18 +511,13 @@ function readPendingFromDisk(repo: string): PendingEntry[] {
 }
 
 /**
- * Every `<flumeDir>/merging/*.json` as it stands right now, name → contents
- * (spec/loop.md "Crash equals stop", "A merge the crash interrupted is
- * refused, never resumed").
+ * The state root's own entries as they stand right now, sorted — what a
+ * probe inside a tick sees the engine holding on disk at that instant.
  */
-async function markersNow(repo: string): Promise<Map<string, unknown>> {
-  const dir = join(repo, ".flume", "merging");
-  const out = new Map<string, unknown>();
-  if (!existsSync(dir)) return out;
-  for (const name of (await readdir(dir)).sort()) {
-    out.set(name, JSON.parse(await readFile(join(dir, name), "utf8")));
-  }
-  return out;
+async function stateRootEntriesNow(repo: string): Promise<string[]> {
+  const dir = join(repo, ".flume");
+  if (!existsSync(dir)) return [];
+  return (await readdir(dir)).sort();
 }
 
 /**
@@ -8468,12 +8461,6 @@ describe("Dispatcher fanout — cherry-pick conflict leaves the conflicting entr
   });
 });
 
-// spec/loop.md "Crash equals stop", "A merge the crash interrupted is refused,
-// never resumed": the merge stage stakes `<flumeDir>/merging/<slug>.json`
-// before it picks an entry's span onto trunk and retires it once the queue
-// rewrite lands, so a death anywhere in between leaves the fact on disk for
-// the next start to refuse over (`src/cliLoop.ts`; pinned in
-// tests/cli.test.ts).
 /**
  * SIBLING-TICKS-TAKE-TURNS-AT-GIT — the two guards a tick takes around a git
  * mutation, seen from the tick that takes them (spec/loop.md, "The ship lock
@@ -9064,176 +9051,30 @@ describe("Dispatcher fanout — the ledger commit lands with its own merge", () 
   });
 });
 
-describe("Dispatcher fanout — the merge-stage crash marker", () => {
-  it("the merge stage writes a merging marker naming the branch, the base sha and the entry before the pick", async () => {
-    // Three entries, carried in A → B → C order. A wave picks each span as
-    // its own agent finishes (spec/worktrees.md, "Fanout and worktrees —
-    // provisioning, isolation, teardown"), so the order is fixed here by
-    // holding each agent on an event the previous entry's merge produces —
-    // never on a sleep, which under the gate's own load is a coin flip.
-    //
-    // MARK-B's pick *conflicts* and is aborted — it never reaches an
-    // afterMerge gate, never lands on trunk, never ships. So MARK-B's marker
-    // being on disk at all is only explicable by it having been written ahead
-    // of B's own pick: no later point in B's life had the chance. Each pick
-    // retires its own marker with its own ledger commit, inside the same hold
-    // (`src/waveMerge.ts`), so the window it is observable in is B's pick —
-    // which is what MARK-C's agent waits for below. (The shared file is an
-    // entryChannelPaths allowance, the only way disjoint declared files can
-    // still collide — same vector as the cherry-pick-conflict test above.)
-    await mkdir(join(fx.repo, "src"), { recursive: true });
-    await writeFile(join(fx.repo, "src", "shared.ts"), "baseline\n");
-    await exec("git", ["add", "--", "src/shared.ts"], { cwd: fx.repo });
-    await exec("git", ["commit", "-q", "-m", "seed shared"], { cwd: fx.repo });
-
-    const entries = [
-      makeEntry("MARK-A", ["src/decoy-a.ts"]),
-      makeEntry("MARK-B", ["src/decoy-b.ts"]),
-      makeEntry("MARK-C", ["src/decoy-c.ts"]),
-    ];
-    await writePending(fx.repo, entries);
+/**
+ * spec/loop.md "Crash equals stop", *A merge moves trunk once*: the span and
+ * the ledger commit that ships it reach trunk in a single fast-forward from a
+ * judged candidate, so no state exists between a judged candidate and a moved
+ * trunk — and nothing is staked on disk to describe one. The merge stage once
+ * wrote `<flumeDir>/merging/<slug>.json` around each pick and `flume loop`
+ * refused to start over a survivor; both are gone, and this is the pin that
+ * the writing half stays gone.
+ */
+describe("Dispatcher fanout — the merge stage stakes nothing on disk", () => {
+  it("a wave's merge writes no marker under the state root", async () => {
+    await writePending(fx.repo, [makeEntry("NO-MARK", ["src/no-mark.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
 
-    const preHead = await head(fx.repo);
-
-    // Runs between each entry's pick and that entry's own queue rewrite — the
-    // one window its marker is supposed to be observable in.
-    const seen: Array<Map<string, unknown>> = [];
-    // The merging dir as MARK-C's agent found it, mid-pick for MARK-B — the
-    // one window B's own marker stands in.
-    let bWindow: Map<string, unknown> | undefined;
+    // The one window a stake was ever observable in: this gate runs between
+    // NO-MARK's pick onto the candidate and the queue rewrite that retires
+    // the entry, inside the same ship-lock hold as both. A marker written
+    // before the pick and removed after the rewrite would stand here.
+    let duringMerge: string[] = [];
     const probe: Gate = {
-      name: "marker-probe",
+      name: "state-root-probe",
       when: "afterMerge",
       async run() {
-        seen.push(await markersNow(fx.repo));
-        return { ok: true, message: "probed" };
-      },
-    };
-
-    const phase = makePhase({
-      name: "build",
-      concurrency: "fanout",
-      entryChannelPaths: ["src/shared.ts"],
-      gates: [probe],
-    });
-
-    const writeEntry =
-      (
-        decoy: string,
-        shared: string | undefined,
-        // The gate on this agent's own finish: resolves once the entry ahead
-        // of it in the intended merge order has reached the stage.
-        turn?: () => Promise<unknown>,
-      ) =>
-      async (cwd: string) => {
-        if (turn) await turn();
-        await mkdir(join(cwd, "src"), { recursive: true });
-        await writeFile(join(cwd, "src", decoy), "x\n");
-        if (shared) await writeFile(join(cwd, "src", "shared.ts"), shared);
-        await exec("git", ["add", "."], { cwd });
-        await exec("git", ["commit", "-q", "-m", `build: ${decoy}`], { cwd });
-      };
-
-    const dispatcher = new Dispatcher({
-      chainLoader: staticLoader({ phases: [phase], humanOnly: [] }),
-      repoRoot: fx.repo,
-      configDir: fx.configDir,
-      agent: fanoutAgent({
-        "mark-a": writeEntry("decoy-a.ts", "from-A\n"),
-        // A's span is on trunk and gated before B's agent even commits —
-        // the probe below only runs after A's pick landed.
-        "mark-b": writeEntry("decoy-b.ts", "from-B\n", () =>
-          waitFor("MARK-A's afterMerge probe", () =>
-            seen.length >= 1 ? true : undefined,
-          ),
-        ),
-        // And B's merge is under way — its marker is staked before its pick
-        // — before C's agent commits. The snapshot that wait holds on is the
-        // evidence: B reaches no gate of its own to probe from.
-        "mark-c": writeEntry("decoy-c.ts", undefined, async () => {
-          bWindow = await waitFor("MARK-B's merge marker", async () => {
-            const now = await markersNow(fx.repo);
-            return now.has("mark-b.json") ? now : undefined;
-          });
-        }),
-      }),
-      log: silent,
-      maxParallel: 4,
-    });
-
-    const outcome = await dispatcher.tick();
-
-    // Before the verdict: the wait this case's agent body held ended on
-    // its event rather than its ceiling (`runAgentBody`,
-    // `tests/helpers/dispatcherFixture.ts`).
-    expectNoFindings(blownWaitsInAgentBodies());
-    // The fates this pin depends on: all three agents committed under their
-    // own gates, B's pick then conflicted (so B never reached the probe), A
-    // and C picked clean (so the probe ran exactly twice).
-    //
-    // Read the per-entry fate off `result.entries` first, before any merge
-    // row below derives from it (.claude/rules/engineering.md, "A fact the
-    // engine holds is reported, never rediscovered"): a B that never
-    // committed — a gate revert, a clean exit, a platform preempt — writes
-    // no `mergeOutcomes` row at all, so the conflict assertion alone would
-    // red with `undefined` where the engine already named the no-commit
-    // class. `?? null` because `toEqual` reads an absent key and an
-    // `undefined` one alike, and the class is the whole point of the line.
-    expect(
-      outcome.result?.entries?.map((e) => ({
-        tag: e.tag,
-        committed: e.committed,
-        noCommit: e.noCommit ?? null,
-      })),
-    ).toEqual([
-      { tag: "MARK-A", committed: true, noCommit: null },
-      { tag: "MARK-B", committed: true, noCommit: null },
-      { tag: "MARK-C", committed: true, noCommit: null },
-    ]);
-    expect(outcome.result?.shippedTags).toEqual(["MARK-A", "MARK-C"]);
-    expect(
-      outcome.verdict?.mergeOutcomes.find((m) => m.entryTag === "MARK-B")?.outcome,
-    ).toBe("cherry-pick-conflict");
-    // Vacuity (.claude/rules/engineering.md, "A green verdict is proven
-    // non-vacuous"): a probe that never ran would leave every assertion below
-    // reading an empty snapshot list.
-    expect(seen, "the afterMerge probe never ran").toHaveLength(2);
-
-    // Each entry stakes its own marker immediately before its own pick, not
-    // the wave's worth up front: at A's gate only A's is on disk.
-    expect([...seen[0]!.keys()]).toEqual(["mark-a.json"]);
-    expect(seen[0]!.get("mark-a.json")).toEqual({
-      tag: "MARK-A",
-      branch: "flume/primary/mark-a",
-      baseSha: preHead,
-    });
-    // B's marker, in B's own pick window — written before the pick that then
-    // conflicted and was aborted. A's is already gone: A's ledger commit
-    // landed inside A's hold, which the serialized stage closes before B's
-    // opens, so the set is exactly one pick wide.
-    expect([...bWindow!.keys()]).toEqual(["mark-b.json"]);
-    expect(bWindow!.get("mark-b.json")).toEqual({
-      tag: "MARK-B",
-      branch: "flume/primary/mark-b",
-      baseSha: preHead,
-    });
-    // And at C's gate, C's alone for the same reason: B retired its marker
-    // with the footprint commit its conflict earned.
-    expect([...seen[1]!.keys()]).toEqual(["mark-c.json"]);
-  });
-
-  it("the merging marker is gone once the ship bookkeeping has landed", async () => {
-    const entries = [makeEntry("GONE-A", ["src/gone-a.ts"])];
-    await writePending(fx.repo, entries);
-    new Baton(join(fx.repo, ".flume")).wake("build");
-
-    let duringWave: string[] = [];
-    const probe: Gate = {
-      name: "marker-probe",
-      when: "afterMerge",
-      async run() {
-        duringWave = [...(await markersNow(fx.repo)).keys()];
+        duringMerge = await stateRootEntriesNow(fx.repo);
         return { ok: true, message: "probed" };
       },
     };
@@ -9248,11 +9089,11 @@ describe("Dispatcher fanout — the merge-stage crash marker", () => {
       repoRoot: fx.repo,
       configDir: fx.configDir,
       agent: fanoutAgent({
-        "gone-a": async (cwd) => {
+        "no-mark": async (cwd) => {
           await mkdir(join(cwd, "src"), { recursive: true });
-          await writeFile(join(cwd, "src", "gone-a.ts"), "a\n");
+          await writeFile(join(cwd, "src", "no-mark.ts"), "a\n");
           await exec("git", ["add", "."], { cwd });
-          await exec("git", ["commit", "-q", "-m", "build: A"], { cwd });
+          await exec("git", ["commit", "-q", "-m", "build: NO-MARK"], { cwd });
         },
       }),
       log: silent,
@@ -9261,147 +9102,23 @@ describe("Dispatcher fanout — the merge-stage crash marker", () => {
 
     const outcome = await dispatcher.tick();
 
-    expect(outcome.result?.shippedTags).toEqual(["GONE-A"]);
-    // Vacuity: "gone afterwards" says nothing unless the marker was ever
-    // there — the wave must have staked it mid-flight for the removal below
-    // to be a removal rather than an absence.
-    expect(duringWave, "no marker was staked mid-wave").toEqual([
-      "gone-a.json",
-    ]);
-    expect([...(await markersNow(fx.repo)).keys()]).toEqual([]);
-    // The queue rewrite is what the removal waits on — and it landed.
-    expect((readPendingFromDisk(fx.repo)).map((e) => e.tag)).toEqual([]);
-  });
-});
-
-/**
- * The one consumer of `readMergingMarkers` is the CLI's startup refusal
- * (`flume loop`), where an empty read means *start*. So
- * the listing's ENOENT-vs-other split is load-bearing: absent is the honest
- * empty answer, and anything else must escape rather than read as "no
- * interrupted merge" (`.claude/rules/engineering.md`, "Loud or nothing").
- *
- * The denial is structural, not a permission bit (`tests/helpers/denial.ts`):
- * a plain file stands where the listing wants a directory, so the read
- * refuses — and not as ENOENT — on every host and under a root-run, where a
- * mode denies nothing.
- * Same fixture shape `countFrictionFiles` and `PriorAttemptStore.readAll`
- * are pinned with. Each unreadable leg reads its fixture once *before*
- * denying it, so the throw afterwards is judged against a dir that really
- * held a marker rather than a mistyped path
- * (`.claude/rules/engineering.md`, "A green verdict is proven non-vacuous").
- *
- * Two denials, because the split is proven from the path rather than from an
- * errno: one at the dir the listing names, one at the *ancestor* above it —
- * the shape a fixture normally must not use, since a lookup through a plain
- * file answers `ENOENT` on win32 and takes an errno-keyed reader's absent arm
- * (`.claude/rules/platform-facts.md`, *win32 reports a path through a
- * non-directory as not found*). Here that is precisely the subject: the
- * descent is what makes the ancestor case refuse on both hosts, so the arm
- * asserts the reader's own refusal and never the errno underneath it.
- */
-describe("readMergingMarkers — the merging dir's absent-vs-unreachable split", () => {
-  it("readMergingMarkers reads an absent merging dir as no interrupted merge", async () => {
-    const flumeDir = await mkTempDir("flume-mm-absent-");
-    try {
-      expect(existsSync(mergingDir(flumeDir))).toBe(false);
-      expect(await readMergingMarkers(flumeDir)).toEqual([]);
-    } finally {
-      await rm(flumeDir, { recursive: true, force: true });
-    }
-  });
-
-  it("readMergingMarkers throws when the merging dir cannot be read for a reason other than absence", async () => {
-    const flumeDir = await mkTempDir("flume-mm-sealed-");
-    const dir = mergingDir(flumeDir);
-    try {
-      await mkdir(dir, { recursive: true });
-      await writeFile(
-        join(dir, "sealed.json"),
-        JSON.stringify({
-          tag: "SEALED",
-          branch: "flume/sealed",
-          baseSha: "0".repeat(40),
-        }),
-        "utf8",
-      );
-      // Vacuity: the marker is readable *now*, so the refusal below is the
-      // seal talking and not an empty dir.
-      expect(await readMergingMarkers(flumeDir)).toHaveLength(1);
-
-      // Deny the merging dir structurally: readdir now fails ENOTDIR — the
-      // path is there, but it is not a dir the listing can read — not
-      // ENOENT.
-      denyDirectory(dir);
-
-      let caught: NodeJS.ErrnoException | undefined;
-      try {
-        await readMergingMarkers(flumeDir);
-      } catch (err) {
-        caught = err as NodeJS.ErrnoException;
-      }
-      expect(
-        caught,
-        "the sealed merging dir read as no interrupted merge",
-      ).toBeDefined();
-      expect(caught?.code).not.toBe("ENOENT");
-      // The reader's own reading of the path, not the host's spelling of the
-      // failure: the errno a plain file raises here is `ENOTDIR` on posix and
-      // `ENOENT` on win32, and neither is the property.
-      expect(caught?.message).toContain(
-        `${dir} is present but is not a directory`,
-      );
-    } finally {
-      await rm(flumeDir, { recursive: true, force: true });
-    }
-  });
-
-  it("readMergingMarkers refuses an obstructed merging dir with a reading of its own, naming the path that is not a directory", async () => {
-    const root = await mkTempDir("flume-mm-obstructed-");
-    const flumeDir = join(root, ".flume");
-    const dir = mergingDir(flumeDir);
-    try {
-      await mkdir(dir, { recursive: true });
-      await writeFile(
-        join(dir, "obstructed.json"),
-        JSON.stringify({
-          tag: "OBSTRUCTED",
-          branch: "flume/obstructed",
-          baseSha: "0".repeat(40),
-        }),
-        "utf8",
-      );
-      // Vacuity: the marker really is reachable while the state root is a
-      // directory, so the refusal below is the obstruction talking.
-      expect(await readMergingMarkers(flumeDir)).toHaveLength(1);
-
-      // The obstruction sits one level *above* the dir the listing names, so
-      // nothing beneath it exists to stat: the listing raises ENOTDIR on
-      // posix and ENOENT on win32, and an errno-keyed absent arm would start
-      // a loop over a marker it could not see on exactly one of them.
-      denyDirectory(flumeDir);
-      expect(existsSync(flumeDir)).toBe(true);
-      expect(lstatSync(flumeDir).isDirectory()).toBe(false);
-      expect(existsSync(dir)).toBe(false);
-
-      const caught = await readMergingMarkers(flumeDir).then(
-        () => undefined,
-        (err: unknown) => err as Error,
-      );
-      expect(
-        caught,
-        "the obstructed state root read as no interrupted merge",
-      ).toBeInstanceOf(Error);
-      // The path that is not a directory is the obstructing *ancestor* — the
-      // one an operator has to go fix — named by the reader itself rather
-      // than by whichever errno this host happened to raise beneath it.
-      expect(caught?.message).toContain(
-        `${flumeDir} is present but is not a directory`,
-      );
-      expect((caught as NodeJS.ErrnoException).code).toBeUndefined();
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
+    expect(outcome.result?.shippedTags).toEqual(["NO-MARK"]);
+    // Vacuity (.claude/rules/engineering.md, "A green verdict is proven
+    // non-vacuous"): the probe ran, and the listing it took was of a state
+    // root this wave had already written under — an empty or absent listing
+    // would agree with any claim about what is missing from it.
+    expect(
+      duringMerge,
+      "the afterMerge probe never ran, or read an empty state root",
+    ).toContain(STATE_ROOT_NAMES.worktrees);
+    // The claim, in the window and after it: the engine holds no directory
+    // standing for a merge in flight, so there is nothing for a crash to
+    // strand and nothing for the next `loop` start to read.
+    expect(duringMerge).not.toContain("merging");
+    expect(await stateRootEntriesNow(fx.repo)).not.toContain("merging");
+    // And the rewrite the marker's removal used to wait on really landed, so
+    // the window above spanned the whole merge rather than half of it.
+    expect(readPendingFromDisk(fx.repo).map((e) => e.tag)).toEqual([]);
   });
 });
 
@@ -10508,20 +10225,20 @@ describe("Dispatcher — a gate that throws is a gate that failed", () => {
     expect(outcome.verdict?.noCommit).toBe("gate-revert");
   });
 
-  it("a tick whose gate throws writes its verdict instead of dying at the crash marker", async () => {
+  it("a tick whose gate throws writes its verdict instead of dying inside the merge stage", async () => {
     await writePending(fx.repo, [makeEntry("THROW-M", ["src/throw-m.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
 
-    // The marker window: this gate runs between THROW-M's pick onto trunk
-    // and the wave's queue rewrite, so a throw escaping here is exactly the
-    // death that would strand `merging/throw-m.json` and refuse the next
-    // `loop` start (spec/loop.md "Crash equals stop").
-    let staked: string[] = [];
+    // The merge window: this gate runs between THROW-M's pick onto the
+    // candidate and the wave's queue rewrite, so a throw escaping here is
+    // the death mid-merge spec/loop.md "Crash equals stop" bounds — trunk as
+    // it was, the candidate discarded, nothing for an operator to reconcile.
+    let duringMerge: string[] = [];
     const probeThenThrow: Gate = {
       name: "merge-explodes",
       when: "afterMerge",
       async run() {
-        staked = [...(await markersNow(fx.repo)).keys()];
+        duringMerge = await stateRootEntriesNow(fx.repo);
         throw new Error(BOOM);
       },
     };
@@ -10550,11 +10267,13 @@ describe("Dispatcher — a gate that throws is a gate that failed", () => {
 
     const outcome = await dispatcher.tick();
 
-    // Vacuity: the throw happened mid-merge, with this entry's marker staked
-    // — otherwise "no marker afterwards" would be an absence, not a removal.
-    expect(staked, "the afterMerge gate never ran mid-merge").toEqual([
-      "throw-m.json",
-    ]);
+    // Vacuity: the gate really ran inside the merge, over a state root this
+    // wave had already written under — otherwise the verdict below would be
+    // the verdict of a tick that never reached the stage under test.
+    expect(
+      duringMerge,
+      "the afterMerge gate never ran mid-merge",
+    ).toContain(STATE_ROOT_NAMES.worktrees);
     // The tick's facts survive the gate's exception.
     expect(outcome.verdict).toBeDefined();
     expect(outcome.verdict?.gateResults).toContainEqual({
@@ -10563,9 +10282,6 @@ describe("Dispatcher — a gate that throws is a gate that failed", () => {
       message: BOOM,
       details: STACK,
     });
-    // Nothing is left behind for the next start to refuse over: the wave
-    // reached its bookkeeping and retired the marker it staked.
-    expect([...(await markersNow(fx.repo)).keys()]).toEqual([]);
   });
 
   it("an afterMerge gate that throws reverts the merge as a returned refusal would", async () => {
@@ -13767,23 +13483,38 @@ describe("Dispatcher fanout — a merge-stage throw outside the ledger rewrite c
   }
 
   /**
-   * The wall this stage has that is not a refused rewrite: a merge marker the
-   * disk will not take. `mergeError` (`src/waveTick.ts`) holds every throw out
-   * of `drainWaiting`, only one of which is `commitPendingUpdate` refusing, so
-   * the carry is driven here from the other side — over a wave whose first pick
-   * has already cherry-picked, gated and retired its entry.
+   * The wall this stage has that is not a refused rewrite: a prior-attempt
+   * record the disk will not take. `mergeError` (`src/waveTick.ts`) holds
+   * every throw out of `drainWaiting`, only one of which is
+   * `commitPendingUpdate` refusing, so the carry is driven here from the other
+   * side — over a wave whose first pick has already cherry-picked, gated and
+   * retired its entry.
    *
-   * The obstruction is structural rather than a permission bit, so it denies on
-   * every host (`.claude/rules/platform-facts.md`, "`chmod` denies nothing on
-   * win32"): a directory standing where STAKE-B's marker file goes, at the
-   * engine's own spelling of that path rather than a second copy of the layout
-   * composed here. STAKE-A's marker is a sibling name and writes clean, which
-   * is what leaves a shipped span behind the wall.
+   * A red `afterMerge` gate for STAKE-B alone is the arming: the carry writes
+   * that entry's gate-revert record inside the same hold as the pick
+   * (`src/mergeSpan.ts`), and the write is what refuses. The obstruction is
+   * structural rather than a permission bit, so it denies on every host
+   * (`.claude/rules/platform-facts.md`, "`chmod` denies nothing on win32"): a
+   * directory standing where STAKE-B's record file goes, at the engine's own
+   * spelling of that path (`entryRef` through `priorAttemptPath`) rather than
+   * a second copy of the layout composed here. STAKE-A's gate is green and its
+   * record path untouched, which is what leaves a shipped span behind the wall.
+   *
+   * The gate plants it rather than the arming above, and that is the whole
+   * reason this wall is reachable: the store reads every record under the
+   * state root once at tick start, so a record path denied before the tick
+   * refuses *that* read — loudly, by design — and the tick never reaches a
+   * merge. Denied from inside the gate whose red triggers the write, the read
+   * saw a clean store and the write is the only call left to refuse. The
+   * keyspace directory is made here rather than there, because `denyFile`
+   * creates no missing parent: planted into a keyspace no record has reached
+   * yet, the plant itself throws inside the gate and the write it was meant
+   * to refuse goes through.
    *
    * One arming, two cases: what the carried verdict names, and the class it
    * declines to name.
    */
-  async function waveWalledByAnUnwritableMarker(): Promise<{
+  async function waveWalledByAnUnwritableRecord(): Promise<{
     outcome: Awaited<ReturnType<Dispatcher["tick"]>> | undefined;
     thrown: unknown;
     obstructed: string;
@@ -13794,15 +13525,27 @@ describe("Dispatcher fanout — a merge-stage throw outside the ledger rewrite c
     ]);
     new Baton(join(fx.repo, ".flume")).wake("build");
 
-    const obstructed = mergingMarkerPath(
+    const obstructed = priorAttemptPath(
       join(fx.repo, ".flume"),
-      slugify("STAKE-B"),
+      entryRef("STAKE-B"),
     );
-    await mkdir(obstructed, { recursive: true });
+    await mkdir(dirname(obstructed), { recursive: true });
+    const redForB: Gate = {
+      name: "red-for-b",
+      when: "afterMerge",
+      run: async (ctx) => {
+        if (ctx.assignment?.entry.tag !== "STAKE-B")
+          return { ok: true, message: "clean" };
+        denyFile(obstructed);
+        return { ok: false, message: "STAKE-B is refused" };
+      },
+    };
 
     const dispatcher = new Dispatcher({
       chainLoader: staticLoader({
-        phases: [makePhase({ name: "build", concurrency: "fanout", gates: [] })],
+        phases: [
+          makePhase({ name: "build", concurrency: "fanout", gates: [redForB] }),
+        ],
         humanOnly: [],
       }),
       repoRoot: fx.repo,
@@ -13838,14 +13581,14 @@ describe("Dispatcher fanout — a merge-stage throw outside the ledger rewrite c
   }
 
   it("a wave whose merge stage throws outside its ledger rewrite reports a tick verdict naming the spans it already shipped", async () => {
-    const { outcome, thrown, obstructed } = await waveWalledByAnUnwritableMarker();
+    const { outcome, thrown, obstructed } = await waveWalledByAnUnwritableRecord();
 
     // Before anything else: the order this case's agent body held for ended on
     // its event rather than its ceiling (`runAgentBody`,
     // `tests/helpers/dispatcherFixture.ts`).
     expectNoFindings(blownWaitsInAgentBodies());
     // Vacuity, in the order the wave produced it. The obstruction is still
-    // standing, so the write it refused really was refused…
+    // standing, so the record write it refused really was refused…
     expect(lstatSync(obstructed).isDirectory()).toBe(true);
     // …both agents ran and were paid for, so the wall is a merge stage's and
     // not a batch that never reached one…
@@ -13885,7 +13628,7 @@ describe("Dispatcher fanout — a merge-stage throw outside the ledger rewrite c
   });
 
   it("a non-ledger throw out of a wave's merge stage reports no ledger-refusal class", async () => {
-    const { outcome, thrown, obstructed } = await waveWalledByAnUnwritableMarker();
+    const { outcome, thrown, obstructed } = await waveWalledByAnUnwritableRecord();
 
     expectNoFindings(blownWaitsInAgentBodies());
     // The same vacuity the sibling carries, because a class absence asserted
@@ -13920,12 +13663,14 @@ describe("Dispatcher fanout — a merge-stage throw outside the ledger rewrite c
    * rewrite's alone, and the sibling case that pins it drives it from the
    * refusal side only.
    *
-   * WALL-A's marker path is obstructed, so its pick throws inside the ship
-   * lock it took, and it is the only pick this wave reaches — CARRY-B is
-   * folded, never picked — so that one hold is what the held slot waits out
-   * unambiguously. The hold is short (a bystander checkpoint and a
-   * `revParse`, then the stake), which is why the probe gap is narrowed to
-   * catch it.
+   * WALL-A's gate is red and obstructs that entry's prior-attempt record path
+   * on its way out, so the gate-revert record the carry writes inside the ship
+   * lock it took throws there — planted from the gate for the reason the
+   * sibling arming above states — and WALL-A is the only pick this wave
+   * reaches: CARRY-B is folded, never picked, so that one hold is what the
+   * held slot waits out unambiguously. The probe gap stays narrowed: the hold
+   * is one candidate, one pick and one gate long, which is short enough that
+   * a coarser poll can step over it.
    */
   it("records a wave-walled row for a span that settled after a merge-stage wall no ledger refused", async () => {
     await writePending(fx.repo, [
@@ -13934,11 +13679,11 @@ describe("Dispatcher fanout — a merge-stage throw outside the ledger rewrite c
     ]);
     new Baton(join(fx.repo, ".flume")).wake("build");
 
-    const obstructed = mergingMarkerPath(
+    const obstructed = priorAttemptPath(
       join(fx.repo, ".flume"),
-      slugify("WALL-A"),
+      entryRef("WALL-A"),
     );
-    await mkdir(obstructed, { recursive: true });
+    await mkdir(dirname(obstructed), { recursive: true });
     const shipLock = join(fx.repo, ".git", "flume", "ship.lock");
 
     let heldWait: string | undefined;
@@ -13948,7 +13693,18 @@ describe("Dispatcher fanout — a merge-stage throw outside the ledger rewrite c
           makePhase({
             name: "build",
             concurrency: "fanout",
-            gates: [],
+            gates: [
+              {
+                name: "red-for-a",
+                when: "afterMerge",
+                run: async (ctx) => {
+                  if (ctx.assignment?.entry.tag !== "WALL-A")
+                    return { ok: true, message: "clean" };
+                  denyFile(obstructed);
+                  return { ok: false, message: "WALL-A is refused" };
+                },
+              },
+            ],
             setupWorktree: async (ctx: WorktreeSetupContext) => {
               if (ctx.worktreeKey !== "CARRY-B") return undefined;
               try {
@@ -13986,7 +13742,7 @@ describe("Dispatcher fanout — a merge-stage throw outside the ledger rewrite c
     // landing ahead of the wall…
     expect(heldWait).toBeUndefined();
     expectNoFindings(blownWaitsInAgentBodies());
-    // …the obstruction still stands, so the marker write really refused…
+    // …the obstruction still stands, so the record write really refused…
     expect(lstatSync(obstructed).isDirectory()).toBe(true);
     // …both agents ran and were paid for, so CARRY-B's span exists and the
     // wall is a merge stage's, not a batch that never reached one…

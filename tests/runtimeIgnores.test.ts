@@ -21,7 +21,6 @@ import {
 } from "../src/runtimeIgnores.ts";
 import {
   invocationsPath,
-  mergingMarkerPath,
   STATE_ROOT_NAMES,
   tickVerdictPath,
 } from "../src/paths.ts";
@@ -192,15 +191,6 @@ describe("ensureRuntimeIgnores — the runtime files a tick drops", () => {
   });
 });
 
-// Mechanism pin (RUNTIME-IGNORES-NAMES-MERGING, per spec/jobs.md "Runtime
-// ignores"): the merge stage stakes `<stateRoot>/merging/<slug>.json` before
-// each pick and clears it after, so a crash mid-merge leaves the marker on
-// disk — exactly the moment an operator reaches for `git add`. The seed
-// covered every other runtime dir but not this one, so the crash artifact the
-// next `loop` start refuses on was untracked-visible and addable. The name is
-// the state root's own (`STATE_ROOT_NAMES`, `src/paths.ts`) and the marker
-// path is built by the real accessor, so this drives the real writer through
-// the real reader — git — rather than respelling either side here.
 // Mechanism pin (per spec/loop.md "Every agent invocation leaves a usage
 // row"): a running tick appends one row per returned agent under
 // `<stateRoot>/invocations/<phase>.jsonl`, so the rows of every tick that
@@ -245,35 +235,30 @@ describe("ensureRuntimeIgnores — the usage rows a running tick appends", () =>
   });
 });
 
-describe("ensureRuntimeIgnores — the crash-surviving merge marker", () => {
-  it("RUNTIME_IGNORES names the merging-marker dir", async () => {
+// Mechanism pin (per spec/loop.md "Crash equals stop", *A merge moves trunk
+// once*): the merge stage once staked `<stateRoot>/merging/<slug>.json` around
+// each pick, and the ignore set carried an entry for it. No state exists
+// between a judged candidate and a moved trunk, so no tick writes that
+// directory and the engine's layout names it nowhere — an ignore for it would
+// be a line seeded under every adopter's state root for an artifact the
+// runtime can no longer produce.
+describe("ensureRuntimeIgnores — the retired merge marker", () => {
+  it("the runtime ignore set names no merging dir", () => {
     // Vacuity (.claude/rules/engineering.md, "A green verdict is proven
-    // non-vacuous"): an empty set would leave `status` below judging nothing.
+    // non-vacuous"): both sets below are populated, so neither negative is
+    // read over nothing.
     expect(RUNTIME_IGNORES.length).toBeGreaterThan(0);
-    expect(RUNTIME_IGNORES).toContain(`${STATE_ROOT_NAMES.merging}/`);
-
-    const repo = await makeRepo();
-    try {
-      const stateRoot = join(repo.dir, ".flume");
-      await mkdir(stateRoot, { recursive: true });
-      await ensureRuntimeIgnores(stateRoot);
-      // The marker as an interrupted merge leaves it: git only reports an
-      // ignore for a path it would otherwise see, so write it first.
-      const marker = mergingMarkerPath(stateRoot, "some-entry-tag");
-      await mkdir(dirname(marker), { recursive: true });
-      await writeFile(marker, "{}\n");
-
-      const seen = await gitOut(repo.dir, [
-        "status",
-        "--porcelain",
-        "-uall",
-        "--",
-        ".flume",
-      ]);
-      expect(seen).toBe("?? .flume/.gitignore");
-    } finally {
-      await repo.cleanup();
-    }
+    expect(Object.values(STATE_ROOT_NAMES).length).toBeGreaterThan(0);
+    // The layout first — the set is derived from these names, so an entry
+    // could only come back by the name coming back.
+    expect(Object.values<string>(STATE_ROOT_NAMES)).not.toContain("merging");
+    // And the set itself, read at the entry's own granularity rather than as
+    // one joined blob: an entry is a bare name or a name with the trailing
+    // slash a directory carries (`.claude/rules/posture-sweep.md`, *Standing
+    // lenses*).
+    expect(RUNTIME_IGNORES.map((e) => e.replace(/\/$/, ""))).not.toContain(
+      "merging",
+    );
   });
 });
 

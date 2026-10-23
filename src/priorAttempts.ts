@@ -547,10 +547,10 @@ export class PriorAttemptStore {
    * The root and the one directory beneath it are a contiguous walk, so they
    * go through {@link isDirectoryOrAbsentUnder} (`src/fsProbe.ts`), which
    * composes those rungs for every reader running this descent —
-   * `readMergingMarkers` included; the keyspaces are a fan of siblings under
-   * a root already proven, which is the shape {@link isDirectoryOrAbsent}'s
-   * own list exists for. An errno is not that proof
-   * (`.claude/rules/platform-facts.md`, *win32 reports a path through a
+   * `renderedPromptNames` (`src/renderedPrompts.ts`) included; the keyspaces
+   * are a fan of siblings under a root already proven, which is the shape
+   * {@link isDirectoryOrAbsent}'s own list exists for. An errno is not that
+   * proof (`.claude/rules/platform-facts.md`, *win32 reports a path through a
    * non-directory as not found*), so an errno-keyed silent arm reads one
    * host's obstructed store as an empty one. The state root is where the
    * descent starts: the store is constructed with it, and what stands above

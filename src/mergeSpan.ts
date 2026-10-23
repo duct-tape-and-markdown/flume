@@ -1,8 +1,8 @@
 /**
  * The span carry: a finished span's whole passage onto trunk — the refusal
- * that may decline it before anything is staked, the candidate the span is
- * cherry-picked onto, the `afterMerge` gates that judge that candidate, and
- * the one fast-forward that moves trunk to it.
+ * that may decline it before any candidate is built, the candidate the span
+ * is cherry-picked onto, the `afterMerge` gates that judge that candidate,
+ * and the one fast-forward that moves trunk to it.
  *
  * **Trunk only ever moves forward** (spec/worktrees.md, *Per-entry
  * `afterMerge` revert isolation*). Nothing here picks onto the checkout an
@@ -37,14 +37,13 @@
  * ({@link fastForwardTrunk}) are shared between them, so a batch is the same
  * passage at a width rather than a second spelling of it.
  *
- * So what is not here is what the two do not share: the merge marker a wave
- * stakes before its pick, the blame half of every failure recorded
- * (`StageFailureEntry`, `src/tickVerdict.ts`), the `shipped` consult and the
- * ledger rewrite that retire a tag — handed in as the leg's own landing step
- * ({@link carryMergeSpan}'s `land`), so the sequence calls them where they
- * belong without spelling either — and the verdict rows each leg writes. This
- * module runs the git sequence and answers with the facts of it
- * ({@link SpanCarried}); the leg spells what those facts mean, in its own
+ * So what is not here is what the two do not share: the blame half of every
+ * failure recorded (`StageFailureEntry`, `src/tickVerdict.ts`), the `shipped`
+ * consult and the ledger rewrite that retire a tag — handed in as the leg's
+ * own landing step ({@link carryMergeSpan}'s `land`), so the sequence calls
+ * them where they belong without spelling either — and the verdict rows each
+ * leg writes. This module runs the git sequence and answers with the facts of
+ * it ({@link SpanCarried}); the leg spells what those facts mean, in its own
  * words ({@link SpanNarration}) and on its own surfaces.
  *
  * Both move the branch the primary checkout is on, so a caller reaches them
@@ -231,12 +230,11 @@ type SpanCarried<L> =
  * Carry one span onto trunk and answer with what became of it.
  *
  * The order is the whole of what this function is: refuse to a live foreign
- * claim before anything is staked, build a provisioned candidate at the tip
- * trunk stands at, stake whatever the leg holds for the window before the
- * pick, pick the range onto the candidate, gate the candidate, let the leg
- * land what ships the span on it, and fast-forward trunk to the result. Each
- * step's reason is at the step, in the step's own function — the ones the
- * batch carry below runs over N spans instead of one
+ * claim before any candidate is built, build a provisioned candidate at the
+ * tip trunk stands at, pick the range onto the candidate, gate the candidate,
+ * let the leg land what ships the span on it, and fast-forward trunk to the
+ * result. Each step's reason is at the step, in the step's own function — the
+ * ones the batch carry below runs over N spans instead of one
  * ({@link carryMergeBatch}).
  *
  * That order runs again, once, where trunk declined the move because a writer
@@ -269,14 +267,6 @@ export async function carryMergeSpan<L>(carry: {
   assignment?: GateAssignment;
   /** Where a gate revert's prior-attempt record lands (`priorAttemptRef`, `src/priorAttempts.ts`). */
   ref: PriorAttemptRef;
-  /**
-   * What the leg stakes in the window this carry opens before the pick — a
-   * wave's merge marker, which must be standing before the first commit of the
-   * range lands and must *not* be standing for a span refused ahead of it
-   * (spec/loop.md "Crash equals stop"). No leg has anything to stake after the
-   * pick, so there is one window and it is here.
-   */
-  stake?: () => Promise<void>;
   /**
    * One `afterMerge` gate row and what it cost, handed over as the gate
    * returns rather than collected and answered at the end: a throw past this
@@ -542,7 +532,6 @@ async function carryOntoCandidate<L>(
     tree: candidate,
     base,
     head,
-    ...(carry.stake ? { stake: carry.stake } : {}),
     narrate,
   });
   if (picked.fate === "cherry-pick-conflict") return picked;
@@ -629,8 +618,7 @@ async function carryOntoCandidate<L>(
 
 /**
  * One span a batched merge is asked to carry: the range, the entry whose facts
- * the batch's gates read for it, the marker its leg stakes for it, and the
- * words its own pick is reported in.
+ * the batch's gates read for it, and the words its own pick is reported in.
  *
  * The narration is the single-span vocabulary minus the steps a batch does not
  * take per span — no gate runs over one span of a batch, so nothing reverts one
@@ -644,8 +632,6 @@ interface BatchSpanInput {
   head: string;
   /** The session this span carries, for the batch's gates to read as its own ({@link GateBatchSpan}). */
   assignment?: GateAssignment;
-  /** This span's stake window, on {@link carryMergeSpan}'s terms — before its own pick, never the batch's first. */
-  stake?: () => Promise<void>;
   /** The words this span's own pick is reported in. */
   narrate: Pick<SpanNarration, "pickFailed" | "absorbed" | "merged">;
 }
@@ -799,7 +785,6 @@ export async function carryMergeBatch<L>(carry: {
               tree: candidate,
               base: span.base,
               head: span.head,
-              ...(span.stake ? { stake: span.stake } : {}),
               narrate: span.narrate,
             });
             if (picked.fate === "cherry-pick-conflict") {
@@ -875,8 +860,8 @@ export async function carryMergeBatch<L>(carry: {
 }
 
 /**
- * The live foreign tip claim both carries refuse to, before anything is staked
- * or picked (`liveForeignClaimPid`, `src/tipVerify.ts`).
+ * The live foreign tip claim both carries refuse to, before anything is
+ * picked (`liveForeignClaimPid`, `src/tipVerify.ts`).
  *
  * spec/loop.md "Tip verify — one writer per branch, absorption at the merge",
  * "Harness-driven commits carry no expected-tip bookkeeping — the claim
@@ -919,8 +904,8 @@ type SpanPicked =
   | ({ fate: "picked" } & SpanLanded);
 
 /**
- * Pick one span's range onto the candidate it is handed: the leg's stake
- * window, the range itself, and the facts of where it landed.
+ * Pick one span's range onto the candidate it is handed: the range itself and
+ * the facts of where it landed.
  *
  * One home for the step both carries take — once for a single span
  * ({@link carryMergeSpan}), once per span of a batch
@@ -943,15 +928,10 @@ async function pickSpanRange(pick: {
   base: string;
   /** The span's head — the pick range's upper end. */
   head: string;
-  /** The leg's stake window, before the range. */
-  stake?: () => Promise<void>;
   narrate: Pick<SpanNarration, "pickFailed" | "absorbed">;
 }): Promise<SpanPicked> {
   const { leg, tree, base, head, narrate } = pick;
   const landedOnSha = await git.revParse(tree);
-  // The stake window: whatever the leg needs standing if this pick dies
-  // halfway through the range.
-  await pick.stake?.();
   // The commits of this span trunk already held. A range pick absorbs those
   // rather than refusing over them (`git.cherryPickRange`), so only a real
   // conflict reaches the catch below. The whole range, in order, rather than

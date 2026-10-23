@@ -17,8 +17,8 @@
  * non-directory as not found*): deny the read path, never a parent — and its
  * one converse, that a reader proving absence by descending is exercised by
  * nothing *but* an obstructed ancestor, so a case pinning that reader denies
- * the parent on purpose and says so at the site (`tests/Dispatcher.test.ts`
- * seals the state root above the directory `readMergingMarkers` lists).
+ * the parent on purpose and says so at the site (`tests/priorAttempts.test.ts`
+ * seals the state root above the directory `PriorAttemptStore.readAll` lists).
  * Denied at the read path, the stat stays truthful (the entry really is
  * there) and the failure lands on the read; sealed at a parent instead, an
  * existence gate above the denial takes its absent arm and the case reads
