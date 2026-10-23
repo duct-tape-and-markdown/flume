@@ -235,8 +235,8 @@ const RunnerFactoryValue = z.custom<RunnerFactory>(
   {
     error:
       "must be a factory over { api, provision } returning a runner that " +
-      "supplies run(), runAtBase() and lanes — a built runner value is not " +
-      "one (spec/harness.md, The runner interface)",
+      "supplies run(), runAtBase(), lanes and coverage() — a built runner " +
+      "value is not one (spec/harness.md, The runner interface)",
   },
 );
 

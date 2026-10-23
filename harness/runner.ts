@@ -26,16 +26,13 @@ import type { FlumeApi } from "../src/flumeApi.js";
  * would otherwise name its lines blind to that and discover it after a wave.
  */
 export interface Lane {
-  /** The lane's name, as the consumer's own tooling spells it. */
-  readonly name: string;
   /**
-   * Patterns for the test files this lane does not run, in the consumer's
-   * own glob vocabulary — vitest's `exclude`, cargo's filters. Reported, not
-   * interpreted: the running lane's are rendered verbatim into plan's
-   * `tests[]` and `pins[]` hints (`entryExtension.ts`), which informs
-   * authorship and refuses nothing.
+   * The lane's name, as the consumer's own tooling spells it — a label with
+   * one other reader: a shipped runner selects an idle lane by it when it
+   * asks its tool what that lane holds ({@link LaneCoverage}). What a lane
+   * *covers* is never declared here; the tool answers it.
    */
-  readonly excludes: readonly string[];
+  readonly name: string;
   /**
    * True for the lane `run` and `runAtBase` execute. Exactly one lane
    * carries it — a runner constructed with none or several refuses.
@@ -43,8 +40,46 @@ export interface Lane {
   readonly runs: boolean;
 }
 
-/** The lane a plain, unsplit project has: everything, nothing excluded. */
-const DEFAULT_LANE: Lane = { name: "default", excludes: [], runs: true };
+/** The lane a plain, unsplit project has: one lane, and it runs. */
+const DEFAULT_LANE: Lane = { name: "default", runs: true };
+
+/**
+ * The running lane's coverage, as the consumer's own test tool answered it
+ * (`spec/harness.md`, *The runner interface*) — the fact plan's named-line
+ * hints are rendered from.
+ *
+ * Asked of the tool, never declared beside the lane: a glob list a consumer
+ * keeps in step with its own test config by hand is a second copy of one
+ * truth, checked against nothing any run did, and the copy that drifts is
+ * the one nothing reads (`.claude/rules/engineering.md`, *Derived state is
+ * computed, never restated beside its source*).
+ *
+ * Two arms because a tool that cannot list its own selection is a real
+ * consumer and not an error: plan is then told no coverage is known, with
+ * the reason, rather than told an empty set it would read as "nothing is
+ * left out" (`.claude/rules/engineering.md`, *Loud or nothing*).
+ */
+export type LaneCoverage =
+  | {
+      readonly kind: "known";
+      /**
+       * The test files no judged run reaches — what the tool collects for
+       * this consumer's other lanes and not for the running one, in the
+       * alphabet a run reports its files in.
+       *
+       * Empty is a verdict, not a silence: the tool answered, and the
+       * running lane leaves nothing out.
+       */
+      readonly uncovered: readonly string[];
+    }
+  | {
+      readonly kind: "unknown";
+      /**
+       * Why the tool could not answer, as plan is told it: a tool with no
+       * listing operation at all, or one whose listing failed in this tree.
+       */
+      readonly reason: string;
+    };
 
 /**
  * A shipped runner's declared lanes, defaulted to the single unsplit lane and
@@ -165,7 +200,7 @@ export interface Runner {
    * The one selection any operation adds, and the judge's own: `files`
    * narrows **within** the declared scope, never past it — a line whose test
    * the consumer's scope leaves out is a line no base run reaches, which is
-   * what the lane hints tell plan at authorship ({@link Lane.excludes}).
+   * what the lane hints tell plan at authorship ({@link LaneCoverage}).
    */
   runAtBase(
     names: readonly string[],
@@ -174,11 +209,30 @@ export interface Runner {
     cwd: string,
   ): Promise<RunResult>;
   /**
-   * The runner's declared lanes, and which files each excludes. Read at
-   * chain load, where the running lane's exclusions become part of plan's
-   * named-line hints (`spec/harness.md`, *The runner interface*).
+   * The runner's declared lanes, by name, and which one the two operations
+   * above execute. Read at chain load, where the running lane's name opens
+   * the clause plan's named-line hints carry (`spec/harness.md`, *The runner
+   * interface*).
    */
   readonly lanes: readonly Lane[];
+  /**
+   * What the running lane's coverage leaves out, asked of the consumer's own
+   * test tool in `cwd` (`spec/harness.md`, *The runner interface*).
+   *
+   * Synchronous, and that is the interface's decision rather than an
+   * implementation's: the one reader is the hint a phase's `promptArgs` hook
+   * renders, and that hook is synchronous, so a runner handing back a promise
+   * here could not be read by the only thing that reads it. A listing is one
+   * spawn against a collected file set, not a run, and the hints that carry
+   * it are built lazily — nothing pays for this until a prompt renders one.
+   *
+   * Reports a fact and never a verdict: a tool that cannot answer says so
+   * with its reason and nothing downstream refuses over it, because an
+   * entry's `files` is a prediction build is not held to
+   * (`.claude/rules/engine-boundary.md`, *Routing rule (plan, build, and
+   * interactive sessions)*).
+   */
+  coverage(cwd: string): LaneCoverage;
 }
 
 /**

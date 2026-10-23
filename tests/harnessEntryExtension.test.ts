@@ -26,7 +26,7 @@ import {
   GOAL_RANK_FIELD,
   entryExtension,
 } from "../harness/index.ts";
-import type { Declaration, Lane } from "../harness/index.ts";
+import type { Declaration, Lane, LaneCoverage } from "../harness/index.ts";
 import { parsePendingQueue, renderSchemaForPrompt } from "../src/index.ts";
 // The naming rule, not the package surface: a fixture composing an entry's
 // own file takes the engine's spelling of `<tag>.json` rather than a second
@@ -445,20 +445,44 @@ it("the rendered contract-touching hint names the contracts two tick children sh
 });
 
 /**
- * A split suite's lanes, as a consumer's runner reports them: the lane that
- * runs excludes two globs, the idle one excludes something else entirely so
- * a hint quoting the wrong lane is visible.
+ * A split suite's lanes, as a consumer's runner reports them: a name and
+ * whether it runs, and nothing at all about what either holds.
  */
 const SPLIT: readonly Lane[] = [
-  { name: "fast", excludes: ["tests/**/*.slow.test.ts", "bench/**"], runs: true },
-  { name: "nightly", excludes: ["tests/unit/**"], runs: false },
+  { name: "fast", runs: true },
+  { name: "nightly", runs: false },
 ];
 
 /** The lane that runs, read off the declaration above rather than respelled. */
 const RUNNING = SPLIT[0]!;
 
-/** The lane that does not run — whose exclusions plan is told nothing about. */
+/** The lane that does not run — the one a hint must not be quoting. */
 const IDLE = SPLIT[1]!;
+
+/**
+ * What that consumer's test tool answered about the running lane: two files
+ * no judged run reaches. Two, because one would pass a hint that names the
+ * first file it is handed and drops the rest.
+ */
+const UNCOVERED = ["tests/widget.slow.test.ts", "bench/throughput.test.ts"];
+
+/** That answer, as a runner reports it. */
+const READ: LaneCoverage = { kind: "known", uncovered: UNCOVERED };
+
+/** And the answer a tool with no listing operation leaves instead. */
+const UNREADABLE_REASON = "the declared command reports names and lists nothing";
+const UNREAD: LaneCoverage = { kind: "unknown", reason: UNREADABLE_REASON };
+
+/**
+ * The composition every lane case below reads its hints off: the split lanes,
+ * and a coverage read that answers whatever the case states.
+ *
+ * The read is handed as the function the composition takes, not an answer, so
+ * what these cases drive is the deferral the real chain relies on — a hint
+ * asked for is a tool asked, and a hint nobody reads is a tool never spawned.
+ */
+const composed = (coverage: LaneCoverage = READ): ReturnType<typeof entryExtension> =>
+  entryExtension(undefined, { lanes: SPLIT, coverage: () => coverage });
 
 /** One field's hint off a composed extension, or a failure naming the field. */
 const hintOf = (extension: ReturnType<typeof entryExtension>, field: string): string => {
@@ -490,59 +514,82 @@ it("the laneTests[] hint announces the CI lanes its own schema accepts", () => {
   expect(laneless).toContain("no CI lane");
 });
 
-it("the tests[] hint names the globs the running lane excludes", () => {
-  // Non-vacuity: the lane under test really excludes something, so the
-  // assertions below are about globs rather than about an empty list.
-  expect(RUNNING.excludes.length).toBeGreaterThan(0);
+it("the tests[] hint names the files the declared scope leaves out", () => {
+  // Non-vacuity: the read under test really answered with files, so what
+  // follows is about a named set rather than about an empty one.
+  expect(UNCOVERED.length).toBeGreaterThan(1);
 
-  const hint = hintOf(entryExtension(undefined, { lanes: SPLIT }), "tests");
+  const hint = hintOf(composed(), "tests");
 
-  for (const glob of RUNNING.excludes) expect(hint).toContain(glob);
+  for (const file of UNCOVERED) expect(hint).toContain(file);
   expect(hint).toContain(RUNNING.name);
 
-  // The running lane's, not every lane's: a hint naming what the idle lane
-  // skips would send plan away from the files the judge does reach.
+  // The running lane's, not every lane's: a hint naming the lane nobody runs
+  // would send plan away from the files the judge does reach.
   expect(hint).not.toContain(IDLE.name);
-  for (const glob of IDLE.excludes) expect(hint).not.toContain(glob);
 
   // And it reaches plan: the hint is what the engine's own renderer puts in
   // the schema block, not a string this module keeps to itself.
-  expect(renderSchemaForPrompt(entryExtension(undefined, { lanes: SPLIT }))).toContain(hint);
+  expect(renderSchemaForPrompt(composed())).toContain(hint);
 });
 
-it("the laneTests[] hint names the globs the running lane excludes", () => {
-  expect(RUNNING.excludes.length).toBeGreaterThan(0);
+it("the laneTests[] hint names the files the declared scope leaves out", () => {
+  expect(UNCOVERED.length).toBeGreaterThan(1);
 
-  const hint = hintOf(entryExtension(undefined, { lanes: SPLIT }), "laneTests");
+  const hint = hintOf(composed(), "laneTests");
 
-  for (const glob of RUNNING.excludes) expect(hint).toContain(glob);
+  for (const file of UNCOVERED) expect(hint).toContain(file);
   expect(hint).toContain(RUNNING.name);
   expect(hint).not.toContain(IDLE.name);
-  for (const glob of IDLE.excludes) expect(hint).not.toContain(glob);
 
-  expect(renderSchemaForPrompt(entryExtension(undefined, { lanes: SPLIT }))).toContain(hint);
+  expect(renderSchemaForPrompt(composed())).toContain(hint);
 });
 
-it("the pins[] hint names the globs the running lane excludes", () => {
-  expect(RUNNING.excludes.length).toBeGreaterThan(0);
+it("the pins[] hint names the files the declared scope leaves out", () => {
+  expect(UNCOVERED.length).toBeGreaterThan(1);
 
-  const hint = hintOf(entryExtension(undefined, { lanes: SPLIT }), "pins");
+  const hint = hintOf(composed(), "pins");
 
-  for (const glob of RUNNING.excludes) expect(hint).toContain(glob);
+  for (const file of UNCOVERED) expect(hint).toContain(file);
   expect(hint).toContain(RUNNING.name);
   expect(hint).not.toContain(IDLE.name);
-  for (const glob of IDLE.excludes) expect(hint).not.toContain(glob);
 
-  expect(renderSchemaForPrompt(entryExtension(undefined, { lanes: SPLIT }))).toContain(hint);
+  expect(renderSchemaForPrompt(composed())).toContain(hint);
 });
 
-it("a running lane with no exclusions renders the hint without a lane clause", () => {
-  const unsplit: readonly Lane[] = [{ name: "default", excludes: [], runs: true }];
-  const quiet = entryExtension(undefined, { lanes: unsplit });
+it("a tool that cannot answer coverage makes the hint say none is known", () => {
+  // Non-vacuity: the arm under test is the one a runner with no listing
+  // operation reports, and it carries a reason rather than a bare flag.
+  expect(UNREAD.kind).toBe("unknown");
+
+  for (const field of NAMED_LINE_FIELDS) {
+    const hint = hintOf(composed(UNREAD), field);
+
+    // Said out loud, with the tool's own reason: plan is choosing titles
+    // against a judge whose reach nobody can state, and the silence an
+    // unanswered read would leave reads as "every file is reachable".
+    expect(hint).toContain("no coverage");
+    expect(hint).toContain(UNREADABLE_REASON);
+    expect(hint).toContain(RUNNING.name);
+
+    // Not the answered clause, and not the empty one: three readings, three
+    // renderings, and this is the middle one.
+    expect(hint).not.toContain("does not reach");
+    expect(hint).not.toBe(hintOf(entryExtension(), field));
+  }
+
+  expect(renderSchemaForPrompt(composed(UNREAD))).toContain(
+    hintOf(composed(UNREAD), "tests"),
+  );
+});
+
+it("a running lane that leaves nothing out renders the hint without a lane clause", () => {
+  const quiet = composed({ kind: "known", uncovered: [] });
   const laneless = entryExtension();
 
-  // Nothing excluded, nothing said: the hints are byte-identical to the ones
-  // a runner that declared no lanes at all composes.
+  // The tool answered and nothing is left out, so there is nothing to say:
+  // the hints are byte-identical to the ones a composition handed no runner
+  // at all produces.
   for (const field of NAMED_LINE_FIELDS) {
     expect(hintOf(quiet, field)).toBe(hintOf(laneless, field));
   }
@@ -550,16 +597,34 @@ it("a running lane with no exclusions renders the hint without a lane clause", (
   // And the clause it is missing is a real one — without this the case above
   // passes over a composition that never renders a lane clause for anyone.
   for (const field of NAMED_LINE_FIELDS) {
-    expect(hintOf(entryExtension(undefined, { lanes: SPLIT }), field)).not.toBe(
-      hintOf(laneless, field),
-    );
+    expect(hintOf(composed(), field)).not.toBe(hintOf(laneless, field));
   }
 
   // The clause is the only difference: every other field renders the same
   // whatever the lanes, so nothing else moved with it.
   for (const field of PACKAGE_FIELDS.filter((f) => !NAMED_LINE_FIELDS.includes(f))) {
-    expect(hintOf(entryExtension(undefined, { lanes: SPLIT }), field)).toBe(hintOf(laneless, field));
+    expect(hintOf(composed(), field)).toBe(hintOf(laneless, field));
   }
+});
+
+it("a coverage read nothing asks about is never made, and is made once when it is", () => {
+  let asked = 0;
+  const extension = entryExtension(undefined, {
+    lanes: SPLIT,
+    coverage: () => {
+      asked += 1;
+      return READ;
+    },
+  });
+
+  // Composition alone spawns nothing: every chain load composes this
+  // extension and most of them — `flume status`, a queue parse, a gate
+  // reading the ledger — never render a hint.
+  expect(asked).toBe(0);
+
+  // And the three fields carrying the clause are three readers of one fact.
+  for (const field of NAMED_LINE_FIELDS) expect(hintOf(extension, field)).toContain(RUNNING.name);
+  expect(asked).toBe(1);
 });
 
 it("an entry whose interface carries all three parts parses", () => {

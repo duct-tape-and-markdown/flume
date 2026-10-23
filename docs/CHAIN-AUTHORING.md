@@ -448,11 +448,19 @@ the operations below. The work is not the signatures, it is what they return.
   checkout of a base sha and runs the same names there — a provisioned
   checkout, and in a compiled language a build, per judged entry. That
   recurring cost is usually the deciding one.
-- `lanes` is declared rather than discovered, and the running lane's exclusions
-  become plan's authorship hints.
+- `lanes` is declared rather than discovered — each lane's name, and which one
+  the two operations above run. A lane says nothing about what it holds.
+- `coverage` is where what a lane holds comes from: your tool's own answer for
+  the scope you declared, reported as the files no judged run reaches, and
+  those become plan's authorship hints. A tool with no listing operation
+  reports that no coverage is known, with the reason, and plan is told exactly
+  that — the one thing it must not be handed is an empty set, which reads as
+  "every file is reachable". It is synchronous, because the hint that reads it
+  is rendered inside a synchronous `promptArgs` hook.
 
 `Runner`, `RunnerFactory`, `RunnerContext`, `RunResult`, `NamedResult`,
-`TestFailure` and `Lane` are exported from `@dtmd/flume/harness`, and
+`TestFailure`, `Lane` and `LaneCoverage` are exported from
+`@dtmd/flume/harness`, and
 `vitestRunner()` and `scriptRunner()` are two working implementations of
 `Runner` to read against — one over a tool's report, one over a command's
 stdout, whose `ScriptReader` and `ScriptReport` are exported beside them.

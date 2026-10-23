@@ -65,13 +65,16 @@ export const declaration: DeclarationInput = {
   scopeWritesToEntry: false,
 
   runner: vitestRunner({
-    // vitest.config.ts: the default run excludes the integration lane. The
-    // running lane's exclusions are rendered into plan's named-line hints, so
-    // plan is told at authorship which globs no judge reaches — informed,
-    // never refused for a prediction.
+    // The two lanes vitest.config.ts collects, each named as its own
+    // `--mode` spells it: the default run is the fast lane the judge runs,
+    // and `--mode integration` is the one it does not (spec/worktrees.md,
+    // *The default test lane must stay fast*). Neither states what it holds —
+    // the runner asks vitest, and what the fast lane leaves out is rendered
+    // into plan's named-line hints, so plan is told at authorship which files
+    // no judge reaches — informed, never refused for a prediction.
     lanes: [
-      { name: "default", excludes: ["**/*.integration.test.ts"], runs: true },
-      { name: "integration", excludes: [], runs: false },
+      { name: "default", runs: true },
+      { name: "integration", runs: false },
     ],
   }),
 

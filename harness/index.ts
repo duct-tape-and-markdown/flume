@@ -6,6 +6,7 @@
 
 export type {
   Lane,
+  LaneCoverage,
   NamedResult,
   RunResult,
   Runner,

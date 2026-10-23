@@ -34,6 +34,7 @@ import type { GateBatchSpan, GateContext, GateSite } from "../src/Gate.ts";
 import { batchGateContext, mergeBatchWidth } from "../src/gateBatch.ts";
 import type { Chain, Phase } from "../src/Phase.ts";
 import type { PendingEntry } from "../src/PendingSchema.ts";
+import { NO_COVERAGE } from "./helpers/stubRunner.ts";
 
 const BASE_SHA = "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c";
 const CWD = "/tmp/a-tree";
@@ -104,7 +105,8 @@ const fakeRunner = (
 ): { runner: Runner; asked: Asked } => {
   const asked: Asked = { run: [], runAtBase: [] };
   const runner: Runner = {
-    lanes: [{ name: "default", excludes: [], runs: true }],
+    lanes: [{ name: "default", runs: true }],
+    coverage: () => NO_COVERAGE,
     run: async (names, cwd) => {
       asked.run.push({ names, cwd });
       return answer(merged, names);
@@ -569,7 +571,8 @@ describe("the judge", () => {
   it("refuses loudly when the runner answers fewer names than it was asked", async () => {
     const line = "the widget refuses a negative count";
     const runner: Runner = {
-      lanes: [{ name: "default", excludes: [], runs: true }],
+      lanes: [{ name: "default", runs: true }],
+    coverage: () => NO_COVERAGE,
       run: async () => ({
         ok: true,
         passed: 1,

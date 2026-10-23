@@ -22,7 +22,7 @@
  * Not *.test.ts, so neither vitest lane collects it as a suite of its own.
  */
 
-import type { RunResult, Runner } from "../../harness/runner.ts";
+import type { LaneCoverage, RunResult, Runner } from "../../harness/runner.ts";
 
 /**
  * What a runner reports for a suite it never ran: green over nothing. The
@@ -38,7 +38,17 @@ export const EMPTY_RUN: RunResult = {
 };
 
 /**
- * A runner answering the three operations — what a declared factory returns.
+ * What a runner reports for a coverage read it cannot make: no coverage
+ * known, which renders as the clause that says so rather than as an empty
+ * set a hint would read as "nothing is left out".
+ */
+export const NO_COVERAGE: LaneCoverage = {
+  kind: "unknown",
+  reason: "the runner stand-in lists nothing",
+};
+
+/**
+ * A runner answering the operations a declared factory returns.
  *
  * Its lanes are the single unsplit one, the shape a real runner must carry:
  * a runner constructed with no running lane is refused at construction
@@ -48,5 +58,6 @@ export const EMPTY_RUN: RunResult = {
 export const stubRunner: Runner = {
   run: () => Promise.resolve(EMPTY_RUN),
   runAtBase: () => Promise.resolve(EMPTY_RUN),
-  lanes: [{ name: "default", excludes: [], runs: true }],
+  lanes: [{ name: "default", runs: true }],
+  coverage: () => NO_COVERAGE,
 };

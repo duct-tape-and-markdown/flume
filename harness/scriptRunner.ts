@@ -73,6 +73,7 @@ import { escapesRoot, gitPath } from "../src/paths.js";
 import { resolveLanes } from "./runner.js";
 import type {
   Lane,
+  LaneCoverage,
   NamedResult,
   RunResult,
   Runner,
@@ -266,10 +267,14 @@ export interface ScriptRunnerOptions {
    */
   read?: ScriptReader;
   /**
-   * The consumer's lanes. Defaults to the single unsplit lane; a consumer
-   * whose validator splits — a fast check and a slow one — declares both
-   * here, and the running lane's exclusions are rendered into plan's
-   * `tests[]` and `pins[]` hints (`spec/harness.md`, *The runner interface*).
+   * The consumer's lanes, by name. Defaults to the single unsplit lane; a
+   * consumer whose validator splits — a fast check and a slow one — declares
+   * both here, and the running lane's name opens the clause plan's named-line
+   * hints carry (`spec/harness.md`, *The runner interface*).
+   *
+   * What a lane covers is not declared: it is the tool's answer, and a
+   * declared command is a tool with no listing operation, so this runner
+   * reports no coverage known ({@link NO_COVERAGE}).
    */
   lanes?: readonly Lane[];
 }
@@ -303,6 +308,26 @@ const reportOf = (names: readonly NamedResult[]): RunResult => ({
  * tree at a sha and the consumer's own provisioning, and only the chain load
  * holds either.
  */
+/**
+ * What this runner answers a coverage read with (`spec/harness.md`, *The
+ * runner interface*): a declared command reports on the names it was handed
+ * and has no operation that lists what it would check, so plan is told no
+ * coverage is known rather than handed an empty set it would read as "the
+ * running lane leaves nothing out".
+ *
+ * A consumer whose validator *can* list its own selection writes a
+ * `RunnerFactory` of its own over the same operations — the escape hatch
+ * every unusual tool already takes, rather than a knob here that every other
+ * consumer of this runner would have to decline.
+ */
+const NO_COVERAGE: LaneCoverage = {
+  kind: "unknown",
+  reason:
+    "a script runner's declared command reports on the names it is given " +
+    "and lists nothing, so what its lanes collect is not a question this " +
+    "tool answers",
+};
+
 export function scriptRunner(options: ScriptRunnerOptions): RunnerFactory {
   const lanes = resolveLanes("scriptRunner", options.lanes);
   const args = options.args ?? [];
@@ -321,6 +346,8 @@ export function scriptRunner(options: ScriptRunnerOptions): RunnerFactory {
 
   return ({ api, provision }: RunnerContext): Runner => ({
     lanes,
+
+    coverage: () => NO_COVERAGE,
 
     run: (names, cwd) => runIn(cwd, names),
 

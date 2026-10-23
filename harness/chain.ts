@@ -150,11 +150,18 @@ export function harnessChain(options: HarnessChainOptions): Chain {
 
   /**
    * The entry extension, composed ahead of every prompt that renders it and
-   * behind the runner that informs it: the running lane's exclusions ride
-   * the `tests[]` and `pins[]` hints, so plan names its lines already knowing
-   * which globs the judge will not reach (`spec/harness.md`, *The runner
-   * interface*). Told once, at authorship — nothing downstream refuses an
-   * entry over where its `files` predicted the work would land.
+   * behind the runner that informs it: the running lane's name and what its
+   * coverage leaves out ride the `tests[]` and `pins[]` hints, so plan names
+   * its lines already knowing which files the judge will not reach
+   * (`spec/harness.md`, *The runner interface*). Told once, at authorship —
+   * nothing downstream refuses an entry over where its `files` predicted the
+   * work would land.
+   *
+   * The coverage goes in as the read rather than its answer: it costs a
+   * spawn of the consumer's test tool, and this composition happens on every
+   * chain load — `flume status` included, where no hint is ever rendered.
+   * Asked at the repository root, which is the tree the suite the judge runs
+   * is scoped against.
    *
    * The declared CI lanes ride it too, and those a parse *does* refuse on: a
    * `laneTests[]` line is owed to its lane, so a lane this declaration never
@@ -164,6 +171,7 @@ export function harnessChain(options: HarnessChainOptions): Chain {
    */
   const extension = entryExtension(options.entryFields, {
     lanes: runner.lanes,
+    coverage: () => runner.coverage(api.paths.repoRoot),
     ci: declaration.ci,
   });
 

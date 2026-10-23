@@ -114,6 +114,47 @@ const soloProject = async (slug: string, body: string): Promise<string> => {
   return dir;
 };
 
+/** The one name the judged file below carries, asserted from both sides. */
+const JUDGED = "the lane that runs collects this one";
+
+/**
+ * A vitest project whose config collects a different set per mode, holding one
+ * file in each of the three states a coverage read tells apart: one the
+ * running lane reaches, one the declared scope excludes, and one only the idle
+ * lane's own mode collects.
+ *
+ * Real config, real files, no git: what the coverage read is judged on is
+ * vitest's own answer about a project it collected, never a listing written by
+ * the tester's hand (`.claude/rules/engineering.md`, *A seam gate reads what
+ * the real writer wrote*).
+ */
+const twoLaneProject = async (slug: string): Promise<string> => {
+  const dir = await mkTempDir(`flume-harness-runner-${slug}-`);
+  await put(dir, "package.json", `{ "name": "two-lane", "private": true, "type": "module" }\n`);
+  await put(
+    dir,
+    "vitest.config.ts",
+    `import { defineConfig } from "vitest/config";
+export default defineConfig(({ mode }) => ({
+  test:
+    mode === "slow"
+      ? { include: ["tests/**/*.slow.test.ts"], exclude: ["**/node_modules/**"] }
+      : {
+          include: ["tests/**/*.test.ts"],
+          exclude: ["**/node_modules/**", "**/*.slow.test.ts"],
+        },
+}));
+`,
+  );
+  const oneCase = (title: string): string =>
+    `import { expect, it } from "vitest";\n\nit(${JSON.stringify(title)}, () => {\n  expect(1).toBe(1);\n});\n`;
+  await put(dir, "tests/widget.test.ts", oneCase(JUDGED));
+  await put(dir, "tests/widget.extra.test.ts", oneCase("the declared scope leaves this one out"));
+  await put(dir, "tests/widget.slow.test.ts", oneCase("only the slow lane collects this one"));
+  await link(dir);
+  return dir;
+};
+
 /** The test file as the base commit holds it: one name, and it needs "base". */
 const BASE_TEST = `import { describe, expect, it } from "vitest";
 import { widget } from "../src/widget.ts";
@@ -293,7 +334,9 @@ interface Recording {
   /**
    * What reaching vitest itself takes, which every recorded spawn opens
    * with — asked of the same resolver the stand-in forwards through, so the
-   * assertions below read the appended tail and never re-spell the head.
+   * assertions below read the appended tail and never re-spell the head. The
+   * subcommand is not part of it: each operation names its own, so it is the
+   * first word of every tail asserted below.
    */
   readonly reaching: readonly string[];
   /** The arguments each spawn was handed, in spawn order. */
@@ -648,7 +691,8 @@ describe("the vitest runner", () => {
       expect(spawns).toHaveLength(2);
       for (const args of spawns) {
         const appended = args.slice(rec.reaching.length);
-        expect(appended.slice(0, 2 + SCOPE.length)).toEqual([
+        expect(appended.slice(0, 3 + SCOPE.length)).toEqual([
+          "run",
           "--reporter=json",
           `--outputFile=${toldReport(appended)}`,
           ...SCOPE,
@@ -684,6 +728,7 @@ describe("the vitest runner", () => {
       const spawns = await rec.spawns();
       expect(spawns).toHaveLength(1);
       expect(spawns[0]!.slice(rec.reaching.length)).toEqual([
+        "run",
         "--reporter=json",
         `--outputFile=${toldReport(spawns[0]!)}`,
         ...SCOPE,
@@ -714,6 +759,7 @@ describe("the vitest runner", () => {
       const file = toldReport(spawns[0]!);
       expect(spawns[0]).toEqual([
         ...rec.reaching,
+        "run",
         "--reporter=json",
         `--outputFile=${file}`,
       ]);
@@ -926,18 +972,20 @@ describe("the vitest runner", () => {
     });
   });
 
-  it("reports its lanes and the files each excludes", () => {
+  it("reports its lanes by name and nothing about what they hold", () => {
     const declared: Lane[] = [
-      { name: "fast", excludes: ["**/*.integration.test.ts"], runs: true },
-      { name: "integration", excludes: ["**/*.unit.test.ts"], runs: false },
+      { name: "fast", runs: true },
+      { name: "integration", runs: false },
     ];
     expect(vitestRunner({ lanes: declared })(ctx).lanes).toEqual(declared);
+    // A name and a flag, and no third key: what a lane covers is the tool's
+    // answer, so there is nothing here for a consumer to keep in step with
+    // its own vitest config by hand.
+    expect(Object.keys(declared[0]!)).toEqual(["name", "runs"]);
 
-    // Unsplit by default: one lane, nothing excluded — no consumer inherits
+    // Unsplit by default: one lane, and it runs — no consumer inherits
     // another's split.
-    expect(vitestRunner()(ctx).lanes).toEqual([
-      { name: "default", excludes: [], runs: true },
-    ]);
+    expect(vitestRunner()(ctx).lanes).toEqual([{ name: "default", runs: true }]);
 
     // Which lane the judge runs is declared, never guessed.
     expect(() => vitestRunner({ lanes: declared.map((l) => ({ ...l, runs: false })) })).toThrow(
@@ -947,6 +995,57 @@ describe("the vitest runner", () => {
       /exactly one lane must carry `runs`, got 2 of 2/,
     );
     expect(() => vitestRunner({ lanes: [] })).toThrow(/no lanes/);
+  });
+
+  it("a running lane's coverage is read from the tool for the declared scope", async () => {
+    const dir = await twoLaneProject("coverage");
+    try {
+      const declared = vitestRunner({
+        lanes: [
+          { name: "fast", runs: true },
+          { name: "slow", runs: false },
+        ],
+        scope: ["--exclude", "**/*.extra.test.ts"],
+      })(ctx);
+
+      // The seam, and the vacuity pin with it: the run the coverage read
+      // claims to describe is driven here against the same project, so the
+      // file it collected is vitest's own answer rather than the tester's.
+      const run = await declared.run([JUDGED], dir);
+      expect(run.names[0]!.carried).toBe(true);
+      expect(run.names[0]!.files).toEqual(["tests/widget.test.ts"]);
+
+      const coverage = declared.coverage(dir);
+      if (coverage.kind !== "known")
+        throw new Error(`the listing did not answer: ${coverage.reason}`);
+
+      // Both narrowings, named: the file the declared scope excludes and the
+      // file only the idle lane's mode collects. The judged file is absent,
+      // because the judge reaches it.
+      expect([...coverage.uncovered].sort()).toEqual([
+        "tests/widget.extra.test.ts",
+        "tests/widget.slow.test.ts",
+      ]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("a listing vitest cannot produce leaves no coverage known rather than an empty set", async () => {
+    // A tree with no dependencies at all: the listing cannot be spawned, and
+    // the arm that matters is which answer that produces. An empty
+    // `uncovered` would read as "the running lane leaves nothing out", which
+    // is the confident wrong answer (`.claude/rules/engineering.md`, *Loud or
+    // nothing*).
+    const dir = await mkTempDir("flume-harness-runner-unlistable-");
+    try {
+      const coverage = vitestRunner()(ctx).coverage(dir);
+      expect(coverage.kind).toBe("unknown");
+      if (coverage.kind !== "unknown") throw new Error("the listing answered");
+      expect(coverage.reason).toContain("vitest does not resolve");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("refuses a base run it cannot judge: no files to lay down, or a file absent from the tree", async () => {
@@ -1040,7 +1139,10 @@ describe("the vitest runner", () => {
       const probe = invoke(fixture);
       const captured = await captureRun(
         probe.command,
-        [...probe.args, "--reporter=json"],
+        // The subcommand is the operation's, not the invocation's, so a probe
+        // spawning the invocation itself names it the way the runner does —
+        // without it vitest watches instead of running.
+        [...probe.args, "run", "--reporter=json"],
         fixture,
       );
       expect(captured.status).toBe(0);
@@ -1137,7 +1239,7 @@ describe("the vitest runner", () => {
       const invocation = resolveVitest(solo);
       const captured = await captureRun(
         invocation.command,
-        [...invocation.args, "--reporter=json"],
+        [...invocation.args, "run", "--reporter=json"],
         solo,
       );
       expect(captured.status).not.toBe(0);
@@ -1594,17 +1696,25 @@ describe("the script runner", () => {
     },
   );
 
-  it("reports its lanes and refuses a set naming no running lane", () => {
+  it("reports its lanes, answers no coverage, and refuses a set naming no running lane", () => {
     const declared: Lane[] = [
-      { name: "fast", excludes: ["checks/slow/**"], runs: true },
-      { name: "slow", excludes: ["checks/fast/**"], runs: false },
+      { name: "fast", runs: true },
+      { name: "slow", runs: false },
     ];
-    expect(scriptRunner({ command: "check", lanes: declared })(ctx).lanes).toEqual(declared);
+    const runner = scriptRunner({ command: "check", lanes: declared })(ctx);
+    expect(runner.lanes).toEqual(declared);
 
-    // Unsplit by default, as every shipped runner is: one lane, nothing
-    // excluded.
+    // A declared command reports on the names it is handed and lists
+    // nothing, so plan is told no coverage is known — with the reason, never
+    // as an empty set a hint would read as "nothing is left out".
+    const coverage = runner.coverage("/tmp/a-tree");
+    expect(coverage.kind).toBe("unknown");
+    if (coverage.kind !== "unknown") throw new Error("the command listed something");
+    expect(coverage.reason).toContain("lists nothing");
+
+    // Unsplit by default, as every shipped runner is: one lane, and it runs.
     expect(scriptRunner({ command: "check" })(ctx).lanes).toEqual([
-      { name: "default", excludes: [], runs: true },
+      { name: "default", runs: true },
     ]);
 
     // And the invariant is the interface's, so it reads the same here as it

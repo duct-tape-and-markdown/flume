@@ -23,6 +23,7 @@
  * `RunResult` for a judge to rule on.
  */
 
+import { mkdtempSync, rmSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -31,9 +32,11 @@ import { dirname, join, relative } from "node:path";
 import { existsLoud, readFileLoudUnder } from "../src/fsProbe.js";
 import { gitPath, namespacedJoin, plainPath } from "../src/paths.js";
 
+import { captureSync, detailOf } from "./exec.js";
 import { resolveLanes } from "./runner.js";
 import type {
   Lane,
+  LaneCoverage,
   NamedResult,
   RunResult,
   Runner,
@@ -56,30 +59,37 @@ const capture = (
   extra: readonly string[],
   cwd: string,
 ): Promise<CapturedRun> =>
-  captureRun(invocation.command, [...invocation.args, ...extra], cwd);
+  captureRun(invocation.command, [...invocation.args, "run", ...extra], cwd);
 
 /** How the runner reaches vitest from one tree. */
 export interface VitestInvocation {
   /** The binary to spawn. */
   readonly command: string;
   /**
-   * The arguments reaching vitest takes — the entry point and the
-   * subcommand — before everything an operation appends. What the suite *is*
-   * is not one of them: a filter spelled here would be read as part of how
-   * the binary is reached and so could not be stated without restating the
-   * binary, which is what {@link VitestRunnerOptions.scope} is for.
+   * The arguments reaching vitest takes — its entry point — before
+   * everything an operation appends.
+   *
+   * The subcommand is **not** one of them: a run reaches vitest under `run`
+   * and the coverage read under `list`, so a subcommand spelled here would
+   * pin both operations to one of them. Nor is what the suite *is*: a filter
+   * spelled here would be read as part of how the binary is reached and so
+   * could not be stated without restating the binary, which is what
+   * {@link VitestRunnerOptions.scope} is for.
    */
   readonly args: readonly string[];
 }
 
 export interface VitestRunnerOptions {
   /**
-   * The consumer's lanes. Defaults to the single unsplit lane; a project
-   * whose vitest config excludes a slice of its suite from the default run
-   * declares both lanes here, and the running lane's exclusions are rendered
-   * into plan's `tests[]` and `pins[]` hints (`spec/harness.md`, *The runner
-   * interface*) — plan is told which globs no judge will reach, never
-   * refused for having predicted `files` that name one.
+   * The consumer's lanes, by name. Defaults to the single unsplit lane; a
+   * project whose vitest config collects a different set per mode declares
+   * one lane per mode here, naming each as its own `--mode` spells it.
+   *
+   * No lane states what it covers: {@link coverageFor} asks vitest, which is
+   * the only reader of a lane's name beyond the hint that quotes it
+   * (`spec/harness.md`, *The runner interface*). Plan is told which files no
+   * judge will reach, never refused for having predicted `files` that name
+   * one.
    */
   lanes?: readonly Lane[];
   /**
@@ -143,7 +153,7 @@ export function resolveVitest(cwd: string): VitestInvocation {
       `vitestRunner: vitest resolves from ${cwd} but its entry point is missing: ${entry}`,
     );
   }
-  return { command: process.execPath, args: [entry, "run"] };
+  return { command: process.execPath, args: [entry] };
 }
 
 /** The slice of vitest's JSON report this reader consumes. */
@@ -391,6 +401,121 @@ function readRun(
   };
 }
 
+/** What a refusal calls the listing below, as a bare noun phrase. */
+const LIST_SUBJECT = "the JSON listing vitest was told to write";
+
+/** The slice of vitest's `--filesOnly` listing this reader consumes. */
+interface ListedFile {
+  file: string;
+}
+
+/**
+ * Run `body` against a listing file this module owns, and take it away again
+ * however the read ended — {@link withReportFile}'s sibling, told the same
+ * way and for the same reasons, over the one operation that cannot be
+ * asynchronous ({@link Runner.coverage}).
+ */
+function withListFile<T>(body: (file: string) => T): T {
+  const dir = plainPath(mkdtempSync(namespacedJoin(tmpdir(), "flume-vitest-list-")));
+  try {
+    return body(join(dir, "list.json"));
+  } finally {
+    rmSync(namespacedJoin(dir), { recursive: true, force: true });
+  }
+}
+
+/**
+ * The test files one `vitest list` collects in `cwd`, in the alphabet a run
+ * reports its own files in — so a listing and a report name one file one way.
+ *
+ * `list` rather than `run`: `--filesOnly` is the subcommand's own flag and
+ * collects without executing anything, which is the whole reason a coverage
+ * read can be one spawn. Refuses rather than reads an absent or shapeless
+ * listing as an empty suite, which would report every file as uncovered
+ * (`.claude/rules/engineering.md`, *Loud or nothing*); the caller turns a
+ * refusal here into the arm that says no coverage is known.
+ */
+function listFiles(
+  invocation: VitestInvocation,
+  extra: readonly string[],
+  cwd: string,
+): string[] {
+  return withListFile((file) => {
+    captureSync(
+      invocation.command,
+      [...invocation.args, "list", "--filesOnly", `--json=${file}`, ...extra],
+      { cwd },
+    );
+    const raw = readFileLoudUnder(LIST_SUBJECT, dirname(file), file);
+    if (raw === null) {
+      throw new Error(
+        `vitest wrote no JSON listing in ${cwd} — it was told to write one at ` +
+          `${file} and wrote nothing there, so what it collects is unknown.`,
+      );
+    }
+    const listed = JSON.parse(raw) as unknown;
+    if (
+      !Array.isArray(listed) ||
+      listed.some((entry) => typeof (entry as ListedFile | null)?.file !== "string")
+    ) {
+      throw new Error(
+        `vitest's JSON listing in ${cwd} is not a list of files: ${file} held ` +
+          `${raw.length} bytes beginning ${raw.slice(0, 200)}`,
+      );
+    }
+    return (listed as ListedFile[]).map((entry) => gitPath(relative(cwd, entry.file)));
+  });
+}
+
+/**
+ * What the running lane leaves out, asked of vitest (`spec/harness.md`, *The
+ * runner interface*).
+ *
+ * **What the judge reaches** is asked exactly as {@link Runner.run} asks it —
+ * the declared scope and nothing else — because that is the claim being
+ * made, and a selector added here would make it about some other run.
+ *
+ * **What there is to reach** is the same question with each narrowing lifted
+ * in turn: once with the declared scope dropped, and once per idle lane,
+ * selected by the only thing a lane declares — its name, read as vitest's
+ * own `--mode`. A consumer that declared no scope asks the first of those
+ * nowhere, because with nothing to lift it is the question already answered.
+ *
+ * What survives the subtraction is every file this consumer's tool collects
+ * for some selection other than the judge's — the scope's own exclusions and
+ * the other lanes' files alike — which is exactly the set no judge reaches,
+ * since the judge runs the running lane under the declared scope and nothing
+ * else.
+ *
+ * A consumer whose config collects one set under every mode and declared no
+ * scope gets an empty answer, and that is the truthful one: nothing it
+ * declared narrows anything, so nothing is left out. A listing that fails —
+ * vitest unresolvable in this tree, a config that throws on a mode, a
+ * listing that is not one — leaves the arm that says no coverage is known,
+ * carrying what went wrong.
+ */
+function coverageFor(
+  invoke: (cwd: string) => VitestInvocation,
+  scope: readonly string[],
+  lanes: readonly Lane[],
+  cwd: string,
+): LaneCoverage {
+  try {
+    const invocation = invoke(cwd);
+    const covered = new Set(listFiles(invocation, scope, cwd));
+    const collected = new Set(scope.length === 0 ? covered : listFiles(invocation, [], cwd));
+    for (const lane of lanes) {
+      if (lane.runs) continue;
+      for (const file of listFiles(invocation, ["--mode", lane.name], cwd)) {
+        collected.add(file);
+      }
+    }
+    return { kind: "known", uncovered: [...collected].filter((file) => !covered.has(file)) };
+  } catch (err) {
+    return { kind: "unknown", reason: detailOf(err) };
+  }
+}
+
 /**
  * Declare the vitest runner. Every field of `options` is optional, and the
  * defaults describe the unsplit single-lane project whose suite is whatever
@@ -423,6 +548,8 @@ export function vitestRunner(options: VitestRunnerOptions = {}): RunnerFactory {
   return ({ api, provision }: RunnerContext): Runner => {
     return {
       lanes,
+
+      coverage: (cwd) => coverageFor(invoke, scope, lanes, cwd),
 
       async run(names, cwd) {
         return withReportFile(async (reportFile) => {

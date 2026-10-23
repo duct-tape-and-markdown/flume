@@ -29,7 +29,7 @@ import { z } from "zod";
 
 import type { EntryExtension, EntryExtensionField } from "../src/PendingSchema.js";
 import { INBOX_PHASE, type Declaration } from "./declaration.js";
-import type { Lane } from "./runner.js";
+import type { Lane, LaneCoverage } from "./runner.js";
 
 /**
  * The caps the package enforces, in characters. Public because they are the
@@ -230,27 +230,62 @@ export const GOAL_RANK_FIELD = "rank";
 /**
  * What the running lane will not reach, as a clause on the three named-line
  * hints — the reader `spec/harness.md`, *The runner interface* names for
- * `Runner.lanes`.
+ * `Runner.lanes` and `Runner.coverage`.
  *
  * Informs, never refuses. An entry's `files` is a prediction build is not
  * held to, so no gate can rule on where a line's test will land; what plan
- * can be given is the globs at authorship, while it is still choosing which
- * behavior to name. The globs are the consumer's own, in the consumer's own
- * glob vocabulary, so the clause stays as tool-neutral as the hints it rides
- * (`.claude/rules/engine-boundary.md`, *Surface, not prescription*).
+ * can be given is the files at authorship, while it is still choosing which
+ * behavior to name. The files are the test tool's own answer, so the clause
+ * names what no judge reaches rather than a vocabulary a consumer typed
+ * beside its test config (`.claude/rules/engine-boundary.md`, *Surface, not
+ * prescription*).
  *
- * Empty for a runner whose running lane excludes nothing, and for one that
- * declared no lanes at all: a clause naming no glob is a sentence every plan
- * tick pays for and no plan tick can act on.
+ * Three readings, and only the middle one is silent:
+ *
+ * - **No coverage known** — the tool has no listing operation, or its
+ *   listing failed here. Said out loud with the reason: plan is choosing
+ *   titles against a judge whose reach nobody can state, and a silence there
+ *   reads as "everything is reachable" (`.claude/rules/engineering.md`,
+ *   *Loud or nothing*).
+ * - **Known and empty** — the tool answered and the running lane leaves
+ *   nothing out. Nothing to say, and a sentence saying so is one every plan
+ *   tick pays for and no plan tick can act on.
+ * - **Known files** — named, so a line whose test would land in one of them
+ *   is a line plan does not write.
+ *
+ * Empty too where no runner is in hand at all, which is a composition handed
+ * nothing rather than a consumer whose tool said nothing.
  */
-function laneClause(lanes: readonly Lane[]): string {
+function laneClause(lanes: readonly Lane[], coverage: LaneCoverage | undefined): string {
   const running = lanes.find((lane) => lane.runs);
-  if (running === undefined || running.excludes.length === 0) return "";
+  if (running === undefined || coverage === undefined) return "";
+  const lead = `; the lane that runs (${running.name})`;
+  if (coverage.kind === "unknown") {
+    return (
+      `${lead} reports no coverage — ${coverage.reason} — so which files a ` +
+      `line's test can land in and still be judged is not known here`
+    );
+  }
+  if (coverage.uncovered.length === 0) return "";
   return (
-    `; the lane that runs (${running.name}) does not run ` +
-    `${running.excludes.join(", ")}, so a line whose test lands there is ` +
-    `carried by nothing the judge sees`
+    `${lead} does not reach ${coverage.uncovered.join(", ")}, so a line whose ` +
+    `test lands there is carried by nothing the judge sees`
   );
+}
+
+/**
+ * `read`, called at most once however many readers ask.
+ *
+ * The clause above is the one hint value that costs a spawn — the test tool's
+ * own listing ({@link ExtensionContext.coverage}) — and three fields carry
+ * it. Deferred rather than computed at composition because every chain load
+ * composes this extension and most of them never render a prompt: `flume
+ * status`, a queue parse, a gate reading the ledger. Once, because the three
+ * hints are three readers of one fact.
+ */
+function once<T>(read: () => T): () => T {
+  let answer: { value: T } | undefined;
+  return () => (answer ??= { value: read() }).value;
 }
 
 /**
@@ -268,7 +303,9 @@ function laneClause(lanes: readonly Lane[]): string {
  * Built per composition rather than held as a constant, because three of the
  * hints carry {@link laneClause} and one field's schema is held to the
  * declared CI lanes ({@link laneTestsSchema}) — both the consumer's, neither
- * the package's to hold as a constant.
+ * the package's to hold as a constant. Those three carry theirs as a getter:
+ * the clause costs the consumer's test tool a listing, and a composition that
+ * renders no prompt must not pay for one ({@link once}).
  *
  * No hint here names a test tool. The judge speaks to whatever runner the
  * consumer declared (`spec/harness.md`, *The runner interface*), so a hint
@@ -276,7 +313,7 @@ function laneClause(lanes: readonly Lane[]): string {
  * phase a tool half of them do not run.
  */
 function packageFields(context: ExtensionContext) {
-  const lane = laneClause(context.lanes ?? []);
+  const lane = once(() => laneClause(context.lanes ?? [], context.coverage?.()));
   return {
     summary: {
       schema: z.string().min(1).max(ENTRY_CAPS.summary),
@@ -298,7 +335,9 @@ function packageFields(context: ExtensionContext) {
      */
     tests: {
       schema: NamedLinesSchema,
-      hint: `[ "behavior this entry introduces or changes" ] — one per behavior, written as a test title: build titles a passing test with the line verbatim; the judge proves it passes, then proves it fails on the pre-fix tree; the file is build's call${lane}`,
+      get hint() {
+        return `[ "behavior this entry introduces or changes" ] — one per behavior, written as a test title: build titles a passing test with the line verbatim; the judge proves it passes, then proves it fails on the pre-fix tree; the file is build's call${lane()}`;
+      },
     },
     /**
      * A property that already holds and gains its check here — an agreement
@@ -308,7 +347,9 @@ function packageFields(context: ExtensionContext) {
      */
     pins: {
       schema: NamedLinesSchema,
-      hint: `[ "property that already holds and gains its check here" ] — same title discipline as tests[]; judged green, never red on the base${lane}`,
+      get hint() {
+        return `[ "property that already holds and gains its check here" ] — same title discipline as tests[]; judged green, never red on the base${lane()}`;
+      },
     },
     /**
      * A behavior only another host can run — the case a host-gated defect
@@ -320,7 +361,9 @@ function packageFields(context: ExtensionContext) {
      */
     laneTests: {
       schema: laneTestsSchema(context.ci),
-      hint: `[ { "lane": "a declared CI lane's name", "title": "behavior only that lane's host can run" } ] — for a case this host cannot run at all: same title discipline as tests[], written skipped on every other host so the suite reports it skipped and never failed. The judge reports each owed to its lane and never green, so the lane is the proof: a red title files as that lane's finding and a run on the tip reporting it green closes it. A behavior this host can run belongs in tests[]${ciLaneClause(context.ci)}${lane}`,
+      get hint() {
+        return `[ { "lane": "a declared CI lane's name", "title": "behavior only that lane's host can run" } ] — for a case this host cannot run at all: same title discipline as tests[], written skipped on every other host so the suite reports it skipped and never failed. The judge reports each owed to its lane and never green, so the lane is the proof: a red title files as that lane's finding and a run on the tip reporting it green closes it. A behavior this host can run belongs in tests[]${ciLaneClause(context.ci)}${lane()}`;
+      },
     },
     notes: {
       schema: z.string().max(ENTRY_CAPS.notes).optional(),
@@ -419,13 +462,23 @@ export class EntryFieldRemovalError extends Error {
  */
 export interface ExtensionContext {
   /**
-   * The consumer's runner's lanes (`spec/harness.md`, *The runner interface*):
-   * the running lane's exclusions ride the `tests[]`, `pins[]` and
-   * `laneTests[]` hints, so plan is told at authorship which globs no judge
-   * will reach. Informs alone — omitted where no runner is in hand, and a
-   * hint is not something a parse can refuse on.
+   * The consumer's runner's lanes (`spec/harness.md`, *The runner
+   * interface*): the running lane's name opens the clause the `tests[]`,
+   * `pins[]` and `laneTests[]` hints carry. Informs alone — omitted where no
+   * runner is in hand, and a hint is not something a parse can refuse on.
    */
   readonly lanes?: readonly Lane[] | undefined;
+  /**
+   * That runner's coverage read, as a function rather than an answer
+   * (`Runner.coverage`): the answer costs a spawn of the consumer's test
+   * tool, and most compositions of this extension never render a hint at
+   * all. Called at most once per composition, by the first hint read.
+   *
+   * Handed separately from `lanes` because the two are different kinds of
+   * fact: the roster is a static declaration this package refuses on, and
+   * the coverage is what the tool answered about it.
+   */
+  readonly coverage?: (() => LaneCoverage) | undefined;
   /**
    * The CI lanes the declaration carries (`spec/harness.md`, *CI lanes as a
    * findings source*) — the names a `laneTests[]` line's `lane` is held to,
@@ -452,9 +505,9 @@ export interface ExtensionContext {
  * consumer refining `tag` is passed through untouched — the engine composes
  * a refinement there as an intersection over its own mechanical floor.
  *
- * Both halves of {@link ExtensionContext} reach a different half of the
- * composition: `lanes` informs three hints, `ci` is what the `laneTests[]`
- * schema refuses against ({@link laneTestsSchema}). Every composition that
+ * The halves of {@link ExtensionContext} reach different halves of the
+ * composition: `lanes` and `coverage` inform three hints, `ci` is what the
+ * `laneTests[]` schema refuses against ({@link laneTestsSchema}). Every composition that
  * parses a queue is handed `ci` — the chain's and the pending gate's alike —
  * or one field is held to two rules by the two readers of it.
  */
