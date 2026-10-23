@@ -25,6 +25,8 @@ Four autonomous phases — three plan slices (`plan-inbox`, `plan-derive`, `plan
 
 Project conventions for the chain live in `.flume/PROTOCOL.md`.
 
+**A session that runs the loop operates it.** A loop launched from an agent session's shell is that session's to run: it reads a stop, removes `.flume/stop`, wakes phases and relaunches as its own acts, and reports what it did. It never hands those steps back to the human.
+
 **Pushback is the point.** Never silently fill product/UX gaps — challenge them. See .claude/rules/collaboration.md.
 
 ## Common Commands

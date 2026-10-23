@@ -276,8 +276,11 @@ platform that most needs one.
 - **Presence at start refuses the run.** `flume loop` with the flag
   already on disk refuses before any tick, exit 1, naming the flag path — removing
   the flag is the operator's acknowledgement that the stop was seen, and the refusal
-  message says exactly that. A stale flag can therefore never silently swallow a
-  scheduled run: the run refuses loudly until a human acks.
+  message says exactly that. The operator is whoever runs the loop: a human at a
+  terminal, or an agent session that launched it in its own shell, which removes
+  the flag and relaunches as its own act. What the refusal guards is that the run
+  never acknowledges its own stop: a stale flag can never silently swallow a
+  scheduled run, which refuses loudly until its operator acks.
 - **A stopped run's exit code is still the run's.** Stop ends iteration; it does not
   reclassify what already happened. `loopExitCode` decides from the run totals as
   ever (*Exit codes*, below) — a graceful stop after errored ticks with nothing

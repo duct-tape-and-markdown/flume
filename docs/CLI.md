@@ -128,8 +128,9 @@ while the flag is already present rewrites the same empty file and prints the sa
 statement. The verb is discoverability, not a privileged channel: `touch .flume/stop`
 is equally the interface, and nothing distinguishes the two writers. There is
 deliberately no `unstop` / `resume` verb — removing the flag is the operator's own
-acknowledgement that they saw the stop, and an engine verb that removed it would let
-a script ack a stop no human saw. Consumes no positionals; a trailing argument is
+acknowledgement that they saw the stop, and `rm .flume/stop` is the interface as
+`touch` is for the stop. The operator is whoever runs the loop: a human, or the
+agent session that launched it. Consumes no positionals; a trailing argument is
 refused before the flag is written. Exits `0` always; exits `2` if given any
 argument; exits `74` (`EX_IOERR`) when the bay discovery every verb starts with cannot
 hand back a usable root — the state root (`.flume`) is present but will not

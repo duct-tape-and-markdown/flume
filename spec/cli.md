@@ -39,7 +39,9 @@ chain declarations the CLI reads in `spec/chain.md`.
   discoverability, not a privileged channel: `touch` on the same path is equally
   the interface, and nothing distinguishes the two writers. There is deliberately
   no `unstop`/`resume` verb — removing the flag is the operator's acknowledgement,
-  and an engine verb that removes it would let a script ack a stop no human saw.
+  `rm` on the path is the interface as `touch` is for the stop, and the operator is
+  whoever runs the loop, a human or the agent session that launched it
+  (`spec/loop.md`, *Graceful stop — the stop flag*).
 - `log [-n N] [--json]` — observational; prints the last N tick verdicts
   (the declared default `--help` prints) from `tick-verdicts.jsonl` via
   `readTickVerdicts`, oldest
