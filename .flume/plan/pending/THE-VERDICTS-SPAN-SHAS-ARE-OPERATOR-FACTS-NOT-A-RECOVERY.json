@@ -1,0 +1,34 @@
+{
+  "tag": "THE-VERDICTS-SPAN-SHAS-ARE-OPERATOR-FACTS-NOT-A-RECOVERY",
+  "gate": {
+    "kind": "open"
+  },
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/tickVerdict.ts",
+        "description": "`headSha`'s promise and the `merge-walled` row's, both on exported hover text"
+      },
+      {
+        "path": "src/singletonTick.ts",
+        "description": "the revert leg's note on what the two shas buy"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the two case comments restating the retired promise"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "the verdict's span shas are stated as the operator's facts, not a recovery the loop performs: no actor re-picks one and the entry re-runs its agent",
+  "per": {
+    "path": "spec/loop.md",
+    "section": "The tick verdict — one facts artifact"
+  },
+  "acceptance": "each of the three src sites and the two case comments states the shas as facts the operator may carry by hand, and none claims a re-pick that no actor performs",
+  "pins": [],
+  "laneTests": [],
+  "notes": "The section retired the promise. Still asserting it: `headSha`'s doc comment (\"must be re-cherry-pickable from the verdict alone, never re-run at full agent price\"), the `merge-walled` row's last clause, `singletonTick`'s gate-revert note, and two Dispatcher comments (\"recovery, not decoration\"). Exported hover text, so the retired half reads as current (`engineering.md`, *Narration is the ladder's bottom rung*)."
+}

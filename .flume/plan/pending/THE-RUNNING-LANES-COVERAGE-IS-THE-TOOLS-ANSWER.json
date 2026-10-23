@@ -1,8 +1,7 @@
 {
   "tag": "THE-RUNNING-LANES-COVERAGE-IS-THE-TOOLS-ANSWER",
   "gate": {
-    "kind": "parked",
-    "reason": "decision on where a breaking harness-declaration change lands — `.flume/declaration.ts` is outside every phase's fence (`questions/a-breaking-declaration-change-has-no-landing-lane.md`)"
+    "kind": "open"
   },
   "dependsOnForks": [],
   "kind": "work",
@@ -28,6 +27,10 @@
       {
         "path": "tests/harnessEntryExtension.test.ts",
         "description": "the hint cases, which declare lane exclusions today"
+      },
+      {
+        "path": ".flume/declaration.ts",
+        "description": "this consumer's two declared lanes, which state exclusions the cut removes"
       }
     ],
     "retire": []
@@ -49,7 +52,7 @@
   "interface": {
     "changes": "a consumer's lane states a name and which one runs; what a lane covers is asked of its tool",
     "hides": "a glob list the consumer kept in step with its own test config by hand, checked against nothing the run did",
-    "rejected": "keeping the list as an override for a tool that cannot answer — a second source of one truth, and the arm that drifts is the one nothing reads"
+    "rejected": "keeping the list as an override for a tool that cannot answer \u2014 a second source of one truth, and the arm that drifts is the one nothing reads"
   },
-  "notes": "Parked, not blocked: cutting `Lane.excludes` breaks `.flume/declaration.ts`, which declares two lanes with exclusions and sits outside build's fence, so no build commit lands this green. The scope it reads has landed, and the gap is live: the hints render `Lane.excludes` alone, so a consumer narrowing with `scope` is told nothing. Build also measures whether `vitest list --filesOnly --json` answers coverage under the declared scope; if no form does, the no-coverage arm is the whole answer."
+  "notes": "Unparked: build's fence now names `.flume/declaration.ts`, so the `Lane.excludes` cut lands with this consumer's own two lanes in one commit. The gap is live \u2014 the hints render `Lane.excludes` alone, so a consumer narrowing with `scope` is told nothing. Build also measures whether `vitest list --filesOnly --json` answers coverage under the declared scope; if no form does, the no-coverage arm is the whole answer."
 }
