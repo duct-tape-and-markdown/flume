@@ -1,0 +1,55 @@
+{
+  "tag": "THE-PRIOR-ATTEMPT-BLOCK-SPELLS-A-BLAMED-PATH-AS-ONE-LINE",
+  "gate": {
+    "kind": "open"
+  },
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/paths.ts",
+        "description": "the one home for a git-reported path spelled into one line of block text, beside `gitPath`"
+      },
+      {
+        "path": "src/Prompt.ts",
+        "description": "the `<prior-attempt>` block's one-path-per-line renders: the gate's blamed files and the not-shipped footprint"
+      },
+      {
+        "path": "src/builtinGates.ts",
+        "description": "`writablePathsGate`'s `details` lines, the same shape for the same input"
+      },
+      {
+        "path": "harness/declaredGates.ts",
+        "description": "the one hand-rolled copy of the escape, which becomes a call to the shared home"
+      },
+      {
+        "path": "tests/Prompt.test.ts",
+        "description": "beside the prior-attempt render cases"
+      },
+      {
+        "path": "tests/Gate.test.ts",
+        "description": "beside the writable-paths refusal's `failingFiles` and `details` case"
+      },
+      {
+        "path": "tests/paths.test.ts",
+        "description": "the shared spelling's own case"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "a path carrying a newline renders as two file lines in the `<prior-attempt>` block and in `writablePathsGate`'s `details` — one path the retrying agent reads as two",
+  "per": {
+    "path": "spec/loop.md",
+    "section": "Prior-outcome feedback to the retrying tick"
+  },
+  "acceptance": "every one-path-per-line listing the engine renders for an agent — the `<prior-attempt>` block's `failingFiles` and its not-shipped footprint, and `writablePathsGate`'s `details` — spells a path carrying a newline as one line, through one home in `src/paths.ts` that `harness/declaredGates.ts`'s own copy becomes a call to, and each case reds on the raw `join`",
+  "tests": [
+    "a gate-blamed path carrying a newline renders as one line in the prior-attempt block",
+    "a not-shipped record's touched path carrying a newline renders as one line in the prior-attempt block",
+    "a writable-paths refusal spells a violating path carrying a newline as one details line"
+  ],
+  "pins": [],
+  "laneTests": [],
+  "notes": "Three raw sites: src/Prompt.ts:990 (`failingFiles.join`), :1095 (`touchedPathsBlock`), src/builtinGates.ts:800 (`  - ${p}`). Reachable through a shipped gate: `unspellableTouched` (harness/declaredGates.ts:187) escapes its own `details` and puts the raw path on `failingFiles`, which :990 then splits. Git preserves such a path and the engine decodes it NUL-delimited, so the input is real. Fix at the renderers, not at each gate."
+}
