@@ -13483,33 +13483,39 @@ describe("Dispatcher fanout — a merge-stage throw outside the ledger rewrite c
   }
 
   /**
-   * The wall this stage has that is not a refused rewrite: a prior-attempt
-   * record the disk will not take. `mergeError` (`src/waveTick.ts`) holds
-   * every throw out of `drainWaiting`, only one of which is
+   * The trunk-scoped wall this stage has that is not a refused rewrite: the
+   * stale prior-attempt slot a shipped span's ledger commit clears, over a
+   * disk that will not take the removal. `mergeError` (`src/waveTick.ts`)
+   * holds the throws `drainWaiting` leaves by, only one of which is
    * `commitPendingUpdate` refusing, so the carry is driven here from the other
    * side — over a wave whose first pick has already cherry-picked, gated and
    * retired its entry.
    *
-   * A red `afterMerge` gate for STAKE-B alone is the arming: the carry writes
-   * that entry's gate-revert record inside the same hold as the pick
-   * (`src/mergeSpan.ts`), and the write is what refuses. The obstruction is
-   * structural rather than a permission bit, so it denies on every host
-   * (`.claude/rules/platform-facts.md`, "`chmod` denies nothing on win32"): a
-   * directory standing where STAKE-B's record file goes, at the engine's own
-   * spelling of that path (`entryRef` through `priorAttemptPath`) rather than
-   * a second copy of the layout composed here. STAKE-A's gate is green and its
-   * record path untouched, which is what leaves a shipped span behind the wall.
+   * STAKE-B's own `afterMerge` gate is the arming, and it rules *green*: the
+   * clear runs inside `commitAttemptLedger` (`src/waveMerge.ts`), which is the
+   * step the drain declares trunk's (`MergeWallScope`, `src/mergeSpan.ts`), so
+   * the wall it produces is the one that stops the wave. A red gate here would
+   * be the same store refusing one rung down, at a step the carry declares
+   * that span's — which ends that span and carries its siblings, and is a
+   * sibling case's subject rather than this one's.
+   *
+   * The obstruction is structural rather than a permission bit, so it denies
+   * on every host (`.claude/rules/platform-facts.md`, "`chmod` denies nothing
+   * on win32"): a directory standing where STAKE-B's record file goes, at the
+   * engine's own spelling of that path (`entryRef` through `priorAttemptPath`)
+   * rather than a second copy of the layout composed here. STAKE-A's record
+   * path is untouched, which is what leaves a shipped span behind the wall.
    *
    * The gate plants it rather than the arming above, and that is the whole
    * reason this wall is reachable: the store reads every record under the
    * state root once at tick start, so a record path denied before the tick
    * refuses *that* read — loudly, by design — and the tick never reaches a
-   * merge. Denied from inside the gate whose red triggers the write, the read
-   * saw a clean store and the write is the only call left to refuse. The
-   * keyspace directory is made here rather than there, because `denyFile`
-   * creates no missing parent: planted into a keyspace no record has reached
-   * yet, the plant itself throws inside the gate and the write it was meant
-   * to refuse goes through.
+   * merge. Denied from inside the gate that runs one step ahead of the clear,
+   * the read saw a clean store and the removal is the only call left to
+   * refuse. The keyspace directory is made here rather than there, because
+   * `denyFile` creates no missing parent: planted into a keyspace no record
+   * has reached yet, the plant itself throws inside the gate and the clear it
+   * was meant to refuse goes through.
    *
    * One arming, two cases: what the carried verdict names, and the class it
    * declines to name.
@@ -13530,21 +13536,23 @@ describe("Dispatcher fanout — a merge-stage throw outside the ledger rewrite c
       entryRef("STAKE-B"),
     );
     await mkdir(dirname(obstructed), { recursive: true });
-    const redForB: Gate = {
-      name: "red-for-b",
+    const denyBsSlot: Gate = {
+      name: "deny-b-slot",
       when: "afterMerge",
       run: async (ctx) => {
-        if (ctx.assignment?.entry.tag !== "STAKE-B")
-          return { ok: true, message: "clean" };
-        denyFile(obstructed);
-        return { ok: false, message: "STAKE-B is refused" };
+        if (ctx.assignment?.entry.tag === "STAKE-B") denyFile(obstructed);
+        return { ok: true, message: "clean" };
       },
     };
 
     const dispatcher = new Dispatcher({
       chainLoader: staticLoader({
         phases: [
-          makePhase({ name: "build", concurrency: "fanout", gates: [redForB] }),
+          makePhase({
+            name: "build",
+            concurrency: "fanout",
+            gates: [denyBsSlot],
+          }),
         ],
         humanOnly: [],
       }),
@@ -13588,7 +13596,7 @@ describe("Dispatcher fanout — a merge-stage throw outside the ledger rewrite c
     // `tests/helpers/dispatcherFixture.ts`).
     expectNoFindings(blownWaitsInAgentBodies());
     // Vacuity, in the order the wave produced it. The obstruction is still
-    // standing, so the record write it refused really was refused…
+    // standing, so the record removal it refused really was refused…
     expect(lstatSync(obstructed).isDirectory()).toBe(true);
     // …both agents ran and were paid for, so the wall is a merge stage's and
     // not a batch that never reached one…
@@ -13658,21 +13666,25 @@ describe("Dispatcher fanout — a merge-stage throw outside the ledger rewrite c
   /**
    * The other side of the same wall: a span that reaches its own commit
    * *behind* the throw. `abandonWaiting` (`src/waveMerge.ts`) rows on
-   * `mergeError` (`src/waveTick.ts`), which holds every throw out of
-   * `drainWaiting` — so the `wave-walled` row is not the refused ledger
+   * `mergeError` (`src/waveTick.ts`), which holds the trunk-scoped throws out
+   * of `drainWaiting` — so the `wave-walled` row is not the refused ledger
    * rewrite's alone, and the sibling case that pins it drives it from the
    * refusal side only.
    *
-   * WALL-A's gate is red and obstructs that entry's prior-attempt record path
-   * on its way out, so the gate-revert record the carry writes inside the ship
-   * lock it took throws there — planted from the gate for the reason the
-   * sibling arming above states — and WALL-A is the only pick this wave
-   * reaches: CARRY-B is folded, never picked, so that one hold is what the
-   * held slot waits out unambiguously. The probe gap stays narrowed: the hold
-   * is one candidate, one pick and one gate long, which is short enough that
-   * a coarser poll can step over it.
+   * WALL-A's gate rules green and obstructs that entry's own prior-attempt
+   * record path on its way out, so the stale-slot clear inside that pick's
+   * ledger commit throws there — the trunk-scoped step, planted from the gate
+   * for the reason the sibling arming above states. WALL-A is the only pick
+   * this wave reaches: CARRY-B is folded, never picked, so that one hold is
+   * what the held slot waits out unambiguously. The probe gap stays narrowed:
+   * the hold is one candidate, one pick and one gate long, which is short
+   * enough that a coarser poll can step over it.
+   *
+   * What the row carries is this case's whole point: the span's base and head,
+   * so a span no pick was ever attempted over is re-cherry-pickable from the
+   * verdict alone once the worktree branch is gone.
    */
-  it("records a wave-walled row for a span that settled after a merge-stage wall no ledger refused", async () => {
+  it("an abandoned span is still rowed with the base and head it could be carried again from", async () => {
     await writePending(fx.repo, [
       makeEntry("WALL-A", ["src/a.ts"]),
       makeEntry("CARRY-B", ["src/b.ts"]),
@@ -13695,13 +13707,12 @@ describe("Dispatcher fanout — a merge-stage throw outside the ledger rewrite c
             concurrency: "fanout",
             gates: [
               {
-                name: "red-for-a",
+                name: "deny-a-slot",
                 when: "afterMerge",
                 run: async (ctx) => {
-                  if (ctx.assignment?.entry.tag !== "WALL-A")
-                    return { ok: true, message: "clean" };
-                  denyFile(obstructed);
-                  return { ok: false, message: "WALL-A is refused" };
+                  if (ctx.assignment?.entry.tag === "WALL-A")
+                    denyFile(obstructed);
+                  return { ok: true, message: "clean" };
                 },
               },
             ],
@@ -13742,7 +13753,7 @@ describe("Dispatcher fanout — a merge-stage throw outside the ledger rewrite c
     // landing ahead of the wall…
     expect(heldWait).toBeUndefined();
     expectNoFindings(blownWaitsInAgentBodies());
-    // …the obstruction still stands, so the record write really refused…
+    // …the obstruction still stands, so the record removal really refused…
     expect(lstatSync(obstructed).isDirectory()).toBe(true);
     // …both agents ran and were paid for, so CARRY-B's span exists and the
     // wall is a merge stage's, not a batch that never reached one…
@@ -13778,6 +13789,280 @@ describe("Dispatcher fanout — a merge-stage throw outside the ledger rewrite c
     );
     expect(span.stdout.trim().split("\n")).toEqual([
       "build(CARRY-B): uncarried",
+    ]);
+  });
+
+  /**
+   * The split itself, from the span side. A merge-stage step that fails over
+   * one span's own material declares the failure that span's
+   * (`MergeWallScope`, `src/mergeSpan.ts`), and the drain reports it as that
+   * span's failed merge and carries the siblings behind it — the same
+   * isolation a red `afterMerge` gate already buys (`spec/worktrees.md`,
+   * *Per-entry `afterMerge` revert isolation*).
+   *
+   * SPAN-A's gate rules red *and* obstructs that entry's own prior-attempt
+   * record path on its way out, so the gate-revert record the carry writes
+   * next refuses — the step the carry declares that span's. GOES-ON-B is held
+   * out of SPAN-A's drain by a `setupWorktree` that waits one whole ship-lock
+   * span, so its own span is offered behind the wall rather than beside it,
+   * and a drain that stopped at the wall would never carry it.
+   *
+   * That hold fires once, on GOES-ON-B's *build* worktree. The same hook
+   * provisions that entry's merge candidate too, under the same `worktreeKey`
+   * and inside the ship lock its drain holds (`withProvisionedCandidate`,
+   * `src/mergeSpan.ts`) — so a hold taken there would be waiting out the span
+   * it is itself blocking, and this is the case that reaches it.
+   */
+  it("an entry-scoped merge throw ends that span and the wave carries its siblings", async () => {
+    await writePending(fx.repo, [
+      makeEntry("SPAN-A", ["src/a.ts"]),
+      makeEntry("GOES-ON-B", ["src/b.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const obstructed = priorAttemptPath(
+      join(fx.repo, ".flume"),
+      entryRef("SPAN-A"),
+    );
+    await mkdir(dirname(obstructed), { recursive: true });
+    const shipLock = join(fx.repo, ".git", "flume", "ship.lock");
+
+    let heldWait: string | undefined;
+    let held = false;
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [
+          makePhase({
+            name: "build",
+            concurrency: "fanout",
+            gates: [
+              {
+                name: "red-for-a",
+                when: "afterMerge",
+                run: async (ctx) => {
+                  if (ctx.assignment?.entry.tag !== "SPAN-A")
+                    return { ok: true, message: "clean" };
+                  denyFile(obstructed);
+                  return { ok: false, message: "SPAN-A is refused" };
+                },
+              },
+            ],
+            setupWorktree: async (ctx: WorktreeSetupContext) => {
+              if (ctx.worktreeKey !== "GOES-ON-B" || held) return undefined;
+              held = true;
+              try {
+                await shipLockSpanSettled(shipLock, { intervalMs: 1 });
+              } catch (err) {
+                heldWait = (err as Error).message;
+              }
+              return undefined;
+            },
+          }),
+        ],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "span-a": (cwd) =>
+          writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(SPAN-A): walled"),
+        "goes-on-b": (cwd) =>
+          writeAndCommit(
+            cwd,
+            "src/b.ts",
+            "from-B\n",
+            "build(GOES-ON-B): ship",
+          ),
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Vacuity, in the order the wave produced it. The held slot waited
+    // SPAN-A's whole hold out rather than landing beside it…
+    expect(heldWait).toBeUndefined();
+    expectNoFindings(blownWaitsInAgentBodies());
+    // …the obstruction still stands, so the record write really refused…
+    expect(lstatSync(obstructed).isDirectory()).toBe(true);
+    // …and both agents ran, so there really was a sibling span to carry.
+    expect(outcome.verdict?.invocations.map((i) => i.entryTag).sort()).toEqual([
+      "GOES-ON-B",
+      "SPAN-A",
+    ]);
+
+    // The claim: the wall cost SPAN-A its candidate and nothing else. The
+    // sibling behind it is on the trunk and retired from the queue, the walled
+    // entry is rowed as a failed merge under its own tag, and the pair that row
+    // names is the span a retry re-picks.
+    const subjects = await trunkSubjects();
+    expect(subjects).toContain("build(GOES-ON-B): ship");
+    expect(subjects).not.toContain("build(SPAN-A): walled");
+    const rows = outcome.verdict?.mergeOutcomes ?? [];
+    expect(rows.map((m) => `${m.entryTag}:${m.outcome}`)).toEqual([
+      "SPAN-A:merge-walled",
+      "GOES-ON-B:merged",
+    ]);
+    expect(outcome.verdict?.shippedTags).toEqual(["GOES-ON-B"]);
+    expect(readPendingFromDisk(fx.repo).map((e) => e.tag)).toEqual(["SPAN-A"]);
+    // The fact the row cannot carry, on the stage failure the run quarantine
+    // reads: blamed on the entry whose own step raised the wall.
+    const failures = outcome.verdict?.mergeFailures ?? [];
+    expect(failures.map((f) => f.tag)).toEqual(["SPAN-A"]);
+    const walled = rows[0]!;
+    const span = await exec(
+      "git",
+      ["log", "--format=%s", `${walled.baseSha!}..${walled.headSha!}`],
+      { cwd: fx.repo },
+    );
+    expect(span.stdout.trim().split("\n")).toEqual(["build(SPAN-A): walled"]);
+  });
+
+  /**
+   * And the other half of the split, over a wave holding one wall of each
+   * scope. ENDS-A's is its own span's, so the drain goes on; WALLS-B's is
+   * trunk's, so the wave stops carrying and WAITS-C — whose span exists and
+   * whose gates never ran — is rowed rather than picked.
+   *
+   * Two armings, each at a step that declares the scope this case needs of it.
+   * ENDS-A's merge candidate will not provision: the chain's `setupWorktree`
+   * throws on its *second* call for that tag, which is the candidate's rather
+   * than the build worktree's (`withProvisionedCandidate`, `src/mergeSpan.ts`)
+   * — the span's own tree, so the span's own wall, and it leaves no residue a
+   * later read of the state root could trip over. WALLS-B's gate rules green
+   * and obstructs that entry's prior-attempt record path on its way out, so
+   * the stale-slot clear inside its ledger commit refuses, which is the step
+   * the drain declares trunk's.
+   *
+   * The order is held on those same two events rather than on a sleep: each
+   * entry's agent waits for the event of the entry ahead of it, and both fire
+   * inside the drain that entry's own offer chained. So ENDS-A is offered
+   * first, WALLS-B is offered behind ENDS-A's drain, and WAITS-C behind
+   * WALLS-B's — the one ordering under which "the spans still waiting" names
+   * exactly WAITS-C.
+   */
+  it("a trunk-scoped merge throw abandons the spans still waiting", async () => {
+    await writePending(fx.repo, [
+      makeEntry("ENDS-A", ["src/a.ts"]),
+      makeEntry("WALLS-B", ["src/b.ts"]),
+      makeEntry("WAITS-C", ["src/c.ts"]),
+    ]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    const obstructed = priorAttemptPath(
+      join(fx.repo, ".flume"),
+      entryRef("WALLS-B"),
+    );
+    await mkdir(dirname(obstructed), { recursive: true });
+    /** Every `setupWorktree` call, by the key it was handed. */
+    const setups: string[] = [];
+    /** The two events the order is held on, in the order they fired. */
+    const reached: string[] = [];
+    const reaching = (what: string): Promise<true> =>
+      waitFor(`${what} inside its own drain`, () =>
+        reached.includes(what) ? true : undefined,
+      );
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [
+          makePhase({
+            name: "build",
+            concurrency: "fanout",
+            gates: [
+              {
+                name: "deny-b-slot",
+                when: "afterMerge",
+                run: async (ctx) => {
+                  if (ctx.assignment?.entry.tag === "WALLS-B") {
+                    denyFile(obstructed);
+                    reached.push("WALLS-B's ledger commit");
+                  }
+                  return { ok: true, message: "clean" };
+                },
+              },
+            ],
+            setupWorktree: async (ctx: WorktreeSetupContext) => {
+              setups.push(ctx.worktreeKey);
+              if (
+                ctx.worktreeKey !== "ENDS-A" ||
+                setups.filter((k) => k === "ENDS-A").length < 2
+              )
+                return undefined;
+              reached.push("ENDS-A's candidate");
+              throw new Error("ENDS-A's merge candidate will not provision");
+            },
+          }),
+        ],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "ends-a": (cwd) =>
+          writeAndCommit(cwd, "src/a.ts", "from-A\n", "build(ENDS-A): walled"),
+        "walls-b": async (cwd) => {
+          await reaching("ENDS-A's candidate");
+          await writeAndCommit(
+            cwd,
+            "src/b.ts",
+            "from-B\n",
+            "build(WALLS-B): walls",
+          );
+        },
+        "waits-c": async (cwd) => {
+          await reaching("WALLS-B's ledger commit");
+          await writeAndCommit(
+            cwd,
+            "src/c.ts",
+            "from-C\n",
+            "build(WAITS-C): uncarried",
+          );
+        },
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Vacuity, in the order the wave produced it. Both ordering waits ended on
+    // their event rather than their ceiling, so the offers really arrived in
+    // the order this case turns on…
+    expectNoFindings(blownWaitsInAgentBodies());
+    expect(reached).toEqual(["ENDS-A's candidate", "WALLS-B's ledger commit"]);
+    // …ENDS-A's hook really ran twice, so what threw above was its candidate's
+    // provisioning and not its build worktree's…
+    expect(setups.filter((k) => k === "ENDS-A")).toHaveLength(2);
+    // …the obstruction still stands, so the clear behind WALLS-B's pick really
+    // refused…
+    expect(lstatSync(obstructed).isDirectory()).toBe(true);
+    // …all three agents ran and were paid for, so WAITS-C has a span of its
+    // own and the wave is not a batch that never reached a merge…
+    expect(outcome.verdict?.invocations.map((i) => i.entryTag).sort()).toEqual([
+      "ENDS-A",
+      "WAITS-C",
+      "WALLS-B",
+    ]);
+    // …and no span of the three reached trunk, so the wave shipped nothing the
+    // rows below could be read against.
+    const subjects = await trunkSubjects();
+    expect(subjects).not.toContain("build(ENDS-A): walled");
+    expect(subjects).not.toContain("build(WALLS-B): walls");
+    expect(subjects).not.toContain("build(WAITS-C): uncarried");
+
+    // The claim: the entry-scoped wall ended its own span and the drain went
+    // on; the trunk-scoped one stopped the carrying, so the span still waiting
+    // behind it is rowed `wave-walled` and never picked. Two walls, two
+    // different fates.
+    expect(outcome.failed).toBe(true);
+    expect(outcome.ledgerRefusal).toBeUndefined();
+    expect(outcome.verdict?.summary).toContain("the merge stage threw");
+    const rows = outcome.verdict?.mergeOutcomes ?? [];
+    expect(rows.map((m) => `${m.entryTag}:${m.outcome}`)).toEqual([
+      "ENDS-A:merge-walled",
+      "WAITS-C:wave-walled",
     ]);
   });
 });

@@ -46,6 +46,14 @@
  * it ({@link SpanCarried}); the leg spells what those facts mean, in its own
  * words ({@link SpanNarration}) and on its own surfaces.
  *
+ * And every step either carry takes declares how far its own failure reaches
+ * ({@link MergeWallScope}): a candidate that would not provision, a pick that
+ * would not read, a record the store refused are one span's, while the tip
+ * read, the claim on the ref and the fast-forward are trunk's. A leg reads
+ * that scope off the wall ({@link readMergeWall}) and ends one span or stops
+ * carrying, rather than treating every throw out of the stage as the whole
+ * wave's (spec/worktrees.md, *Per-entry `afterMerge` revert isolation*).
+ *
  * Both move the branch the primary checkout is on, so a caller reaches them
  * holding the ship lock (spec/loop.md "The ship lock and the worktree lock —
  * sibling ticks take turns at git"). The lock stays the caller's rather than
@@ -91,6 +99,114 @@ type StageFacts = {
   signature: string;
   message: string;
 };
+
+/**
+ * How far a merge-stage wall reaches, declared at the step that raises it.
+ *
+ * A step of the carry can fail over one span's own material — the candidate
+ * tree it was provisioned, the pick onto it, the record its revert owes — or
+ * over trunk's: the ref, the tip read, the queue the rewrite commits. The two
+ * cost different things, and only the second is a reason to stop carrying the
+ * siblings whose agents already finished (spec/worktrees.md, *Per-entry
+ * `afterMerge` revert isolation*). A gate already declares exactly this
+ * (spec/chain.md, *What a gate returns*); every other wall the stage can raise
+ * declares it here.
+ *
+ * - `"span"` — this span's passage ends and nothing else is implicated. The
+ *   leg reports it as that span's failed merge and goes on to the next.
+ * - `"trunk"` — what the step was mid-way through is shared, so no further
+ *   span can be carried and the leg walls.
+ */
+type MergeWallScope = "span" | "trunk";
+
+/**
+ * A wall one step of the carry raised, carrying the scope that step declared
+ * ({@link MergeWallScope}).
+ *
+ * Its message is the cause's own, unprefixed, so a leg reporting it reports
+ * what failed rather than this wrapper; `step` is the phrase the leg names the
+ * site in, and `cause` is the thing itself — the one a trunk-scoped wall
+ * travels on past the stage, since what reads a refusal downstream reads its
+ * class and not ours ({@link readMergeWall}).
+ *
+ * Raised by {@link declareMergeWall} at every step of the carry, and directly
+ * wherever a site states its scope by construction rather than by wrapping a
+ * call it makes.
+ */
+class MergeWall extends Error {
+  readonly scope: MergeWallScope;
+  readonly step: string;
+  constructor(scope: MergeWallScope, step: string, cause: unknown) {
+    super(thrownMessage(cause), { cause });
+    this.name = "MergeWall";
+    this.scope = scope;
+    this.step = step;
+  }
+}
+
+/**
+ * Run one step of a carry, declaring the scope of whatever it raises.
+ *
+ * Exported for the legs: what a leg lands on a green candidate is its own step
+ * ({@link carryMergeSpan}'s `land`), so the scope of a throw out of it is the
+ * leg's to state at its own site rather than this module's to guess.
+ *
+ * A wall already declared deeper passes through untouched: the innermost step
+ * is the one that knows what it was doing, so an outer frame may wrap a whole
+ * sub-sequence without overriding a scope stated inside it. That is what makes
+ * the declaration total at the cost of one wrapper per frame rather than one
+ * per call.
+ */
+export async function declareMergeWall<T>(
+  scope: MergeWallScope,
+  /** The phrase a leg names this site in, on {@link MergeWall.step}'s terms. */
+  step: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await run();
+  } catch (err) {
+    if (err instanceof MergeWall) throw err;
+    throw new MergeWall(scope, step, err);
+  }
+}
+
+/**
+ * Read what a throw out of a carry declared, for the leg that has to decide
+ * between ending one span and walling.
+ *
+ * An undeclared throw reads as trunk's. Not an inference about the cause: it
+ * is the conservative reading of a step that stated nothing, and it is exactly
+ * the behavior every merge-stage throw had before any of them declared
+ * (`.claude/rules/engineering.md`, *Loud or nothing*). A step whose scope is
+ * really one span's says so, and the suite is what proves the ones that matter
+ * do.
+ *
+ * `cause` is what a leg re-throws rather than the wall itself, so nothing past
+ * the merge stage branches on this class — a `PendingParseFailure`
+ * (`src/PendingSchema.ts`) stays one, and the wave's own carry classes it as
+ * it always did.
+ */
+export function readMergeWall(err: unknown): {
+  scope: MergeWallScope;
+  step: string;
+  message: string;
+  cause: unknown;
+} {
+  if (err instanceof MergeWall)
+    return {
+      scope: err.scope,
+      step: err.step,
+      message: err.message,
+      cause: err.cause,
+    };
+  return {
+    scope: "trunk",
+    step: "the merge stage",
+    message: thrownMessage(err),
+    cause: err,
+  };
+}
 
 /**
  * The words one leg reports its carry in: one function per point the sequence
@@ -368,7 +484,14 @@ async function carryAbsorbingMovedTip<
   attempt: (carryAgain: boolean) => Promise<C>,
 ): Promise<C> {
   for (let absorptions = MOVED_TIP_ABSORPTIONS; ; absorptions--) {
-    if (await foreignTipRefusal(leg, tipClaimed)) return claimed;
+    // Trunk's: the claim is a statement about the ref, so a read of it that
+    // fails leaves no span carryable ({@link MergeWallScope}).
+    if (
+      await declareMergeWall("trunk", "the foreign tip-claim read", () =>
+        foreignTipRefusal(leg, tipClaimed),
+      )
+    )
+      return claimed;
     const carried = await attempt(absorptions > 0);
     if (carried.movedTo === undefined || absorptions === 0) return carried;
   }
@@ -404,45 +527,57 @@ async function withProvisionedCandidate<T>(
   body: (candidate: string, trunkTip: string) => Promise<T>,
 ): Promise<T> {
   const repoRoot = leg.repoRoot;
-  const trunkTip = await git.revParse(repoRoot);
-  return withMergeCandidate(leg.worktreeCtx, trunkTip, async (candidate) => {
-    // Provisioned the way a build worktree is, which includes whatever the
-    // chain materializes for the gates (spec/worktrees.md, *`setupWorktree`
-    // and `teardownWorktree` — the chain's provisioning hooks*): a candidate
-    // holds tracked files only, and the gates that judge it are the same ones
-    // a worktree's install exists for. A throw propagates — the candidate is
-    // discarded by the carry and trunk is untouched, and a merge that cannot
-    // provision the tree it judges in has no verdict to report
-    // (`.claude/rules/engineering.md`, *Loud or nothing*).
-    if (phase.setupWorktree) {
-      await phase.setupWorktree({
-        worktreePath: candidate,
-        repoRoot,
-        worktreeKey,
-      });
-    }
-    try {
-      return await body(candidate, trunkTip);
-    } finally {
-      // The counterpart hook, best-effort by contract: a leaked resource is
-      // recoverable, and a throw here would take the carry's verdict with it
-      // (spec/worktrees.md, *`setupWorktree` and `teardownWorktree` — the
-      // chain's provisioning hooks*).
-      if (phase.teardownWorktree) {
-        try {
-          await phase.teardownWorktree({
-            worktreePath: candidate,
-            repoRoot,
-            worktreeKey,
-          });
-        } catch (err) {
-          leg.log.warn(
-            `[flume] teardownWorktree failed for the merge candidate at ${candidate}: ${thrownMessage(err)}`,
-          );
+  // Trunk's: the tip every candidate of this carry is cut at, so a read that
+  // fails is not one span's problem ({@link MergeWallScope}).
+  const trunkTip = await declareMergeWall("trunk", "the trunk tip read", () =>
+    git.revParse(repoRoot),
+  );
+  // And the tree itself is this carry's own — the `git worktree add`, the
+  // chain's provisioning hook over it, the removal — so a frame that will not
+  // provision is the span's wall and not the wave's, exactly as a build
+  // worktree that would not provision is one entry's (`runFanout`,
+  // `src/waveTick.ts`). The body's own steps declare for themselves and pass
+  // through ({@link declareMergeWall}).
+  return declareMergeWall("span", "the merge candidate's provisioning", () =>
+    withMergeCandidate(leg.worktreeCtx, trunkTip, async (candidate) => {
+      // Provisioned the way a build worktree is, which includes whatever the
+      // chain materializes for the gates (spec/worktrees.md, *`setupWorktree`
+      // and `teardownWorktree` — the chain's provisioning hooks*): a candidate
+      // holds tracked files only, and the gates that judge it are the same ones
+      // a worktree's install exists for. A throw propagates as the frame's own
+      // wall — the candidate is discarded by the carry and trunk is untouched,
+      // and a merge that cannot provision the tree it judges in has no verdict
+      // to report (`.claude/rules/engineering.md`, *Loud or nothing*).
+      if (phase.setupWorktree) {
+        await phase.setupWorktree({
+          worktreePath: candidate,
+          repoRoot,
+          worktreeKey,
+        });
+      }
+      try {
+        return await body(candidate, trunkTip);
+      } finally {
+        // The counterpart hook, best-effort by contract: a leaked resource is
+        // recoverable, and a throw here would take the carry's verdict with it
+        // (spec/worktrees.md, *`setupWorktree` and `teardownWorktree` — the
+        // chain's provisioning hooks*).
+        if (phase.teardownWorktree) {
+          try {
+            await phase.teardownWorktree({
+              worktreePath: candidate,
+              repoRoot,
+              worktreeKey,
+            });
+          } catch (err) {
+            leg.log.warn(
+              `[flume] teardownWorktree failed for the merge candidate at ${candidate}: ${thrownMessage(err)}`,
+            );
+          }
         }
       }
-    }
-  });
+    }),
+  );
 }
 
 /**
@@ -473,11 +608,21 @@ async function fastForwardTrunk(move: {
   refused: SpanNarration["fastForwardRefused"];
 }): Promise<TrunkMove> {
   const { leg } = move;
-  const candidateSha = await git.revParse(move.candidate);
+  // The candidate's own tip: this span's tree, so a read that fails ends this
+  // span ({@link MergeWallScope}).
+  const candidateSha = await declareMergeWall(
+    "span",
+    "the candidate tip read",
+    () => git.revParse(move.candidate),
+  );
   try {
     await git.fastForwardTo(leg.repoRoot, candidateSha);
   } catch (err) {
-    if (!(err instanceof git.FastForwardRefusedError)) throw err;
+    // A refusal is the step's own answer below, never a wall. Anything else is
+    // the move on the shared ref failing, which is trunk's by construction:
+    // what the next carry would read is the thing that just would not answer.
+    if (!(err instanceof git.FastForwardRefusedError))
+      throw new MergeWall("trunk", "the fast-forward of trunk", err);
     // Which refusal this was, read off the tip git stood at when it refused
     // (`git.FastForwardRefusedError`) rather than out of the words it raised:
     // a tip that is no longer the one this candidate was cut from is a writer
@@ -527,39 +672,50 @@ async function carryOntoCandidate<L>(
 ): Promise<SpanCarried<L>> {
   const { leg, phase, base, head, narrate } = carry;
   const repoRoot = leg.repoRoot;
-  const picked = await pickSpanRange({
-    leg,
-    tree: candidate,
-    base,
-    head,
-    narrate,
-  });
+  // This span's own range onto this span's own candidate: a read of either
+  // that fails ends this span and implicates nothing shared
+  // ({@link MergeWallScope}). A real conflict is the step's answer, not a wall.
+  const picked = await declareMergeWall(
+    "span",
+    "the cherry-pick of the span",
+    () => pickSpanRange({ leg, tree: candidate, base, head, narrate }),
+  );
   if (picked.fate === "cherry-pick-conflict") return picked;
   const { mergedSha, landedOnSha, touchedPaths } = picked;
   const landed: SpanLanded = { mergedSha, landedOnSha, touchedPaths };
-  const failingGate = await gateMergedTip(
-    leg,
-    phase,
-    {
-      ...gateSite(leg, phase, candidate),
-      commitSha: mergedSha,
-      touchedPaths,
-      // One span is one session, and a session's footprint is the entry's
-      // declaration and its steps' together, so the gates read the pair as
-      // one value (`GateContext.assignment`, `src/Gate.ts`).
-      ...(carry.assignment ? { assignment: carry.assignment } : {}),
-      // The span's own base, not the tip it landed on: an `afterMerge` gate
-      // reading the candidate needs the tip its agent branched from to tell an
-      // input the span ignored from one that landed after it started
-      // (spec/chain.md "What a gate receives"). Siblings provisioned from the
-      // same tip each carry their own value regardless.
-      baseSha: base,
-      // And the tip it landed onto beside it, which is what a cumulative
-      // gate measuring the tree before and after this span reads as its
-      // *before* (spec/chain.md "What a gate receives").
-      landedOnSha,
-    },
-    carry.onGateRow,
+  // The gates judge this candidate, and a gate that throws is already that
+  // gate's red (`runGate`, `src/gateRun.ts`) — so what is left to declare here
+  // is the loop's own material, which is this span's
+  // ({@link MergeWallScope}).
+  const failingGate = await declareMergeWall(
+    "span",
+    "the afterMerge gates over the candidate",
+    () =>
+      gateMergedTip(
+        leg,
+        phase,
+        {
+          ...gateSite(leg, phase, candidate),
+          commitSha: mergedSha,
+          touchedPaths,
+          // One span is one session, and a session's footprint is the entry's
+          // declaration and its steps' together, so the gates read the pair as
+          // one value (`GateContext.assignment`, `src/Gate.ts`).
+          ...(carry.assignment ? { assignment: carry.assignment } : {}),
+          // The span's own base, not the tip it landed on: an `afterMerge`
+          // gate reading the candidate needs the tip its agent branched from
+          // to tell an input the span ignored from one that landed after it
+          // started (spec/chain.md "What a gate receives"). Siblings
+          // provisioned from the same tip each carry their own value
+          // regardless.
+          baseSha: base,
+          // And the tip it landed onto beside it, which is what a cumulative
+          // gate measuring the tree before and after this span reads as its
+          // *before* (spec/chain.md "What a gate receives").
+          landedOnSha,
+        },
+        carry.onGateRow,
+      ),
   );
   if (failingGate) {
     leg.log.warn(narrate.gateFailed(failingGate.gate));
@@ -574,11 +730,23 @@ async function carryOntoCandidate<L>(
     // prior attempt (spec/loop.md "Prior-outcome feedback to the retrying
     // tick"). Read through `repoRoot`, which shares the candidate's object
     // store, so the digest does not depend on the directory outliving it.
-    const record = await buildGateRevert("afterMerge", failingGate, repoRoot, {
-      base: landedOnSha,
-      head: mergedSha,
-    });
-    await leg.attempts.write(carry.ref, record);
+    //
+    // This span's own record, in this span's own slot, so the step is the
+    // span's: a store that will not take it costs the retry its prior-attempt
+    // block and costs no sibling anything ({@link MergeWallScope}).
+    await declareMergeWall(
+      "span",
+      "the gate-revert prior-attempt record",
+      async () => {
+        const record = await buildGateRevert(
+          "afterMerge",
+          failingGate,
+          repoRoot,
+          { base: landedOnSha, head: mergedSha },
+        );
+        await leg.attempts.write(carry.ref, record);
+      },
+    );
     return {
       fate: "afterMerge-reverted",
       ...landed,
@@ -593,6 +761,11 @@ async function carryOntoCandidate<L>(
   // fast-forward below carries both in one move and no instant exists at which
   // trunk holds one without the other (spec/loop.md "The ship lock and the
   // worktree lock — sibling ticks take turns at git").
+  //
+  // Not declared here: what the leg lands is the leg's step, and so is its
+  // scope — a wave's `shipped` consult is one span's and its ledger rewrite is
+  // trunk's (`src/waveMerge.ts`). An undeclared throw out of it reads as
+  // trunk's ({@link readMergeWall}).
   const landing = await carry.land({ candidate, ...landed });
   const moved = await fastForwardTrunk({
     leg,
@@ -744,11 +917,17 @@ export async function carryMergeBatch<L>(carry: {
 }): Promise<BatchCarried<L>> {
   const { leg, phase, spans, narrate } = carry;
   if (spans.length < 2) {
-    throw new Error(
-      `a batched merge of ${spans.length} span(s) is the single-span carry ` +
-        `under another name: a batch withholds every per-span fact from its ` +
-        `gates, so carrying one span through here would gate it over a ` +
-        `context that names no entry`,
+    // Trunk's: a caller that reached here is an engine bug, and the loud exit
+    // it has always taken is the one this scope keeps ({@link readMergeWall}).
+    throw new MergeWall(
+      "trunk",
+      "the batch width check",
+      new Error(
+        `a batched merge of ${spans.length} span(s) is the single-span ` +
+          `carry under another name: a batch withholds every per-span fact ` +
+          `from its gates, so carrying one span through here would gate it ` +
+          `over a context that names no entry`,
+      ),
     );
   }
   return carryAbsorbingMovedTip<BatchCarried<L>>(
@@ -777,16 +956,22 @@ export async function carryMergeBatch<L>(carry: {
             return { fate: "discarded", why };
           };
           for (const span of spans) {
-            const picked = await pickSpanRange({
-              leg,
-              // One candidate for the whole batch, so span N+1 picks onto what
-              // span N left and the gates judge the tree every span of the batch
-              // produced together — which is the whole of what batching buys.
-              tree: candidate,
-              base: span.base,
-              head: span.head,
-              narrate: span.narrate,
-            });
+            const picked = await declareMergeWall(
+              "span",
+              "the cherry-pick of the span",
+              () =>
+                pickSpanRange({
+                  leg,
+                  // One candidate for the whole batch, so span N+1 picks onto
+                  // what span N left and the gates judge the tree every span
+                  // of the batch produced together — which is the whole of
+                  // what batching buys.
+                  tree: candidate,
+                  base: span.base,
+                  head: span.head,
+                  narrate: span.narrate,
+                }),
+            );
             if (picked.fate === "cherry-pick-conflict") {
               // A conflict is the batch's verdict; each span's own is the serial
               // pass's to take. The spans picked ahead of it need no taking back —
@@ -802,14 +987,19 @@ export async function carryMergeBatch<L>(carry: {
               touchedPaths: picked.touchedPaths,
             });
           }
-          const failingGate = await gateMergedTip(
-            leg,
-            phase,
-            // Every per-span fact on the span records, every batch-wide fact
-            // computed from them (`batchGateContext`, `src/gateBatch.ts`) — never
-            // restated here.
-            batchGateContext(gateSite(leg, phase, candidate), gateSpans),
-            carry.onGateRow,
+          const failingGate = await declareMergeWall(
+            "span",
+            "the afterMerge gates over the candidate",
+            () =>
+              gateMergedTip(
+                leg,
+                phase,
+                // Every per-span fact on the span records, every batch-wide
+                // fact computed from them (`batchGateContext`,
+                // `src/gateBatch.ts`) — never restated here.
+                batchGateContext(gateSite(leg, phase, candidate), gateSpans),
+                carry.onGateRow,
+              ),
           );
           if (failingGate) {
             leg.log.warn(narrate.gateFailed(failingGate.gate));

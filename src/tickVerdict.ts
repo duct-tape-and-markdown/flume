@@ -103,8 +103,10 @@ export type StageFailureEntry =
 
 /**
  * A merge-stage failure (spec/loop.md "Repeated identical failures — quarantine,
- * then abort"): a cherry-pick conflict, or a dirty trunk refusing the pick, that
- * kept a worktree's already-agent-committed work off trunk. `tag` is the
+ * then abort"): a cherry-pick conflict, a dirty trunk refusing the pick, or a
+ * step of one span's carry that walled over that span alone
+ * (`MergeWallScope`, `src/mergeSpan.ts`) — each of them keeping a worktree's
+ * already-agent-committed work off trunk. `tag` is the
  * fanout entry's tag; absent for a singleton phase's own merge-stage failure
  * (no entry to quarantine — same rationale as {@link StageFailureEntry}, it
  * falls to the consecutive-failure backstop alone).
@@ -589,6 +591,20 @@ export function startTiming(): () => number {
  *                            sibling fact so a dropped per-entry commit never
  *                            lands as silence a partial ship summary papers
  *                            over.
+ *  - `merge-walled`          a step of this span's own carry threw: the
+ *                            candidate it was being carried on is discarded,
+ *                            trunk never named the span, and the drain went
+ *                            on to the siblings behind it. The step declared
+ *                            the failure as this span's
+ *                            (`MergeWallScope`, `src/mergeSpan.ts`) — a
+ *                            candidate that would not provision, a pick that
+ *                            would not read, a prior-attempt record the store
+ *                            refused — which is what separates it from a
+ *                            trunk-scoped throw, the one that still walls the
+ *                            wave. The facts are on
+ *                            {@link TickVerdict.mergeFailures} under this
+ *                            entry's tag, and the `baseSha`/`headSha` pair is
+ *                            the span the retry re-picks.
  *  - `wave-walled`           the span passed its afterCommit gates in its own
  *                            worktree and the wave was already walled when it
  *                            settled: an earlier pick's merge stage threw, so
@@ -596,11 +612,14 @@ export function startTiming(): () => number {
  *                            was never offered to cherry-pick. Any throw that
  *                            stage holds is the wall — a ledger rewrite that
  *                            refused, a merge marker the disk would not take,
- *                            a prior-attempt record the store refused, a
- *                            `revParse` that failed (`drainWaiting`,
+ *                            a tip read that failed (`drainWaiting`,
  *                            `src/waveMerge.ts`) — and the row is the same
  *                            for every one of them, because the fold is keyed
- *                            on the wave being walled and never on the cause.
+ *                            on the wave being walled and never on the cause
+ *                            — the walling throw having been one the merge
+ *                            stage declared trunk-scoped, since a
+ *                            span-scoped one ends its own span as
+ *                            `merge-walled` above and walls nothing.
  *                            Distinct from every kind above in what did *not*
  *                            happen — no pick was attempted,
  *                            so neither trunk nor this entry's own branch
@@ -618,6 +637,7 @@ export type MergeOutcome =
   | "not-shipped"
   | "tip-moved"
   | "dropped-work"
+  | "merge-walled"
   | "wave-walled";
 
 /**
@@ -648,7 +668,8 @@ export interface TickVerdictMergeOutcome {
    * the tip the candidate was cut at for a span the pick landed (`merged`,
    * `afterMerge-reverted`, `not-shipped`), else
    * the tip the agent's worktree branched from (`tip-moved`, `dropped-work`,
-   * `afterCommit-reverted`, `cherry-pick-conflict`, `wave-walled`). Recovery
+   * `afterCommit-reverted`, `cherry-pick-conflict`, `merge-walled`,
+   * `wave-walled`). Recovery
    * needs both: a span may hold several commits (spec/loop.md "The check is
    * ancestry, and N commits are completion"), and `headSha` alone re-picks
    * only the last of them. Absent only when the span never reached a commit
@@ -659,7 +680,8 @@ export interface TickVerdictMergeOutcome {
    * The span's own head — the entry's cherry-picked commit sha once one
    * exists (`merged`, `afterMerge-reverted`, `not-shipped`), else the
    * worktree-branch commit sha the entry never got past (`tip-moved`,
-   * `dropped-work`, `afterCommit-reverted`, `wave-walled`). Recovery, not
+   * `dropped-work`, `afterCommit-reverted`, `merge-walled`, `wave-walled`).
+   * Recovery, not
    * decoration: a span parked or refused after its gates passed must be
    * re-cherry-pickable from the verdict alone, never re-run at full agent
    * price — worktree teardown deletes the branch, but the commit object

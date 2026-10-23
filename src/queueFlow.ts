@@ -27,22 +27,26 @@
 import type { PendingEntry } from "./PendingSchema.js";
 import type { FilingTimes } from "./filingOrder.js";
 import { formatSpan, spanFrom } from "./queueSpan.js";
-import type { TickVerdict } from "./tickVerdict.js";
+import type { MergeOutcome, TickVerdict } from "./tickVerdict.js";
 
 /**
- * The merge outcome this line counts as a failed merge: the cherry-pick that
- * would not land (`MergeOutcome`, `src/tickVerdict.ts`).
+ * The merge outcomes this line counts as a failed merge: the cherry-pick that
+ * would not land, and a step of one span's carry that walled over that span
+ * (`MergeOutcome`, `src/tickVerdict.ts`).
  *
- * The merge stage's own failure and no other, because the engine has already
- * drawn that line: a span this outcome names is what `TickVerdict.mergeFailures`
- * records, while a span whose gates reverted it after it landed is filed as a
- * gate failure (`GateFailure`, `src/tickVerdict.ts`) over a merge that
- * succeeded. Reading a gate revert or a tip-verify refusal into "failed
- * merge" here would re-draw that boundary on a reporting surface, where
- * nothing enforces it (`.claude/rules/engine-boundary.md`, *Told, not
- * inferred*).
+ * The merge stage's own failures and no others, because the engine has already
+ * drawn that line: a span one of these outcomes names is what
+ * `TickVerdict.mergeFailures` records, while a span whose gates reverted it
+ * after it landed is filed as a gate failure (`GateFailure`,
+ * `src/tickVerdict.ts`) over a merge that succeeded. Reading a gate revert or
+ * a tip-verify refusal into "failed merge" here would re-draw that boundary on
+ * a reporting surface, where nothing enforces it
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
  */
-const FAILED_MERGE_OUTCOME = "cherry-pick-conflict";
+const FAILED_MERGE_OUTCOMES: readonly MergeOutcome[] = [
+  "cherry-pick-conflict",
+  "merge-walled",
+];
 
 /** What every figure prints in place of a number it has no population for. */
 const NOT_MEASURABLE = "not yet measurable";
@@ -146,7 +150,7 @@ export function flowLine(opts: {
   for (const verdict of opts.verdicts) {
     ships += verdict.shippedTags.length;
     for (const row of verdict.mergeOutcomes) {
-      if (row.outcome === FAILED_MERGE_OUTCOME) failedMerges += 1;
+      if (FAILED_MERGE_OUTCOMES.includes(row.outcome)) failedMerges += 1;
     }
   }
   const perShip = `failed merges per ship ${

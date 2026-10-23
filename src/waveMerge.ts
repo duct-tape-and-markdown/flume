@@ -23,7 +23,8 @@
  * outlast many merges, and a queue that went on listing an entry already on
  * the trunk would be read as current by every producer beside it. One
  * ship-lock span per pick — taken when the pick begins and released however
- * it leaves, shipped, reverted or thrown as a {@link WaveCarriedThrow} — so
+ * it leaves, shipped, reverted, walled over that one span, or thrown as a
+ * {@link WaveCarriedThrow} when the wall was trunk's — so
  * a sibling tick gets its turn between two of this wave's picks and reads a
  * queue that matches the trunk it is looking at. What one span learned and
  * the next needs is {@link WaveMerge}.
@@ -34,7 +35,12 @@
  */
 
 import * as git from "./git.js";
-import { carryMergeBatch, carryMergeSpan } from "./mergeSpan.js";
+import {
+  carryMergeBatch,
+  carryMergeSpan,
+  declareMergeWall,
+  readMergeWall,
+} from "./mergeSpan.js";
 import {
   commitPendingUpdate,
   type PendingRewriteNoCommitExit,
@@ -68,6 +74,40 @@ import {
   type WaveWallEvent,
 } from "./tickVerdict.js";
 import { thrownMessage } from "./thrown.js";
+
+/**
+ * What a carry comes back as when a step of it raised a wall that step
+ * declared one span's (`MergeWallScope`, `src/mergeSpan.ts`): a fate beside
+ * the carry's own, so the caller reads it off `fate` with every other.
+ */
+type SpanWall = {
+  fate: "walled";
+  /** The phrase the step that raised it names itself in, for this leg's line. */
+  step: string;
+  message: string;
+};
+
+/**
+ * Read a throw out of a carry as the carry's answer or the wave's end.
+ *
+ * A span-scoped wall is one span's whole cost: the candidate it was on is
+ * already discarded, trunk never named it, and the drain is free to carry the
+ * siblings behind it (spec/worktrees.md, *Per-entry `afterMerge` revert
+ * isolation*). It comes back as a fate.
+ *
+ * A trunk-scoped one re-throws, and re-throws the **cause** rather than the
+ * wall: what classes a refusal past this stage reads the refusal's own class
+ * ({@link WaveLedgerRefusal}), never this stage's wrapper. The wave leg holds
+ * it and the spans still waiting are rowed ({@link abandonWaiting}).
+ *
+ * Attached with `.catch` at each carry rather than wrapping it, so the one
+ * decision this fold makes sits on the line that can raise.
+ */
+function spanWall(err: unknown): SpanWall {
+  const wall = readMergeWall(err);
+  if (wall.scope === "trunk") throw wall.cause;
+  return { fate: "walled", step: wall.step, message: wall.message };
+}
 
 /**
  * Rank of each no-commit mode in a wave's representative-cause fold — lowest
@@ -432,11 +472,11 @@ interface WaveMerge {
    * is readable whatever the cause is; `undefined` while none has.
    *
    * Held on the stage because it is what tells the stage's two carries apart:
-   * every throw out of the merge stage leaves wrapped, and a re-thrown cause
-   * at the wave leg's throw site is indistinguishable there from a marker the
-   * disk refused or a record the store would not write — so the ledger class
-   * one of them reports is stated by the call that took the refusal rather
-   * than read back off the cause
+   * every trunk-scoped throw out of the merge stage leaves wrapped, and a
+   * re-thrown cause at the wave leg's throw site is indistinguishable there
+   * from a record the store would not write or a tip read that failed — so the
+   * ledger class one of them reports is stated by the call that took the
+   * refusal rather than read back off the cause
    * (`.claude/rules/engine-boundary.md`, *Told, not inferred*). The verdict
    * either carry rides is built where the wave has *settled* — every slot
    * finished ({@link waveWallThrow}).
@@ -550,6 +590,14 @@ export async function offerAttempt(
  * lock is a pid claim, so two of them in-flight in one process would wait on
  * each other forever.
  *
+ * A step of one span's carry that throws ends that span and no more: the step
+ * declares how far its failure reaches (`MergeWallScope`, `src/mergeSpan.ts`)
+ * and a span-scoped wall is rowed as that span's failed merge while the drain
+ * goes on to the siblings behind it ({@link spanWall}). Only a trunk-scoped
+ * one — the ledger rewrite, the ref, a tip read — leaves this call, and the
+ * spans still waiting on it are rowed rather than carried
+ * ({@link abandonWaiting}).
+ *
  * How many spans one call carries is {@link takeBatch}'s, and whether a batch
  * ships as one is {@link carryBatch}'s. A drain whose waiting queue is already
  * empty — every span of it carried by an earlier drain's batch — returns
@@ -638,7 +686,13 @@ export async function drainWaiting(w: WaveMerge): Promise<void> {
       rows: readonly TickVerdictMergeOutcome[],
       tree: string,
     ): Promise<PendingRewriteResult | undefined> =>
-      commitAttemptLedger(w, shipped, rows, tree);
+      // Trunk's, in whichever tree it is derived: the queue on disk is shared
+      // and one drain's rewrite can cover a batch of spans, so a rewrite that
+      // failed part-way is no one entry's to be charged with and leaves no
+      // span behind it carryable (`MergeWallScope`, `src/mergeSpan.ts`).
+      declareMergeWall("trunk", "the pending-ledger commit", () =>
+        commitAttemptLedger(w, shipped, rows, tree),
+      );
     /**
      * What a ledger commit leaves on the stage, applied once trunk holds it.
      *
@@ -687,7 +741,10 @@ export async function drainWaiting(w: WaveMerge): Promise<void> {
         w.gatedTip =
           update?.exit === "tip-claimed"
             ? undefined
-            : await git.revParse(leg.repoRoot);
+            : // Trunk's: the ref itself (`MergeWallScope`, `src/mergeSpan.ts`).
+              await declareMergeWall("trunk", "the gated-tip read", () =>
+                git.revParse(leg.repoRoot),
+              );
     };
     /** Both halves at once, for the ledger commits that land on trunk itself. */
     const landOnTrunk = async (
@@ -768,6 +825,14 @@ export async function drainWaiting(w: WaveMerge): Promise<void> {
         }
       }
     }
+  } catch (err) {
+    // Every wall that reaches here is trunk's: one a span's own step declared
+    // was already answered as that span's failed merge inside the carry
+    // ({@link spanWall}), and the steps outside a carry — the footprint ledger
+    // commit, the gated-tip read — are trunk's by declaration. It leaves as
+    // its cause, so what classes a refusal past this stage reads the refusal's
+    // own class and never this stage's wrapper ({@link WaveLedgerRefusal}).
+    throw readMergeWall(err).cause;
   } finally {
     // Every way out of the passage: shipped, reverted, refused, or thrown. A
     // leaked lock names a pid that is still alive, so a sibling — and this
@@ -813,6 +878,11 @@ function takeBatch(w: WaveMerge): WaitingSpan[] {
  * Drains the queue, so the drains still chained behind a wall find nothing to
  * carry and the wave reports one `wave-walled` row per uncarried span rather
  * than one per drain that arrived after the wall.
+ *
+ * Reached by a **trunk-scoped** wall alone (`MergeWallScope`,
+ * `src/mergeSpan.ts`): a wall one span's own step declared is that span's
+ * failed merge and stops no drain, so nothing reaches here for it
+ * ({@link spanWall}).
  */
 export function abandonWaiting(w: WaveMerge): void {
   for (const s of w.waiting.splice(0)) {
@@ -965,6 +1035,16 @@ async function carryBatch(
   const entryMergeGateResultsStart = w.mergeGateResults.length;
   /** Every entry this batch carries, for the lines that name all of them. */
   const tags = spans.map((s) => s.attempt.entry.tag).join(", ");
+  /**
+   * The one sentence a discarded candidate is reported in, whichever way it
+   * was discarded — the carry's own `discarded` narration and the span-scoped
+   * wall below both spend it, because the fallback they leave the drain is the
+   * same one (`.claude/rules/engineering.md`, *The fix lands at the
+   * mechanism*).
+   */
+  const discarded = (why: string): string =>
+    `[flume] ${phase.name}: the candidate carrying the batch of ` +
+    `${spans.length} is discarded (${why}); merging its spans one at a time`;
   const batch = await carryMergeBatch({
     leg,
     phase,
@@ -1020,8 +1100,7 @@ async function carryBatch(
         `[flume] ${phase.name}: tip claimed by pid ${pid}; refusing to cherry-pick ${tags}, entries stay pending`,
       gateFailed: (gate) =>
         `[flume] afterMerge gate '${gate}' failed over the batch of ${spans.length}; each span merges on its own so blame and revert stay per entry`,
-      discarded: (why) =>
-        `[flume] ${phase.name}: the candidate carrying the batch of ${spans.length} is discarded (${why}); merging its spans one at a time`,
+      discarded,
       fastForwardRefused: ({
         candidateSha,
         landedOnSha,
@@ -1033,7 +1112,16 @@ async function carryBatch(
           ? `trunk unchanged, ${tags} stay pending`
           : `trunk now stands at ${carriedAgainOnto.slice(0, 8)}, so the batch is carried again onto it`),
     },
-  });
+  }).catch(spanWall);
+  if (batch.fate === "walled") {
+    // A span-scoped wall over a batch names no span — the batch withholds
+    // every per-span fact by construction — so it is the candidate that goes,
+    // exactly as a red gate or a conflicting pick sends it. The serial pass
+    // the caller runs next is where the wall recurs for the one span that
+    // raised it and ends that span alone.
+    leg.log.warn(discarded(batch.message));
+    return { fate: "discarded" };
+  }
   if (batch.fate === "tip-moved") {
     // The shared trunk was not this merge's to move — a foreign engine held
     // the claim before the first pick, or it declined the fast-forward to the
@@ -1080,6 +1168,11 @@ async function carryBatch(
  * is left here is what only a wave has: rows and records under this entry's
  * tag, the blame each failure it recorded carries, and the consult that
  * decides whether landing on trunk shipped.
+ *
+ * A step of the carry that throws over this span's own material is this
+ * span's failed merge rather than the wave's wall ({@link spanWall}): the row
+ * and the blame are the same per-entry shape every other merge-stage failure
+ * here takes, and the drain goes on.
  *
  * Answers with what this span leaves its drain to do: the one merge outcome it
  * earned, if any, and the entries its span shipped, empty where it shipped
@@ -1187,7 +1280,35 @@ async function carrySpan(
           ? `[flume] ${r.entry.tag}: trunk already holds the whole span ${r.spanBase.slice(0, 8)}..${r.headSha.slice(0, 8)}; merged with no commit to add`
           : `[flume] cherry-picked ${r.entry.tag} → ${mergedSha.slice(0, 8)}`,
     },
-  });
+  }).catch(spanWall);
+  if (carried.fate === "walled") {
+    // A step of this span's carry threw and declared the failure this span's
+    // (`MergeWallScope`, `src/mergeSpan.ts`): the candidate is discarded,
+    // trunk never named the span, and the drain goes on to the siblings behind
+    // it. Blamed unconditionally — the wall is one entry's by the declaration
+    // that raised it, which is what the run quarantine isolates on — and the
+    // span's two shas are its recovery handle the way every other uncarried
+    // span's are.
+    leg.log.warn(
+      `[flume] ${r.entry.tag}: ${carried.step} threw ` +
+        `(${carried.message}); that entry's candidate is discarded and it ` +
+        `stays pending, and the spans behind it are still carried`,
+    );
+    w.mergeFailures.push({
+      ...blamedOn(r.entry),
+      ...stageFailureFacts(carried.message),
+    });
+    return {
+      shipped: [],
+      landed: false,
+      outcome: {
+        entryTag: r.entry.tag,
+        outcome: "merge-walled",
+        baseSha: r.spanBase,
+        headSha: r.headSha,
+      },
+    };
+  }
   if (carried.fate === "tip-moved") {
     // The shared trunk raced during this wave's own merge step, distinct from
     // the per-entry ancestry refusal {@link foldAttemptFacts} rows as
@@ -1370,9 +1491,15 @@ async function consultShipped(
     // the same reason it rides the merge outcome below: the disk record is
     // what the *next* process reads, and a broken predicate collapsing into
     // "the chain parked this" is a wall the retry would invent.
-    await leg.attempts.write(
-      priorAttemptRef(phase, r.entry),
-      buildNotShipped(landed.mergedSha, landed.touchedPaths, broke),
+    //
+    // This entry's own record in this entry's own slot, so a store that will
+    // not take it ends this span and costs no sibling its carry
+    // (`MergeWallScope`, `src/mergeSpan.ts`).
+    await declareMergeWall("span", "the not-shipped prior-attempt record", () =>
+      leg.attempts.write(
+        priorAttemptRef(phase, r.entry),
+        buildNotShipped(landed.mergedSha, landed.touchedPaths, broke),
+      ),
     );
     // A broken hook is a stage failure; an empty list is not. The run's accounting
     // reads this list, never the `not-shipped` outcomes — the outcome
