@@ -115,6 +115,8 @@ import {
   deleteBranch,
   diffNameOnly,
   dropLastCommit,
+  fastForwardTo,
+  FastForwardRefusedError,
   gitCommonDir,
   isAncestor,
   parseGitVersion,
@@ -734,6 +736,89 @@ describe("dropLastCommit", () => {
 
     expect(await revParse(repo)).toBe(seedSha);
     expect(existsSync(join(repo, "own.txt"))).toBe(false);
+  });
+});
+
+describe("fastForwardTo (spec/loop.md 'Tip verify — one writer per branch, absorption at the merge')", () => {
+  /**
+   * A commit on a branch of its own over the tip trunk stands at — the merge
+   * candidate's shape, built with git rather than described: the span rewrites
+   * a tracked path the checkout also holds, which is what makes the collision
+   * case below reachable at all.
+   */
+  const candidateOver = async (): Promise<{ trunk: string; sha: string }> => {
+    const { stdout: branch } = await exec(
+      "git",
+      ["rev-parse", "--abbrev-ref", "HEAD"],
+      { cwd: repo },
+    );
+    const trunk = branch.trim();
+    await exec("git", ["checkout", "-q", "-b", "candidate"], { cwd: repo });
+    await writeFile(join(repo, ".seed"), "the span's line\n");
+    await exec("git", ["commit", "-q", "-am", "the span"], { cwd: repo });
+    const sha = await revParse(repo);
+    await exec("git", ["checkout", "-q", trunk], { cwd: repo });
+    return { trunk, sha };
+  };
+
+  it("moves the branch to the candidate, taking its content with it", async () => {
+    const { sha } = await candidateOver();
+
+    await fastForwardTo(repo, sha);
+
+    expect(await revParse(repo)).toBe(sha);
+    expect(await readFile(join(repo, ".seed"), "utf8")).toBe(
+      "the span's line\n",
+    );
+  });
+
+  it("refuses a candidate a writer landed under, naming the tip the branch stands at", async () => {
+    const { sha } = await candidateOver();
+    // Someone else's commit, on the branch the move was going to update: the
+    // candidate is no longer a descendant of it.
+    await writeFile(join(repo, "other.txt"), "someone else's work\n");
+    await exec("git", ["add", "--", "other.txt"], { cwd: repo });
+    await exec("git", ["commit", "-q", "-m", "someone else's commit"], {
+      cwd: repo,
+    });
+    const movedTo = await revParse(repo);
+
+    const caught = await fastForwardTo(repo, sha).catch((err: unknown) => err);
+
+    expect(caught).toBeInstanceOf(FastForwardRefusedError);
+    // The discriminant: the tip reported is the one the writer left, not the
+    // one the candidate was cut from, so the caller can carry the span again
+    // onto it without parsing a word git said.
+    expect((caught as FastForwardRefusedError).tipSha).toBe(movedTo);
+    expect((caught as FastForwardRefusedError).targetSha).toBe(sha);
+    // And git moved nothing.
+    expect(await revParse(repo)).toBe(movedTo);
+    expect(await readFile(join(repo, ".seed"), "utf8")).toBe("");
+  });
+
+  it("refuses over an uncommitted change on a path the candidate touches, naming the tip it was cut from", async () => {
+    const { sha } = await candidateOver();
+    const tip = await revParse(repo);
+    // The bystander's own line on the one path the move would update. Staged
+    // and unstaged refuse alike (`.claude/rules/platform-facts.md` carries no
+    // fact here because git's own refusal is what this case reads), so the
+    // unstaged form stands for both.
+    await writeFile(join(repo, ".seed"), "the operator's line\n");
+
+    const caught = await fastForwardTo(repo, sha).catch((err: unknown) => err);
+
+    expect(caught).toBeInstanceOf(FastForwardRefusedError);
+    // The other side of the discriminant: trunk stands exactly where the
+    // candidate was cut, so nothing moved under it and carrying again would
+    // meet this same wall.
+    expect((caught as FastForwardRefusedError).tipSha).toBe(tip);
+    // Both writers' work is where its author left it: the branch unmoved, the
+    // uncommitted line in the tree, the candidate still readable.
+    expect(await revParse(repo)).toBe(tip);
+    expect(await readFile(join(repo, ".seed"), "utf8")).toBe(
+      "the operator's line\n",
+    );
+    expect(await readFileAtRef(repo, sha, ".seed")).toBe("the span's line\n");
   });
 });
 

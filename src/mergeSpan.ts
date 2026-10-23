@@ -132,6 +132,16 @@ type SpanNarration = {
     landedOnSha: string;
     /** The words the refusal itself raised. */
     refusal: string;
+    /**
+     * The tip trunk now stands at, present exactly when the carry is about to
+     * be made again onto it ({@link MOVED_TIP_ABSORPTIONS}) — a foreign commit
+     * landed under the candidate and this refusal is not the span's fate.
+     * Absent when it is: trunk never moved, or the absorption is spent, and
+     * the span is the leg's to report unshipped. Handed over rather than left
+     * for the leg to guess, so a line promising a retry is only written where
+     * one follows.
+     */
+    carriedAgainOnto?: string;
   }): string;
   /**
    * The span is on trunk. `landedOnSha` equal to `mergedSha` is the whole span
@@ -180,9 +190,18 @@ type SpanCarried<L> =
    * Trunk was not this carry's to move: a live foreign tip claim refused ahead
    * of everything, or the fast-forward to a judged candidate was declined.
    * Either way trunk stands where it stood, holds nothing of this span, and
-   * the span is carried again onto whatever tip it then has.
+   * the span is carried again by whatever tick next has it.
+   *
+   * `movedTo` is the tip trunk stands at where that is not the tip the
+   * candidate was cut from — a writer landed under the candidate and the
+   * carry's own absorption was already spent on an earlier one
+   * ({@link MOVED_TIP_ABSORPTIONS}). Absent is trunk standing exactly where
+   * the candidate was cut: the claim refused ahead of the pick, or an
+   * uncommitted change on a path the span touched refused the move. A fact,
+   * never a verdict — what a second mover means for a queue is the leg's
+   * (`.claude/rules/engine-boundary.md`, *Surface, not prescription*).
    */
-  | { fate: "tip-moved" }
+  | { fate: "tip-moved"; movedTo?: string }
   /** The pick hit a real conflict: the candidate is discarded and trunk holds nothing of this span. */
   | {
       fate: "cherry-pick-conflict";
@@ -219,6 +238,11 @@ type SpanCarried<L> =
  * step's reason is at the step, in the step's own function — the ones the
  * batch carry below runs over N spans instead of one
  * ({@link carryMergeBatch}).
+ *
+ * That order runs again, once, where trunk declined the move because a writer
+ * landed under the candidate: the span is carried onto the tip it left rather
+ * than walled by it ({@link carryAbsorbingMovedTip}), which is what absorption
+ * means at this site.
  *
  * **Every exit short of the fast-forward discards one directory.** There is no
  * reset, no revert and no rewind: a red gate, a conflicting pick, a refused
@@ -285,19 +309,79 @@ export async function carryMergeSpan<L>(carry: {
   narrate: SpanNarration;
 }): Promise<SpanCarried<L>> {
   const { leg, phase, narrate } = carry;
-  if (await foreignTipRefusal(leg, narrate.tipClaimed)) {
+  return carryAbsorbingMovedTip<SpanCarried<L>>(
+    leg,
+    narrate.tipClaimed,
     // Refused ahead of the candidate and the pick, so trunk holds nothing of
     // this span. The leg's row is the whole recovery handle: the span's
     // commits outlive the branch teardown deletes
     // (`TickVerdictMergeOutcome`, `src/tickVerdict.ts`).
-    return { fate: "tip-moved" };
-  }
-  return withProvisionedCandidate(
-    leg,
-    phase,
-    carry.assignment?.entry.tag ?? phase.name,
-    (candidate) => carryOntoCandidate(carry, candidate),
+    { fate: "tip-moved" },
+    (carryAgain) =>
+      withProvisionedCandidate(
+        leg,
+        phase,
+        carry.assignment?.entry.tag ?? phase.name,
+        (candidate) => carryOntoCandidate(carry, candidate, carryAgain),
+      ),
   );
+}
+
+/**
+ * How many times a carry whose fast-forward trunk declined *over a tip that
+ * moved* is made again, onto the tip that moved it. One.
+ *
+ * A foreign commit under the candidate is legal history, and absorbing it at a
+ * harness commit site means picking onto whatever tip is current (spec/loop.md,
+ * *Tip verify — one writer per branch, absorption at the merge*) — which at
+ * this site is a candidate cut at the tip it left, the whole carry run there,
+ * and trunk fast-forwarded to that. Refusing instead would wall a span over an
+ * operator committing law or prompts mid-run, which is the interference this
+ * section says is not one.
+ *
+ * Bounded, and bounded out loud: each absorption pays for one more full
+ * `afterMerge` gate run under the ship lock, so a writer committing in a loop
+ * would hold that lock for as long as it kept going. Past the bound the carry
+ * answers `tip-moved` naming the tip it saw, and the span is carried again by
+ * the tick that next holds it — no commit, nothing dropped, the entry pending
+ * exactly as every other refusal leaves it.
+ */
+const MOVED_TIP_ABSORPTIONS = 1;
+
+/**
+ * Run a carry, and run it again on the tip a writer left under its candidate
+ * ({@link MOVED_TIP_ABSORPTIONS}).
+ *
+ * One home for the absorption both carries take — a single span's
+ * ({@link carryMergeSpan}) and a batch's ({@link carryMergeBatch}) — because
+ * the refusal they meet is the same one and the tip they would re-cut at is
+ * read the same way (`.claude/rules/engineering.md`, *The fix lands at the
+ * mechanism*).
+ *
+ * The live foreign claim is asked once per **attempt** rather than once per
+ * carry: a second engine that took the ref while this candidate was being
+ * judged is exactly the mover absorption must not launder (spec/loop.md,
+ * *Harness-driven commits carry no expected-tip bookkeeping — the claim
+ * refuses, git arbitrates*), and it costs one read of one file.
+ *
+ * `attempt` is told whether a refusal over a moved tip will be carried again,
+ * which the leg needs to word its own refusal line and nothing else: the
+ * decision is this loop's.
+ */
+async function carryAbsorbingMovedTip<
+  C extends { fate: string; movedTo?: string },
+>(
+  leg: TickLegContext,
+  tipClaimed: (pid: number) => string,
+  /** The fate a live foreign claim answers with — the one refusal absorption never touches. */
+  claimed: C,
+  attempt: (carryAgain: boolean) => Promise<C>,
+): Promise<C> {
+  for (let absorptions = MOVED_TIP_ABSORPTIONS; ; absorptions--) {
+    if (await foreignTipRefusal(leg, tipClaimed)) return claimed;
+    const carried = await attempt(absorptions > 0);
+    if (carried.movedTo === undefined || absorptions === 0) return carried;
+  }
 }
 
 /**
@@ -376,12 +460,12 @@ async function withProvisionedCandidate<T>(
  * carries end at, over the sha read *after* the leg's landing step, so the
  * move carries the picks and the commit that ships them together.
  *
- * Answers whether trunk moved. A refusal is a fact, not an error: something
- * landed on the branch under this candidate, or the move would overwrite an
+ * Answers whether trunk moved, and on a refusal which of the two refusals it
+ * was ({@link TrunkMove}). A refusal is a fact, not an error: something landed
+ * on the branch under this candidate, or the move would overwrite an
  * uncommitted change on a path a pick touched. Git moved nothing either way,
- * so the candidate is the only thing discarded, and what it carried is
- * carried again onto whatever tip trunk then has (spec/worktrees.md,
- * *Per-entry `afterMerge` revert isolation*).
+ * so the candidate is the only thing discarded (spec/worktrees.md, *Per-entry
+ * `afterMerge` revert isolation*).
  */
 async function fastForwardTrunk(move: {
   leg: TickLegContext;
@@ -389,26 +473,51 @@ async function fastForwardTrunk(move: {
   candidate: string;
   /** The tip the candidate was cut at, for the refusal's own line. */
   landedOnSha: string;
+  /**
+   * Whether a refusal over a moved tip is to be carried again onto it
+   * ({@link carryAbsorbingMovedTip}) — read for the leg's wording alone, so
+   * this step never decides what the refusal means.
+   */
+  carryAgain: boolean;
   /** How this leg words the refusal ({@link SpanNarration.fastForwardRefused}). */
   refused: SpanNarration["fastForwardRefused"];
-}): Promise<boolean> {
+}): Promise<TrunkMove> {
   const { leg } = move;
   const candidateSha = await git.revParse(move.candidate);
   try {
     await git.fastForwardTo(leg.repoRoot, candidateSha);
   } catch (err) {
     if (!(err instanceof git.FastForwardRefusedError)) throw err;
+    // Which refusal this was, read off the tip git stood at when it refused
+    // (`git.FastForwardRefusedError`) rather than out of the words it raised:
+    // a tip that is no longer the one this candidate was cut from is a writer
+    // landed under it, and a candidate cut at the tip trunk still holds is a
+    // descendant by construction, so only that checkout's own uncommitted
+    // work can have declined it.
+    const movedTo =
+      err.tipSha === move.landedOnSha ? undefined : err.tipSha;
     leg.log.warn(
       move.refused({
         candidateSha,
         landedOnSha: move.landedOnSha,
         refusal: err.gitMessage,
+        ...(movedTo !== undefined && move.carryAgain
+          ? { carriedAgainOnto: movedTo }
+          : {}),
       }),
     );
-    return false;
+    return { moved: false, ...(movedTo !== undefined ? { movedTo } : {}) };
   }
-  return true;
+  return { moved: true };
 }
+
+/**
+ * What the one fast-forward answered: trunk became the candidate, or it stands
+ * where it stood and `movedTo` says whether anything moved it
+ * ({@link SpanCarried}'s `tip-moved` arm carries the same fact on, in the same
+ * spelling).
+ */
+type TrunkMove = { moved: true } | { moved: false; movedTo?: string };
 
 /**
  * The half of {@link carryMergeSpan} that runs inside a provisioned
@@ -423,6 +532,8 @@ async function fastForwardTrunk(move: {
 async function carryOntoCandidate<L>(
   carry: Parameters<typeof carryMergeSpan<L>>[0],
   candidate: string,
+  /** Passed straight to the fast-forward, for the leg's wording ({@link fastForwardTrunk}). */
+  carryAgain: boolean,
 ): Promise<SpanCarried<L>> {
   const { leg, phase, base, head, narrate } = carry;
   const repoRoot = leg.repoRoot;
@@ -498,14 +609,19 @@ async function carryOntoCandidate<L>(
     leg,
     candidate,
     landedOnSha,
+    carryAgain,
     refused: narrate.fastForwardRefused,
   });
-  if (!moved) {
-    // Trunk declined, so the entry is the leg's to carry again onto the new
-    // tip ({@link fastForwardTrunk}), and `landing` is dropped with the
-    // candidate it was written into — the leg never sees it, so nothing it
+  if (!moved.moved) {
+    // Trunk declined, so this span is carried again — onto the tip a writer
+    // left under the candidate ({@link carryAbsorbingMovedTip}), or by the
+    // tick that next holds the entry. `landing` is dropped with the candidate
+    // it was written into either way: the leg never sees it, so nothing it
     // describes is reported as shipped.
-    return { fate: "tip-moved" };
+    return {
+      fate: "tip-moved",
+      ...(moved.movedTo !== undefined ? { movedTo: moved.movedTo } : {}),
+    };
   }
   leg.log.info(narrate.merged(mergedSha, landedOnSha));
   return { fate: "merged", ...landed, landing };
@@ -567,8 +683,10 @@ type BatchCarried<L> =
    * Trunk was not this batch's to move: a live foreign tip claim refused ahead
    * of everything, or the fast-forward to the judged candidate was declined.
    * Either way trunk stands where it stood and holds nothing of any span.
+   * `movedTo` carries the same fact at a width that a single span's arm does
+   * ({@link SpanCarried}).
    */
-  | { fate: "tip-moved" }
+  | { fate: "tip-moved"; movedTo?: string }
   /** Red, or a conflict while picking: the candidate is discarded and trunk named no span of it. */
   | { fate: "discarded"; why: string }
   /**
@@ -586,7 +704,10 @@ type BatchCarried<L> =
  * gate turns red or a pick conflicts.
  *
  * Every step is {@link carryMergeSpan}'s own, over N spans instead of one: the
- * same foreign-claim refusal ahead of everything, the same candidate frame
+ * same foreign-claim refusal ahead of everything, the same absorption of a
+ * trunk that moved under the candidate ({@link carryAbsorbingMovedTip}) — the
+ * whole batch re-picked onto the tip the writer left, since the candidate it
+ * was judged in has gone — the same candidate frame
  * ({@link withProvisionedCandidate}), the same pick per span, the same gate
  * loop — handed a {@link BatchGateContext} instead of a single span's, which
  * is the whole of what a gate declaring `batches: true` bought
@@ -644,103 +765,112 @@ export async function carryMergeBatch<L>(carry: {
         `context that names no entry`,
     );
   }
-  if (await foreignTipRefusal(leg, narrate.tipClaimed)) {
-    return { fate: "tip-moved" };
-  }
-  return withProvisionedCandidate(
+  return carryAbsorbingMovedTip<BatchCarried<L>>(
     leg,
-    phase,
-    // No entry names this tree: the gates over it are handed every span's
-    // assignment and none of them as *the* one, and a provisioning hook is
-    // owed the same account of what it is provisioning for
-    // (`batchGateContext`, `src/gateBatch.ts`).
-    phase.name,
-    async (candidate, trunkTip) => {
-      const landed: SpanLanded[] = [];
-      const gateSpans: GateBatchSpan[] = [];
-      /**
-       * Give up the candidate. Nothing is reset and nothing is aborted: the
-       * tree the picks landed in is the thing discarded, and trunk has not
-       * moved since it was cut.
-       */
-      const discard = (why: string): BatchCarried<L> => {
-        leg.log.warn(narrate.discarded(why));
-        return { fate: "discarded", why };
-      };
-      for (const span of spans) {
-        const picked = await pickSpanRange({
-          leg,
-          // One candidate for the whole batch, so span N+1 picks onto what
-          // span N left and the gates judge the tree every span of the batch
-          // produced together — which is the whole of what batching buys.
-          tree: candidate,
-          base: span.base,
-          head: span.head,
-          ...(span.stake ? { stake: span.stake } : {}),
-          narrate: span.narrate,
-        });
-        if (picked.fate === "cherry-pick-conflict") {
-          // A conflict is the batch's verdict; each span's own is the serial
-          // pass's to take. The spans picked ahead of it need no taking back —
-          // they are on the candidate, and the candidate goes.
-          return discard(`cherry-pick conflict: ${picked.failure.message}`);
-        }
-        landed.push(picked);
-        gateSpans.push({
-          ...(span.assignment ? { assignment: span.assignment } : {}),
-          commitSha: picked.mergedSha,
-          baseSha: span.base,
-          landedOnSha: picked.landedOnSha,
-          touchedPaths: picked.touchedPaths,
-        });
-      }
-      const failingGate = await gateMergedTip(
+    narrate.tipClaimed,
+    { fate: "tip-moved" },
+    (carryAgain) =>
+      withProvisionedCandidate(
         leg,
         phase,
-        // Every per-span fact on the span records, every batch-wide fact
-        // computed from them (`batchGateContext`, `src/gateBatch.ts`) — never
-        // restated here.
-        batchGateContext(gateSite(leg, phase, candidate), gateSpans),
-        carry.onGateRow,
-      );
-      if (failingGate) {
-        leg.log.warn(narrate.gateFailed(failingGate.gate));
-        // No prior-attempt record and no gate failure reported for the batch's
-        // own red: the serial pass below it re-runs these gates per span, and
-        // the entry each of them blames is the one that pass condemns. A
-        // record written here would name every span for a verdict one of them
-        // earned.
-        return discard(
-          `afterMerge gate '${failingGate.gate}' failed over the batch: ${failingGate.message}`,
-        );
-      }
-      // Green. Whatever ships the spans lands on the candidate too, so the
-      // fast-forward below carries the batch and the commit that retires it in
-      // one move and no instant exists at which trunk holds one without the
-      // other (spec/loop.md "The ship lock and the worktree lock — sibling
-      // ticks take turns at git").
-      const landing = await carry.land({ candidate, landed });
-      const moved = await fastForwardTrunk({
-        leg,
-        candidate,
-        // The tip the candidate was cut at — the batch's own lower end, and
-        // the tip trunk stays at when the move is declined.
-        landedOnSha: trunkTip,
-        refused: narrate.fastForwardRefused,
-      });
-      if (!moved) {
-        // Trunk declined, so every span of the batch is where a refused
-        // single-span carry leaves its own: nothing on trunk, the entry
-        // pending, carried again onto whatever tip trunk then has. `landing`
-        // is dropped with the candidate it was written into.
-        return { fate: "tip-moved" };
-      }
-      for (const [i, span] of spans.entries()) {
-        const l = landed[i]!;
-        leg.log.info(span.narrate.merged(l.mergedSha, l.landedOnSha));
-      }
-      return { fate: "merged", landed, landing };
-    },
+        // No entry names this tree: the gates over it are handed every span's
+        // assignment and none of them as *the* one, and a provisioning hook is
+        // owed the same account of what it is provisioning for
+        // (`batchGateContext`, `src/gateBatch.ts`).
+        phase.name,
+        async (candidate, trunkTip) => {
+          const landed: SpanLanded[] = [];
+          const gateSpans: GateBatchSpan[] = [];
+          /**
+           * Give up the candidate. Nothing is reset and nothing is aborted: the
+           * tree the picks landed in is the thing discarded, and trunk has not
+           * moved since it was cut.
+           */
+          const discard = (why: string): BatchCarried<L> => {
+            leg.log.warn(narrate.discarded(why));
+            return { fate: "discarded", why };
+          };
+          for (const span of spans) {
+            const picked = await pickSpanRange({
+              leg,
+              // One candidate for the whole batch, so span N+1 picks onto what
+              // span N left and the gates judge the tree every span of the batch
+              // produced together — which is the whole of what batching buys.
+              tree: candidate,
+              base: span.base,
+              head: span.head,
+              ...(span.stake ? { stake: span.stake } : {}),
+              narrate: span.narrate,
+            });
+            if (picked.fate === "cherry-pick-conflict") {
+              // A conflict is the batch's verdict; each span's own is the serial
+              // pass's to take. The spans picked ahead of it need no taking back —
+              // they are on the candidate, and the candidate goes.
+              return discard(`cherry-pick conflict: ${picked.failure.message}`);
+            }
+            landed.push(picked);
+            gateSpans.push({
+              ...(span.assignment ? { assignment: span.assignment } : {}),
+              commitSha: picked.mergedSha,
+              baseSha: span.base,
+              landedOnSha: picked.landedOnSha,
+              touchedPaths: picked.touchedPaths,
+            });
+          }
+          const failingGate = await gateMergedTip(
+            leg,
+            phase,
+            // Every per-span fact on the span records, every batch-wide fact
+            // computed from them (`batchGateContext`, `src/gateBatch.ts`) — never
+            // restated here.
+            batchGateContext(gateSite(leg, phase, candidate), gateSpans),
+            carry.onGateRow,
+          );
+          if (failingGate) {
+            leg.log.warn(narrate.gateFailed(failingGate.gate));
+            // No prior-attempt record and no gate failure reported for the batch's
+            // own red: the serial pass below it re-runs these gates per span, and
+            // the entry each of them blames is the one that pass condemns. A
+            // record written here would name every span for a verdict one of them
+            // earned.
+            return discard(
+              `afterMerge gate '${failingGate.gate}' failed over the batch: ${failingGate.message}`,
+            );
+          }
+          // Green. Whatever ships the spans lands on the candidate too, so the
+          // fast-forward below carries the batch and the commit that retires it in
+          // one move and no instant exists at which trunk holds one without the
+          // other (spec/loop.md "The ship lock and the worktree lock — sibling
+          // ticks take turns at git").
+          const landing = await carry.land({ candidate, landed });
+          const moved = await fastForwardTrunk({
+            leg,
+            candidate,
+            // The tip the candidate was cut at — the batch's own lower end, and
+            // the tip trunk stays at when the move is declined.
+            landedOnSha: trunkTip,
+            carryAgain,
+            refused: narrate.fastForwardRefused,
+          });
+          if (!moved.moved) {
+            // Trunk declined, so every span of the batch is where a refused
+            // single-span carry leaves its own: nothing on trunk, the entry
+            // pending, and the whole batch carried again — onto the tip a writer
+            // left under this candidate ({@link carryAbsorbingMovedTip}), or by
+            // the tick that next holds these entries. `landing` is dropped with
+            // the candidate it was written into.
+            return {
+              fate: "tip-moved",
+              ...(moved.movedTo !== undefined ? { movedTo: moved.movedTo } : {}),
+            };
+          }
+          for (const [i, span] of spans.entries()) {
+            const l = landed[i]!;
+            leg.log.info(span.narrate.merged(l.mergedSha, l.landedOnSha));
+          }
+          return { fate: "merged", landed, landing };
+        },
+      ),
   );
 }
 
@@ -758,9 +888,11 @@ export async function carryMergeBatch<L>(carry: {
  * trunk was not an engine, and the picks below land onto whatever tip is
  * current, with git's own conflict detection the only content arbiter left.
  *
- * One refusal per carry, never per span of a batch: the claim is a statement
- * about the ref, so asking it N times would read the same disk N times to
- * answer N identical questions.
+ * One refusal per carry **attempt**, never per span of a batch: the claim is a
+ * statement about the ref, so asking it per span would read the same disk N
+ * times to answer N identical questions — while a carry made again onto a tip
+ * that moved asks afresh, because the mover it must not launder can arrive in
+ * exactly that window ({@link carryAbsorbingMovedTip}).
  */
 async function foreignTipRefusal(
   leg: TickLegContext,

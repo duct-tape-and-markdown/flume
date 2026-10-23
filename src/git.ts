@@ -176,15 +176,24 @@ export async function gitToplevel(cwd: string): Promise<string | undefined> {
  * has moved nothing, so the branch is exactly where it was and the caller's
  * candidate is the only thing to discard.
  *
+ * {@link FastForwardRefusedError.tipSha} is what tells the two apart: the tip
+ * the branch stands at, read back at the refusal. A tip the caller did not cut
+ * its candidate from is the first cause — a writer landed under it — and the
+ * tip it did cut from is the second, since a candidate cut there is a
+ * descendant by construction and only the tree can have refused.
+ *
  * `gitMessage` carries git's own stderr for the operator's log and is never
  * parsed to tell the two causes apart (`.claude/rules/engine-boundary.md`,
- * *Told, not inferred*): what the engine acts on is that trunk did not move.
+ * *Told, not inferred*): the discriminant is a sha on disk, never a sentence
+ * git composed.
  */
 export class FastForwardRefusedError extends Error {
   constructor(
     public readonly cwd: string,
     public readonly targetSha: string,
     public readonly gitMessage: string,
+    /** The tip the branch stands at, read at the refusal — the discriminant above. */
+    public readonly tipSha: string,
   ) {
     super(
       `fast-forward to ${targetSha} refused in ${cwd}: ${gitMessage} — ` +
@@ -212,7 +221,19 @@ export async function fastForwardTo(cwd: string, sha: string): Promise<void> {
   try {
     await run(cwd, ["merge", "--ff-only", sha]);
   } catch (err) {
-    throw new FastForwardRefusedError(cwd, sha, thrownMessage(err));
+    // The tip is read here rather than by the caller one call later: "did the
+    // branch move under me" is a question about the moment of the refusal, and
+    // a read past it reads a ref another writer may have moved again
+    // (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
+    // never rediscovered*). A read that itself fails throws past the refusal —
+    // a checkout whose HEAD will not resolve has no verdict to report
+    // (`.claude/rules/engineering.md`, *Loud or nothing*).
+    throw new FastForwardRefusedError(
+      cwd,
+      sha,
+      thrownMessage(err),
+      await revParse(cwd),
+    );
   }
 }
 

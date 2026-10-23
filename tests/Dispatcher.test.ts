@@ -9418,6 +9418,22 @@ describe("Dispatcher — trunk moves only by fast-forward to a judged candidate"
    */
   const candidatesAmong = (provisioned: readonly string[]): string[] =>
     provisioned.filter((p) => basename(p).startsWith("candidate-"));
+  /**
+   * One file's content at a commit, read out of git's own object store rather
+   * than off the checkout: the two differ exactly where a case's claim lives —
+   * a refused carry leaves the span's commit readable while the tree carries
+   * the operator's own line on that path.
+   */
+  const fileAtRef = async (
+    repo: string,
+    sha: string,
+    rel: string,
+  ): Promise<string> => {
+    const { stdout } = await exec("git", ["show", `${sha}:${rel}`], {
+      cwd: repo,
+    });
+    return stdout;
+  };
 
   /** A phase whose `setupWorktree` records every tree the tick provisioned. */
   const recordingPhase = (gates: Gate[], provisioned: string[]): Phase =>
@@ -9836,6 +9852,324 @@ describe("Dispatcher — trunk moves only by fast-forward to a judged candidate"
       "src/ff-row-extra.ts",
       "src/ff-row.ts",
     ]);
+  });
+
+  it("a trunk that moved under a candidate refuses the fast-forward and the span is carried again onto the new tip", async () => {
+    await writePending(fx.repo, [makeEntry("FF-ABSORB", ["src/ff-absorb.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    // An operator's commit landed on trunk from inside the `afterMerge` gate:
+    // the one window where the candidate is cut, its span is picked, and
+    // trunk has not yet fast-forwarded to it. Once — the re-carry runs these
+    // gates again over the candidate cut at the tip the commit left, and a
+    // second commit there would move trunk out from under every candidate
+    // forever.
+    const judged: string[] = [];
+    const operatorCommits: Gate = {
+      name: "ff-absorb-operator",
+      when: "afterMerge",
+      async run(ctx) {
+        judged.push(ctx.commitSha);
+        if (judged.length === 1) {
+          await writeAndCommit(
+            fx.repo,
+            "operator.md",
+            "operator\n",
+            "docs: an operator's own commit",
+          );
+        }
+        return { ok: true, message: "clean" };
+      },
+    };
+
+    const trunkBefore = await head(fx.repo);
+    const provisioned: string[] = [];
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [recordingPhase([operatorCommits], provisioned)],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "ff-absorb": async (cwd) => {
+          await writeAndCommit(
+            cwd,
+            "src/ff-absorb.ts",
+            "absorb\n",
+            "build(FF-ABSORB): ship",
+          );
+        },
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Vacuity: the carry really ran twice — one candidate trunk moved under,
+    // one cut at the tip it moved to — so there was a refused fast-forward
+    // and a second carry to rule on.
+    expect(judged).toHaveLength(2);
+    expect(candidatesAmong(provisioned)).toHaveLength(2);
+    expect(candidatesAmong(provisioned).filter((p) => existsSync(p))).toEqual(
+      [],
+    );
+
+    // The span is on trunk, over the commit that moved it: the foreign commit
+    // sits under the span's, exactly as if it had landed between ticks, and
+    // the entry left the queue.
+    expect(outcome.result?.shippedTags).toEqual(["FF-ABSORB"]);
+    const log = await exec("git", ["log", "--format=%s", "-n", "3"], {
+      cwd: fx.repo,
+    });
+    expect(log.stdout.trim().split("\n")).toEqual([
+      "chore(flume): ship FF-ABSORB",
+      "build(FF-ABSORB): ship",
+      "docs: an operator's own commit",
+    ]);
+    expect(await readFile(join(fx.repo, "operator.md"), "utf8")).toBe(
+      "operator\n",
+    );
+    expect(existsSync(join(fx.repo, "src", "ff-absorb.ts"))).toBe(true);
+    expect(readPendingFromDisk(fx.repo)).toEqual([]);
+
+    // And the absorption is not interference: trunk moved under the carry,
+    // the carry absorbed it, and no tick-level `tipMoved` fact is reported
+    // for a span that shipped.
+    expect(outcome.verdict?.tipMoved ?? false).toBe(false);
+    expect(await git.isAncestor(fx.repo, trunkBefore, await head(fx.repo))).toBe(
+      true,
+    );
+  });
+
+  it("a writer that moves trunk under every candidate is reported tip-moved rather than carried forever", async () => {
+    await writePending(fx.repo, [makeEntry("FF-CHASE", ["src/ff-chase.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    // A writer committing in every gate window moves trunk out from under
+    // each candidate in turn. The absorption is bounded, so the carry gives
+    // up and reports the fact rather than chasing the tip for as long as the
+    // writer keeps going — and the entry is carried again by the tick that
+    // next holds it.
+    const judged: string[] = [];
+    const operatorKeepsCommitting: Gate = {
+      name: "ff-chase-operator",
+      when: "afterMerge",
+      async run(ctx) {
+        judged.push(ctx.commitSha);
+        await writeAndCommit(
+          fx.repo,
+          `operator-${judged.length}.md`,
+          "operator\n",
+          `docs: operator commit ${judged.length}`,
+        );
+        return { ok: true, message: "clean" };
+      },
+    };
+
+    const provisioned: string[] = [];
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [recordingPhase([operatorKeepsCommitting], provisioned)],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "ff-chase": async (cwd) => {
+          await writeAndCommit(
+            cwd,
+            "src/ff-chase.ts",
+            "chase\n",
+            "build(FF-CHASE): ship",
+          );
+        },
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Vacuity and the bound together: the carry was made twice and stopped —
+    // the absorption spent on the first mover, the second reported.
+    expect(judged).toHaveLength(2);
+    expect(candidatesAmong(provisioned)).toHaveLength(2);
+
+    // Nothing of the span on trunk, the writer's own commits untouched, the
+    // entry pending, and the refusal named as the tick fact it is.
+    expect(outcome.result?.shippedTags ?? []).toEqual([]);
+    expect(outcome.verdict?.tipMoved).toBe(true);
+    expect(
+      outcome.verdict?.mergeOutcomes.find((m) => m.entryTag === "FF-CHASE")
+        ?.outcome,
+    ).toBe("tip-moved");
+    expect(readPendingFromDisk(fx.repo).map((e) => e.tag)).toEqual([
+      "FF-CHASE",
+    ]);
+    expect(existsSync(join(fx.repo, "src", "ff-chase.ts"))).toBe(false);
+    expect(await readFile(join(fx.repo, "operator-2.md"), "utf8")).toBe(
+      "operator\n",
+    );
+  });
+
+  it("an uncommitted change on a path the span touched refuses the fast-forward with both writers' work in place", async () => {
+    await writePending(fx.repo, [makeEntry("FF-COLLIDE", ["README.md"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    // The operator's unstaged edit lands on the path the span rewrote from
+    // inside the `afterMerge` gate — the same window the moved-trunk case
+    // above uses. Staged before the tick it would refuse the pick instead,
+    // which is a different leg.
+    const judged: string[] = [];
+    const operatorEdits: Gate = {
+      name: "ff-collide-operator",
+      when: "afterMerge",
+      async run(ctx) {
+        judged.push(ctx.commitSha);
+        await writeFile(join(fx.repo, "README.md"), "operator's own line\n");
+        return { ok: true, message: "clean" };
+      },
+    };
+
+    const trunkBefore = await head(fx.repo);
+    const provisioned: string[] = [];
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [recordingPhase([operatorEdits], provisioned)],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "ff-collide": async (cwd) => {
+          await writeAndCommit(
+            cwd,
+            "README.md",
+            "the span's line\n",
+            "build(FF-COLLIDE): ship",
+          );
+        },
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Vacuity: one candidate was cut and judged, and the collision refused
+    // the move rather than the carry being re-run into the same wall — trunk
+    // never moved, so there is no new tip to carry onto.
+    expect(judged).toHaveLength(1);
+    expect(candidatesAmong(provisioned)).toHaveLength(1);
+
+    // Trunk stands exactly where it stood: the span is unshipped and its
+    // entry stays in the queue for a fresh retry.
+    expect(await head(fx.repo)).toBe(trunkBefore);
+    expect(outcome.result?.shippedTags ?? []).toEqual([]);
+    expect(readPendingFromDisk(fx.repo).map((e) => e.tag)).toEqual([
+      "FF-COLLIDE",
+    ]);
+
+    // Both writers' work is where its author left it. The operator's edit is
+    // in the tree, unstaged and uncommitted, with nothing of the span written
+    // over it...
+    expect(await readFile(join(fx.repo, "README.md"), "utf8")).toBe(
+      "operator's own line\n",
+    );
+    const { stdout: status } = await exec("git", ["status", "--porcelain"], {
+      cwd: fx.repo,
+    });
+    expect(status).toContain("README.md");
+    expect(await fileAtRef(fx.repo, trunkBefore, "README.md")).toBe("seed\n");
+    // ...and the span's own commit is still readable at the sha the row
+    // names, which is the whole recovery handle a refused carry leaves.
+    const row = outcome.verdict?.mergeOutcomes.find(
+      (m) => m.entryTag === "FF-COLLIDE",
+    );
+    expect(row?.outcome).toBe("tip-moved");
+    expect(await fileAtRef(fx.repo, row!.headSha!, "README.md")).toBe(
+      "the span's line\n",
+    );
+  });
+
+  it("a fast-forward leaves an uncommitted change on a path the span did not touch standing", async () => {
+    await writePending(fx.repo, [makeEntry("FF-BYSTAND", ["src/ff-bystand.ts"])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+
+    // Two bystander edits on paths the span never names: one staged from
+    // inside the gate (mid-carry, past the pick), one unstaged before the
+    // tick began. The move updates only the paths that differ, so neither is
+    // in its way.
+    let judged: string | undefined;
+    const operatorStages: Gate = {
+      name: "ff-bystand-operator",
+      when: "afterMerge",
+      async run(ctx) {
+        judged = ctx.commitSha;
+        await writeFile(join(fx.repo, "operator-staged.txt"), "staged work\n");
+        await exec("git", ["add", "--", "operator-staged.txt"], {
+          cwd: fx.repo,
+        });
+        return { ok: true, message: "clean" };
+      },
+    };
+
+    await writeFile(join(fx.repo, "operator-unstaged.txt"), "unstaged work\n");
+
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [
+          makePhase({
+            name: "build",
+            concurrency: "fanout",
+            gates: [operatorStages],
+          }),
+        ],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        "ff-bystand": async (cwd) => {
+          await writeAndCommit(
+            cwd,
+            "src/ff-bystand.ts",
+            "bystand\n",
+            "build(FF-BYSTAND): ship",
+          );
+        },
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+
+    const outcome = await dispatcher.tick();
+
+    // Vacuity: the span really did reach trunk, so there was a fast-forward
+    // for the bystander work to survive.
+    expect(judged).toMatch(/^[0-9a-f]{40}$/);
+    expect(outcome.result?.shippedTags).toEqual(["FF-BYSTAND"]);
+    expect(existsSync(join(fx.repo, "src", "ff-bystand.ts"))).toBe(true);
+
+    // Both bystander edits stand, in the state their author left them.
+    expect(
+      await readFile(join(fx.repo, "operator-staged.txt"), "utf8"),
+    ).toBe("staged work\n");
+    expect(
+      await readFile(join(fx.repo, "operator-unstaged.txt"), "utf8"),
+    ).toBe("unstaged work\n");
+    const { stdout: staged } = await exec(
+      "git",
+      ["diff", "--cached", "--name-only"],
+      { cwd: fx.repo },
+    );
+    expect(staged.trim()).toBe("operator-staged.txt");
+    const { stdout: status } = await exec("git", ["status", "--porcelain"], {
+      cwd: fx.repo,
+    });
+    expect(status).toContain("operator-unstaged.txt");
   });
 });
 
@@ -28696,6 +29030,77 @@ describe("Dispatcher fanout — a merge carries a batch of spans, gated once (sp
     expect(reachable).toContain(outcome.result?.ledgerCommitShas?.[0]);
     for (const row of outcome.verdict?.mergeOutcomes ?? [])
       expect(reachable).toContain(row.headSha);
+  });
+
+  it("a batch whose fast-forward meets a moved trunk is carried again onto the tip the writer left", async () => {
+    // The batch's one gate run is the window: the candidate is cut, both
+    // spans are picked onto it, and trunk has not yet fast-forwarded to it.
+    // An operator's commit landing there refuses the move — and the batch is
+    // the unit that is carried again, cut at the tip the commit left, rather
+    // than falling to the serial pass a red batch or a conflict falls to.
+    const seen: string[][] = [];
+    const operatorCommits: Gate = {
+      name: "batch-absorb-operator",
+      when: "afterMerge",
+      batches: true,
+      async run(ctx) {
+        seen.push(tagsOf(ctx).sort());
+        if (seen.length === 1) {
+          await writeAndCommit(
+            fx.repo,
+            "operator.md",
+            "operator\n",
+            "docs: an operator's own commit",
+          );
+        }
+        return { ok: true, message: "clean" };
+      },
+    };
+
+    const { outcome } = await batchedWave({
+      entries: [
+        makeEntry("ABSORB-A", ["src/absorb-a.ts"]),
+        makeEntry("ABSORB-B", ["src/absorb-b.ts"]),
+      ],
+      mergeBatch: 2,
+      release: 2,
+      gates: [operatorCommits],
+      agent: {
+        "absorb-a": shipsFile("ABSORB-A", "src/absorb-a.ts", "a\n"),
+        "absorb-b": shipsFile("ABSORB-B", "src/absorb-b.ts", "b\n"),
+      },
+    });
+
+    // Vacuity, and the claim's first half: the gates ruled over a batch of
+    // two twice — the candidate trunk moved under, then the one cut at the
+    // tip it moved to — rather than the spans falling to one merge each.
+    expect(seen).toEqual([
+      ["ABSORB-A", "ABSORB-B"],
+      ["ABSORB-A", "ABSORB-B"],
+    ]);
+
+    // The second half: both spans are on trunk over the commit that moved it,
+    // under the one ledger commit that retired the pair, and the absorption
+    // is no one's interference.
+    expect([...(outcome.result?.shippedTags ?? [])].sort()).toEqual([
+      "ABSORB-A",
+      "ABSORB-B",
+    ]);
+    expect(outcome.result?.ledgerCommitShas).toHaveLength(1);
+    expect(outcome.verdict?.tipMoved ?? false).toBe(false);
+    expect(readPendingFromDisk(fx.repo)).toEqual([]);
+    expect(await candidatesLeft()).toEqual([]);
+    const { stdout: log } = await exec(
+      "git",
+      ["log", "--format=%s", "-n", "4"],
+      { cwd: fx.repo },
+    );
+    expect(log.trim().split("\n")).toEqual([
+      "chore(flume): ship ABSORB-A, ABSORB-B",
+      "build(ABSORB-B): ship",
+      "build(ABSORB-A): ship",
+      "docs: an operator's own commit",
+    ]);
   });
 
   it("a sibling tick's spans are never carried in this tick's batch", async () => {

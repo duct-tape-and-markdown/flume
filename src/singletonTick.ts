@@ -425,8 +425,16 @@ export async function runSingleton(
             `[flume] ${phase.name}: trunk already held ${shas.map((sha) => sha.slice(0, 8)).join(", ")} of ${spanBase.slice(0, 8)}..${spanHead.slice(0, 8)}; absorbed, not a conflict`,
           gateFailed: (gate) =>
             `[flume] afterMerge gate '${gate}' failed for ${phase.name}; discarding the candidate, trunk unchanged`,
-          fastForwardRefused: ({ candidateSha, landedOnSha, refusal }) =>
-            `[flume] ${phase.name}: fast-forward of trunk from ${landedOnSha.slice(0, 8)} to candidate ${candidateSha.slice(0, 8)} refused (${refusal}); trunk unchanged, commit stays on the worktree branch, retried next tick`,
+          fastForwardRefused: ({
+            candidateSha,
+            landedOnSha,
+            refusal,
+            carriedAgainOnto,
+          }) =>
+            `[flume] ${phase.name}: fast-forward of trunk from ${landedOnSha.slice(0, 8)} to candidate ${candidateSha.slice(0, 8)} refused (${refusal}); ` +
+            (carriedAgainOnto === undefined
+              ? `trunk unchanged, commit stays on the worktree branch, retried next tick`
+              : `trunk now stands at ${carriedAgainOnto.slice(0, 8)}, so the span is carried again onto it`),
           merged: (mergedSha, landedOnSha) =>
             mergedSha === landedOnSha
               ? `[flume] ${phase.name}: trunk already holds the whole span ${spanBase.slice(0, 8)}..${spanHead.slice(0, 8)}; merged with no commit to add`

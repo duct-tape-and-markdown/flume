@@ -1060,8 +1060,16 @@ async function carryBatch(
         `[flume] afterMerge gate '${gate}' failed over the batch of ${spans.length}; each span merges on its own so blame and revert stay per entry`,
       discarded: (why) =>
         `[flume] ${phase.name}: the candidate carrying the batch of ${spans.length} is discarded (${why}); merging its spans one at a time`,
-      fastForwardRefused: ({ candidateSha, landedOnSha, refusal }) =>
-        `[flume] ${phase.name}: fast-forward of trunk from ${landedOnSha.slice(0, 8)} to the batch's candidate ${candidateSha.slice(0, 8)} refused (${refusal}); trunk unchanged, ${tags} stay pending`,
+      fastForwardRefused: ({
+        candidateSha,
+        landedOnSha,
+        refusal,
+        carriedAgainOnto,
+      }) =>
+        `[flume] ${phase.name}: fast-forward of trunk from ${landedOnSha.slice(0, 8)} to the batch's candidate ${candidateSha.slice(0, 8)} refused (${refusal}); ` +
+        (carriedAgainOnto === undefined
+          ? `trunk unchanged, ${tags} stay pending`
+          : `trunk now stands at ${carriedAgainOnto.slice(0, 8)}, so the batch is carried again onto it`),
     },
   });
   if (batch.fate === "tip-moved") {
@@ -1212,9 +1220,19 @@ async function carrySpan(
         `[flume] afterMerge gate '${gate}' failed for ${r.entry.tag}; discarding only that entry's candidate (clean siblings stay shipped)`,
       // The bare refusal, with both shas short and named once each: the same
       // sentence a singleton's leg reads (`src/singletonTick.ts`), plus the
-      // tail only a wave has to say.
-      fastForwardRefused: ({ candidateSha, landedOnSha, refusal }) =>
-        `[flume] ${r.entry.tag}: fast-forward of trunk from ${landedOnSha.slice(0, 8)} to candidate ${candidateSha.slice(0, 8)} refused (${refusal}); trunk unchanged, entry stays pending; other entries continue`,
+      // tail only a wave has to say — and the tail the carry's own answer
+      // decides, because a refusal it is about to absorb is not this entry's
+      // fate (`carriedAgainOnto`, `src/mergeSpan.ts`).
+      fastForwardRefused: ({
+        candidateSha,
+        landedOnSha,
+        refusal,
+        carriedAgainOnto,
+      }) =>
+        `[flume] ${r.entry.tag}: fast-forward of trunk from ${landedOnSha.slice(0, 8)} to candidate ${candidateSha.slice(0, 8)} refused (${refusal}); ` +
+        (carriedAgainOnto === undefined
+          ? `trunk unchanged, entry stays pending; other entries continue`
+          : `trunk now stands at ${carriedAgainOnto.slice(0, 8)}, so the span is carried again onto it`),
       merged: (mergedSha, landedOnSha) =>
         mergedSha === landedOnSha
           ? `[flume] ${r.entry.tag}: trunk already holds the whole span ${r.spanBase.slice(0, 8)}..${r.headSha.slice(0, 8)}; merged with no commit to add`
