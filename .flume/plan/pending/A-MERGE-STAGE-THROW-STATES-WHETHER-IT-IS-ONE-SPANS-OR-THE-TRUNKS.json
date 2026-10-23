@@ -1,10 +1,7 @@
 {
   "tag": "A-MERGE-STAGE-THROW-STATES-WHETHER-IT-IS-ONE-SPANS-OR-THE-TRUNKS",
   "gate": {
-    "kind": "blockedBy",
-    "tags": [
-      "A-BATCHS-SPANS-REACH-ONE-CANDIDATE"
-    ]
+    "kind": "open"
   },
   "dependsOnForks": [],
   "kind": "work",

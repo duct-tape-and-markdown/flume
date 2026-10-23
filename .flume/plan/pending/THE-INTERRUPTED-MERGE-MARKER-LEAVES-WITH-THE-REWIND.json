@@ -1,10 +1,7 @@
 {
   "tag": "THE-INTERRUPTED-MERGE-MARKER-LEAVES-WITH-THE-REWIND",
   "gate": {
-    "kind": "blockedBy",
-    "tags": [
-      "A-BATCHS-SPANS-REACH-ONE-CANDIDATE"
-    ]
+    "kind": "open"
   },
   "dependsOnForks": [],
   "kind": "work",
