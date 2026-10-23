@@ -680,6 +680,56 @@ describe("the harness declaration schema", () => {
     expect(refusalFor(declared)).toContain("gates.build.0.when");
   });
 
+  it("a command gate's reader parses as the value with behavior it is", () => {
+    const declared = fullDeclaration();
+    const read = (): { ok: boolean; message: string } => ({
+      ok: true,
+      message: "green",
+    });
+    declared["gates"] = {
+      build: [
+        { kind: "shell", command: "pnpm lint", when: "afterCommit", read },
+        { kind: "script", path: "scripts/check.sh", when: "afterMerge", read },
+      ],
+    };
+
+    // The function arrives on the parsed declaration rather than being
+    // normalized into data: a schema that stripped it would leave the chain
+    // factory nothing to hand the engine's gate.
+    const parsed = parseDeclaration(declared).gates?.build ?? [];
+    expect(
+      parsed.map((gate) => (gate.kind === "registry" ? undefined : gate.read)),
+    ).toEqual([read, read]);
+  });
+
+  it("a command gate's reader that is not a function is refused at its own path", () => {
+    const declared = fullDeclaration();
+    declared["gates"] = {
+      build: [
+        { kind: "shell", command: "pnpm lint", when: "afterCommit", read: "stdout" },
+      ],
+    };
+
+    const message = refusalFor(declared);
+
+    expect(message).toContain("gates.build.0.read");
+    expect(message).toContain("the command's run");
+  });
+
+  it("a registry gate carrying a reader is refused — its verdict is the built gate's", () => {
+    const declared = fullDeclaration();
+    declared["gates"] = {
+      build: [
+        { kind: "registry", name: "tsc", when: "afterCommit", read: () => ({}) },
+      ],
+    };
+
+    const message = refusalFor(declared);
+
+    expect(message).toContain("gates.build.0.read");
+    expect(message).toContain("valid fields are: kind, name, when");
+  });
+
   /**
    * The declaration list one page keeps by hand, cut from that page and proven
    * to be the list rather than an empty span. Both pages that keep one are the

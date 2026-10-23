@@ -65,7 +65,8 @@ the entry fields the chain factory takes:
   prompt that fills it cannot drift;
 - `slots` — text the prompts quote, context and never a directive;
 - `gates` — by registry name, shell, or script, run under the `shell` the
-  declaration names with the engine's gate facts in their environment;
+  declaration names with the engine's gate facts in their environment, and a
+  command gate's optional reader over what it wrote;
 - `resolver` — how a `per` cite's section is found, where heading text is not
   how this consumer's spec is keyed;
 - `channelPaths` and `scopeWritesToEntry` — what a build tick writes beside

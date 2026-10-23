@@ -86,6 +86,8 @@ export {
   pendingGate,
   type PendingGateOptions,
   type ShellGateOptions,
+  type ShellGateReader,
+  type ShellGateRun,
   type PkgManagerOverride,
   type PkgManagerGate,
 } from "./builtinGates.js";

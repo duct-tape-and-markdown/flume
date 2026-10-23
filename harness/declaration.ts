@@ -23,6 +23,7 @@
 
 import { z } from "zod";
 
+import type { ShellGateReader } from "../src/builtinGates.js";
 import type { GatePhase } from "../src/Gate.js";
 import { foreignGlobRefusal } from "../src/paths.js";
 import type { Chain } from "../src/Phase.js";
@@ -161,6 +162,28 @@ const GATE_WHEN: Record<GatePhase, true> = {
 const When = z.enum(Object.keys(GATE_WHEN) as [GatePhase, ...GatePhase[]]);
 
 /**
+ * A command gate's reader (`spec/harness.md`, *What a consumer declares*) — a
+ * declared value with behavior, and one the package could not have supplied:
+ * what a consumer's validator says in its own report is that validator's
+ * grammar, as a failing title's is
+ * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+ *
+ * Checked as a function and nothing more, for the resolver's reason: what it
+ * answers over one run is the gate result's contract (`ShellGateReader`,
+ * `src/builtinGates.ts`), and the only thing that could check it here is
+ * spawning a command this schema has never seen.
+ */
+const GateReaderValue = z.custom<ShellGateReader>(
+  (value): boolean => typeof value === "function",
+  {
+    error:
+      "must be a function over the command's run — its two streams, the " +
+      "status it exited with, and the tree it ran in — answering the result " +
+      "the gate reports (spec/harness.md, What a consumer declares)",
+  },
+);
+
+/**
  * One extra gate a consumer hangs on a phase: by the name of a gate the
  * package's registry ships, by an inline shell command, or by a script the
  * consumer commits. The package's own gates are not declarable: its
@@ -169,11 +192,27 @@ const When = z.enum(Object.keys(GATE_WHEN) as [GatePhase, ...GatePhase[]]);
  *
  * A registry `name` is any non-empty string here; whether the registry holds
  * it is the chain factory's refusal, at the same load.
+ *
+ * A command carries an optional `read` over what it wrote, and a registry
+ * name carries none: a registry gate is a `Gate` the package already built,
+ * and its verdict is that gate's to report. Absent on a command gate, the
+ * exit status is the whole verdict — the same mechanism over no reader, which
+ * is why no `kind` of its own spells it.
  */
 const GateDeclaration = z.discriminatedUnion("kind", [
   strict({ kind: z.literal("registry"), name: z.string().min(1), when: When }),
-  strict({ kind: z.literal("shell"), command: z.string().min(1), when: When }),
-  strict({ kind: z.literal("script"), path: z.string().min(1), when: When }),
+  strict({
+    kind: z.literal("shell"),
+    command: z.string().min(1),
+    when: When,
+    read: GateReaderValue.optional(),
+  }),
+  strict({
+    kind: z.literal("script"),
+    path: z.string().min(1),
+    when: When,
+    read: GateReaderValue.optional(),
+  }),
 ]);
 
 /**
@@ -444,6 +483,10 @@ export const DeclarationSchema = strict({
    * present and always first, so nothing here can displace one; the
    * package's judge trails whatever is declared at the same `when`, so a
    * seconds-long check reports before a minutes-long suite.
+   *
+   * A command gate's optional `read` is where a verdict richer than an exit
+   * status comes from — the files the gate blames, a run it skipped, a
+   * failure that is not the span's ({@link GateReaderValue}).
    */
   gates: byPhase(z.array(GateDeclaration)).optional(),
   /**

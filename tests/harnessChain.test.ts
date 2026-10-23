@@ -71,7 +71,8 @@ import { entryDeclaredKey } from "../src/entryKey.ts";
 import { mergeBatchWidth } from "../src/gateBatch.ts";
 import { computeStateRootRel } from "../src/paths.ts";
 import { buildFlumeApi, type FlumeApi } from "../src/flumeApi.ts";
-import type { Gate, GateContext } from "../src/Gate.ts";
+import type { ShellGateReader } from "../src/builtinGates.ts";
+import type { Gate, GateContext, GateResult } from "../src/Gate.ts";
 import type {
   Chain,
   Phase,
@@ -2299,6 +2300,180 @@ it("docs/CHAIN-AUTHORING.md names exactly the FLUME_ variables a declared gate's
     [...tabled].sort(),
     "docs/CHAIN-AUTHORING.md tables exactly the facts a declared gate's child is handed",
   ).toEqual(Object.keys(seen).sort());
+});
+
+/**
+ * The reports a declared reader is driven over, each written by a real child
+ * whose **exit status contradicts what it wrote**: the first names drift and
+ * exits clean, the second reports nothing wrong and exits 3. A pair whose
+ * status agreed with its report would leave every verdict below readable as
+ * the exit status the gate already had.
+ */
+const REPORTS_DRIFT =
+  `node -e 'console.log("drift: src/widget.ts");` +
+  ` console.log("drift: docs/a page.md")'`;
+const REPORTS_CLEAN_AND_EXITS_3 = `node -e 'console.log("clean"); process.exit(3)'`;
+
+/** The marker the reports above lead a drifted file with. */
+const DRIFT = "drift: ";
+
+/**
+ * A consumer's reader over those reports: the files the report names are the
+ * ones the gate blames, and a report naming none is green however the command
+ * exited.
+ */
+const readDrift: ShellGateReader = ({ stdout }) => {
+  const drifted = stdout
+    .split(/\r?\n/)
+    .flatMap((line) => (line.startsWith(DRIFT) ? [line.slice(DRIFT.length)] : []));
+  return drifted.length === 0
+    ? { ok: true, message: "no drift" }
+    : {
+        ok: false,
+        message: `${drifted.length} file(s) drifted`,
+        verdict: "drift",
+        failingFiles: drifted,
+      };
+};
+
+/**
+ * One declared command gate's result over a real run in a throwaway tree —
+ * the real producer (a spawned command's own output) driven through the real
+ * consumer (the reader the chain factory wired onto the engine's gate), with
+ * the declaration parsed by the package's own schema on the way
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ *
+ * A case omitting `read` declares no reader at all, which is the one way to
+ * read the gate's answer to silence.
+ */
+async function declaredCommandResult(
+  command: string,
+  read?: ShellGateReader,
+): Promise<GateResult> {
+  const gate = declaredGate(
+    {
+      kind: "shell",
+      command,
+      when: "afterCommit",
+      ...(read === undefined ? {} : { read }),
+    },
+    command,
+  );
+  const tree = await mkTempDir("flume-harness-chain-gate-read-");
+  try {
+    return await gate.run(gateContext(tree));
+  } finally {
+    await rm(tree, { recursive: true, force: true });
+  }
+}
+
+it("a declared command gate's reader decides the gate's verdict", async () => {
+  // A command that exited clean while its report names drift: the gate fails,
+  // and carries the discriminant the reader stated.
+  const overExit = await declaredCommandResult(REPORTS_DRIFT, readDrift);
+  expect({ ok: overExit.ok, verdict: overExit.verdict }).toEqual({
+    ok: false,
+    verdict: "drift",
+  });
+
+  // And the other direction, so neither verdict is the exit status agreeing
+  // with the reader by accident: a command that exited 3 with nothing to
+  // report is green.
+  const underExit = await declaredCommandResult(
+    REPORTS_CLEAN_AND_EXITS_3,
+    readDrift,
+  );
+  expect({ ok: underExit.ok, message: underExit.message }).toEqual({
+    ok: true,
+    message: "no drift",
+  });
+
+  // Vacuity pins (`.claude/rules/engineering.md`, *A green verdict is proven
+  // non-vacuous*): both children ran and wrote the reports the verdicts above
+  // were read off, which a gate that never spawned would leave empty.
+  expect(overExit.details).toContain("drift: src/widget.ts");
+  expect(underExit.details).toContain("clean");
+});
+
+it("a declared command gate's reader names the files the gate blames", async () => {
+  const result = await declaredCommandResult(REPORTS_DRIFT, readDrift);
+
+  // The two paths the report named, in its own order and verbatim — the space
+  // in one of them included, which no exit status could have carried.
+  expect(result.failingFiles).toEqual(["src/widget.ts", "docs/a page.md"]);
+  // The blame rides the failure the same reader returned, not a green result
+  // carrying files nobody is blamed for.
+  expect(result.ok).toBe(false);
+});
+
+it("a declared command gate's reader reports the run as skipped", async () => {
+  const command = `node -e 'console.log("nothing to check")'`;
+  const result = await declaredCommandResult(command, ({ stdout }) =>
+    stdout.includes("nothing to check")
+      ? {
+          ok: true,
+          message: "no contract in the span",
+          skipped: "no contract file among the touched paths",
+        }
+      : { ok: false, message: "the report said something else" },
+  );
+
+  // The skip is the reader's answer to what the command wrote — the other arm
+  // is what says so, since a reader stating it unconditionally would report
+  // the same thing over a report it never read.
+  expect({ ok: result.ok, skipped: result.skipped }).toEqual({
+    ok: true,
+    skipped: "no contract file among the touched paths",
+  });
+});
+
+it("a declared command gate's reader withholds the blame from the span", async () => {
+  const command = `node -e 'console.log("red at the base"); process.exit(1)'`;
+  const result = await declaredCommandResult(command, ({ stdout, status }) =>
+    stdout.includes("red at the base")
+      ? { ok: false, message: "red before this span", blamesSpan: false }
+      : { ok: status === 0, message: `exited ${status}` },
+  );
+
+  // A failure the span did not cause: the gate still refuses the commit, and
+  // the engine withholds the entry-scoped half of the stage failure
+  // (`GateResult.blamesSpan`, `src/Gate.ts`).
+  expect({ ok: result.ok, blamesSpan: result.blamesSpan }).toEqual({
+    ok: false,
+    blamesSpan: false,
+  });
+});
+
+it("a declared command gate with no reader reports its exit status alone", async () => {
+  // The same two commands the reader cases drive, declared with no reader:
+  // what the reports *say* is inverted from how the children *exit*, so the
+  // verdicts below can only be the statuses.
+  const clean = await declaredCommandResult(REPORTS_DRIFT);
+  const nonZero = await declaredCommandResult(REPORTS_CLEAN_AND_EXITS_3);
+  expect([clean.ok, nonZero.ok]).toEqual([true, false]);
+
+  // And nothing a reader would have stated is invented on its behalf: no
+  // discriminant, no blame, no skip, and no withheld span blame
+  // (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
+  for (const result of [clean, nonZero]) {
+    expect({
+      verdict: result.verdict,
+      failingFiles: result.failingFiles,
+      skipped: result.skipped,
+      blamesSpan: result.blamesSpan,
+    }).toEqual({
+      verdict: undefined,
+      failingFiles: undefined,
+      skipped: undefined,
+      blamesSpan: undefined,
+    });
+  }
+
+  // Vacuity: both children ran and both reports reached `details`, so the
+  // absences above are the gate's silence over real output.
+  expect(clean.details).toContain("drift: src/widget.ts");
+  expect(nonZero.details).toContain("clean");
 });
 
 /**

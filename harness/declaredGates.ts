@@ -17,6 +17,7 @@
  * discipline demands regardless of any declaration is `gates.ts`.
  */
 
+import type { ShellGateReader } from "../src/builtinGates.js";
 import type { FlumeApi } from "../src/flumeApi.js";
 import type {
   Gate,
@@ -73,6 +74,14 @@ function registry(api: FlumeApi): Record<string, (when: GatePhase) => Gate> {
  * `shell` is the parsed declaration's, which is the package's default where
  * the consumer named none — the parse folds that once, for every declared
  * command line alike (`declaration.ts`).
+ *
+ * A command gate's declared reader is handed to the engine's gate, which runs
+ * it over the output it captured and reports what it returned; a kind that
+ * carries no reader hands none, and the exit status is the verdict
+ * (`ShellGateOptions`, `src/builtinGates.ts`). The package reads the report
+ * nowhere itself — a second decode beside the engine's would be the chain
+ * restating an engine fact (`.claude/rules/engineering.md`, *A fact the
+ * engine holds is reported, never rediscovered*).
  */
 export function constructGate(
   api: FlumeApi,
@@ -95,9 +104,9 @@ export function constructGate(
       return make(declared.when);
     }
     case "shell":
-      return shellCommand(api, shell, declared.command, declared.when);
+      return shellCommand(api, shell, declared.command, declared.when, declared.read);
     case "script":
-      return shellCommand(api, shell, declared.path, declared.when);
+      return shellCommand(api, shell, declared.path, declared.when, declared.read);
   }
 }
 
@@ -172,6 +181,7 @@ function shellCommand(
   shell: string,
   command: string,
   when: GatePhase,
+  read: ShellGateReader | undefined,
 ): SingleSpanGate {
   const under = runnableShell(api, shell, `gate "${command}"`);
   const spawning = (env: Record<string, string>): Gate =>
@@ -181,6 +191,7 @@ function shellCommand(
       cmd: under,
       args: shellArgs(command),
       env,
+      ...(read === undefined ? {} : { read }),
     });
   return {
     ...spawning({}),

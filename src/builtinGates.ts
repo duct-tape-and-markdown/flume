@@ -40,10 +40,47 @@ import {
 import { thrownMessage } from "./thrown.js";
 
 /**
+ * What one run of a `shellGate` command produced, as that gate's declared
+ * reader reads it ({@link ShellGateReader}).
+ *
+ * The two streams are kept apart rather than folded together, because a
+ * reader is handed the document its command wrote and a fold would leave it
+ * parsing whatever the command's diagnostics happened to interleave into it.
+ *
+ * `status` is the status the child exited with, `0` included: a run a reader
+ * is handed always reached an exit, since a child that reported none wrote
+ * nothing to rule on and is {@link shellGate}'s own failure before any reader
+ * is asked.
+ */
+export interface ShellGateRun {
+  /** Everything the command wrote to stdout, verbatim. */
+  readonly stdout: string;
+  /** Everything it wrote to stderr, verbatim. */
+  readonly stderr: string;
+  /** The status it exited with — `0` for a command that succeeded. */
+  readonly status: number;
+  /** The tree it ran in, which is the gate's own `cwd` ({@link GateSite}). */
+  readonly cwd: string;
+}
+
+/**
+ * How a command's own output answers for it: a function over the run,
+ * returning the result the gate reports.
+ *
+ * What it returns is the verdict whole — `ok`, the `message`, and whichever of
+ * `verdict`, `failingFiles`, `skipped` and `blamesSpan` it states
+ * ({@link GateResult}). The exit status is a fact on {@link ShellGateRun} for
+ * the reader to weigh, never a second verdict the engine holds beside the one
+ * the reader returned (`.claude/rules/engine-boundary.md`, *Told, not
+ * inferred*).
+ */
+export type ShellGateReader = (run: ShellGateRun) => GateResult;
+
+/**
  * Inputs for `shellGate`. The gate spawns `cmd` with `args` in the
- * worktree's cwd; non-zero exit = fail. `failHint` is the message surfaced
- * to the dispatcher on failure (and embedded in the next agent prompt's
- * gate-failure context).
+ * worktree's cwd; non-zero exit = fail unless a `read` says otherwise.
+ * `failHint` is the message surfaced to the dispatcher on failure (and
+ * embedded in the next agent prompt's gate-failure context).
  */
 export interface ShellGateOptions {
   name: string;
@@ -62,18 +99,54 @@ export interface ShellGateOptions {
    * environment untouched (no forced var leaks in)" case.
    */
   env?: Record<string, string>;
+  /**
+   * How this command's output answers for it. Absent, the gate reports the
+   * exit status alone: non-zero is a failure and the captured output rides as
+   * `details`, which is the whole verdict a command line on its own can give.
+   *
+   * Declared, what the reader returns is the gate's result, so a command that
+   * reports what it found can name the files it blames, say it ran nothing,
+   * or withhold the blame from the span — none of which an exit status can
+   * spell. A reader that throws is a gate that failed, as any gate's throw is
+   * (`src/gateRun.ts`).
+   */
+  read?: ShellGateReader;
 }
 
 /**
- * Generic gate that shells out and reports green/fail by exit code.
- * Captures stdout+stderr up to `maxBuffer` (default 16 MiB) and surfaces
- * them as `GateResult.details` so the dispatcher can route them to the
- * logger or back to the agent as context on the next tick.
+ * `opts`'s reader over `run`, or `undefined` where the options declared none
+ * and the exit status is the whole verdict.
+ *
+ * `details` falls back to what the command wrote, because the output is a
+ * fact the engine captured and the tree it was captured in is gone by the
+ * time anyone reads the verdict (`.claude/rules/engineering.md`, *A fact the
+ * engine holds is reported, never rediscovered*). A reader that distilled
+ * that output says so by stating the field, and nothing overwrites it.
+ */
+function readRun(
+  opts: ShellGateOptions,
+  run: ShellGateRun,
+): GateResult | undefined {
+  if (opts.read === undefined) return undefined;
+  const result = opts.read(run);
+  const output = run.stdout + run.stderr;
+  return result.details === undefined && output !== ""
+    ? { ...result, details: output }
+    : result;
+}
+
+/**
+ * Generic gate that shells out and reports green/fail by exit code, or by
+ * whatever its declared `read` makes of the output
+ * ({@link ShellGateOptions.read}). Captures stdout+stderr up to `maxBuffer`
+ * (default 16 MiB) and surfaces them as `GateResult.details` so the
+ * dispatcher can route them to the logger or back to the agent as context on
+ * the next tick.
  *
  * **It declares `batches: true`** (spec/worktrees.md, *Batched merges*). The
  * declaration is withheld from a gate that would read a batch's facts as one
  * entry's, and this gate reads no span fact at all: the verdict is one
- * command's exit code, and the only thing it takes off its context is `cwd` —
+ * command's own answer, and the only thing it takes off its context is `cwd` —
  * the tree the merge left behind, which is one tree however many spans were
  * picked into it. Hence `run`'s parameter is {@link GateSite}, the half of a
  * gate's input that holds at either width, so the absence of a span read is
@@ -108,18 +181,52 @@ export function shellGate(opts: ShellGateOptions): BatchingGate {
             ...(opts.env ? { env: { ...process.env, ...opts.env } } : {}),
           },
         );
-        return {
-          ok: true,
-          message: `${opts.name} green`,
-          details: stdout || stderr,
-        };
+        return (
+          readRun(opts, { stdout, stderr, status: 0, cwd: ctx.cwd }) ?? {
+            ok: true,
+            message: `${opts.name} green`,
+            details: stdout || stderr,
+          }
+        );
       } catch (err) {
-        const e = err as { stdout?: string; stderr?: string; message: string };
-        return {
+        const e = err as {
+          stdout?: string;
+          stderr?: string;
+          code?: unknown;
+          message: string;
+        };
+        const failed: GateResult = {
           ok: false,
           message: opts.failHint ?? `${opts.name} failed`,
           details: (e.stderr ?? "") + (e.stdout ?? "") || e.message,
         };
+        // A child that exited with a status wrote whatever it wrote, and a
+        // declared reader rules on it however that status reads. One that
+        // reported no status never reached an exit — a spawn that failed, a
+        // signal, node's own overrun kill (`.claude/rules/platform-facts.md`,
+        // *Node caps a captured child stream at 1 MiB, and reports the
+        // overrun as a spawn failure*) — so the gate fails on its own and
+        // says the reader was never asked, rather than handing a reader an
+        // empty document to call clean (`.claude/rules/engineering.md`, *Loud
+        // or nothing*).
+        if (typeof e.code !== "number") {
+          return opts.read === undefined
+            ? failed
+            : {
+                ...failed,
+                message:
+                  `${failed.message} — the command reported no exit status, ` +
+                  `so its reader was not asked`,
+              };
+        }
+        return (
+          readRun(opts, {
+            stdout: e.stdout ?? "",
+            stderr: e.stderr ?? "",
+            status: e.code,
+            cwd: ctx.cwd,
+          }) ?? failed
+        );
       }
     },
   };

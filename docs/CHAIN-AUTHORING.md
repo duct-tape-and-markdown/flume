@@ -143,7 +143,9 @@ package takes no side), `resolver`, `handoff` per phase,
 `gates` per phase (each gate a `kind`, a `when`, and what that kind reads —
 a `registry` gate the `name` of one the package's own registry ships, a
 `shell` gate its `command`, a `script` gate the `path` of a script you
-commit), `shell` (the shell every command line the
+commit, and either command kind an optional `read` over what its command
+wrote — see *What a declared command gate's reader answers* below),
+`shell` (the shell every command line the
 declaration carries runs under — a `shell` or `script` gate's, `setup`'s
 restore — `sh` where the declaration is silent), `agents` (per phase, and
 each of its five subfields optional: `model`, the model that phase's tick
@@ -245,6 +247,63 @@ declared shell is probed once at chain load, and a shell this host will not
 run refuses the load naming the line that declared a command for it, rather
 than reporting itself as that gate failing on the tick that first reached it
 — or as every worktree in a wave failing to provision.
+
+#### What a declared command gate's reader answers
+
+An exit status is one bit, and a command that found something usually knows
+more: which files it was about, that it had nothing to check, that the tree
+was already broken before this entry touched it. A `shell` or `script` gate
+declares a `read` to say so — a function in the declaration, beside `runner`,
+`resolver` and a lane's `titles`:
+
+```ts
+gates: {
+  build: [
+    {
+      kind: "script",
+      path: "scripts/check-contracts.sh",
+      when: "afterCommit",
+      read: ({ stdout }) => {
+        const report = JSON.parse(stdout) as { ran: boolean; drifted: string[] };
+        if (!report.ran) {
+          return {
+            ok: true,
+            message: "no contract in the span",
+            skipped: "no contract file among the touched paths",
+          };
+        }
+        return report.drifted.length === 0
+          ? { ok: true, message: "contracts agree" }
+          : {
+              ok: false,
+              message: `${report.drifted.length} contract(s) drifted`,
+              verdict: "contract-drift",
+              failingFiles: report.drifted,
+            };
+      },
+    },
+  ],
+},
+```
+
+The reader is handed the run: `stdout` and `stderr` apart rather than folded
+together, the `status` the command exited with, and the `cwd` it ran in. What
+it returns is the gate's result whole — `ok`, the `message`, and whichever of
+`verdict`, `failingFiles`, `skipped` and `blamesSpan` it states, each read by
+the engine exactly as it reads that field from any other gate. `details`
+falls back to what the command wrote where the
+reader states none, since the tree the command ran in is gone by the time
+anyone reads the verdict.
+
+Declare no reader and the gate reports its exit status alone: non-zero fails,
+and the captured output rides as `details`. That is the same mechanism over
+no reader rather than a second kind of gate — nothing to opt out of, and
+nothing to declare until a command has more to say than its status.
+
+A command that never reached an exit status — a spawn that failed, a signal,
+output past `maxBuffer` — fails the gate without its reader being asked, and
+the message says so. A reader handed a document that was never written would
+rule an un-run command clean.
 
 #### A fence that varies per checkout
 

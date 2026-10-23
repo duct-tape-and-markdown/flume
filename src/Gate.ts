@@ -348,9 +348,10 @@ export interface GateResult {
    * they never touched — a pin in a test module that reads the whole tree —
    * so disjointness from the footprint proves nothing, and attribution is
    * the gate's to declare on {@link blamesSpan}. `writablePathsGate`
-   * populates this with the same paths its `details` lists; the
-   * shell-backed builtins do not, having no structured report to attribute
-   * from.
+   * populates this with the same paths its `details` lists; a shell-backed
+   * gate populates it from whatever its declared reader attributed
+   * (`ShellGateOptions`, `src/builtinGates.ts`), and leaves it empty where
+   * no reader was declared, an exit status naming no file.
    */
   failingFiles?: string[];
   /**
@@ -369,15 +370,18 @@ export interface GateResult {
    * never a reading of {@link verdict} or {@link message}
    * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
    *
-   * **The shell-backed builtins never set it.** `shellGate` judges by the
-   * exit code of one command in one working tree, so it — and `tscGate`,
-   * `vitestGate` and `eslintGate`, which are that gate under three
-   * commands — has no base run to compare against and cannot tell a red the
-   * span introduced from one it inherited. `chainLoadGate`, `pendingGate`
-   * and `writablePathsGate` read the gated commit alone and declare nothing
-   * either; `namedLinesGate` (`harness/judgeGate.ts`) is the one gate
-   * shipped beside the engine that observes a base at all, and so the one
-   * that withholds blame.
+   * **No builtin the package configures sets it.** `shellGate` judges by the
+   * exit code of one command in one working tree — so it, and `tscGate`,
+   * `vitestGate` and `eslintGate`, which are that gate under three commands
+   * and declare no reader — has no base run to compare against and cannot
+   * tell a red the span introduced from one it inherited. `chainLoadGate`,
+   * `pendingGate` and `writablePathsGate` read the gated commit alone and
+   * declare nothing either; `namedLinesGate` (`harness/judgeGate.ts`) is the
+   * one gate shipped beside the engine that observes a base at all, and so
+   * the one that withholds blame. A `shellGate` carrying a declared reader
+   * reports whatever that reader stated here, the command having made the
+   * comparison the gate itself cannot
+   * (`ShellGateOptions`, `src/builtinGates.ts`).
    *
    * What that costs is declared, not accidental
    * (`.claude/rules/engineering.md`, *Loud or nothing*): a trunk already red

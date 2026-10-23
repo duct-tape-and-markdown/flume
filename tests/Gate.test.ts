@@ -23,6 +23,7 @@ import {
 import { entryFileName } from "../src/PendingSchema.ts";
 import { batchGateContext } from "../src/gateBatch.ts";
 import { runGate, type GateRunScope } from "../src/gateRun.ts";
+import type { ShellGateRun } from "../src/builtinGates.ts";
 import type { Gate, GateContext, GateSite } from "../src/Gate.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { SPAWN_BUDGET_MS, exec } from "./helpers/subprocess.ts";
@@ -185,6 +186,85 @@ describe("shellGate — fail path", () => {
     expect(result.ok).toBe(false);
     expect(result.message).toBe("absent failed");
   });
+});
+
+describe("shellGate — read option", () => {
+  it("the reader is handed both streams, the exit status, and the tree the command ran in", async () => {
+    const tree = await mkTempDir("flume-gate-read-");
+    try {
+      const seen: ShellGateRun[] = [];
+      const gate = shellGate({
+        name: "reporting",
+        when: "afterCommit",
+        cmd: "node",
+        args: [
+          "-e",
+          "process.stdout.write('on-stdout'); process.stderr.write('on-stderr'); process.exit(7)",
+        ],
+        read: (run) => {
+          seen.push(run);
+          return { ok: true, message: "noted" };
+        },
+      });
+
+      const result = await gate.run(ctx(tree));
+
+      // The streams apart, the status the child exited with, and the gate's
+      // own cwd — the whole run, read off a child that genuinely wrote to
+      // both and exited non-zero.
+      expect(seen).toEqual([
+        { stdout: "on-stdout", stderr: "on-stderr", status: 7, cwd: tree },
+      ]);
+      // And the reader's verdict is the gate's, over a status that says the
+      // opposite.
+      expect(result.ok).toBe(true);
+    } finally {
+      await rm(tree, { recursive: true, force: true });
+    }
+  }, SPAWN_BUDGET_MS);
+
+  it("a reader's own details are kept rather than replaced by the captured output", async () => {
+    const raw = "the-raw-output";
+    const gate = shellGate({
+      name: "distilled",
+      when: "afterCommit",
+      cmd: "node",
+      args: ["-e", `process.stdout.write(${JSON.stringify(raw)})`],
+      read: ({ stdout }) => ({
+        ok: false,
+        message: "distilled",
+        details: `one line about ${stdout.length} bytes`,
+      }),
+    });
+
+    const result = await gate.run(ctx(process.cwd()));
+
+    expect(result.details).toBe(`one line about ${raw.length} bytes`);
+  }, SPAWN_BUDGET_MS);
+
+  it("a command that reports no exit status fails without its reader being asked", async () => {
+    let asked = 0;
+    const gate = shellGate({
+      name: "overrun",
+      when: "afterCommit",
+      cmd: "node",
+      args: ["-e", "process.stdout.write('x'.repeat(4096))"],
+      // Node kills the child on overrun and reports it where an exit status
+      // would sit (`.claude/rules/platform-facts.md`, *Node caps a captured
+      // child stream at 1 MiB, and reports the overrun as a spawn failure*),
+      // so this is a child that wrote plenty and still never reached an exit.
+      maxBuffer: 16,
+      read: () => {
+        asked += 1;
+        return { ok: true, message: "read a document that was never written" };
+      },
+    });
+
+    const result = await gate.run(ctx(process.cwd()));
+
+    expect({ ok: result.ok, asked }).toEqual({ ok: false, asked: 0 });
+    expect(result.message).toContain("no exit status");
+  }, SPAWN_BUDGET_MS);
 });
 
 // Node refuses to spawn .cmd shims without a shell (CVE-2024-27980
