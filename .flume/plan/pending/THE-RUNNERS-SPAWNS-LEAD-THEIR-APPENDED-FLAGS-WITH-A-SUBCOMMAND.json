@@ -1,0 +1,29 @@
+{
+  "tag": "THE-RUNNERS-SPAWNS-LEAD-THEIR-APPENDED-FLAGS-WITH-A-SUBCOMMAND",
+  "gate": {
+    "kind": "open"
+  },
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "tests/harnessRunner.test.ts",
+        "description": "the stderr case's inert `--` and the comment crediting it, and the pin over the recorded spawns that holds the mechanism instead"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "every spawn the vitest runner makes leads its appended flags with a subcommand, so no `-e` fixture needs a `--`; the case crediting one says otherwise",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Narration is the ladder's bottom rung"
+  },
+  "acceptance": "the no-report stderr case carries no inert `--` and no comment crediting one for reaching its script, and a pin holds every spawn the runner makes to lead its appended reading flags with a subcommand positional",
+  "tests": [],
+  "pins": [
+    "every spawn the vitest runner makes leads its appended reading flags with a subcommand positional"
+  ],
+  "laneTests": [],
+  "notes": "Measured, node 24.21: `node -e \"\" --reporter=json` exits 9 `bad option`; the same with `run` ahead of the flags exits 0. `capture` prepends `run`, the file lister prepends `list` (`harness/vitestRunner.ts`), so the `--` is inert and its comment names a mechanism that is not the one holding. Whole diff is one test file, so no `tests[]` line is judgeable; the pin is the rung the comment stood in for. The page-side wording is a question of its own and gates nothing here."
+}
