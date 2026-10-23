@@ -1,0 +1,33 @@
+{
+  "tag": "A-BATCH-SPANS-LANDED-ON-SHA-NAMES-THE-CANDIDATE-ITS-PICK-WENT-ONTO",
+  "gate": {
+    "kind": "open"
+  },
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/Gate.ts",
+        "description": "the per-span field's doc lead, which names a trunk tip its own next sentence refutes"
+      },
+      {
+        "path": "tests/docComments.test.ts",
+        "description": "beside the hover-text pins the candidate rename already landed there"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "`GateBatchSpan.landedOnSha` ships as \"the trunk tip this span landed onto\", which no span of a batch landed onto — the candidate did",
+  "per": {
+    "path": "spec/chain.md",
+    "section": "What a gate receives"
+  },
+  "acceptance": "the doc for `GateBatchSpan.landedOnSha` names the candidate tip its own pick went onto, agreeing with its own second sentence and with the sequential picks `spec/worktrees.md`, *Batched merges* states, and the pin reds on a lead calling it a trunk tip",
+  "tests": [
+    "`GateBatchSpan.landedOnSha`'s doc names the candidate tip a span's pick went onto rather than a trunk tip"
+  ],
+  "pins": [],
+  "laneTests": [],
+  "notes": "The candidate rename's note left this site, claiming spec/harness.md (*What a consumer declares*) and spec/chain.md spell it the same way. Refuted on this tree: both describe the single-span `GateContext.landedOnSha`/`FLUME_LANDED_ON_SHA`, where the pick does go onto a candidate cut at the trunk tip, and a non-batching gate forces one span per merge — so \"trunk tip\" is true there. Only the per-span field is wrong; chain.md's `batch` bullet names it without naming a tree. src/Gate.ts:188."
+}
