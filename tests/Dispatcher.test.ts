@@ -17495,8 +17495,10 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
     // finish — nothing hand-authored between them
     // (`.claude/rules/engineering.md`, *A seam gate reads what the real
     // writer wrote*).
-    await writeTickVerdict(flumeDir, plan);
-    await writeTickVerdict(flumeDir, build);
+    const planTickId = "plan-child";
+    const buildTickId = "build-child";
+    await writeTickVerdict(flumeDir, plan, planTickId);
+    await writeTickVerdict(flumeDir, build, buildTickId);
 
     // Two files, not one: the second write did not land where the first did.
     expect(tickVerdictPath(flumeDir, "plan")).not.toBe(
@@ -17508,14 +17510,27 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
     // And the real reader, handed the phase the supervisor named each child
     // by, gets that child's own facts back — the plan verdict survives the
     // build tick that followed it.
-    expect(await readTickVerdict(flumeDir, "plan")).toEqual(plan);
-    expect(await readTickVerdict(flumeDir, "build")).toEqual(build);
+    expect(await readTickVerdict(flumeDir, "plan", planTickId)).toEqual({
+      ...plan,
+      tickId: planTickId,
+    });
+    expect(await readTickVerdict(flumeDir, "build", buildTickId)).toEqual({
+      ...build,
+      tickId: buildTickId,
+    });
+
+    // And each is read by the child that wrote it alone: the build child's
+    // identity over the plan child's path answers nothing, which is what
+    // keeps a record a tick never wrote from being read as its facts.
+    expect(
+      await readTickVerdict(flumeDir, "plan", buildTickId),
+    ).toBeUndefined();
 
     // Clearing one phase's verdict leaves the other's standing, which is what
     // a child's pre-tick clear must not take from its sibling.
     await clearTickVerdict(flumeDir, "build");
-    expect(await readTickVerdict(flumeDir, "build")).toBeUndefined();
-    expect((await readTickVerdict(flumeDir, "plan"))?.summary).toBe(
+    expect(await readTickVerdict(flumeDir, "build", buildTickId)).toBeUndefined();
+    expect((await readTickVerdict(flumeDir, "plan", planTickId))?.summary).toBe(
       "plan shipped nothing",
     );
 
@@ -17852,15 +17867,22 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
 
   it("the per-phase verdict read refuses a present-but-unreadable record naming the path it read", async () => {
     const flumeDir = join(fx.repo, ".flume");
-    await writeTickVerdict(flumeDir, verdictFixture({ summary: "tick 0" }));
+    const tickId = "tick-0-invocation";
+    await writeTickVerdict(
+      flumeDir,
+      verdictFixture({ summary: "tick 0" }),
+      tickId,
+    );
     // Non-vacuity: the latest-tick file reads back before it is denied.
-    expect((await readTickVerdict(flumeDir, "build"))?.summary).toBe("tick 0");
+    expect((await readTickVerdict(flumeDir, "build", tickId))?.summary).toBe(
+      "tick 0",
+    );
 
     denyFile(latestPath());
 
     let caught: Error | undefined;
     try {
-      await readTickVerdict(flumeDir, "build");
+      await readTickVerdict(flumeDir, "build", tickId);
     } catch (err) {
       caught = err as Error;
     }
@@ -17874,7 +17896,7 @@ describe("writeTickVerdict / clearTickVerdict / readTickVerdicts — the tick-ve
     // `clearTickVerdict` leaves nothing behind, and that absence still reads
     // as "nothing to report" — the one silent arm this reader keeps.
     await rm(latestPath(), { recursive: true, force: true });
-    expect(await readTickVerdict(flumeDir, "build")).toBeUndefined();
+    expect(await readTickVerdict(flumeDir, "build", tickId)).toBeUndefined();
   });
 });
 
@@ -28425,7 +28447,8 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
     // this chain declares no `humanOnly` phase and the fixture holds no
     // phase, so every name its handoff returns is woken — which is also what
     // keeps the two producers one fact set, since a walled wave never
-    // reaches a handoff at all. Such a fact is
+    // reaches a handoff at all; and `tickId` is the writer's stamp rather
+    // than a fact either producer composes. Such a fact is
     // asserted absent below, never left to read as covered.
     const conditionalFacts: {
       [K in ConditionalTickVerdictFact]: "populated" | "unreachable";
@@ -28443,6 +28466,12 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
       unclassedWalls: "unreachable",
       clearedPriorAttempts: "populated",
       declinedWakes: "unreachable",
+      // Unreachable from either producer by construction, and the only
+      // member here that is: `tickId` is the writing *process's* identity,
+      // stamped by `writeTickVerdict` (`src/tickVerdict.ts`) onto the record
+      // it lands, never a fact a wave holds. A verdict `tick()` returns
+      // carries none, which is exactly what the comparison below asserts.
+      tickId: "unreachable",
       // Populated on both legs, and at the same point: F-SHIP-ONE's pick is
       // the only ship either leg makes, and the corruption the refused leg
       // carries lands in the *last* entry's agent — so the tip that ship
@@ -28458,7 +28487,7 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
     // this wave really populates, and the unreachable half is a named few
     // rather than the roster quietly emptying itself.
     expect(populated.length).toBeGreaterThan(0);
-    expect(reach.length - populated.length).toBe(4);
+    expect(reach.length - populated.length).toBe(5);
 
     const legs: [string, WaveLeg][] = [
       ["completing", completing],
@@ -28473,9 +28502,10 @@ describe("Dispatcher fanout — one wave through both verdict producers", () => 
           expect(keys, `${name} verdict names ${field}`).not.toContain(field);
         }
       }
-      // What puts two of the four unreachable facts out of reach: this wave
+      // What puts two of the five unreachable facts out of reach: this wave
       // shipped. The third is the wave holding one wall, not two; the fourth
-      // is a handoff whose every returned name was woken.
+      // is a handoff whose every returned name was woken; the fifth is a
+      // field no producer composes at all.
       expect(leg.verdict.committed).toBe(true);
     }
   });
@@ -28598,8 +28628,12 @@ it("a wave whose slot leg throws outside a ledger read still writes the settled 
   // supervisor and the next tick read it (`spec/loop.md`, *The tick verdict —
   // one facts artifact*).
   const flumeDir = join(fx.repo, ".flume");
-  await writeTickVerdict(flumeDir, outcome!.verdict!);
-  const onDisk = await readTickVerdict(flumeDir, "build");
+  // Written and read back under one invocation identity, the way a tick
+  // process and its supervisor pair them (`TickVerdict.tickId`,
+  // `src/tickVerdict.ts`).
+  const tickId = "wave-torn-down-by-a-slot-leg";
+  await writeTickVerdict(flumeDir, outcome!.verdict!, tickId);
+  const onDisk = await readTickVerdict(flumeDir, "build", tickId);
   expect(onDisk?.phaseName).toBe("build");
   expect(onDisk?.summary).toContain("a slot leg threw");
   // The tick's whole agent spend, which is what went unwritten: one row for

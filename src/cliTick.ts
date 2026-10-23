@@ -10,6 +10,8 @@
  * logs.
  */
 
+import { randomUUID } from "node:crypto";
+
 import { installSignalledTeardown } from "./cliTeardown.js";
 import { takeFlagValue, usageRefusal } from "./cliArgs.js";
 import { describeRefFailure, tickExitCode } from "./cliVerdict.js";
@@ -61,6 +63,36 @@ export async function tickVerb(run: CliVerbRun): Promise<number> {
   // (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
   // never rediscovered*).
   const tickRequest = named !== undefined ? { phase: named } : {};
+  // Who this tick is, as the verdict it writes below will state it
+  // (`TickVerdict.tickId`, `src/tickVerdict.ts`). Read here, beside the
+  // clear, because the two are the same guarantee from opposite ends: the
+  // clear removes a predecessor's record this process could be mistaken
+  // for, and the stamp names this process on the record that replaces it —
+  // so a tick that dies before either one is read as the verdictless exit
+  // it was, whatever its predecessor left standing.
+  //
+  // A loop-spawned child is handed its identity by the supervisor that
+  // started it (`FLUME_TICK_ID`, `defaultTickRunner`,
+  // `src/loopSupervisor.ts`), which is the only actor that can name a tick
+  // before it exists; a bare tick has no supervisor and mints its own, so
+  // the record states its writer either way. Present and empty is refused
+  // rather than read as absent: the writer emits the token it minted and
+  // nothing else, so an empty value is a hand on the var, and the reading
+  // that would let this tick proceed — "no supervisor, mint my own" — is
+  // the one the operator can state outright by unsetting it
+  // (`.claude/rules/engineering.md`, *Loud or nothing*).
+  const handedTickId = process.env.FLUME_TICK_ID;
+  if (handedTickId !== undefined && handedTickId.length === 0) {
+    operatorLog.error(
+      `[flume] tick refuses: FLUME_TICK_ID is set and empty, so this tick's ` +
+        `verdict would name no invocation — the loop supervisor sets it to ` +
+        `the identity of the child it spawned (spec/loop.md, "The tick ` +
+        `verdict — one facts artifact"). Unset it to run a tick that mints ` +
+        `its own.`,
+    );
+    return 1;
+  }
+  const tickId = handedTickId ?? randomUUID();
   // Clear any stale verdict before this tick's own work — a tick that
   // returns below without an agent having run (chain-load failure,
   // hibernation, terminal misconfiguration, the detached-HEAD refusal below)
@@ -182,7 +214,7 @@ export async function tickVerb(run: CliVerbRun): Promise<number> {
       // than a guess at an errno's prose: everything else out of the call
       // is an ordinary throw and keeps the exit-1 harness-error route.
       try {
-        await writeTickVerdict(flumeDir, outcome.verdict);
+        await writeTickVerdict(flumeDir, outcome.verdict, tickId);
       } catch (err) {
         if (!(err instanceof VerdictHistoryUnreadableError)) throw err;
         operatorLog.error(

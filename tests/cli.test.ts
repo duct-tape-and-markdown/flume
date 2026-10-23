@@ -75,6 +75,7 @@ import { DEFAULT_KILL_GRACE_MS } from "../src/processTree.ts";
 import {
   appendInvocationRow,
   readInvocationRows,
+  readTickVerdict,
   tickVerdictPath,
   tickVerdictsLogPath,
   writeTickVerdict,
@@ -6067,6 +6068,81 @@ describe("flume tick --phase <name> (spec/loop.md §Baton — presence wakes, ab
   );
 });
 
+
+describe("flume tick — the verdict names the invocation that wrote it (spec/loop.md §The tick verdict — one facts artifact)", () => {
+  it(
+    "a tick handed an invocation identity writes a verdict the real reader answers for that identity and no other",
+    async () => {
+      const repo = await makeScratchRepo("flume-tick-id-", "main");
+      try {
+        const marker = join(repo.dir, "agent-ran");
+        await writeRepoConfig(repo.dir, markerAgentChainSrc(marker));
+        const flumeDir = join(repo.dir, ".flume");
+        new Baton(flumeDir).wake("probe");
+
+        const handed = "supervisor-child-7f3a";
+        const r = await runCli(repo.dir, ["tick"], {
+          ...hermeticEnv(),
+          FLUME_TICK_ID: handed,
+        });
+
+        // The tick really ran: the claim below is about a verdict a real
+        // tick wrote, not about an absent file reading as a mismatch.
+        expect(r.code).toBe(0);
+        expect(existsSync(marker)).toBe(true);
+
+        // The real writer's record, through the real reader — the pairing
+        // the supervisor makes between the child it started and the facts
+        // it reads back (`.claude/rules/engineering.md`, *A seam gate reads
+        // what the real writer wrote*).
+        const onDisk = JSON.parse(
+          await readFile(tickVerdictPath(flumeDir, "probe"), "utf8"),
+        ) as TickVerdict;
+        expect(onDisk.tickId).toBe(handed);
+        expect((await readTickVerdict(flumeDir, "probe", handed))?.phaseName).toBe(
+          "probe",
+        );
+        // And the same file answers nothing for an invocation that did not
+        // write it, which is what a child dying before its own clear leaves
+        // its successor's read holding.
+        expect(
+          await readTickVerdict(flumeDir, "probe", "a-later-child"),
+        ).toBeUndefined();
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+
+  it(
+    "a tick handed an empty FLUME_TICK_ID refuses rather than writing a verdict naming no invocation",
+    async () => {
+      const repo = await makeScratchRepo("flume-tick-id-empty-", "main");
+      try {
+        const marker = join(repo.dir, "agent-ran");
+        await writeRepoConfig(repo.dir, markerAgentChainSrc(marker));
+        const flumeDir = join(repo.dir, ".flume");
+        new Baton(flumeDir).wake("probe");
+
+        const r = await runCli(repo.dir, ["tick"], {
+          ...hermeticEnv(),
+          FLUME_TICK_ID: "",
+        });
+
+        expect(r.code).toBe(1);
+        expect(r.out).toContain("FLUME_TICK_ID is set and empty");
+        // Refused before the tick's own work, so no agent ran and no
+        // verdict was left for a supervisor to read either way.
+        expect(existsSync(marker)).toBe(false);
+        expect(existsSync(tickVerdictPath(flumeDir, "probe"))).toBe(false);
+      } finally {
+        await repo.cleanup();
+      }
+    },
+    SPAWN_BUDGET_MS,
+  );
+});
 
 describe("flume loop refuses a stray positional past --max/<value> (spec/cli.md §Subcommand surface)", () => {
   it(

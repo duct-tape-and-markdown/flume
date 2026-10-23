@@ -9,7 +9,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -159,11 +159,12 @@ describe("superviseLoop — tip-moved counts as errored", () => {
     baton.wake("build");
     const verdictPath = childVerdictPath(join(fx.repo, ".flume"), "build");
 
-    const runTick = async (): Promise<{ exitCode: number | null }> => {
+    const runTick = async ({ tickId }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       await writeFile(
         verdictPath,
         JSON.stringify(
           verdictFixture({
+            tickId,
             committed: false,
             tipMoved: true,
             summary: "build: no commit (tip-moved) → hibernate",
@@ -374,13 +375,13 @@ describe("superviseLoop — process-per-tick supervisor", () => {
     const verdictPath = childVerdictPath(join(fx.repo, ".flume"), "build");
 
     let calls = 0;
-    const runTick = async (): Promise<{ exitCode: number | null }> => {
+    const runTick = async ({ tickId }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       if (calls === 1) {
         await writeFile(
           verdictPath,
           JSON.stringify(
-            verdictFixture({ committed: true, shippedTags: ["SHIPPED-ENTRY"] }),
+            verdictFixture({ tickId, committed: true, shippedTags: ["SHIPPED-ENTRY"] }),
           ),
           "utf8",
         );
@@ -389,6 +390,7 @@ describe("superviseLoop — process-per-tick supervisor", () => {
           verdictPath,
           JSON.stringify(
             verdictFixture({
+              tickId,
               committed: false,
               noCommit: "gate-revert",
               summary: "build: no commit (gate-revert) → hibernate",
@@ -428,13 +430,13 @@ describe("superviseLoop — process-per-tick supervisor", () => {
     const verdictPath = childVerdictPath(join(fx.repo, ".flume"), "build");
 
     let calls = 0;
-    const runTick = async (): Promise<{ exitCode: number | null }> => {
+    const runTick = async ({ tickId }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       if (calls === 1) {
         await writeFile(
           verdictPath,
           JSON.stringify(
-            verdictFixture({ committed: true, shippedTags: ["SHIPPED-ENTRY"] }),
+            verdictFixture({ tickId, committed: true, shippedTags: ["SHIPPED-ENTRY"] }),
           ),
           "utf8",
         );
@@ -482,11 +484,12 @@ describe("superviseLoop — process-per-tick supervisor", () => {
     baton.wake("build");
     const verdictPath = childVerdictPath(join(fx.repo, ".flume"), "build");
 
-    const runTick = async (): Promise<{ exitCode: number | null }> => {
+    const runTick = async ({ tickId }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       await writeFile(
         verdictPath,
         JSON.stringify(
           verdictFixture({
+            tickId,
             committed: false,
             noCommit: "render-refused",
             summary: "build: no commit (render-refused) → hibernate",
@@ -760,11 +763,12 @@ describe("superviseLoop — merge-stage-only failure counts as errored (loop-mer
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("build");
 
-    const runTick = async ({ phase }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+    const runTick = async ({ phase, tickId }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       await writeFile(
         verdictPath(phase),
         JSON.stringify(
           verdictFixture({
+            tickId,
             committed: false,
             summary: "build: no commit — merge failed",
             mergeFailures: [
@@ -805,13 +809,14 @@ describe("superviseLoop — merge-stage-only failure counts as errored (loop-mer
     // accounting fix from the separate consecutive-identical-signature
     // backstop (which would independently force a non-zero exit at 3).
     let calls = 0;
-    const runTick = async ({ phase }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+    const runTick = async ({ phase, tickId }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       const signature = `cherry-pick conflict in src/file-${calls}.ts`;
       await writeFile(
         verdictPath(phase),
         JSON.stringify(
           verdictFixture({
+            tickId,
             committed: false,
             summary: "build: no commit — merge failed",
             mergeFailures: [
@@ -846,11 +851,12 @@ describe("superviseLoop — merge-stage-only failure counts as errored (loop-mer
     const baton = new Baton(join(fx.repo, ".flume"));
     baton.wake("build");
 
-    const runTick = async ({ phase }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+    const runTick = async ({ phase, tickId }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       await writeFile(
         verdictPath(phase),
         JSON.stringify(
           verdictFixture({
+            tickId,
             committed: true,
             shippedTags: ["OK-A"],
             summary: "build shipped OK-A",
@@ -904,12 +910,13 @@ describe("superviseLoop — a thrown shipped predicate counts as errored (not-sh
   /** A tick whose wave landed a commit the `shipped` hook then threw on. */
   const notShippedTick =
     (over: { threw?: string }) =>
-    async ({ phase }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+    async ({ phase, tickId }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       const baton = new Baton(join(fx.repo, ".flume"));
       await writeFile(
         verdictPath(phase),
         JSON.stringify(
           verdictFixture({
+            tickId,
             committed: false,
             shippedTags: [],
             summary: "build: PARKED cherry-picked but not shipped",
@@ -1003,6 +1010,7 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
     const runTick = async ({
       phase,
       quarantinedSlugs,
+      tickId,
     }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       receivedSlugs.push([...quarantinedSlugs].sort());
@@ -1011,6 +1019,7 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
           verdictPath(phase),
           JSON.stringify(
             verdictFixture({
+              tickId,
               committed: true,
               shippedTags: ["OK-A"],
               provisionFailures: [
@@ -1027,7 +1036,7 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
       } else {
         await writeFile(
           verdictPath(phase),
-          JSON.stringify(verdictFixture({ committed: false })),
+          JSON.stringify(verdictFixture({ tickId, committed: false })),
           "utf8",
         );
         baton.sleep("build");
@@ -1067,12 +1076,13 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
 
     const SIGNATURE = "git worktree prune: fatal: not a git repository";
     let calls = 0;
-    const runTick = async ({ phase }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+    const runTick = async ({ phase, tickId }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       await writeFile(
         verdictPath(phase),
         JSON.stringify(
           verdictFixture({
+            tickId,
             committed: false,
             summary: "build: no commit — worktree provisioning failed",
             provisionFailures: [{ signature: SIGNATURE, message: SIGNATURE }],
@@ -1116,12 +1126,13 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
     const REPEATED_SIGNATURE =
       "git worktree prune: fatal: not a git repository";
     let calls = 0;
-    const runTick = async ({ phase }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+    const runTick = async ({ phase, tickId }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       await writeFile(
         verdictPath(phase),
         JSON.stringify(
           verdictFixture({
+            tickId,
             committed: false,
             summary: "build: no commit — worktree provisioning failed",
             // The repo-level failure (untagged) always lands first in
@@ -1176,13 +1187,14 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
 
     const SIGNATURE = "git worktree prune: fatal: not a git repository";
     let calls = 0;
-    const runTick = async ({ phase }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+    const runTick = async ({ phase, tickId }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       if (calls === 1 || calls === 3) {
         await writeFile(
           verdictPath(phase),
           JSON.stringify(
             verdictFixture({
+              tickId,
               committed: false,
               summary: "build: no commit — worktree provisioning failed",
               provisionFailures: [{ signature: SIGNATURE, message: SIGNATURE }],
@@ -1194,13 +1206,13 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
         // Transient — the wall didn't recur this tick.
         await writeFile(
           verdictPath(phase),
-          JSON.stringify(verdictFixture({ committed: false })),
+          JSON.stringify(verdictFixture({ tickId, committed: false })),
           "utf8",
         );
       } else {
         await writeFile(
           verdictPath(phase),
-          JSON.stringify(verdictFixture({ committed: false })),
+          JSON.stringify(verdictFixture({ tickId, committed: false })),
           "utf8",
         );
         baton.sleep("build");
@@ -1238,8 +1250,10 @@ describe("superviseLoop — provisioning-failure quarantine & consecutive-failur
     const written: Array<TickVerdict> = [];
     const runTick = async ({
       phase,
+      tickId,
     }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       const verdict = verdictFixture({
+        tickId,
         committed: false,
         noCommit: "clean-exit",
         summary: "build: no commit — agent exited cleanly",
@@ -1300,6 +1314,7 @@ describe("superviseLoop — the repeated-failure backstop generalizes to merge- 
     const runTick = async ({
       phase,
       quarantinedSlugs,
+      tickId,
     }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       receivedSlugs.push([...quarantinedSlugs].sort());
@@ -1308,6 +1323,7 @@ describe("superviseLoop — the repeated-failure backstop generalizes to merge- 
           verdictPath(phase),
           JSON.stringify(
             verdictFixture({
+              tickId,
               committed: true,
               shippedTags: ["OK-A"],
               mergeFailures: [
@@ -1325,7 +1341,7 @@ describe("superviseLoop — the repeated-failure backstop generalizes to merge- 
       } else {
         await writeFile(
           verdictPath(phase),
-          JSON.stringify(verdictFixture({ committed: false })),
+          JSON.stringify(verdictFixture({ tickId, committed: false })),
           "utf8",
         );
         baton.sleep("build");
@@ -1368,6 +1384,7 @@ describe("superviseLoop — the repeated-failure backstop generalizes to merge- 
     const runTick = async ({
       phase,
       quarantinedSlugs,
+      tickId,
     }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       receivedSlugs.push([...quarantinedSlugs].sort());
@@ -1376,6 +1393,7 @@ describe("superviseLoop — the repeated-failure backstop generalizes to merge- 
           verdictPath(phase),
           JSON.stringify(
             verdictFixture({
+              tickId,
               committed: true,
               shippedTags: ["OK-A"],
               gateFailures: [
@@ -1392,7 +1410,7 @@ describe("superviseLoop — the repeated-failure backstop generalizes to merge- 
       } else {
         await writeFile(
           verdictPath(phase),
-          JSON.stringify(verdictFixture({ committed: false })),
+          JSON.stringify(verdictFixture({ tickId, committed: false })),
           "utf8",
         );
         baton.sleep("build");
@@ -1429,12 +1447,13 @@ describe("superviseLoop — the repeated-failure backstop generalizes to merge- 
 
     const SIGNATURE = "error: could not apply ...: conflict in src/shared.ts";
     let calls = 0;
-    const runTick = async ({ phase }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+    const runTick = async ({ phase, tickId }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       await writeFile(
         verdictPath(phase),
         JSON.stringify(
           verdictFixture({
+            tickId,
             committed: false,
             mergeFailures: [
               {
@@ -1483,12 +1502,13 @@ describe("superviseLoop — the repeated-failure backstop generalizes to merge- 
 
     const SIGNATURE = "tsc: no commit — tsc failed";
     let calls = 0;
-    const runTick = async ({ phase }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+    const runTick = async ({ phase, tickId }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       await writeFile(
         verdictPath(phase),
         JSON.stringify(
           verdictFixture({
+            tickId,
             phaseName: "plan",
             committed: false,
             noCommit: "gate-revert",
@@ -1534,6 +1554,7 @@ describe("superviseLoop — the repeated-failure backstop generalizes to merge- 
     const runTick = async ({
       phase,
       quarantinedSlugs,
+      tickId,
     }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       receivedSlugs.push([...quarantinedSlugs].sort());
@@ -1541,6 +1562,7 @@ describe("superviseLoop — the repeated-failure backstop generalizes to merge- 
         verdictPath(phase),
         JSON.stringify(
           verdictFixture({
+            tickId,
             phaseName: "plan",
             committed: false,
             noCommit: "clean-exit",
@@ -1573,7 +1595,7 @@ describe("superviseLoop — the repeated-failure backstop generalizes to merge- 
 
     const SHARED_TEXT = "boom";
     let calls = 0;
-    const runTick = async ({ phase }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+    const runTick = async ({ phase, tickId }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       if (calls === 1) {
         // Tick 1: a merge-stage failure with the shared text — starts a
@@ -1582,6 +1604,7 @@ describe("superviseLoop — the repeated-failure backstop generalizes to merge- 
           verdictPath(phase),
           JSON.stringify(
             verdictFixture({
+              tickId,
               committed: false,
               mergeFailures: [
                 {
@@ -1603,6 +1626,7 @@ describe("superviseLoop — the repeated-failure backstop generalizes to merge- 
           verdictPath(phase),
           JSON.stringify(
             verdictFixture({
+              tickId,
               committed: false,
               gateFailures: [{ signature: SHARED_TEXT, message: SHARED_TEXT }],
             }),
@@ -1657,6 +1681,7 @@ describe("superviseLoop — the render stage joins the quarantine and the backst
     const runTick = async ({
       phase,
       quarantinedSlugs,
+      tickId,
     }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       receivedSlugs.push([...quarantinedSlugs].sort());
@@ -1668,6 +1693,7 @@ describe("superviseLoop — the render stage joins the quarantine and the backst
           verdictPath(phase),
           JSON.stringify(
             verdictFixture({
+              tickId,
               committed: true,
               shippedTags: ["OK-A"],
               renderFailures: [
@@ -1687,7 +1713,7 @@ describe("superviseLoop — the render stage joins the quarantine and the backst
         // is held for the rest of the run.
         await writeFile(
           verdictPath(phase),
-          JSON.stringify(verdictFixture({ committed: false })),
+          JSON.stringify(verdictFixture({ tickId, committed: false })),
           "utf8",
         );
         baton.sleep("build");
@@ -1731,12 +1757,14 @@ describe("superviseLoop — the render stage joins the quarantine and the backst
     let calls = 0;
     const runTick = async ({
       phase,
+      tickId,
     }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       await writeFile(
         verdictPath(phase),
         JSON.stringify(
           verdictFixture({
+            tickId,
             committed: false,
             noCommit: "render-refused",
             renderFailures: [
@@ -1804,6 +1832,7 @@ describe("superviseLoop — a render-, gate-, merge- or ship-stage hold expires 
     const runTick = async ({
       phase,
       quarantinedSlugs,
+      tickId,
     }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       receivedSlugs.push([...quarantinedSlugs].sort());
@@ -1814,6 +1843,7 @@ describe("superviseLoop — a render-, gate-, merge- or ship-stage hold expires 
           verdictPath(phase),
           JSON.stringify(
             verdictFixture({
+              tickId,
               committed: false,
               headSha: TIP_A,
               noCommit: "render-refused",
@@ -1836,6 +1866,7 @@ describe("superviseLoop — a render-, gate-, merge- or ship-stage hold expires 
           verdictPath(phase),
           JSON.stringify(
             verdictFixture({
+              tickId,
               committed: true,
               headSha: TIP_B,
               shippedTags: ["OK-B"],
@@ -1848,7 +1879,7 @@ describe("superviseLoop — a render-, gate-, merge- or ship-stage hold expires 
         // pickable again and the next refusal is a fresh one to judge.
         await writeFile(
           verdictPath(phase),
-          JSON.stringify(verdictFixture({ committed: false, headSha: TIP_B })),
+          JSON.stringify(verdictFixture({ tickId, committed: false, headSha: TIP_B })),
           "utf8",
         );
         baton.sleep("build");
@@ -1890,6 +1921,7 @@ describe("superviseLoop — a render-, gate-, merge- or ship-stage hold expires 
     const runTick = async ({
       phase,
       quarantinedSlugs,
+      tickId,
     }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       receivedSlugs.push([...quarantinedSlugs].sort());
@@ -1900,6 +1932,7 @@ describe("superviseLoop — a render-, gate-, merge- or ship-stage hold expires 
           verdictPath(phase),
           JSON.stringify(
             verdictFixture({
+              tickId,
               committed: false,
               headSha: TIP_A,
               gateFailures: [
@@ -1921,6 +1954,7 @@ describe("superviseLoop — a render-, gate-, merge- or ship-stage hold expires 
           verdictPath(phase),
           JSON.stringify(
             verdictFixture({
+              tickId,
               committed: true,
               headSha: TIP_B,
               shippedTags: ["OK-B"],
@@ -1931,7 +1965,7 @@ describe("superviseLoop — a render-, gate-, merge- or ship-stage hold expires 
       } else {
         await writeFile(
           verdictPath(phase),
-          JSON.stringify(verdictFixture({ committed: false, headSha: TIP_B })),
+          JSON.stringify(verdictFixture({ tickId, committed: false, headSha: TIP_B })),
           "utf8",
         );
         baton.sleep("build");
@@ -1973,6 +2007,7 @@ describe("superviseLoop — a render-, gate-, merge- or ship-stage hold expires 
     const runTick = async ({
       phase,
       quarantinedSlugs,
+      tickId,
     }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       receivedSlugs.push([...quarantinedSlugs].sort());
@@ -1983,6 +2018,7 @@ describe("superviseLoop — a render-, gate-, merge- or ship-stage hold expires 
           verdictPath(phase),
           JSON.stringify(
             verdictFixture({
+              tickId,
               committed: false,
               headSha: TIP_A,
               mergeFailures: [
@@ -2005,6 +2041,7 @@ describe("superviseLoop — a render-, gate-, merge- or ship-stage hold expires 
           verdictPath(phase),
           JSON.stringify(
             verdictFixture({
+              tickId,
               committed: true,
               headSha: TIP_B,
               shippedTags: ["OK-B"],
@@ -2015,7 +2052,7 @@ describe("superviseLoop — a render-, gate-, merge- or ship-stage hold expires 
       } else {
         await writeFile(
           verdictPath(phase),
-          JSON.stringify(verdictFixture({ committed: false, headSha: TIP_B })),
+          JSON.stringify(verdictFixture({ tickId, committed: false, headSha: TIP_B })),
           "utf8",
         );
         baton.sleep("build");
@@ -2058,6 +2095,7 @@ describe("superviseLoop — a render-, gate-, merge- or ship-stage hold expires 
     const runTick = async ({
       phase,
       quarantinedSlugs,
+      tickId,
     }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       receivedSlugs.push([...quarantinedSlugs].sort());
@@ -2067,6 +2105,7 @@ describe("superviseLoop — a render-, gate-, merge- or ship-stage hold expires 
             // trunk holds at TIP_A. The pick landed, so the tick reports
             // TIP_A as the tip it ended at.
             verdictFixture({
+              tickId,
               committed: false,
               headSha: TIP_A,
               shipFailures: [
@@ -2082,13 +2121,14 @@ describe("superviseLoop — a render-, gate-, merge- or ship-stage hold expires 
               // tick is told the key, and it is this tick that moves trunk —
               // the operator's hook fix, or any sibling landing.
               verdictFixture({
+                tickId,
                 committed: true,
                 headSha: TIP_B,
                 shippedTags: ["OK-B"],
               })
             : // Trunk is no longer the tree the throwing predicate was
               // consulted over, so the entry is pickable again.
-              verdictFixture({ committed: false, headSha: TIP_B });
+              verdictFixture({ tickId, committed: false, headSha: TIP_B });
       written.push(verdict);
       await writeFile(verdictPath(phase), JSON.stringify(verdict), "utf8");
       if (calls >= 3) baton.sleep("build");
@@ -2131,6 +2171,7 @@ describe("superviseLoop — a render-, gate-, merge- or ship-stage hold expires 
     const runTick = async ({
       phase,
       quarantinedSlugs,
+      tickId,
     }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       receivedSlugs.push([...quarantinedSlugs].sort());
@@ -2143,6 +2184,7 @@ describe("superviseLoop — a render-, gate-, merge- or ship-stage hold expires 
           verdictPath(phase),
           JSON.stringify(
             verdictFixture({
+              tickId,
               committed: false,
               headSha: TIP_A,
               provisionFailures: [
@@ -2168,6 +2210,7 @@ describe("superviseLoop — a render-, gate-, merge- or ship-stage hold expires 
           verdictPath(phase),
           JSON.stringify(
             verdictFixture({
+              tickId,
               committed: true,
               headSha: TIP_B,
               shippedTags: ["OK-C"],
@@ -2178,7 +2221,7 @@ describe("superviseLoop — a render-, gate-, merge- or ship-stage hold expires 
       } else {
         await writeFile(
           verdictPath(phase),
-          JSON.stringify(verdictFixture({ committed: false, headSha: TIP_B })),
+          JSON.stringify(verdictFixture({ tickId, committed: false, headSha: TIP_B })),
           "utf8",
         );
         baton.sleep("build");
@@ -2224,12 +2267,13 @@ describe("superviseLoop — supervisor policy knobs override the shipped default
 
     const SIGNATURE = "git worktree prune: fatal: not a git repository";
     let calls = 0;
-    const runTick = async ({ phase }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+    const runTick = async ({ phase, tickId }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       await writeFile(
         verdictPath(phase),
         JSON.stringify(
           verdictFixture({
+            tickId,
             committed: false,
             summary: "build: no commit — worktree provisioning failed",
             provisionFailures: [{ signature: SIGNATURE, message: SIGNATURE }],
@@ -2267,6 +2311,7 @@ describe("superviseLoop — supervisor policy knobs override the shipped default
     const runTick = async ({
       phase,
       quarantinedSlugs,
+      tickId,
     }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       receivedSlugs.push([...quarantinedSlugs].sort());
@@ -2275,6 +2320,7 @@ describe("superviseLoop — supervisor policy knobs override the shipped default
           verdictPath(phase),
           JSON.stringify(
             verdictFixture({
+              tickId,
               committed: false,
               provisionFailures: [
                 {
@@ -2290,7 +2336,7 @@ describe("superviseLoop — supervisor policy knobs override the shipped default
       } else {
         await writeFile(
           verdictPath(phase),
-          JSON.stringify(verdictFixture({ committed: false })),
+          JSON.stringify(verdictFixture({ tickId, committed: false })),
           "utf8",
         );
         baton.sleep("build");
@@ -2332,6 +2378,7 @@ describe("superviseLoop — supervisor policy knobs override the shipped default
     const runTick = async ({
       phase,
       quarantinedSlugs,
+      tickId,
     }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       receivedSlugs.push([...quarantinedSlugs].sort());
@@ -2339,6 +2386,7 @@ describe("superviseLoop — supervisor policy knobs override the shipped default
         verdictPath(phase),
         JSON.stringify(
           verdictFixture({
+            tickId,
             committed: false,
             summary: "build: no commit — worktree provisioning failed",
             provisionFailures: [
@@ -2573,6 +2621,206 @@ describe("superviseLoop — loop-end friction summary & configDir plumbing", () 
 });
 
 /**
+ * A-TICK-VERDICT-NAMES-THE-TICK-THAT-WROTE-IT (spec/loop.md, *The tick
+ * verdict — one facts artifact*): the clear a tick opens its own work with
+ * runs inside the child (`clearTickVerdict`, `src/tickVerdict.ts`), so a
+ * child that never reaches it — node or `tsx` failing to start, a chain
+ * that would not load — leaves the previous tick's record standing at the
+ * phase's path. Keyed on that path alone, the supervisor read a dead
+ * child's exit against its predecessor's facts: no `exit` record for the
+ * tick that reported nothing, and the predecessor's failures folded a
+ * second time into the streaks the abort backstop keys on. Each record
+ * names the invocation that wrote it (`TickVerdict.tickId`), and the read
+ * asks for the one this supervisor started.
+ *
+ * A child dying upstream of its own clear is spelled here the way it
+ * reaches disk: the stub writes nothing and removes nothing, so the
+ * previous tick's file is exactly what the supervisor's read finds.
+ */
+describe("superviseLoop — the verdict read is scoped to the invocation it spawned", () => {
+  const verdictPath = (phase: string): string =>
+    childVerdictPath(join(fx.repo, ".flume"), phase);
+
+  /** The platform wall the first tick records and no later tick repeats. */
+  const WALL = "platform preempt: Credit balance is too low";
+
+  /**
+   * What a child that never reached its own work exits with — the
+   * CJS-context chain-load refusal's code, one real wall of the class.
+   */
+  const DIED_EARLY = 2;
+
+  /** The record standing at `build`'s verdict path right now. */
+  const standingVerdict = async (): Promise<TickVerdict> =>
+    JSON.parse(await readFile(verdictPath("build"), "utf8")) as TickVerdict;
+
+  it("the verdict a tick's own child wrote is read as that tick's facts", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+
+    const runTick = async ({
+      phase,
+      tickId,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+      await writeFile(
+        verdictPath(phase),
+        JSON.stringify(
+          verdictFixture({
+            tickId,
+            committed: true,
+            shippedTags: ["SHIPPED-ONE"],
+            summary: "build shipped SHIPPED-ONE",
+          }),
+        ),
+        "utf8",
+      );
+      baton.sleep("build");
+      return { exitCode: 0 };
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: 5,
+      runTick,
+      log: silent,
+    });
+
+    // The subject is there to be read: the child really left a record at
+    // the path the supervisor named it by, so the facts below come from a
+    // verdict rather than from a read that found nothing.
+    expect((await standingVerdict()).summary).toBe("build shipped SHIPPED-ONE");
+    expect(res.ticks).toBe(1);
+    expect(res.shippedTags).toEqual(["SHIPPED-ONE"]);
+    expect(res.erroredTicks).toEqual([]);
+  });
+
+  it("a child that dies before clearing its phase's verdict is read as a verdictless exit, not as the previous tick's facts", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    baton.wake("build");
+
+    let calls = 0;
+    const runTick = async ({
+      phase,
+      tickId,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+      calls++;
+      if (calls === 1) {
+        await writeFile(
+          verdictPath(phase),
+          JSON.stringify(
+            verdictFixture({
+              tickId,
+              committed: true,
+              shippedTags: ["SHIPPED-ONE"],
+              summary: "build shipped SHIPPED-ONE",
+            }),
+          ),
+          "utf8",
+        );
+        return { exitCode: 0 };
+      }
+      // The second child dies upstream of everything its own tick would
+      // have done — no clear, no write — and the first tick's record is
+      // still where it left it.
+      baton.sleep("build");
+      return { exitCode: DIED_EARLY };
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      tickBudget: 5,
+      runTick,
+      log: silent,
+    });
+
+    expect(calls).toBe(2);
+    // The premise, proven rather than assumed: the file the second tick's
+    // read found was the first tick's, intact.
+    expect((await standingVerdict()).summary).toBe("build shipped SHIPPED-ONE");
+
+    // One errored tick, and it is the exit record the dead child earned —
+    // never the first tick's facts wearing the second's exit code.
+    expect(res.erroredTicks).toEqual([
+      `build tick process exited ${DIED_EARLY} with no verdict written to disk`,
+    ]);
+    // And the tick that did report is counted once, for what it reported.
+    expect(res.shippedTags).toEqual(["SHIPPED-ONE"]);
+  });
+
+  it("a verdict an earlier tick for the same phase left standing adds nothing to this tick's failure signatures", async () => {
+    const baton = new Baton(join(fx.repo, ".flume"));
+    // Never hibernates until the last tick asks: the run must end on the
+    // baton rather than on the backstop, which is the claim.
+    baton.wake("build");
+
+    let calls = 0;
+    let standingAtThirdStart: TickVerdict | undefined;
+    const runTick = async ({
+      phase,
+      tickId,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+      calls++;
+      if (calls === 1) {
+        await writeFile(
+          verdictPath(phase),
+          JSON.stringify(
+            verdictFixture({
+              tickId,
+              committed: false,
+              noCommit: "platform-preempt",
+              summary: "build: no commit (platform-preempt)",
+              platformFailures: [{ signature: WALL, message: WALL }],
+            }),
+          ),
+          "utf8",
+        );
+        return { exitCode: 0 };
+      }
+      if (calls === 2) return { exitCode: DIED_EARLY };
+      // Read before this child writes anything: the first tick's record is
+      // what the second tick's read was handed, so the streak below was
+      // either keyed on it or it was not.
+      standingAtThirdStart = await standingVerdict();
+      await writeFile(
+        verdictPath(phase),
+        JSON.stringify(verdictFixture({ tickId, committed: false })),
+        "utf8",
+      );
+      baton.sleep("build");
+      return { exitCode: 0 };
+    };
+
+    const res = await superviseLoop({
+      repoRoot: fx.repo,
+      // Two is what the second tick would reach by re-reading the first's
+      // wall; three ticks run, so a backstop that fires is a run that
+      // stopped one tick early.
+      abortThreshold: 2,
+      tickBudget: 5,
+      runTick,
+      log: silent,
+    });
+
+    // Non-vacuity: the stale record really did carry the wall, and really
+    // was standing when the second tick's read ran.
+    expect(standingAtThirdStart?.platformFailures).toEqual([
+      { signature: WALL, message: WALL },
+    ]);
+    expect(calls).toBe(3);
+    expect(res.ticks).toBe(3);
+    expect(res.repeatedFailure).toBeUndefined();
+    // Two errored ticks and no more: the first tick's own preempt line,
+    // once, and the second tick's exit record. A read keyed on the path
+    // alone would have written that preempt line a second time, under the
+    // tick that reported nothing.
+    expect(res.erroredTicks).toEqual([
+      "build: no commit (platform-preempt)",
+      `build tick process exited ${DIED_EARLY} with no verdict written to disk`,
+    ]);
+  });
+});
+
+/**
  * ABORT-SIGNATURE-NAMES-ITS-STAGE — the abort site holds the aborting
  * streak's stage (`failureStreaks` is keyed `${stage}:${signature}`), so
  * `repeatedFailure` reports it rather than leaving a consumer to read it
@@ -2699,18 +2947,18 @@ describe("superviseLoop — the aborting streak's stage is reported, not inferre
 
     const drive = stageCarrying[stage](wall);
     let calls = 0;
-    const runTick = async ({ phase }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+    const runTick = async ({ phase, tickId }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       // The verdict-carried stages write theirs; the exit stage clears the
       // path instead, which is what a real child does before its own work
-      // (`clearTickVerdict`, `src/tickVerdict.ts`) and what makes a
-      // verdictless exit verdictless when an earlier tick of this phase
-      // already wrote one.
+      // (`clearTickVerdict`, `src/tickVerdict.ts`). The case a child that
+      // never reached that clear leaves — a predecessor's record still
+      // standing — is the identity read's, and has its own suite above.
       if (drive.verdict !== undefined) {
         await writeFile(
           verdictPath(phase),
           JSON.stringify(
-            verdictFixture({ committed: false, ...drive.verdict }),
+            verdictFixture({ tickId, committed: false, ...drive.verdict }),
           ),
           "utf8",
         );
@@ -2788,8 +3036,9 @@ describe("superviseLoop — the platform stage feeds the backstop alone", () => 
    * stub it just called (`.claude/rules/engineering.md`, *A green verdict is
    * proven non-vacuous*).
    */
-  const preemptedVerdict = (): TickVerdict =>
+  const preemptedVerdict = (tickId: string): TickVerdict =>
     verdictFixture({
+      tickId,
       committed: false,
       noCommit: "platform-preempt",
       platformFailures: [{ signature: PREEMPT, message: PREEMPT }],
@@ -2802,11 +3051,12 @@ describe("superviseLoop — the platform stage feeds the backstop alone", () => 
     let calls = 0;
     const runTick = async ({
       phase,
+      tickId,
     }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       await writeFile(
         verdictPath(phase),
-        JSON.stringify(preemptedVerdict()),
+        JSON.stringify(preemptedVerdict(tickId)),
         "utf8",
       );
       return { exitCode: 0 };
@@ -2848,10 +3098,11 @@ describe("superviseLoop — the platform stage feeds the backstop alone", () => 
     const runTick = async ({
       phase,
       quarantinedSlugs,
+      tickId,
     }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       receivedSlugs.push([...quarantinedSlugs].sort());
-      const verdict = preemptedVerdict();
+      const verdict = preemptedVerdict(tickId);
       written.push(verdict);
       await writeFile(verdictPath(phase), JSON.stringify(verdict), "utf8");
       // Two ticks, one short of the threshold: the run ends on the baton, so
@@ -2922,8 +3173,9 @@ describe("superviseLoop — a `shipped` hook that threw is a ship-stage failure"
    * causes of one `not-shipped` are both present and only one of them is a
    * failure.
    */
-  const threwVerdict = (): TickVerdict =>
+  const threwVerdict = (tickId: string): TickVerdict =>
     verdictFixture({
+      tickId,
       committed: false,
       tags: ["THROWN-SHIP", "DECLINED-SHIP"],
       mergeOutcomes: [
@@ -2947,9 +3199,10 @@ describe("superviseLoop — a `shipped` hook that threw is a ship-stage failure"
     let calls = 0;
     const runTick = async ({
       phase,
+      tickId,
     }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
-      const verdict = threwVerdict();
+      const verdict = threwVerdict(tickId);
       written.push(verdict);
       await writeFile(verdictPath(phase), JSON.stringify(verdict), "utf8");
       return { exitCode: 0 };
@@ -3004,10 +3257,11 @@ describe("superviseLoop — a `shipped` hook that threw is a ship-stage failure"
     const runTick = async ({
       phase,
       quarantinedSlugs,
+      tickId,
     }: TickChildRequest): Promise<{ exitCode: number | null }> => {
       calls++;
       receivedSlugs.push([...quarantinedSlugs].sort());
-      const verdict = threwVerdict();
+      const verdict = threwVerdict(tickId);
       written.push(verdict);
       await writeFile(verdictPath(phase), JSON.stringify(verdict), "utf8");
       // Two ticks, one short of the threshold: the run ends on the baton, so
@@ -3147,8 +3401,14 @@ describe("superviseLoop — the run's agent spend, by phase", () => {
     expect(ticks.flatMap((v) => v.invocations)).toHaveLength(4);
 
     let call = 0;
-    const runTick = async (): Promise<{ exitCode: number | null }> => {
-      const verdict = ticks[call++]!;
+    const runTick = async ({
+      tickId,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+      // Each is stamped with the identity of the child writing it, the way
+      // a real tick stamps the verdict it lands (`TickVerdict.tickId`,
+      // `src/tickVerdict.ts`); without it the supervisor reads the file as
+      // some other invocation's and folds no row at all.
+      const verdict = { ...ticks[call++]!, tickId };
       await writeFile(verdictPath, JSON.stringify(verdict), "utf8");
       if (call === ticks.length) baton.sleep("build");
       return { exitCode: 0 };
@@ -3223,8 +3483,14 @@ describe("superviseLoop — the run's agent spend, by phase", () => {
     });
     expect(verdict.invocations).toHaveLength(0);
 
-    const runTick = async (): Promise<{ exitCode: number | null }> => {
-      await writeFile(verdictPath, JSON.stringify(verdict), "utf8");
+    const runTick = async ({
+      tickId,
+    }: TickChildRequest): Promise<{ exitCode: number | null }> => {
+      await writeFile(
+        verdictPath,
+        JSON.stringify({ ...verdict, tickId }),
+        "utf8",
+      );
       baton.sleep("build");
       return { exitCode: 0 };
     };

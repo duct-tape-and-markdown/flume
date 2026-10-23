@@ -771,6 +771,27 @@ export interface DeclinedWake {
 export interface TickVerdict {
   phaseName: string;
   /**
+   * Which tick invocation wrote this record — the identity a loop supervisor
+   * handed the child it spawned (`FLUME_TICK_ID`, `defaultTickRunner`,
+   * `src/loopSupervisor.ts`), or the one a bare `flume tick` minted for
+   * itself. Stamped by the write ({@link writeTickVerdict}) and by nothing
+   * else: it states who wrote the file, never what the tick did, which is
+   * why it is the one field {@link buildTickVerdict} does not compose.
+   *
+   * It is what makes the per-phase path a statement about *this* tick.
+   * Finding a record at that path says nothing on its own: the clear a tick
+   * opens its own work with ({@link clearTickVerdict}) runs inside the
+   * child, so a child that dies before reaching it — node or `tsx` failing
+   * to start, a chain that would not load — leaves the previous tick's
+   * record standing, and a reader keyed on the path alone counts that
+   * tick's facts a second time. {@link readTickVerdict} answers for the
+   * invocation it was handed and no other.
+   *
+   * Absent on a record written by something that is not a tick process, and
+   * on a history row written before this field existed.
+   */
+  tickId?: string;
+  /**
    * Entry tags this tick provisioned a worktree/agent for; empty for a
    * singleton phase or a fanout wave with nothing pickable.
    */
@@ -1162,7 +1183,10 @@ export type RequiredInvocationRowField = Exclude<
  *    removes it before that same tick's own work begins, so a tick that
  *    never reaches the write (chain-load failure, hibernation, terminal
  *    misconfiguration) leaves nothing for `superviseLoop` to misread as its
- *    own. Per phase because a supervisor run holds one child per awake phase
+ *    own — and a child that dies before even that clear is covered by the
+ *    record's own {@link TickVerdict.tickId}, which the standing predecessor
+ *    cannot be carrying. Per phase because a supervisor run holds one child
+ *    per awake phase
  *    at once: on a single path the second child to finish overwrote the
  *    first's facts before the supervisor read them, and the loss was silent —
  *    the reader saw a well-formed verdict, just not the one it was waiting
@@ -1359,11 +1383,25 @@ export class VerdictHistoryUnreadableError extends Error {
  * refuses — the append cannot proceed over a log it never resolved, and
  * treating the refusal as an empty history would overwrite every record the
  * file holds with this one (`readTickVerdicts`, below).
+ *
+ * `tickId` is the writing invocation's own identity ({@link
+ * TickVerdict.tickId}), stamped onto the record both files receive. The
+ * `tick` verb passes the one it was handed or minted (`src/cliTick.ts`), so
+ * every verdict a tick process writes names its writer; a caller that is not
+ * a tick — the suite driving this writer for the file shape it leaves —
+ * passes none, and the record then matches no supervisor's read.
  */
 export async function writeTickVerdict(
   flumeDir: string,
   verdict: TickVerdict,
+  tickId?: string,
 ): Promise<void> {
+  // The stamp is folded in here rather than at either write below, so the
+  // latest-tick file and the history row carry one record and cannot differ
+  // by a field (`.claude/rules/engineering.md`, *Derived state is computed,
+  // never restated beside its source*).
+  const record: TickVerdict =
+    tickId === undefined ? verdict : { ...verdict, tickId };
   // The verdict dir nests inside the state root, so one recursive mkdir
   // creates both — and the history log below is written straight under
   // `flumeDir`. win32 MAX_PATH: flumeDir nests under a job/worktree root;
@@ -1375,8 +1413,8 @@ export async function writeTickVerdict(
   // (`.claude/rules/engineering.md`, *Derived state is computed, never
   // restated beside its source*).
   await writeFile(
-    namespacedJoin(tickVerdictPath(flumeDir, verdict.phaseName)),
-    JSON.stringify(verdict),
+    namespacedJoin(tickVerdictPath(flumeDir, record.phaseName)),
+    JSON.stringify(record),
     "utf8",
   );
   let lines: string[];
@@ -1385,7 +1423,7 @@ export async function writeTickVerdict(
   } catch (err) {
     throw new VerdictHistoryUnreadableError(tickVerdictsLogPath(flumeDir), err);
   }
-  const bounded = [...lines, JSON.stringify(verdict)].slice(-MAX_TICK_VERDICTS);
+  const bounded = [...lines, JSON.stringify(record)].slice(-MAX_TICK_VERDICTS);
   await writeFile(
     namespacedJoin(tickVerdictsLogPath(flumeDir)),
     bounded.join("\n") + "\n",
@@ -1629,12 +1667,21 @@ export async function clearInvocationRows(
 }
 
 /**
- * Read `phase`'s last-written verdict, if any — consulted by `superviseLoop`
- * (`src/loopSupervisor.ts`), this export's only consumer, between child
- * ticks, with the phase it named the child by. Corrupt or absent (the CLI clears it before every
- * tick and writes it only once that tick's `dispatcher.tick()` call has
- * returned) degrades to "nothing to report" — a missing record must never
- * be misread as a prior tick's stale one.
+ * Read the verdict invocation `tickId` wrote for `phase`, if any —
+ * consulted by `superviseLoop` (`src/loopSupervisor.ts`), this export's only
+ * consumer, between child ticks, with the phase it named the child by and
+ * the identity it handed that child. Corrupt or absent (the CLI clears it
+ * before every tick and writes it only once that tick's `dispatcher.tick()`
+ * call has returned) degrades to "nothing to report" — a missing record must
+ * never be misread as a prior tick's stale one.
+ *
+ * **Named, not merely found.** A record at the phase's path whose
+ * {@link TickVerdict.tickId} is not the one asked for belongs to some other
+ * invocation — the previous tick of this phase, whose clear this child died
+ * before reaching, or a bare tick that ran before the run — and reads as no
+ * verdict at all. The caller then holds "this tick reported nothing", which
+ * is the truth; counting the standing record would hand it another tick's
+ * facts a second time, under this tick's exit code.
  *
  * Absent is the only silent reading, and it is **proven**: `existsLoudUnder`
  * (`src/fsProbe.ts`) descends from the state root before it stats the record,
@@ -1652,6 +1699,7 @@ export async function clearInvocationRows(
 export async function readTickVerdict(
   flumeDir: string,
   phase: string,
+  tickId: string,
 ): Promise<TickVerdict | undefined> {
   const path = tickVerdictPath(flumeDir, phase);
   const p = namespacedJoin(path);
@@ -1662,7 +1710,8 @@ export async function readTickVerdict(
   } catch (err) {
     throw unreadable("tick verdict record", path, err);
   }
-  return decodeVerdictLine(raw);
+  const verdict = decodeVerdictLine(raw);
+  return verdict?.tickId === tickId ? verdict : undefined;
 }
 
 /**

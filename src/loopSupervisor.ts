@@ -8,6 +8,8 @@
  * only.
  */
 
+import { randomUUID } from "node:crypto";
+
 import { Baton } from "./Baton.js";
 import { diskChainLoader, type LoadedChain } from "./chainLoad.js";
 import { type TerminalMisconfiguration } from "./Dispatcher.js";
@@ -107,6 +109,19 @@ export interface TickChildRequest {
    * (`.claude/rules/engine-boundary.md`, *Told, not inferred*).
    */
   phase: string;
+  /**
+   * This child's invocation identity — minted per child, and the token its
+   * verdict must carry for the supervisor to read that verdict as this
+   * tick's facts ({@link TickVerdict.tickId}). The default runner hands it
+   * across the process boundary in `FLUME_TICK_ID`, which the `tick` verb
+   * stamps onto the record it writes (`src/cliTick.ts`).
+   *
+   * A runner that drops it leaves its children's verdicts unreadable here,
+   * which is the safe direction: the alternative is the supervisor reading
+   * whatever the phase's path happens to hold, which on a child that died
+   * before its own clear is the previous tick's record.
+   */
+  tickId: string;
   /**
    * This run's accumulated run-scoped quarantine so far — the default runner
    * carries it to the child via the `FLUME_QUARANTINED_SLUGS` env var; a test
@@ -487,6 +502,13 @@ interface RunEnd {
 interface SettledChild {
   phase: string;
   exitCode: number | null;
+  /**
+   * The identity this child was started with ({@link
+   * TickChildRequest.tickId}), carried back out so the verdict read below
+   * asks for this tick's record rather than for whatever the phase's path
+   * holds.
+   */
+  tickId: string;
 }
 
 /**
@@ -762,10 +784,16 @@ export async function superviseLoop(
       if (!awake.includes(phase) || inFlight.has(phase)) continue;
       if (heldPhases.includes(phase)) continue;
       started++;
+      // One identity per child, minted here because here is the one place a
+      // child is started: the supervisor is the only actor that knows a
+      // given tick is about to exist, so it is the only one that can name
+      // it before it does. Opaque and unique — nothing reads it but the
+      // equality below.
+      const tickId = randomUUID();
       inFlight.set(
         phase,
-        runTick({ phase, quarantinedSlugs, stopSignal }).then(
-          ({ exitCode }) => ({ phase, exitCode }),
+        runTick({ phase, tickId, quarantinedSlugs, stopSignal }).then(
+          ({ exitCode }) => ({ phase, exitCode, tickId }),
         ),
       );
     }
@@ -864,8 +892,13 @@ export async function superviseLoop(
     try {
       // Read by the phase this supervisor named the child with, which is the
       // name that child wrote its verdict under — no inference, and no path
-      // two children of one run can share.
-      verdict = await readTickVerdict(flumeDir, child.phase);
+      // two children of one run can share — and by the identity it handed
+      // that same child, which is what the record must name for its facts to
+      // be this tick's. A child that died before the clear its own work
+      // opens with leaves the previous tick's record at that path; it names
+      // the invocation that wrote it, so it reads as no verdict here rather
+      // than as this one's facts counted again.
+      verdict = await readTickVerdict(flumeDir, child.phase, child.tickId);
     } catch (err) {
       // The path rides in `why` and is not recomposed here: both refusals
       // `readTickVerdict` can raise name the record they read — the stat
@@ -943,6 +976,9 @@ export async function superviseLoop(
     // the work existed — a CJS-context chain load (2), a harness error (1),
     // an uncaught throw out of `Dispatcher.tick`, or a 69 whose wall the
     // mount-dead re-read below could not name among the legs it re-reads.
+    // "None" is this child's own, never the path's: a child that died
+    // upstream of its clear left its predecessor's record standing, and the
+    // read above declined it by the identity it was handed.
     // Keyed by the exit code, which is the whole wall such a refusal states,
     // and blamed on no entry: the child reported nothing, so which entry it
     // was carrying is not a fact this process holds, and reading one off the
@@ -1381,6 +1417,10 @@ export async function superviseLoop(
  * carries this supervisor process's own pid — the one that acquired the tip
  * claim in the `loop` verb (`src/cliLoop.ts`) — so the child tick trusts the
  * claim already held instead of acquiring (and colliding on) its own.
+ * `FLUME_TICK_ID` carries {@link TickChildRequest.tickId}, which the child
+ * stamps onto the verdict it writes: the supervisor reads back the record
+ * naming the invocation it started, never whichever one the phase's path
+ * happens to hold.
  *
  * `stopSignal` is the run's teardown reaching this child: on abort the child's
  * group is signalled with SIGTERM (`spawnProcessTree`/`signalProcessTree`,
@@ -1407,13 +1447,14 @@ function defaultTickRunner(
   repoRoot: string,
   log: Logger,
 ): (child: TickChildRequest) => Promise<{ exitCode: number | null }> {
-  return ({ phase, quarantinedSlugs, stopSignal }) =>
+  return ({ phase, tickId, quarantinedSlugs, stopSignal }) =>
     new Promise((resolveExit) => {
       const env = { ...process.env };
       if (quarantinedSlugs.size > 0) {
         env.FLUME_QUARANTINED_SLUGS = [...quarantinedSlugs].join(",");
       }
       env.FLUME_TIP_CLAIM_HELD = String(process.pid);
+      env.FLUME_TICK_ID = tickId;
       const child = spawnProcessTree(
         process.execPath,
         [...process.execArgv, process.argv[1]!, "tick", "--phase", phase],
