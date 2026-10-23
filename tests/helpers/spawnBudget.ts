@@ -1016,6 +1016,50 @@ export interface SleepingSite extends SpawningSite {
 }
 
 /**
+ * One registrar as a failure message cites it — the location, what kind of
+ * registrar it is, and the title a reader greps the lane for.
+ *
+ * The base of this scan's three renderings rather than three spellings at
+ * three assertions: a verdict passes its findings through the formatter and
+ * `renderFindings` (`tests/helpers/repoProgram.ts`) names every one of them
+ * on the failure's first line, which is all a reverted tick carries
+ * (`.claude/rules/platform-facts.md`, *chai truncates an inspected value in
+ * an assertion message at 40 characters*).
+ */
+export const formatSpawnSite = (site: SpawnSite): string =>
+  `${site.module}:${site.line} ${site.kind} "${site.title}"`;
+
+/**
+ * A registrar flagged for a ceiling of its own, with the declaration that
+ * armed its reaching name where it spawns. A registrar that starts nothing
+ * has no reaching name to name and is cited on its number alone.
+ */
+export const formatRegistrarCeiling = (site: SpawnSite): string =>
+  `${formatSpawnSite(site)} — ${site.ownCeiling}` +
+  (site.spawnedVia ? `; spawns via ${formatReaching(site, site.spawnedVia)}` : "");
+
+/**
+ * A spawning site flagged for the wall-clock timer it awaits, under the lane
+ * that holds it: the scan runs per lane, so the lane is the caller's to pass
+ * rather than a field on a site that only ever knew one.
+ */
+export const formatSleepingSite = (lane: Lane, site: SleepingSite): string =>
+  `${lane} lane — ${formatSpawnSite(site)} awaits ` +
+  formatReaching(site, site.awaitedTimer);
+
+/**
+ * A spawning file against the budget it declares, with the declaration that
+ * made it a spawning file in the first place.
+ *
+ * The arming declaration rides every rendering because this scan has no
+ * scopes: a flagged file otherwise leaves its reader to re-derive which
+ * spelling of a reaching name put it in the judged set.
+ */
+export const formatSpawnFile = (file: SpawnFile): string =>
+  `${file.module} — ${budgetDefect(file) ?? "declares the lane's budget"}` +
+  `; spawns via ${formatReaching(file, file.sites[0].spawnedVia)}`;
+
+/**
  * Every case and hook the request's lane holds that starts a process, folded
  * to the files that hold them with the budget each file declares — and, for
  * each file that declares one, every registrar it holds whether it spawns or

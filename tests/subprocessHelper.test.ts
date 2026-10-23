@@ -33,6 +33,7 @@ import {
 } from "./helpers/subprocess.ts";
 import {
   REPO_ROOT,
+  expectNoFindings,
   filesUnder,
   parseScopeless,
   relPath,
@@ -56,6 +57,10 @@ import {
   laneRule,
   budgetDefect,
   formatReaching,
+  formatRegistrarCeiling,
+  formatSleepingSite,
+  formatSpawnFile,
+  formatSpawnSite,
   reduceLaneGlobs,
   scanSpawns,
 } from "./helpers/spawnBudget.ts";
@@ -244,13 +249,11 @@ it("the wrapper scan reads tests/ and finds the home's own promisified spawn", (
   expect(wrappers.scanned.map((site) => site.api)).toContain("execFile");
 });
 
+// The remedy a finding here asks for: import `exec` from the wrapper home
+// instead. A wrapper of its own runs on node's 1 MiB default, and the overrun
+// arrives as a child that never ran.
 it("no file under tests/ promisifies execFile outside the module that declares the output cap", () => {
-  expect(
-    wrappers.findings.map(formatPromisifiedSpawnSite),
-    `import { exec } from "${WRAPPER_HOME}" instead — a wrapper of its own ` +
-      "runs on node's 1 MiB default, and the overrun arrives as a child that " +
-      "never ran",
-  ).toEqual([]);
+  expectNoFindings(wrappers.findings.map(formatPromisifiedSpawnSite));
 });
 
 /**
@@ -293,13 +296,11 @@ it("the sync scan reads tests/ and finds the home's own capturing sync spawns", 
   ).toEqual(["execFileSync", "spawnSync"]);
 });
 
+// The remedy here: import `gitOutSync` or `spawnCaptureSync` from the wrapper
+// home instead. A bare sync capture runs on node's 1 MiB default, and the
+// overrun arrives as ENOBUFS with no exit status at all.
 it("no file under tests/ captures a sync child's output outside the module that declares the cap", () => {
-  expect(
-    syncSpawns.findings.map(formatSyncSpawnSite),
-    `import { gitOutSync } or { spawnCaptureSync } from "${WRAPPER_HOME}" ` +
-      "instead — a bare sync capture runs on node's 1 MiB default, and the " +
-      "overrun arrives as ENOBUFS with no exit status at all",
-  ).toEqual([]);
+  expectNoFindings(syncSpawns.findings.map(formatSyncSpawnSite));
 });
 
 // The two exemptions, asserted rather than inherited: each named file is in
@@ -415,6 +416,20 @@ describe("tests/ reads a child's exit status through one mechanism (TESTS-EXIT-S
       );
   }
 
+  /**
+   * One flagged line as a failure message cites it: the site, the shape it
+   * re-derived, and what to read the status through instead. The shape rides
+   * the line because the three needles share one verdict — the whole set is
+   * rendered together, so a site that named only its path would leave its
+   * reader to re-run the needles to learn which one caught it.
+   */
+  function formatReDerivation(
+    shape: (typeof RE_DERIVED)[number],
+    site: string,
+  ): string {
+    return `${site} — ${shape.what}: read the status through ${shape.instead}`;
+  }
+
   // Vacuity pin (.claude/rules/engineering.md, "A green verdict is proven
   // non-vacuous"): the refusals below pass over an empty set once every site is
   // fixed, so a corpus that walked nothing — a non-recursive read, a wrong
@@ -441,14 +456,18 @@ describe("tests/ reads a child's exit status through one mechanism (TESTS-EXIT-S
     ).not.toEqual([]);
   });
 
+  // One verdict over all three needles rather than one assertion each: a
+  // hand-rolled extraction reports a status no process returned whichever
+  // shape it wears, and a single rendering names every site rather than
+  // stopping at the first needle that fires.
   it("no suite outside the subprocess helper defaults a missing exit status to 1", () => {
-    for (const { what, pattern, instead, allowed } of RE_DERIVED) {
-      expect(
-        sitesOf(pattern, allowed),
-        `${what}: read the status through ${instead} — a hand-rolled ` +
-          "extraction reports a status no process returned",
-      ).toEqual([]);
-    }
+    expectNoFindings(
+      RE_DERIVED.flatMap((shape) =>
+        sitesOf(shape.pattern, shape.allowed).map((site) =>
+          formatReDerivation(shape, site),
+        ),
+      ),
+    );
   });
 
   // Sensitivity pin (same section): all three refusals above are green over
@@ -466,6 +485,15 @@ describe("tests/ reads a child's exit status through one mechanism (TESTS-EXIT-S
       for (const line of flagged) {
         expect(needle.pattern.test(line), `needle missed: ${line}`).toBe(true);
       }
+      // And the rendering the verdict above would carry, over a site this
+      // needle really does flag: the verdict is green over an empty set by
+      // design, so the formatter it renders through has produced no site name
+      // at all up to here (`.claude/rules/engineering.md`, *A green verdict is
+      // proven non-vacuous*).
+      const rendered = formatReDerivation(needle, "helpers/elsewhere.ts:12");
+      expect(rendered).toContain("helpers/elsewhere.ts:12");
+      expect(rendered).toContain(needle.what);
+      expect(rendered).toContain(needle.instead);
     }
     for (const [needle, clean] of [
       [nullish, "  return { stdout: e.stdout ?? \"\", code: exitStatusOf(err) };"],
@@ -523,24 +551,15 @@ it("every default-lane file that spawns a process declares the shared spawn budg
   expect(sites.scanned.length).toBeGreaterThan(0);
   expect(files.scanned.length).toBeGreaterThan(1);
 
-  // The arming declaration rides every finding: the scan has no scopes, so a
-  // flagged file names which declaration of the reaching spelling armed it
-  // rather than leaving the reader to re-derive that from the file.
-  const inheriting = files.findings.map(
-    (f) =>
-      `${f.module} — ${budgetDefect(f) ?? ""}; spawns via ` +
-      formatReaching(f, f.sites[0].spawnedVia),
-  );
-  expect(
-    inheriting,
-    `these files hold a site that starts a process — \`process.execPath\`, a ` +
-      `command name like \`node\`/\`npm\`/\`git\`, or \`renderPrompt\`, whose ` +
-      `inline-exec spans each start an \`sh\` — on vitest's 5s defaults: ` +
-      `declare the budget once at file scope, above the first registrar, as ` +
-      `\`vi.setConfig({ testTimeout: SPAWN_BUDGET_MS, hookTimeout: ` +
-      `SPAWN_BUDGET_MS })\` (tests/helpers/subprocess.ts), rather than a ` +
-      `number of its own`,
-  ).toEqual([]);
+  // A finding here holds a site that starts a process — `process.execPath`, a
+  // command name like `node`/`npm`/`git`, or `renderPrompt`, whose inline-exec
+  // spans each start an `sh` — on vitest's 5s defaults. The remedy is one
+  // file-scope declaration above the first registrar, `vi.setConfig({
+  // testTimeout: SPAWN_BUDGET_MS, hookTimeout: SPAWN_BUDGET_MS })`
+  // (tests/helpers/subprocess.ts), rather than a number of its own. The
+  // arming declaration rides every rendering, so a flagged file names which
+  // spelling of a reaching name put it in the judged set.
+  expectNoFindings(files.findings.map(formatSpawnFile));
 
   // Every declaring file names the one constant, rather than each naming a
   // budget of its own: the scan reports the arm's identifier, so this reads
@@ -591,20 +610,13 @@ it("a file declaring the spawn budget carries no numeric timeout on any registra
   expect(sites.scanned.length).toBeGreaterThan(0);
   expect(registrars.scanned.length).toBeGreaterThan(sites.scanned.length);
 
-  // Where the registrar spawns, the declaration that armed its reaching name
-  // rides the finding too; a registrar that starts nothing has no reaching
-  // name to name, and is flagged on its number alone.
-  expect(
-    registrars.findings.map(
-      (s) =>
-        `${s.module}:${s.line} — ${s.ownCeiling}` +
-        (s.spawnedVia ? `; spawns via ${formatReaching(s, s.spawnedVia)}` : ""),
-    ),
-    `these registrars carry a timeout of their own, which vitest resolves ` +
-      `over the file-scope \`vi.setConfig\` budget their file declares: drop ` +
-      `the argument so the registrar inherits \`SPAWN_BUDGET_MS\` ` +
-      `(tests/helpers/subprocess.ts), which is the lane's one number`,
-  ).toEqual([]);
+  // A finding here carries a timeout of its own, which vitest resolves over
+  // the file-scope `vi.setConfig` budget its file declares; the remedy is to
+  // drop the argument so the registrar inherits `SPAWN_BUDGET_MS`
+  // (tests/helpers/subprocess.ts), which is the lane's one number. Where the
+  // registrar spawns, the declaration that armed its reaching name rides the
+  // rendering too.
+  expectNoFindings(registrars.findings.map(formatRegistrarCeiling));
 });
 
 /**
@@ -1045,15 +1057,9 @@ it("a budget finding names the declaration that armed its reaching name", async 
     // And the budget finding the lane's verdict renders, which is where a
     // reverted tick reads it: the file's defect, and the declaration that
     // made it a spawning file.
-    expect(
-      files.findings.map(
-        (f) =>
-          `${budgetDefect(f) ?? ""}; spawns via ` +
-          formatReaching(f, f.sites[0].spawnedVia),
-      ),
-    ).toEqual([
+    expect(files.findings.map(formatSpawnFile)).toEqual([
       expect.stringMatching(
-        /^declares no file-scope `vi\.setConfig` budget; spawns via `boot` declared at .*fixture\.test\.ts:10$/,
+        /^.*fixture\.test\.ts — declares no file-scope `vi\.setConfig` budget; spawns via `boot` declared at .*fixture\.test\.ts:10$/,
       ),
     ]);
   } finally {
@@ -1190,13 +1196,19 @@ it("the spawn scan reports a numeric timeout literal on a registrar under a file
     // non-spawning case with no argument are both pinned by their absence —
     // and the hook is pinned as reported, which no case-only arm would have
     // covered.
-    expect(
-      registrars.findings.map((s) => `${s.kind}: ${s.title} — ${s.ownCeiling}`),
-    ).toEqual([
-      expect.stringMatching(/^hook: beforeEach at .* — 30_000$/),
-      "case: restates the number positionally — 20_000",
-      "case: restates it under the options key — 20_000",
-      "case: restates the number while spawning nothing — 20_000",
+    expect(registrars.findings.map(formatRegistrarCeiling)).toEqual([
+      expect.stringMatching(
+        /^.*fixture\.test\.ts:5 hook "beforeEach at .*fixture\.test\.ts:5" — 30_000; spawns via .+$/,
+      ),
+      expect.stringMatching(
+        /^.*fixture\.test\.ts:9 case "restates the number positionally" — 20_000; spawns via .+$/,
+      ),
+      expect.stringMatching(
+        /^.*fixture\.test\.ts:13 case "restates it under the options key" — 20_000; spawns via .+$/,
+      ),
+      expect.stringMatching(
+        /^.*fixture\.test\.ts:21 case "restates the number while spawning nothing" — 20_000$/,
+      ),
     ]);
 
     // And the file-scope verdict is clean over the same fixture: the two arms
@@ -1246,8 +1258,8 @@ it("the spawn scan judges no registrar in a file that declares no file-scope bud
     // nothing.
     expect(sites.scanned.map((site) => site.ownCeiling)).toEqual(["20_000"]);
 
-    expect(registrars.scanned).toEqual([]);
-    expect(registrars.findings).toEqual([]);
+    expectNoFindings(registrars.scanned.map(formatSpawnSite));
+    expectNoFindings(registrars.findings.map(formatRegistrarCeiling));
 
     // What does judge it: the declaration it never made.
     expect(files.findings.map((f) => budgetDefect(f))).toEqual([
@@ -1388,8 +1400,8 @@ describe("the default-lane spawn-budget scan", () => {
     try {
       await writeFile(join(dir, "fixture.integration.test.ts"), FIXTURE, "utf8");
       const ours = await scanSpawns({ lane: "default", dir });
-      expect(ours.sites.scanned).toEqual([]);
-      expect(ours.files.scanned).toEqual([]);
+      expectNoFindings(ours.sites.scanned.map(formatSpawnSite));
+      expectNoFindings(ours.files.scanned.map(formatSpawnFile));
 
       // The same bytes, read by the lane whose suffix they carry: the absence
       // above is the default lane's exclude doing work rather than a scan
@@ -1481,19 +1493,16 @@ it("no case that starts a node process awaits a timer, in either lane", async ()
     false,
   );
 
-  const sleeping = [...byLane].flatMap(([lane, scan]) =>
-    scan.sites.findings.map(
-      (s) =>
-        `${lane} lane — ${s.module}:${s.line} ${s.kind} "${s.title}" awaits ` +
-        formatReaching(s, s.awaitedTimer),
+  // A finding here starts a node process and then awaits a wall-clock timer;
+  // the remedy is to wait on the event instead (`waitFor`,
+  // tests/helpers/waitFor.ts), which ends as soon as the thing arrives and
+  // refuses by name at its ceiling. Both lanes render into one list, so a red
+  // names every sleeping case rather than whichever lane was read first.
+  expectNoFindings(
+    [...byLane].flatMap(([lane, scan]) =>
+      scan.sites.findings.map((s) => formatSleepingSite(lane, s)),
     ),
   );
-  expect(
-    sleeping,
-    "these cases start a node process and then await a wall-clock timer: " +
-      "wait on the event instead (`waitFor`, tests/helpers/waitFor.ts), which " +
-      "ends as soon as the thing arrives and refuses by name at its ceiling",
-  ).toEqual([]);
 });
 
 /**
@@ -1563,6 +1572,22 @@ it("the timer scan reports an awaited timer in a spawning fixture case", async (
       ["waits on the event instead", null],
       ["names a timer only inside the chain source it writes", null],
       ["arms a kill timer it never awaits", null],
+    ]);
+
+    // And the rendering the lane verdict carries, over the two sites that are
+    // findings here: that verdict is green over an empty set by design, so the
+    // formatter it renders through has named no sleeping case at all up to
+    // this point (`.claude/rules/engineering.md`, *A green verdict is proven
+    // non-vacuous*).
+    expect(
+      sites.findings.map((s) => formatSleepingSite("default", s)),
+    ).toEqual([
+      expect.stringMatching(
+        /^default lane — .*fixture\.test\.ts:6 case "sleeps a fixed guess after spawning" awaits `setTimeout` spelled in the body$/,
+      ),
+      expect.stringMatching(
+        /^default lane — .*fixture\.test\.ts:12 case "sleeps through a file-local wrapper" awaits `settle` declared at .*fixture\.test\.ts:4$/,
+      ),
     ]);
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -1686,13 +1711,13 @@ it("the wait ceiling's warrant restates no per-case budget literal", () => {
       "itself against one",
   ).toEqual(["SPAWN_BUDGET_MS"]);
 
-  expect(
-    warrant.match(FIGURE) ?? [],
-    "the ceiling's warrant states a figure of its own: the per-case budget " +
-      "has one home (`SPAWN_BUDGET_MS`, tests/helpers/subprocess.ts), and a " +
-      "second copy here goes stale the moment that one moves, while still " +
-      "reading as the warrant for this ceiling",
-  ).toEqual([]);
+  // Each figure the warrant states of its own, rendered so a red names them
+  // all: the per-case budget has one home (`SPAWN_BUDGET_MS`,
+  // tests/helpers/subprocess.ts), and a second copy here goes stale the moment
+  // that one moves, while still reading as the warrant for this ceiling.
+  expectNoFindings(
+    (warrant.match(FIGURE) ?? []).map((figure) => `states the figure ${figure}`),
+  );
 
   // Sensitivity: the needle over the sentence this warrant retired, which is
   // the shape it exists to catch.
@@ -1751,21 +1776,28 @@ it("the wait helper's header does not scope it to the integration lane alone", a
   }
   const served = LANES.filter((lane) => (importers.get(lane) ?? []).length > 0);
 
+  // A finding here is a lane the opening sentence claims the helper for while
+  // another importing lane goes unnamed: a caller outside the named lane reads
+  // the ceiling below as sized for a run it is not in.
   const lead = lanesNamedIn(leadSentence(header));
-  expect(
-    lead.length === served.length ? [] : lead,
-    `the wait helper's opening sentence claims it for the ${lead.join(", ")} ` +
-      `lane, while the ${served.join(" and ")} lanes both import it: a ` +
-      `caller outside the named lane reads the ceiling below as sized for a ` +
-      `run it is not in`,
-  ).toEqual([]);
+  expectNoFindings(
+    lead.length === served.length
+      ? []
+      : lead.map(
+          (lane) =>
+            `the opening sentence claims the ${lane} lane, of the ` +
+            `${served.join(" and ")} lanes that import the helper`,
+        ),
+  );
 
-  expect(
-    served.filter((lane) => !lanesNamedIn(header).includes(lane)),
-    "the header never names these lanes, which call the helper: a header " +
-      "that states the lanes it serves is what keeps the ceiling's warrant " +
-      "readable from either one",
-  ).toEqual([]);
+  // And a finding here is a calling lane the header never names anywhere: a
+  // header that states the lanes it serves is what keeps the ceiling's warrant
+  // readable from either one.
+  expectNoFindings(
+    served
+      .filter((lane) => !lanesNamedIn(header).includes(lane))
+      .map((lane) => `the header never names the ${lane} lane, which calls it`),
+  );
 
   // Sensitivity: the lead this header retired, read the same way — the scope
   // claim is green over an empty set by design, so a needle that stopped
