@@ -334,6 +334,14 @@ function main() {
     // all (`.claude/rules/platform-facts.md`, *A CommonJS-scoped `chain.ts`
     // stops loading the ESM-only package at node 22.23*).
     run("npm init", "npm", ["init", "-y"], { cwd: consumerDir });
+    // The lockfile every npm project carries once anything is installed. The
+    // tarball install below is `--no-save`, which writes no lockfile either,
+    // and a consumer with neither a lockfile nor a declared `setup` is refused
+    // at chain load (`spec/harness.md`, *What a consumer declares*) — a refusal
+    // no real adopter meets, since their own install wrote one.
+    run("npm lockfile", "npm", ["install", "--package-lock-only", "--no-audit", "--no-fund"], {
+      cwd: consumerDir,
+    });
     run(
       registrySpec ? "npm install from registry" : "npm install tarball",
       "npm",
