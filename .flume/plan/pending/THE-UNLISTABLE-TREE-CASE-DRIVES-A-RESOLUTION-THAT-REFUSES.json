@@ -3,6 +3,7 @@
   "gate": {
     "kind": "open"
   },
+  "dependsOnForks": [],
   "kind": "work",
   "files": {
     "new": [],
@@ -23,5 +24,9 @@
   "tests": [],
   "pins": [],
   "laneTests": [],
-  "notes": "Measured on this tip: red under `pnpm test`, green under `node <vitest.mjs> run`. Cause: pnpm's `node_modules/.bin/vitest` shim exports `NODE_PATH` holding `node_modules/.pnpm/node_modules`, the hoisted store, so `createRequire(<tmp>/package.json).resolve('vitest/package.json')` answers from a tree with no dependencies. `resolveVitest` is correct; the fixture is the defect, and `options.invoke` is the declared door. No `tests[]`: a test-only diff rebuilds at the base."
+  "notes": "Measured on this tip: red under `pnpm test`, green under `node <vitest.mjs> run`. Cause: pnpm's `node_modules/.bin/vitest` shim exports `NODE_PATH` holding `node_modules/.pnpm/node_modules`, the hoisted store, so `createRequire(<tmp>/package.json).resolve('vitest/package.json')` answers from a tree with no dependencies. `resolveVitest` is correct; the fixture is the defect, and `options.invoke` is the declared door. No `tests[]`: a test-only diff rebuilds at the base.",
+  "observedFiles": [
+    ".flume/plan/notes/THE-UNLISTABLE-TREE-CASE-DRIVES-A-RESOLUTION-THAT-REFUSES.md",
+    "tests/harnessRunner.test.ts"
+  ]
 }
