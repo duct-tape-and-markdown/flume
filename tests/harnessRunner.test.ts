@@ -1096,17 +1096,43 @@ describe("the vitest runner", () => {
   });
 
   it("a listing vitest cannot produce leaves no coverage known rather than an empty set", async () => {
-    // A tree with no dependencies at all: the listing cannot be spawned, and
-    // the arm that matters is which answer that produces. An empty
-    // `uncovered` would read as "the running lane leaves nothing out", which
-    // is the confident wrong answer (`.claude/rules/engineering.md`, *Loud or
-    // nothing*).
+    // A tree the listing cannot be spawned from, and the arm that matters is
+    // which answer that produces. An empty `uncovered` would read as "the
+    // running lane leaves nothing out", which is the confident wrong answer
+    // (`.claude/rules/engineering.md`, *Loud or nothing*).
+    //
+    // The tree is armed, never left bare: a bare temp root resolves vitest
+    // anyway under the test command, because a package manager's `.bin` shim
+    // exports its hoisted store on `NODE_PATH` and a bare specifier's walk
+    // reaches those directories once it has climbed past the tree's own
+    // ancestors — so the case read a real listing over the repo's vitest and
+    // never produced the tree its title names. A `vitest` manifest exporting
+    // its entry point and not its own manifest refuses the subpath
+    // `resolveVitest` asks for, and it refuses it at the nearest
+    // `node_modules` the walk reads, ahead of every `NODE_PATH` entry
+    // whatever the invoking shim put there.
     const dir = await mkTempDir("flume-harness-runner-unlistable-");
     try {
+      const planted = join(dir, "node_modules", "vitest", "package.json");
+      await put(
+        dir,
+        "node_modules/vitest/package.json",
+        `{ "name": "vitest", "version": "0.0.0", "exports": { ".": "./dist/index.js" } }\n`,
+      );
+
+      // Vacuity, and the arming with it: the real resolution refuses this
+      // tree, and refuses it over the manifest planted above rather than for
+      // an absence a host with no hoisted store would have produced anyway.
+      // So the answer below is the catch arm, not a listing that came back
+      // empty.
+      expect(() => resolveVitest(dir)).toThrow(/vitest does not resolve/);
+      expect(() => resolveVitest(dir)).toThrow(planted);
+
       const coverage = vitestRunner()(ctx).coverage(dir);
       expect(coverage.kind).toBe("unknown");
       if (coverage.kind !== "unknown") throw new Error("the listing answered");
       expect(coverage.reason).toContain("vitest does not resolve");
+      expect(coverage.reason).toContain(planted);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
