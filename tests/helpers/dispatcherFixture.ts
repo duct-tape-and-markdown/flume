@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import type { Logger } from "../../src/log.ts";
+import type { TickChildRequest } from "../../src/loopSupervisor.ts";
 import { tickVerdictPath, type TickVerdict } from "../../src/tickVerdict.ts";
 import { RUNTIME_IGNORES } from "../../src/runtimeIgnores.ts";
 
@@ -64,10 +65,11 @@ export function verdictFixture(over: Partial<TickVerdict> = {}): TickVerdict {
  * directory the real writer creates (`writeTickVerdict`, `src/tickVerdict.ts`)
  * already in place.
  *
- * A stub standing in for that child writes there and the supervisor reads
- * there, so the two agree by taking one accessor rather than by both
- * spelling a path. The `mkdir` is what a stub would otherwise repeat at
- * every site — and a suite that goes on to deny the path structurally
+ * The accessor {@link plantChildVerdict} writes through, and what a case
+ * reaching that path for anything else takes: reading the record standing
+ * there, removing it, denying it. One accessor rather than a path spelled
+ * twice. The `mkdir` is what each of those would otherwise repeat — and a
+ * suite that goes on to deny the path structurally
  * (`tests/helpers/denial.ts`) needs the parent standing, since denial never
  * creates one.
  */
@@ -75,6 +77,49 @@ export function childVerdictPath(flumeDir: string, phase: string): string {
   const p = tickVerdictPath(flumeDir, phase);
   mkdirSync(dirname(p), { recursive: true });
   return p;
+}
+
+/**
+ * What a stub hands {@link plantChildVerdict}: the writing child's request —
+ * the phase whose path the record lands at and the invocation identity it is
+ * stamped with — and whatever of the verdict that child is meant to report
+ * differs from {@link verdictFixture}'s clean committed tick.
+ *
+ * `tickId` is required because it is the stamp the read keys on, and `phase`
+ * because it decides the path; everything else is the case's own. A stub
+ * holding a whole {@link TickChildRequest} spreads it; one holding a built
+ * verdict spreads that first, so the request's identity wins over whatever it
+ * carried.
+ */
+export type PlantedChildVerdict = Partial<TickVerdict> &
+  Pick<TickChildRequest, "phase" | "tickId">;
+
+/**
+ * Plant at `phase`'s verdict path the record a child of that phase wrote,
+ * stamped with the identity of the child that wrote it, and hand the record
+ * back so a case can pin the set it judged was populated
+ * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
+ *
+ * The one door a stub standing in for a real `flume tick` child writes
+ * through. `readTickVerdict` (`src/tickVerdict.ts`) answers undefined when
+ * the record's `tickId` is not the one the supervisor asked for, so a stub
+ * that leaves the stamp off sends every case that reads it down
+ * `superviseLoop`'s no-verdict arm — green only where the case wanted that
+ * arm anyway. {@link PlantedChildVerdict} requiring the identity is what
+ * makes it unforgettable, in place of a comment at each site.
+ */
+export async function plantChildVerdict(
+  flumeDir: string,
+  planted: PlantedChildVerdict,
+): Promise<TickVerdict> {
+  const { phase, ...verdict } = planted;
+  const record = verdictFixture(verdict);
+  await writeFile(
+    childVerdictPath(flumeDir, phase),
+    JSON.stringify(record),
+    "utf8",
+  );
+  return record;
 }
 
 // ---------- agent bodies ----------
