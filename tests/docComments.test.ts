@@ -685,32 +685,126 @@ const DOC_OPENER = "/**";
 const opensWithSecondOpener = (block: string): boolean =>
   block.slice(DOC_OPENER.length).replace(/^[\s*]+/, "").startsWith(DOC_OPENER);
 
+/**
+ * Every doc block a module strands: a second block sits directly beneath it
+ * with whitespace alone between, so the parser hands the declaration below
+ * only the lower block and the upper one describes a declaration the emit
+ * never attaches it to. Answered as the 1-based line each stranded block
+ * opens on.
+ *
+ * The stack a file *opens* with is the module header above the first
+ * statement's own block — how `src/Agent.ts` and `src/exitCodes.ts` are
+ * written — and is the one pair a declaration is entitled to. Only that
+ * pair, so a header stacked twice does not shelter the third block, and a
+ * file whose first block sits below a statement has no header to claim.
+ */
+const strandedBlockLines = (sf: ts.SourceFile): readonly number[] => {
+  const lines = sf.getFullText().split(/\r?\n/);
+  const blocks = docCommentBlocks(sf).map(({ line, text }) => ({
+    line,
+    endLine: line + text.split(/\r?\n/).length - 1,
+  }));
+  const first = sf.statements[0];
+  const bodyLine =
+    first === undefined
+      ? lines.length + 1
+      : sf.getLineAndCharacterOfPosition(first.getStart(sf)).line + 1;
+  return blocks.flatMap((block, index) => {
+    const below = blocks[index + 1];
+    if (below === undefined) return [];
+    const between = lines.slice(block.endLine, below.line - 1);
+    if (!between.every((line) => line.trim() === "")) return [];
+    if (index === 0 && below.endLine < bodyLine) return [];
+    return [block.line];
+  });
+};
+
+/**
+ * Every finding a per-module read of the shipped trees reports, each tree's
+ * own doc blocks counted before the verdict over it is read: a tree walked
+ * and found empty is the false green both scans below share, and one count
+ * summed across the trees would let `src/` answer for `harness/`
+ * (`.claude/rules/engineering.md`, *A green verdict is proven non-vacuous*).
+ *
+ * One walk, two callers, because a block that opens malformed and a block
+ * the emit strands are the same question asked of the same trees
+ * (`.claude/rules/engineering.md`, *A module is one job*).
+ */
+const shippedBlockFindings = (
+  read: (sf: ts.SourceFile, module: string) => readonly string[],
+): readonly string[] => {
+  const findings: string[] = [];
+  for (const tree of SHIPPED_TREES) {
+    let blocks = 0;
+    for (const path of modulesUnder(REPO_ROOT, { trees: [tree] })) {
+      const sf = parseScopeless(path);
+      blocks += docCommentBlocks(sf).length;
+      findings.push(...read(sf, relPath(REPO_ROOT, path)));
+    }
+    expect(
+      blocks,
+      `the scan found no doc comment in any ${tree}/ module`,
+    ).toBeGreaterThan(0);
+  }
+  return findings;
+};
+
+/** A module spelled for the scan rather than read off the tree. */
+const planted = (text: string): ts.SourceFile =>
+  ts.createSourceFile("planted.ts", text, ts.ScriptTarget.ESNext, true);
+
+/**
+ * The two stacks that differ only by what sits above them: a pair below an
+ * import strands its upper block, and the same pair opening a file is the
+ * module header. Hand-authored, because no writer in this repo produces the
+ * malformation the scan exists to refuse (`.claude/rules/engineering.md`, *A
+ * seam gate reads what the real writer wrote*).
+ */
+const STRANDED_PAIR = `/** The module header. */
+
+import { thing } from "./thing.ts";
+
+/** The block the emit drops. */
+/** The block the emit carries. */
+export const value = thing;
+`;
+const HEADER_PAIR = `/** The module header. */
+
+/** The block the emit carries. */
+export const value = 1;
+`;
+
 it("no doc comment the package ships opens with a second doc-comment opener", () => {
   // Vacuity guard: more than one tree is walked, so neither answers for the
   // other (`.claude/rules/engineering.md`, *A green verdict is proven
   // non-vacuous*).
   expect(SHIPPED_TREES.length).toBeGreaterThan(1);
 
-  const findings: string[] = [];
-  for (const tree of SHIPPED_TREES) {
-    let blocks = 0;
-    for (const path of modulesUnder(REPO_ROOT, { trees: [tree] })) {
-      for (const { line, text } of docCommentBlocks(parseScopeless(path))) {
-        blocks += 1;
-        if (opensWithSecondOpener(text))
-          findings.push(`${relPath(REPO_ROOT, path)}:${line}`);
-      }
-    }
+  expectNoFindings(
+    shippedBlockFindings((sf, module) =>
+      docCommentBlocks(sf)
+        .filter(({ text }) => opensWithSecondOpener(text))
+        .map(({ line }) => `${module}:${line}`),
+    ),
+  );
+});
 
-    // Each tree contributed blocks of its own before the verdict over it is
-    // read: a tree walked and found empty is the false green here.
-    expect(
-      blocks,
-      `the scan found no doc comment in any ${tree}/ module`,
-    ).toBeGreaterThan(0);
-  }
+it("no declaration the package ships carries a doc comment block stranded above its own", () => {
+  // Vacuity guard: more than one tree is walked, and the reader bites on the
+  // stack it exists to catch while passing over the header stack the
+  // carve-out admits. Green here is an empty findings list by design, so
+  // nothing on the tree arms the finding arm and the plants are what prove it
+  // fires (`.claude/rules/engineering.md`, *A green verdict is proven
+  // non-vacuous*).
+  expect(SHIPPED_TREES.length).toBeGreaterThan(1);
+  expect(strandedBlockLines(planted(STRANDED_PAIR))).toEqual([5]);
+  expect(strandedBlockLines(planted(HEADER_PAIR))).toEqual([]);
 
-  expectNoFindings(findings);
+  expectNoFindings(
+    shippedBlockFindings((sf, module) =>
+      strandedBlockLines(sf).map((line) => `${module}:${line}`),
+    ),
+  );
 });
 
 /**

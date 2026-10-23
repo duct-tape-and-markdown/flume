@@ -299,16 +299,6 @@ const reportOf = (names: readonly NamedResult[]): RunResult => ({
 });
 
 /**
- * Declare the script runner: a consumer whose proof is a validator declares
- * the command that reports what it found, and the reader that turns that
- * report into an answer per name.
- *
- * Returns the factory, not the runner, for the reason every runner is
- * declared as one (`runner.ts`, {@link RunnerFactory}): a base run needs the
- * tree at a sha and the consumer's own provisioning, and only the chain load
- * holds either.
- */
-/**
  * What this runner answers a coverage read with (`spec/harness.md`, *The
  * runner interface*): a declared command reports on the names it was handed
  * and has no operation that lists what it would check, so plan is told no
@@ -328,6 +318,16 @@ const NO_COVERAGE: LaneCoverage = {
     "tool answers",
 };
 
+/**
+ * Declare the script runner: a consumer whose proof is a validator declares
+ * the command that reports what it found, and the reader that turns that
+ * report into an answer per name.
+ *
+ * Returns the factory, not the runner, for the reason every runner is
+ * declared as one (`runner.ts`, {@link RunnerFactory}): a base run needs the
+ * tree at a sha and the consumer's own provisioning, and only the chain load
+ * holds either.
+ */
 export function scriptRunner(options: ScriptRunnerOptions): RunnerFactory {
   const lanes = resolveLanes("scriptRunner", options.lanes);
   const args = options.args ?? [];
