@@ -1,0 +1,62 @@
+{
+  "tag": "THE-MERGE-STAGES-PROSE-NAMES-THE-CANDIDATE-NOT-THE-TRUNK",
+  "gate": {
+    "kind": "open"
+  },
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "src/Phase.ts",
+        "description": "`ShipContext.repoRoot` and the `Concurrency` lead-in, both exported hover text"
+      },
+      {
+        "path": "src/Gate.ts",
+        "description": "a batch span's `commitSha` line"
+      },
+      {
+        "path": "src/cliHelp.ts",
+        "description": "the `exclusive` verb's help text, against docs/CLI.md's already-correct copy"
+      },
+      {
+        "path": "src/git.ts",
+        "description": "the ship lock's doc comment, the same sentence"
+      },
+      {
+        "path": "src/mergeSpan.ts",
+        "description": "the pick leg's \"before the abort\", beside the same file's \"No abort\""
+      },
+      {
+        "path": "harness/judgeGate.ts",
+        "description": "the comment naming the trunk as the tree the suite runs in"
+      },
+      {
+        "path": "docs/CHAIN-AUTHORING.md",
+        "description": "the gate-context rows for `cwd` and `repoRoot` under afterMerge"
+      },
+      {
+        "path": "tests/docComments.test.ts",
+        "description": "the anchors the two hover-text blocks gain, and the comment claiming a singleton picks onto trunk"
+      },
+      {
+        "path": "tests/Dispatcher.test.ts",
+        "description": "the merge-repoRoot title claiming the trunk its own body refutes"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "the merge stage's prose names the candidate the gates judge, not the trunk they ran on before it",
+  "per": {
+    "path": "spec/worktrees.md",
+    "section": "Per-entry `afterMerge` revert isolation"
+  },
+  "acceptance": "no surface in the named files says an `afterMerge` gate runs on the trunk, that a span is gated there, or that a batched merge picks onto the primary checkout; and the merge-repoRoot title states the candidate its body asserts",
+  "tests": [
+    "`ShipContext.repoRoot`'s doc names a batched merge's shared candidate rather than the primary checkout",
+    "the `Concurrency` lead-in names the candidate a span is picked onto and gated in"
+  ],
+  "pins": [],
+  "laneTests": [],
+  "notes": "The pre-candidate premise, whose spec half ad5687da just retired. Refuted by the code and by `consultShipped`'s own param doc, which states both widths right. Sites: `ShipContext.repoRoot` (\"the primary checkout for a batched merge\"), the `Concurrency` block (\"gated there\", \"reverts only that entry's commit\" — nothing is rewound), the `exclusive` help, the ship-lock comment, \"before the abort\", the judge's comment, the two gate-context rows, a title asserting `candidate-`."
+}
