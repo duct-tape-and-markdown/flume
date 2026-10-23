@@ -23,6 +23,7 @@ import type {
   Gate,
   GateContext,
   GatePhase,
+  GateResult,
   SingleSpanGate,
 } from "../src/Gate.js";
 
@@ -132,7 +133,10 @@ export function constructGate(
  * when the span touched nothing: an environment value cannot carry a NUL, so
  * the NUL-delimited form the engine decoded from git has no encoding here,
  * and a tracked path containing a newline is the one shape this channel
- * cannot spell.
+ * cannot spell. {@link unspellableTouched} is the refusal that bounds it —
+ * the gap is declared here and refused before any child reads it, never left
+ * for a gate keying files to discover as two paths its span never touched
+ * (`.claude/rules/engineering.md`, *Loud or nothing*).
  */
 function gateFacts(ctx: GateContext): Record<string, string> {
   return {
@@ -146,6 +150,41 @@ function gateFacts(ctx: GateContext): Record<string, string> {
       ? {}
       : { FLUME_STATE_ROOT_REL: ctx.stateRootRel }),
     FLUME_TOUCHED_PATHS: ctx.touchedPaths.join("\n"),
+  };
+}
+
+/**
+ * The refusal a span this channel cannot spell earns, or `undefined` when
+ * every touched path survives {@link gateFacts}'s one-path-per-line form.
+ *
+ * Git preserves a path carrying a newline and the engine decodes it from the
+ * NUL-delimited listing it already reads
+ * (`.claude/rules/platform-facts.md`, *Git quotes porcelain output per
+ * subcommand and per config; `-z` is the one spelling right everywhere*), so
+ * the span reaching here is real rather than hypothetical. The environment
+ * has no second encoding to fall back to, and a gate reading the variable
+ * one line at a time would key files on two paths the span never touched —
+ * a confident wrong answer where this one says what it could not hand over.
+ *
+ * Reported the way `writablePathsGate` reports its own violating paths
+ * (`src/builtinGates.ts`): the raw paths on `failingFiles` for a chain
+ * reading the verdict row, and `details` as their rendering rather than a
+ * second derivation. The rendering escapes each path, so one unspellable
+ * path is one line of prose about it and not two.
+ */
+function unspellableTouched(
+  touchedPaths: readonly string[],
+): GateResult | undefined {
+  const unspellable = touchedPaths.filter((path) => path.includes("\n"));
+  if (unspellable.length === 0) return undefined;
+  return {
+    ok: false,
+    message:
+      `${unspellable.length} touched path(s) carry a newline, which ` +
+      `FLUME_TOUCHED_PATHS cannot spell — this gate's command would read ` +
+      `one of them as two paths the span never touched`,
+    details: unspellable.map((path) => `  - ${JSON.stringify(path)}`).join("\n"),
+    failingFiles: [...unspellable],
   };
 }
 
@@ -196,6 +235,7 @@ function shellCommand(
   return {
     ...spawning({}),
     batches: false,
-    run: (ctx: GateContext) => spawning(gateFacts(ctx)).run(ctx),
+    run: async (ctx: GateContext) =>
+      unspellableTouched(ctx.touchedPaths) ?? spawning(gateFacts(ctx)).run(ctx),
   };
 }

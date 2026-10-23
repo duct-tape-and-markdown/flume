@@ -231,6 +231,13 @@ command reads what the tick knows instead of rebuilding it from git:
 | `FLUME_STATE_ROOT_REL` | That root's repo-relative offset, forward-slashed for git. Unset when the state root is relocated outside the repository. |
 | `FLUME_TOUCHED_PATHS` | The span's changed paths, one per line, repo-relative and forward-slashed; empty when the span touched nothing. |
 
+One path per line means a command can read the span's footprint with `while
+read`, and it means one shape the variable cannot carry: a tracked path with a
+newline in its name. An environment value cannot carry a NUL, so there is no
+second encoding to reach for — a span that touched such a path **fails the
+gate**, naming the path, rather than handing the command two paths the span
+never touched.
+
 A gate that measures trunk before and after one entry — a count that may not
 grow, a file that may not reappear — reads `FLUME_LANDED_ON_SHA` for its
 *before*. `HEAD^` is right only while a span lands as one commit, and a

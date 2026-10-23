@@ -2251,6 +2251,78 @@ it("FLUME_LANDED_ON_SHA is absent from an afterCommit gate's environment", async
   expect("FLUME_LANDED_ON_SHA" in seen).toBe(false);
 });
 
+it("a declared command gate's touched-paths fact carries one line per path of a span the channel can spell", async () => {
+  const gate = declaredGate(
+    { kind: "shell", command: REPORT_FLUME_ENV, when: "afterMerge" },
+    REPORT_FLUME_ENV,
+  );
+
+  // Every shape near the fence that one-path-per-line does carry: a space, a
+  // quote, a backslash, a tab. None of them is the newline the channel
+  // refuses, so each must reach the child as one line of its own rather than
+  // as whatever a quoting pass would have made of it.
+  const touchedPaths = [
+    "src/widget.ts",
+    "docs/a page.md",
+    'src/quote"name.ts',
+    "src/back\\slash.ts",
+    "src/tab\there.ts",
+  ];
+  const { seen } = await flumeEnvSeenBy(gate, {
+    touchedPaths,
+    landedOnSha: "d".repeat(40),
+  });
+
+  // Vacuity pin (`.claude/rules/engineering.md`, *A green verdict is proven
+  // non-vacuous*): the child reported the variable at all, so the decode
+  // below reads a span's footprint and not an empty string splitting to one
+  // empty line.
+  expect(seen.FLUME_TOUCHED_PATHS ?? "").not.toBe("");
+  expect(seen.FLUME_TOUCHED_PATHS!.split("\n")).toEqual(touchedPaths);
+});
+
+it("a declared command gate refuses a span whose touched path carries a newline", async () => {
+  const gate = declaredGate(
+    { kind: "shell", command: REPORT_FLUME_ENV, when: "afterMerge" },
+    REPORT_FLUME_ENV,
+  );
+
+  const unspellable = "src/two\nlines.ts";
+  const tree = await mkTempDir("flume-harness-chain-gate-env-");
+  const report = join(tree, "gate-env.json");
+  try {
+    const refused = await gate.run({
+      ...gateContext(tree),
+      touchedPaths: ["src/widget.ts", unspellable],
+      landedOnSha: "e".repeat(40),
+    });
+
+    expect(refused.ok, refused.details).toBe(false);
+    // The path the channel could not spell, named: on `failingFiles` for a
+    // chain reading the verdict row, and escaped in the prose so the refusal
+    // about one path is one line and not two.
+    expect(refused.failingFiles).toEqual([unspellable]);
+    expect(refused.details).toContain(JSON.stringify(unspellable));
+    expect(refused.message).toContain("FLUME_TOUCHED_PATHS");
+    // And it refused *before* the spawn: the command never ran, so no child
+    // read a `FLUME_TOUCHED_PATHS` carrying a path its span never touched.
+    expect(existsSync(report)).toBe(false);
+
+    // Control for that absence: the same gate over the same tree with a
+    // spellable span writes the report. Without this leg the assertion above
+    // would be green for a command that writes nothing anywhere.
+    const ran = await gate.run({
+      ...gateContext(tree),
+      touchedPaths: ["src/widget.ts"],
+      landedOnSha: "e".repeat(40),
+    });
+    expect(ran.ok, ran.details).toBe(true);
+    expect(existsSync(report)).toBe(true);
+  } finally {
+    await rm(tree, { recursive: true, force: true });
+  }
+});
+
 /**
  * The page a chain author reads before any hover text states which facts a
  * declared gate's command can reach, so it is pinned for what it says against
