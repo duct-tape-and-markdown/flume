@@ -302,21 +302,33 @@ type SpanRevert = SpanLanded & {
  */
 type SpanCarried<L> =
   /**
-   * Trunk was not this carry's to move: a live foreign tip claim refused ahead
-   * of everything, or the fast-forward to a judged candidate was declined.
-   * Either way trunk stands where it stood, holds nothing of this span, and
-   * the span is carried again by whatever tick next has it.
+   * Trunk was not this carry's to move: a live foreign tip claim refused
+   * ahead of everything, or a writer landed under the judged candidate and
+   * the fast-forward was no longer a fast-forward. Either way trunk stands
+   * where it stood, holds nothing of this span, and the span is carried again
+   * by whatever tick next has it.
    *
    * `movedTo` is the tip trunk stands at where that is not the tip the
-   * candidate was cut from — a writer landed under the candidate and the
-   * carry's own absorption was already spent on an earlier one
-   * ({@link MOVED_TIP_ABSORPTIONS}). Absent is trunk standing exactly where
-   * the candidate was cut: the claim refused ahead of the pick, or an
-   * uncommitted change on a path the span touched refused the move. A fact,
-   * never a verdict — what a second mover means for a queue is the leg's
-   * (`.claude/rules/engine-boundary.md`, *Surface, not prescription*).
+   * candidate was cut from — the writer above, the carry's own absorption
+   * already spent on an earlier one ({@link MOVED_TIP_ABSORPTIONS}). Absent
+   * is the claim refusing ahead of the pick, trunk standing exactly where the
+   * candidate was cut. A fact, never a verdict — what a second mover means
+   * for a queue is the leg's (`.claude/rules/engine-boundary.md`, *Surface,
+   * not prescription*).
    */
   | { fate: "tip-moved"; movedTo?: string }
+  /**
+   * The checkout declined the move, not the branch: trunk still stands at the
+   * tip the candidate was cut from, and an uncommitted change on a path the
+   * span touched is what the fast-forward would have overwritten
+   * (`fastForwardTo`, `src/git.ts`). Its own fate rather than `tip-moved`
+   * above, which the engine already tells it from at the refusal
+   * (`FastForwardRefusedError.tipSha`, `src/git.ts`): nothing moved, so there
+   * is no new tip to carry onto and no later tip that clears it — the work in
+   * that tree is a bystander's to commit or discard, and a carry made again
+   * meets the same refusal.
+   */
+  | { fate: "uncommitted-work" }
   /** The pick hit a real conflict: the candidate is discarded and trunk holds nothing of this span. */
   | {
       fate: "cherry-pick-conflict";
@@ -493,6 +505,9 @@ async function carryAbsorbingMovedTip<
     )
       return claimed;
     const carried = await attempt(absorptions > 0);
+    // A tip to carry onto is the whole precondition: every other fate — the
+    // merge, the red, the conflict, and the checkout whose uncommitted work
+    // declined the move, which no later tip clears — answers as it stands.
     if (carried.movedTo === undefined || absorptions === 0) return carried;
   }
 }
@@ -641,18 +656,25 @@ async function fastForwardTrunk(move: {
           : {}),
       }),
     );
-    return { moved: false, ...(movedTo !== undefined ? { movedTo } : {}) };
+    return movedTo === undefined
+      ? { moved: false, refusal: "uncommitted-work" }
+      : { moved: false, refusal: "tip-moved", movedTo };
   }
   return { moved: true };
 }
 
 /**
  * What the one fast-forward answered: trunk became the candidate, or it stands
- * where it stood and `movedTo` says whether anything moved it
- * ({@link SpanCarried}'s `tip-moved` arm carries the same fact on, in the same
- * spelling).
+ * where it stood and `refusal` says which of the two refusals that was — the
+ * branch moved under the candidate, or the checkout's own uncommitted work
+ * declined it. Named here rather than read off an absent `movedTo`, so the
+ * carries below row the fate the step decided instead of re-deriving it
+ * ({@link SpanCarried} carries both on, in the same spelling).
  */
-type TrunkMove = { moved: true } | { moved: false; movedTo?: string };
+type TrunkMove =
+  | { moved: true }
+  | { moved: false; refusal: "tip-moved"; movedTo: string }
+  | { moved: false; refusal: "uncommitted-work" };
 
 /**
  * The half of {@link carryMergeSpan} that runs inside a provisioned
@@ -779,11 +801,12 @@ async function carryOntoCandidate<L>(
     // left under the candidate ({@link carryAbsorbingMovedTip}), or by the
     // tick that next holds the entry. `landing` is dropped with the candidate
     // it was written into either way: the leg never sees it, so nothing it
-    // describes is reported as shipped.
-    return {
-      fate: "tip-moved",
-      ...(moved.movedTo !== undefined ? { movedTo: moved.movedTo } : {}),
-    };
+    // describes is reported as shipped. The refusal the step named is the
+    // fate: a checkout that declined the move is not a branch that moved, and
+    // only the second is carried again here.
+    return moved.refusal === "uncommitted-work"
+      ? { fate: "uncommitted-work" }
+      : { fate: "tip-moved", movedTo: moved.movedTo };
   }
   leg.log.info(narrate.merged(mergedSha, landedOnSha));
   return { fate: "merged", ...landed, landing };
@@ -840,12 +863,18 @@ type BatchNarration = Pick<SpanNarration, "fastForwardRefused"> & {
 type BatchCarried<L> =
   /**
    * Trunk was not this batch's to move: a live foreign tip claim refused ahead
-   * of everything, or the fast-forward to the judged candidate was declined.
-   * Either way trunk stands where it stood and holds nothing of any span.
-   * `movedTo` carries the same fact at a width that a single span's arm does
+   * of everything, or a writer landed under the judged candidate. Either way
+   * trunk stands where it stood and holds nothing of any span. `movedTo`
+   * carries the same fact at a width that a single span's arm does
    * ({@link SpanCarried}).
    */
   | { fate: "tip-moved"; movedTo?: string }
+  /**
+   * The checkout declined the move: an uncommitted change on a path one of
+   * the batch's spans touched, exactly as a single span's own arm reports it
+   * ({@link SpanCarried}). Trunk holds nothing of any span.
+   */
+  | { fate: "uncommitted-work" }
   /** Red, or a conflict while picking: the candidate is discarded and trunk named no span of it. */
   | { fate: "discarded"; why: string }
   /**
@@ -1033,11 +1062,11 @@ export async function carryMergeBatch<L>(carry: {
             // pending, and the whole batch carried again — onto the tip a writer
             // left under this candidate ({@link carryAbsorbingMovedTip}), or by
             // the tick that next holds these entries. `landing` is dropped with
-            // the candidate it was written into.
-            return {
-              fate: "tip-moved",
-              ...(moved.movedTo !== undefined ? { movedTo: moved.movedTo } : {}),
-            };
+            // the candidate it was written into. Which refusal it was is the
+            // step's answer, at a batch's width exactly as at one span's.
+            return moved.refusal === "uncommitted-work"
+              ? { fate: "uncommitted-work" }
+              : { fate: "tip-moved", movedTo: moved.movedTo };
           }
           for (const [i, span] of spans.entries()) {
             const l = landed[i]!;

@@ -856,7 +856,9 @@ export async function superviseLoop(
     // was broken), `tipMoved` (the
     // ref moved out from under this tick — worth surfacing even on a wave
     // that also shipped something, unlike the provisioning/merge legs below,
-    // since it signals something else is writing to this ref), a
+    // since it signals something else is writing to this ref), an
+    // `uncommitted-work` merge outcome (something is writing to this
+    // *checkout*, and no later tip clears it), a
     // provisioning or merge (cherry-pick) failure that left nothing shipped,
     // or a `not-shipped` merge outcome the chain's `shipped` predicate
     // *threw* into (the predicate is broken, so the tick's ship decision was
@@ -942,6 +944,13 @@ export async function superviseLoop(
         verdict.noCommit === "platform-preempt" ||
         verdict.noCommit === "render-refused" ||
         verdict.tipMoved === true ||
+        // A fast-forward the primary checkout's own uncommitted work declined
+        // — the refusal that was `tipMoved` until the engine told the two
+        // apart (`MergeOutcome`, `src/tickVerdict.ts`). Named here for the
+        // same reason the ref racing is, and harder: nothing the loop does
+        // clears it, so a run that keeps ticking past one ships nothing until
+        // a human commits or discards that work.
+        verdict.mergeOutcomes.some((o) => o.outcome === "uncommitted-work") ||
         verdictShipFailures.length > 0 ||
         (verdictProvisionFailures.length > 0 &&
           verdict.shippedTags.length === 0) ||

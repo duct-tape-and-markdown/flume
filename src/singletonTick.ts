@@ -442,12 +442,14 @@ export async function runSingleton(
               : `[flume] cherry-picked ${phase.name} → ${mergedSha.slice(0, 8)}`,
         },
       });
-      if (carried.fate === "tip-moved") {
+      if (carried.fate === "tip-moved" || carried.fate === "uncommitted-work") {
         // Refused before anything reached trunk, so this row is the whole
         // recovery handle — teardown below deletes the branch, and the commit
         // objects outlive it ({@link TickVerdictMergeOutcome.headSha}).
-        // `committed` stays false.
-        tipMoved = true;
+        // `committed` stays false. Only the ref racing sets the tick fact: a
+        // checkout whose uncommitted work declined the move raced with
+        // nothing (`TickVerdict.tipMoved`, `src/tickVerdict.ts`).
+        if (carried.fate === "tip-moved") tipMoved = true;
         mergeOutcomes.push({
           outcome: carried.fate,
           baseSha: spanBase,

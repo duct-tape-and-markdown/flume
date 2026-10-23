@@ -567,18 +567,29 @@ export function startTiming(): () => number {
  *                            live claim held the ref before the candidate was
  *                            built (a concurrent engine instance,
  *                            spec/loop.md "Tip verify — one writer per
- *                            branch, absorption at the merge"), or the
- *                            fast-forward to the judged candidate was
- *                            declined — the branch moved under it, or the
- *                            move would have overwritten a bystander's
- *                            uncommitted work. Trunk stands where it stood
- *                            and holds nothing of the span, so under fanout
- *                            the entry stays pending and under singleton the
- *                            phase's span stays unmerged, either way carried
- *                            again onto whatever tip it then has. A foreign
- *                            non-engine commit on the ref, with no live
- *                            claim, is absorbed instead: git's own conflict
- *                            detection is the only content arbiter.
+ *                            branch, absorption at the merge"), or a writer
+ *                            landed under the judged candidate and the
+ *                            fast-forward to it was no longer one. Trunk
+ *                            stands where it stood and holds nothing of the
+ *                            span, so under fanout the entry stays pending
+ *                            and under singleton the phase's span stays
+ *                            unmerged, either way carried again onto whatever
+ *                            tip it then has. A foreign non-engine commit on
+ *                            the ref, with no live claim, is absorbed
+ *                            instead: git's own conflict detection is the
+ *                            only content arbiter.
+ *  - `uncommitted-work`      the checkout declined the move, not the branch:
+ *                            the fast-forward to the judged candidate would
+ *                            have overwritten an uncommitted change on a path
+ *                            the span touched, so git moved nothing and trunk
+ *                            still stands at the tip the candidate was cut
+ *                            from. The span is where `tip-moved` leaves its
+ *                            own — nothing on trunk, the entry pending — and
+ *                            distinct from it in what will clear it: no later
+ *                            tip does, because nothing raced. The work in
+ *                            that tree is a bystander's to commit or discard,
+ *                            and the two shas are the recovery handle until
+ *                            they do.
  *  - `dropped-work`          the per-entry tip-verify leg's own ancestry
  *                            check refused (spec/loop.md "Tip verify — one
  *                            writer per branch, absorption at the merge",
@@ -639,6 +650,7 @@ export type MergeOutcome =
   | "afterCommit-reverted"
   | "not-shipped"
   | "tip-moved"
+  | "uncommitted-work"
   | "dropped-work"
   | "merge-walled"
   | "wave-walled";
@@ -670,9 +682,9 @@ export interface TickVerdictMergeOutcome {
    * this span and nothing adjacent. Pairs with whichever sha `headSha` holds:
    * the tip the candidate was cut at for a span the pick landed (`merged`,
    * `afterMerge-reverted`, `not-shipped`), else
-   * the tip the agent's worktree branched from (`tip-moved`, `dropped-work`,
-   * `afterCommit-reverted`, `cherry-pick-conflict`, `merge-walled`,
-   * `wave-walled`). Carrying one by
+   * the tip the agent's worktree branched from (`tip-moved`,
+   * `uncommitted-work`, `dropped-work`, `afterCommit-reverted`,
+   * `cherry-pick-conflict`, `merge-walled`, `wave-walled`). Carrying one by
    * hand needs both: a span may hold several commits (spec/loop.md "The check
    * is ancestry, and N commits are completion"), and `headSha` alone names
    * only the last of them. Absent only when the span never reached a commit
@@ -683,7 +695,8 @@ export interface TickVerdictMergeOutcome {
    * The span's own head — the entry's cherry-picked commit sha once one
    * exists (`merged`, `afterMerge-reverted`, `not-shipped`), else the
    * worktree-branch commit sha the entry never got past (`tip-moved`,
-   * `dropped-work`, `afterCommit-reverted`, `merge-walled`, `wave-walled`).
+   * `uncommitted-work`, `dropped-work`, `afterCommit-reverted`,
+   * `merge-walled`, `wave-walled`).
    * An operator's fact, not a
    * recovery the loop performs: a span parked, refused or walled after its
    * gates passed is cherry-pickable by hand from the verdict alone — worktree
@@ -830,19 +843,27 @@ export interface TickVerdict {
   noCommit?: NoCommitMode;
   /**
    * Set when this tick (or, for a fanout wave, any part of
-   * it) hit the tip-verify backstop and refused a commit. Two producers,
-   * and neither compares the ref against a tip recorded at tick start:
+   * it) hit the tip-verify backstop and refused a commit. Three producers,
+   * and none compares the ref against a tip recorded at tick start:
    *
    *  - before every harness-driven commit — each cherry-pick and the
    *    trailing pending-ledger commit — a **live foreign claim** on the ref,
    *    which is a second engine instance interleaving merges. An unclaimed
    *    foreign commit is absorbed instead: the pick lands onto whatever tip
    *    is current and git's conflict detection arbitrates content.
+   *  - at the one fast-forward that moves trunk, a **branch that moved under
+   *    the judged candidate** past the carry's one absorption of it
+   *    (`carryMergeSpan`, `src/mergeSpan.ts`) — read off the tip git stood at
+   *    when it refused, never off the words it refused in.
    *  - on the agent's own private `flume/**` branch, a **recorded base that
    *    is no longer an ancestor** of the HEAD the agent left — something
    *    reset or rewrote the branch out from under it. Committing twice on
    *    that branch is a completed tick, not interference, so the check is
    *    ancestry rather than equality.
+   *
+   * The fast-forward's *other* refusal is none of them and leaves this unset:
+   * a checkout whose uncommitted work declined the move raced with nothing,
+   * and rows `uncommitted-work` ({@link MergeOutcome}) instead.
    *
    * A sibling fact to `noCommit`, never folded into it: the cause here is
    * never one of the four `NoCommitMode` classes, and a wave can carry both

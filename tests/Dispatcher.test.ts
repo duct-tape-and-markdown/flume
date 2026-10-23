@@ -5365,7 +5365,7 @@ describe("Dispatcher — dispatch reads resolve from the committed tip, not the 
     expect(outcome.verdict?.tags).toEqual(["TIP-A"]);
     expect(
       outcome.verdict?.mergeOutcomes.map((m) => m.outcome),
-    ).toEqual(["tip-moved"]);
+    ).toEqual(["uncommitted-work"]);
     expect(outcome.result?.shippedTags).toEqual([]);
   });
 
@@ -9164,6 +9164,73 @@ describe("Dispatcher — trunk moves only by fast-forward to a judged candidate"
       },
     });
 
+  /**
+   * One `build` wave over a single entry, with `interfere` run in the primary
+   * checkout from inside the `afterMerge` gate over every candidate the carry
+   * cuts — the one window another writer can reach that checkout in between a
+   * span's pick and the fast-forward that would carry it to trunk.
+   *
+   * Hands back the two counts every case here rules against before it rules
+   * on a fate: the candidates the chain's hook was handed and the shas its
+   * gate judged (`.claude/rules/engineering.md`, *A green verdict is proven
+   * non-vacuous*).
+   */
+  const waveWithAnotherWriter = async (opts: {
+    tag: string;
+    /** The one path this span's agent commits, and the entry declares. */
+    file: string;
+    /** Run in the primary checkout, once per candidate, by round number. */
+    interfere: (round: number) => Promise<void>;
+  }): Promise<{
+    outcome: TickOutcome;
+    judged: string[];
+    candidates: string[];
+    trunkBefore: string;
+  }> => {
+    const slug = opts.tag.toLowerCase();
+    await writePending(fx.repo, [makeEntry(opts.tag, [opts.file])]);
+    new Baton(join(fx.repo, ".flume")).wake("build");
+    const trunkBefore = await head(fx.repo);
+    const judged: string[] = [];
+    const provisioned: string[] = [];
+    const writes: Gate = {
+      name: `${slug}-writer`,
+      when: "afterMerge",
+      async run(ctx) {
+        judged.push(ctx.commitSha);
+        await opts.interfere(judged.length);
+        return { ok: true, message: "clean" };
+      },
+    };
+    const dispatcher = new Dispatcher({
+      chainLoader: staticLoader({
+        phases: [recordingPhase([writes], provisioned)],
+        humanOnly: [],
+      }),
+      repoRoot: fx.repo,
+      configDir: fx.configDir,
+      agent: fanoutAgent({
+        [slug]: async (cwd) => {
+          await writeAndCommit(
+            cwd,
+            opts.file,
+            `${opts.tag}'s line\n`,
+            `build(${opts.tag}): ship`,
+          );
+        },
+      }),
+      log: silent,
+      maxParallel: 4,
+    });
+    const outcome = await dispatcher.tick();
+    return {
+      outcome,
+      judged,
+      candidates: candidatesAmong(provisioned),
+      trunkBefore,
+    };
+  };
+
   it("a green candidate carries the span and its ledger commit, and trunk fast-forwards to it in one move", async () => {
     await writePending(fx.repo, [makeEntry("FF-GREEN", ["src/ff-green.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
@@ -9805,10 +9872,93 @@ describe("Dispatcher — trunk moves only by fast-forward to a judged candidate"
     const row = outcome.verdict?.mergeOutcomes.find(
       (m) => m.entryTag === "FF-COLLIDE",
     );
-    expect(row?.outcome).toBe("tip-moved");
+    expect(row?.outcome).toBe("uncommitted-work");
     expect(await fileAtRef(fx.repo, row!.headSha!, "README.md")).toBe(
       "the span's line\n",
     );
+  });
+
+  it("a fast-forward refused by uncommitted work rows its own fate rather than tip-moved", async () => {
+    // The two refusals one `--ff-only` raises, told apart by the tip git
+    // stood at when it refused (`FastForwardRefusedError`, `src/git.ts`):
+    // this one is the checkout declining, so trunk never moved and no later
+    // tip clears it — the work in that tree is a bystander's to commit or
+    // discard. A row reading `tip-moved` would send an operator looking for
+    // the writer that moved a ref nothing moved.
+    const { outcome, judged, candidates, trunkBefore } =
+      await waveWithAnotherWriter({
+        tag: "FF-FATE",
+        file: "README.md",
+        interfere: async () => {
+          await writeFile(join(fx.repo, "README.md"), "operator's own line\n");
+        },
+      });
+
+    // Vacuity: one candidate was cut and judged, so a fast-forward was
+    // reached and refused — and trunk stands where it stood, which is what
+    // separates this refusal from the one above it.
+    expect(judged).toHaveLength(1);
+    expect(candidates).toHaveLength(1);
+    expect(await head(fx.repo)).toBe(trunkBefore);
+
+    const row = outcome.verdict?.mergeOutcomes.find(
+      (m) => m.entryTag === "FF-FATE",
+    );
+    expect(row?.outcome).toBe("uncommitted-work");
+  });
+
+  it("a fast-forward refused by uncommitted work leaves the tick's tip-moved fact unset", async () => {
+    const { outcome, judged, candidates, trunkBefore } =
+      await waveWithAnotherWriter({
+        tag: "FF-NORACE",
+        file: "README.md",
+        interfere: async () => {
+          await writeFile(join(fx.repo, "README.md"), "operator's own line\n");
+        },
+      });
+
+    // Vacuity: the refusal really happened, which is what the absent fact is
+    // claimed over — the tick fact reads absent on a tick that never reached
+    // a fast-forward at all.
+    expect(judged).toHaveLength(1);
+    expect(candidates).toHaveLength(1);
+    expect(await head(fx.repo)).toBe(trunkBefore);
+    expect(
+      outcome.verdict?.mergeOutcomes.find((m) => m.entryTag === "FF-NORACE")
+        ?.outcome,
+    ).toBe("uncommitted-work");
+
+    // Nothing raced: no ref moved under this tick, so the backstop fact the
+    // supervisor reads as "something else is writing to this ref" is unset.
+    expect(outcome.verdict?.tipMoved).toBeUndefined();
+  });
+
+  it("a fast-forward refused by a trunk that moved rows tip-moved and sets the tick's tip-moved fact", async () => {
+    // The other refusal, beside its twin: a writer committing in every gate
+    // window moves trunk out from under each candidate in turn, so the one
+    // absorption is spent and the second refusal is reported — a ref that
+    // raced, which is exactly what the tick fact is for.
+    const { outcome, judged, candidates } = await waveWithAnotherWriter({
+      tag: "FF-RACED",
+      file: "src/ff-raced.ts",
+      interfere: async (round) => {
+        await writeAndCommit(
+          fx.repo,
+          `writer-${round}.md`,
+          "writer\n",
+          `docs: writer commit ${round}`,
+        );
+      },
+    });
+
+    // Vacuity and the bound together: the carry was made twice and stopped.
+    expect(judged).toHaveLength(2);
+    expect(candidates).toHaveLength(2);
+    expect(
+      outcome.verdict?.mergeOutcomes.find((m) => m.entryTag === "FF-RACED")
+        ?.outcome,
+    ).toBe("tip-moved");
+    expect(outcome.verdict?.tipMoved).toBe(true);
   });
 
   it("a fast-forward leaves an uncommitted change on a path the span did not touch standing", async () => {
@@ -28879,6 +29029,67 @@ describe("Dispatcher fanout — a merge carries a batch of spans, gated once (sp
     (await readdir(join(fx.repo, ".git", "worktrees")).catch(() => [])).filter(
       (d) => d.startsWith("candidate-"),
     );
+
+  it("a batch whose fast-forward uncommitted work refused rows that fate for every span", async () => {
+    // Two spans on one candidate, gated once over it, and the operator's
+    // unstaged edit lands on a path one of them rewrote while that gate runs.
+    // Trunk declines the move for the same reason a single span's carry meets
+    // it, so no span of the batch is on trunk — and the fate is every span's,
+    // because the refusal was.
+    const seen: string[][] = [];
+    const { outcome, preHead } = await batchedWave({
+      entries: [
+        makeEntry("BATCH-FF-A", ["README.md"]),
+        makeEntry("BATCH-FF-B", ["src/batch-ff-b.ts"]),
+      ],
+      mergeBatch: 2,
+      release: 2,
+      gates: [
+        {
+          name: "batch-ff-writer",
+          when: "afterMerge",
+          batches: true,
+          async run(ctx) {
+            seen.push(tagsOf(ctx));
+            await writeFile(
+              join(fx.repo, "README.md"),
+              "operator's own line\n",
+            );
+            return { ok: true, message: "clean" };
+          },
+        },
+      ],
+      agent: {
+        "batch-ff-a": shipsFile("BATCH-FF-A", "README.md", "A's line\n"),
+        "batch-ff-b": shipsFile("BATCH-FF-B", "src/batch-ff-b.ts", "B's line\n"),
+      },
+    });
+
+    // Vacuity: one gate run over both spans, so this really is a batch's
+    // fast-forward being refused and not two serial carries — and the
+    // refusal left no serial pass behind it, which a `discarded` batch would
+    // have run.
+    expect(seen).toEqual([["BATCH-FF-A", "BATCH-FF-B"]]);
+    expect(await head(fx.repo)).toBe(preHead);
+    expect(await candidatesLeft()).toEqual([]);
+
+    // Every span's own row, in the order they were picked, and no tick fact:
+    // nothing raced, the checkout declined.
+    expect(
+      (outcome.verdict?.mergeOutcomes ?? []).map((r) => [
+        r.entryTag,
+        r.outcome,
+      ]),
+    ).toEqual([
+      ["BATCH-FF-A", "uncommitted-work"],
+      ["BATCH-FF-B", "uncommitted-work"],
+    ]);
+    expect(outcome.verdict?.tipMoved).toBeUndefined();
+    expect(readPendingFromDisk(fx.repo).map((e) => e.tag)).toEqual([
+      "BATCH-FF-A",
+      "BATCH-FF-B",
+    ]);
+  });
 
   it("a merge carries up to mergeBatch finished spans of the same tick", async () => {
     // Three spans waiting, two per merge: the first merge takes two and the

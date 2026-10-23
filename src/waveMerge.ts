@@ -463,7 +463,13 @@ interface WaveMerge {
    * leave an earlier pick's tip standing as the last ship's.
    */
   gatedTip: string | undefined;
-  /** A tip claim or a per-entry ancestry refusal stopped at least one span. */
+  /**
+   * A tip claim, a fast-forward refused by a branch that moved under the
+   * candidate, or a per-entry ancestry refusal stopped at least one span —
+   * never the checkout's own uncommitted work declining that move, which
+   * raced with nothing and rows its fate instead (`TickVerdict.tipMoved`,
+   * `src/tickVerdict.ts`).
+   */
   tipMoved: boolean;
   /** `shouldRun` declined at least one entry. */
   declined: boolean;
@@ -509,7 +515,13 @@ interface WaveMergeResult {
   readonly mergeFailures: MergeFailure[];
   readonly gateFailures: GateFailure[];
   readonly shipFailures: ShipFailure[];
-  /** A tip claim or a per-entry ancestry refusal stopped at least one span. */
+  /**
+   * A tip claim, a fast-forward refused by a branch that moved under the
+   * candidate, or a per-entry ancestry refusal stopped at least one span —
+   * never the checkout's own uncommitted work declining that move, which
+   * raced with nothing and rows its fate instead (`TickVerdict.tipMoved`,
+   * `src/tickVerdict.ts`).
+   */
   readonly tipMoved: boolean;
   /** `shouldRun` declined at least one entry. */
   readonly declined: boolean;
@@ -792,8 +804,7 @@ export async function drainWaiting(w: WaveMerge): Promise<void> {
         // in.
         if (batch.fate === "merged")
           await recordLanded(batch.shipped, batch.update);
-        else if (batch.fate === "tip-moved")
-          await landOnTrunk([], batch.rows);
+        else if (batch.fate === "refused") await landOnTrunk([], batch.rows);
       } finally {
         // Stamped however the batch left — shipped, discarded or thrown: every
         // way out of it is a merge that happened, and a red batch's one extra
@@ -995,8 +1006,13 @@ type BatchLanding =
       update: PendingRewriteResult | undefined;
     }
   | {
-      /** Trunk named no span of the batch: these rows are the drain's to land on trunk itself. */
-      fate: "tip-moved";
+      /**
+       * Trunk named no span of the batch — the branch moved under the
+       * candidate, or the checkout's own uncommitted work declined the move:
+       * these rows are the drain's to land on trunk itself, each naming
+       * whichever of the two its carry answered with.
+       */
+      fate: "refused";
       rows: readonly TickVerdictMergeOutcome[];
     }
   /** The candidate was discarded: the same spans are the drain's to carry one at a time. */
@@ -1122,27 +1138,31 @@ async function carryBatch(
     leg.log.warn(discarded(batch.message));
     return { fate: "discarded" };
   }
-  if (batch.fate === "tip-moved") {
-    // The shared trunk was not this merge's to move — a foreign engine held
-    // the claim before the first pick, or it declined the fast-forward to the
-    // judged candidate — so no span of the batch is on trunk and none is
-    // retryable from a landed sha. Each span's two shas are the whole recovery
-    // handle: the entry stays pending and its commits outlive the branch
-    // teardown deletes. Reported per span rather than once for the batch,
-    // because the refusal is every entry's fate
-    // (`.claude/rules/engineering.md`, *A fact the engine holds is reported,
-    // never rediscovered*).
-    w.tipMoved = true;
+  if (batch.fate === "tip-moved" || batch.fate === "uncommitted-work") {
+    // Trunk was not this merge's to move — a foreign engine held the claim
+    // before the first pick, a writer landed under the judged candidate, or
+    // the checkout's own uncommitted work declined the move — so no span of
+    // the batch is on trunk and none is retryable from a landed sha. Each
+    // span's two shas are the whole recovery handle: the entry stays pending
+    // and its commits outlive the branch teardown deletes. Reported per span
+    // rather than once for the batch, because the refusal is every entry's
+    // fate (`.claude/rules/engineering.md`, *A fact the engine holds is
+    // reported, never rediscovered*).
+    //
+    // The tick's tip-moved fact follows the carry's own fate and not the
+    // refusal in general: only the first two are a ref that raced
+    // (`TickVerdict.tipMoved`, `src/tickVerdict.ts`).
+    if (batch.fate === "tip-moved") w.tipMoved = true;
     const rows = spans.map(
       ({ attempt: r, base, head }): TickVerdictMergeOutcome => ({
         entryTag: r.entry.tag,
-        outcome: "tip-moved",
+        outcome: batch.fate,
         baseSha: base,
         headSha: head,
       }),
     );
     w.mergeOutcomes.push(...rows);
-    return { fate: "tip-moved", rows };
+    return { fate: "refused", rows };
   }
   if (batch.fate === "discarded") return { fate: "discarded" };
   // Trunk fast-forwarded to the candidate, so everything the landing step
@@ -1309,12 +1329,16 @@ async function carrySpan(
       },
     };
   }
-  if (carried.fate === "tip-moved") {
-    // The shared trunk raced during this wave's own merge step, distinct from
-    // the per-entry ancestry refusal {@link foldAttemptFacts} rows as
-    // `dropped-work`. The span's two shas are the whole recovery handle: the
-    // entry stays pending and its commits outlive the branch teardown deletes.
-    w.tipMoved = true;
+  if (carried.fate === "tip-moved" || carried.fate === "uncommitted-work") {
+    // Trunk holds nothing of the span: the shared ref raced during this wave's
+    // own merge step — distinct from the per-entry ancestry refusal {@link
+    // foldAttemptFacts} rows as `dropped-work` — or the primary checkout's
+    // uncommitted work declined the move, which raced with nothing and so
+    // leaves the tick's tip-moved fact unset (`TickVerdict.tipMoved`,
+    // `src/tickVerdict.ts`). The span's two shas are the whole recovery
+    // handle either way: the entry stays pending and its commits outlive the
+    // branch teardown deletes.
+    if (carried.fate === "tip-moved") w.tipMoved = true;
     return {
       shipped: [],
       landed: false,
