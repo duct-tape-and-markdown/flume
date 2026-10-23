@@ -367,7 +367,7 @@ It is written from three paths:
 - an **in-worktree `afterCommit` gate revert**, where the footprint is the reverted commit's
   touched paths;
 - a **cherry-pick conflict**, where the un-merged worktree commit's diff is captured before
-  the cherry-pick is aborted — best-effort: if reading that diff fails, no footprint is recorded
+  the candidate is discarded — best-effort: if reading that diff fails, no footprint is recorded
   and the retry partitions on declared files alone. Nothing landed on trunk, so this is not a revert, but
   the collision record draws from every merge-stage outcome that carries a footprint — a conflict
   included, not gate failures and reverts alone.

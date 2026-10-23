@@ -126,7 +126,8 @@ the older verb-list wording and are not. Both are the engine recording its own
 output:
 
 - **`cherry-pick`.** A fanout wave's per-entry worktree commits are carried onto the trunk as it then stands,
-each as its agent finishes, under the ship lock, with `cherry-pick --abort` on conflict.
+each as its agent finishes, under the ship lock, onto a candidate cut at the trunk tip; a
+  conflict leaves with the candidate, which takes git's half-applied state with it.
 - **Ephemeral `flume/**` branch names.** `createWorktree` constructs
   `flume/<checkout>/<slug>` — the checkout's own segment first, since linked
   checkouts share one ref namespace (`spec/worktrees.md`, *Fanout is the
@@ -446,7 +447,7 @@ stays pending in every case; only the residue differs.
     ordinary history, never interference. The wave cherry-picks onto whatever tip
     is current — the foreign commit sits under the wave's, exactly as if it had
     landed between ticks — and **git's own conflict detection is the arbiter of
-    content**: a conflicting cherry-pick aborts (`cherry-pick --abort`) into that
+    content**: a conflicting cherry-pick discards its candidate into that
     entry's existing `MergeFailure` outcome — the entry stays pending and retries
     against the tip that now carries the foreign commit, which is itself never
     touched — and a clean pick lands, with semantic compatibility owned by the

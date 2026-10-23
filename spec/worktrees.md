@@ -195,6 +195,13 @@ provisioned under, never absent.
   siblings proceed. The entry reaches `TickResult.provisionFailures` and the verdict, and
   is absent from `TickResult.entries` — a hook that failed silently for one entry while
   its siblings ran is otherwise a record with every flag false and nothing to explain it.
+- **A merge's candidate is the third tree the hooks provision.** Each merge's candidate
+  (*Per-entry `afterMerge` revert isolation*) runs `setupWorktree` before its `afterMerge`
+  gates and `teardownWorktree` once the merge has its verdict, under the key the span's own
+  worktree carried; it holds tracked files only, as a worktree does, and its gates are what
+  the install exists for. Its `extraEnv` reaches nothing, since no agent runs there. A throw
+  is that span's merge failure: the candidate is discarded, trunk is untouched, the entry
+  stays pending, and the wave's other spans carry on.
 - **`Phase.teardownWorktree?(ctx): Promise<void>`** runs after the agent and gates, before
   removal — drop a per-worktree DB, release a lease. Best-effort by contract: a throw is
   logged and removal proceeds. A leaked resource is recoverable; a stuck worktree is not.
@@ -450,11 +457,14 @@ stop*) at the only moment it is safe to.
 
 ## The default test lane must stay fast
 
-The build's `afterMerge` gate runs `pnpm test` (= the default `vitest run`) on the **trunk**,
-not inside a worktree: `runFanout` builds the gate context with
-`cwd: repoRoot` once the entry's cherry-pick has landed. It runs once per merge,
-serially — one entry, or a batch (*Batched merges*) — so a wave of N entries pays the
-default lane up to N times before the tick ends.
+The build's `afterMerge` gate runs `pnpm test` (= the default `vitest run`) on the merge's
+**candidate** (*Per-entry `afterMerge` revert isolation*). It runs once per merge,
+serially and under the ship lock — one entry, or a batch (*Batched merges*) — so a wave
+of N entries pays the default lane up to N times before the tick ends, and each merge
+first pays the candidate's provisioning: the chain's install over a fresh tree. That
+price buys a trunk that only ever fast-forwards to a judged tree. So a check that reads
+only the span's own change belongs at `afterCommit`, in the span's worktree and in
+parallel across the wave; `afterMerge` keeps what only the merged tree can answer.
 
 The suite has two lanes:
 

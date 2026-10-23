@@ -482,9 +482,9 @@ doctrine**, and the default guidance is:
 
 The complementary constraint — naming real-subprocess tests
 `*.integration.test.ts` and excluding them from the default `vitest run` — is
-in `spec/worktrees.md`, which also records that the premise it was introduced
-under (an afterMerge gate running inside a freshly-installed worktree) no
-longer holds: that gate runs on the warm trunk.
+in `spec/worktrees.md`, which also states what an `afterMerge` gate costs: it
+runs serially under the ship lock on the merge's candidate, a fresh tree the
+chain's install provisions per merge.
 
 ## What a gate receives
 
