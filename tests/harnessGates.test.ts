@@ -44,6 +44,7 @@ import {
   type GateEngine,
 } from "../harness/index.ts";
 import { pendingGate } from "../src/builtinGates.ts";
+import { loadModuleDefault } from "../src/chainLoad.ts";
 import { buildFlumeApi } from "../src/flumeApi.ts";
 import type { Gate, GateContext, GateResult } from "../src/Gate.ts";
 import type { Chain } from "../src/Phase.ts";
@@ -67,9 +68,11 @@ import {
   BUILD_PHASE,
   INBOX_PHASE,
   PLAN_SLICES,
+  RAILS,
   type PlanSlice,
 } from "../harness/declaration.ts";
 import { GOAL_RANK_FIELD } from "../harness/entryExtension.ts";
+import { DECLARATION_REL } from "../harness/layout.ts";
 import { JUDGED_SLICES } from "../harness/planState.ts";
 import { putDownPredicate } from "../harness/putDown.ts";
 import type { RunnerFactory } from "../harness/runner.ts";
@@ -100,6 +103,7 @@ const engine: GateEngine = {
   readGatedQueue,
   parsePendingQueue,
   git: { readFileAtRef, isAncestor, statusRecords },
+  loadModuleDefault,
 };
 
 /** The state root every case addresses, repo-relative. */
@@ -1798,6 +1802,7 @@ it("the clean-tree gate takes its status records from the engine rather than spa
     pendingGate,
     readGatedQueue,
     parsePendingQueue,
+    loadModuleDefault,
     git: {
       readFileAtRef,
       isAncestor,
@@ -2461,7 +2466,13 @@ it("the package's gates precede a consumer's declared gates for the same phase",
   expect(declared.length).toBeGreaterThan(0);
 
   const set = gates(declared);
-  const DISCIPLINE = ["records", "clean-tree", "pending-gate", "slice-state"];
+  const DISCIPLINE = [
+    "records",
+    "clean-tree",
+    "pending-gate",
+    "slice-state",
+    "rails",
+  ];
   expect(set.map((g) => g.name)).toEqual([
     ...DISCIPLINE,
     ...declared.map((g) => g.name),
@@ -2787,6 +2798,157 @@ it("the package's claim check covers a claimed entry's note, and build's own set
       true,
     );
   }
+});
+
+/**
+ * The rails gate (`spec/harness.md`, *What a consumer declares*, the `fence`
+ * row): build's fence may name the declaration file, so a tick can reach the
+ * fence, gates and agents it is about to be judged by, and the package
+ * refuses the commit that moves one.
+ *
+ * Every case commits a **real declaration module** and lets the gate load it
+ * through the engine's own loader and the package's own schema. A stubbed
+ * loader would re-author, by the tester's hand, the one thing this gate is —
+ * what the module a commit left behind actually declares — and a
+ * hand-built rails object would skip the parse the refusal is read after
+ * (`.claude/rules/engineering.md`, *A seam gate reads what the real writer
+ * wrote*).
+ */
+
+/**
+ * The declaration as a commit holds it: the shared literal's own fields plus
+ * whatever the case varies, and a runner of the module's own.
+ *
+ * `JSON.stringify` drops the function-valued fields, which is exactly the
+ * split wanted here — the data rides in from the one literal every other case
+ * in this file is wired to, so a fence rename moves these cases with it, and
+ * the runner is spelled as source because a function cannot travel as JSON.
+ */
+const declarationModule = (over: Record<string, unknown>): string =>
+  [
+    "// A declaration a consumer could have written.",
+    `const declaration = ${JSON.stringify({ ...DECLARED, ...over }, null, 2)};`,
+    "",
+    "export default {",
+    "  ...declaration,",
+    "  runner: () => ({",
+    "    lanes: [],",
+    "    run: () => {",
+    '      throw new Error("no case here runs a test");',
+    "    },",
+    "    runAtBase: () => {",
+    '      throw new Error("no case here runs a test");',
+    "    },",
+    "  }),",
+    "};",
+    "",
+  ].join("\n");
+
+/** Where the declaration sits in this repo, as the commit's own path list spells it. */
+const DECLARED_AT = `${STATE_ROOT}/${DECLARATION_REL}`;
+
+/**
+ * Commit the declaration a case states and gate that commit.
+ *
+ * The manifest beside it is what adoption writes (`harness/init.ts`): it
+ * decides which module system the declaration loads in, and the shape the
+ * package supports is the one where a second load in one process answers the
+ * file as it is on disk (`loadChainModule`, `src/chainLoad.ts`).
+ */
+const railsOver = async (
+  over: Record<string, unknown>,
+): Promise<GateResult> => {
+  await write(`${STATE_ROOT}/package.json`, '{ "type": "module" }\n');
+  await write(DECLARED_AT, declarationModule(over));
+  const span = commitAll("build: rewrite the declaration");
+  // The subject reached the span git reports, before any verdict is read off
+  // it: a case whose declaration never landed would be answered by the skip
+  // below rather than by the rails it meant to move.
+  expect(span.touchedPaths).toContain(DECLARED_AT);
+  return named("rails").run(ctxFor(span, { phaseName: BUILD_PHASE }));
+};
+
+it("a build commit widening the declared fence is refused naming the fence", async () => {
+  const refused = await railsOver({
+    fence: { ...DECLARED.fence, build: [...BUILD_FENCE, "spec/**"] },
+  });
+
+  expect(refused.ok).toBe(false);
+  // Judged, not skipped — and the message names the rail that moved rather
+  // than the set the gate holds.
+  expect(refused.skipped).toBeUndefined();
+  expect(refused.message).toContain("moves the fence this tick was judged by");
+  expect(refused.details).toContain("spec/**");
+});
+
+it("a build commit hanging a new gate on a phase is refused naming the gates", async () => {
+  const refused = await railsOver({
+    gates: { build: [{ kind: "registry", name: "tsc", when: "afterCommit" }] },
+  });
+
+  expect(refused.ok).toBe(false);
+  expect(refused.skipped).toBeUndefined();
+  expect(refused.message).toContain("moves the gates this tick was judged by");
+  expect(refused.details).toContain("registry");
+});
+
+it("a build commit changing a phase's declared agent is refused naming the agents", async () => {
+  const refused = await railsOver({
+    agents: { build: { model: "claude-haiku-5-5" } },
+  });
+
+  expect(refused.ok).toBe(false);
+  expect(refused.skipped).toBeUndefined();
+  expect(refused.message).toContain("moves the agents this tick was judged by");
+  expect(refused.details).toContain("claude-haiku-5-5");
+});
+
+it("a build commit that changes only the environment the declaration states passes the rails gate", async () => {
+  const passed = await railsOver({
+    specLocus: ["spec/**", "docs/**"],
+    capabilities: ["docker"],
+    supervisor: { maxParallel: 3 },
+  });
+
+  // The commit really restated the declaration: four fields of environment
+  // moved in the file the gate just loaded, so the green below is a verdict
+  // over a declaration that changed and not over one that did not.
+  const committed = await readFile(join(repo, STATE_ROOT, DECLARATION_REL), "utf8");
+  for (const moved of ["docs/**", "docker", "maxParallel"]) {
+    expect(committed).toContain(moved);
+  }
+
+  expect(passed).toMatchObject({ ok: true });
+  expect(passed.skipped).toBeUndefined();
+  expect(passed.message).toContain(RAILS.join(", "));
+});
+
+it("the rails gate reads a commit that left the declaration alone as skipped, not as a judged green", async () => {
+  await write("src/widget.ts", 'export const widget = "moved";\n');
+  const span = commitAll("build: work the declaration knows nothing about");
+  // Vacuity: the span carries work, and none of it is the declaration.
+  expect(span.touchedPaths).toContain("src/widget.ts");
+
+  const result = await named("rails").run(ctxFor(span, { phaseName: BUILD_PHASE }));
+
+  expect(result).toMatchObject({ ok: true });
+  expect(result.skipped).toBe(`${DECLARED_AT} untouched by this commit`);
+});
+
+it("a build commit that removes the declaration is refused rather than skipped", async () => {
+  await write(DECLARED_AT, declarationModule({}));
+  commitAll("build: the declaration as it stood");
+  await rm(join(repo, STATE_ROOT, DECLARATION_REL));
+  const span = commitAll("build: and gone");
+  expect(span.touchedPaths).toContain(DECLARED_AT);
+
+  const refused = await named("rails").run(
+    ctxFor(span, { phaseName: BUILD_PHASE }),
+  );
+
+  expect(refused.ok).toBe(false);
+  expect(refused.skipped).toBeUndefined();
+  expect(refused.details).toContain("absent from the tree it left");
 });
 
 /**

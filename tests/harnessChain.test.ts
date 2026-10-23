@@ -1525,13 +1525,16 @@ it("the package's judge runs after a consumer's declared gates at the same when"
   // producers' and build's lead carries no row for any of them — then the
   // `slice-state` gate that trails on its spawn, which reads a touched slice's
   // whole state file at two refs against that slice's own rules rather than
-  // every cursor the queue holds (`harness/gates.ts`).
+  // every cursor the queue holds, and the `rails` gate behind it, which
+  // evaluates the declaration a commit that rewrote it left behind
+  // (`harness/gates.ts`).
   const SHARED = ["records", "clean-tree", "pending-gate"];
   const PRODUCER_ONLY = ["per cites resolve", "goal rank", "new blocker resolves"];
   const disciplineOf = (name: string): string[] => [
     ...SHARED,
     ...(PLAN_SLICES.some((slice) => slice === name) ? PRODUCER_ONLY : []),
     "slice-state",
+    "rails",
   ];
   expect(chain.phases.length).toBeGreaterThan(0);
   // Vacuity pin on the split: both arms of those members are reached, so

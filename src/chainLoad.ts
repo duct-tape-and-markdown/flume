@@ -392,6 +392,66 @@ function isCjsContextLoadFailure(err: unknown): err is Error {
 }
 
 /**
+ * Evaluate a TypeScript module at an absolute path and answer its **default
+ * export**, through the one loader the runtime trusts — the engine's own
+ * `tsImport` call, its CJS-context refusal, and the interop fold that makes
+ * tsx's two shapes one answer.
+ *
+ * Reported on `FlumeApi` (`src/flumeApi.ts`) because the engine is the only
+ * holder of all three: a chain that must read a committed module of its own —
+ * a declaration a gate judges, a policy file a phase reads — would otherwise
+ * resolve a second `tsx`, spell the interop fold again, and relay the
+ * CJS-context failure as a stack trace (`.claude/rules/engineering.md`, *A
+ * fact the engine holds is reported, never rediscovered*). What the module
+ * *means* stays the caller's: this answers a value and validates nothing,
+ * which is why {@link loadChainModule} below is the chain-shaped reader over
+ * it rather than a second loader beside it.
+ *
+ * `absent` is the caller's own refusal for a path that is not there, because
+ * what to create is the caller's fact and not this loader's. Absence is the
+ * only silent reading: `existsLoud` (`src/fsProbe.ts`) throws on any other
+ * stat failure rather than reporting absence, so a module that is present
+ * but unreachable — a symlink loop, a permission-denied directory — names
+ * that failure instead of telling the operator to create a file they are
+ * looking at.
+ */
+export async function loadModuleDefault(
+  path: string,
+  absent: string,
+): Promise<unknown> {
+  // win32 MAX_PATH: the single fix point for this check, because every path
+  // into a module loaded here runs this probe first. namespacedJoin
+  // (src/paths.ts) is the shared idiom.
+  if (!existsLoud(namespacedJoin(path))) throw new Error(absent);
+  let ns: Record<string, unknown>;
+  try {
+    ns = (await tsImport(
+      pathToFileURL(path).href,
+      import.meta.url,
+    )) as Record<string, unknown>;
+  } catch (err) {
+    if (isCjsContextLoadFailure(err)) {
+      throw new CjsContextLoadError(path, err);
+    }
+    throw err;
+  }
+
+  // `tsImport` hands the module back in either shape — `__esModule` set with
+  // the default under a second `default`, or the value as `ns.default`
+  // directly — and which one is not read off the module in hand
+  // (`.claude/rules/platform-facts.md`, *tsx decides a module's interop shape
+  // from the nearest `package.json` `type`*). Both are normalized here
+  // because keying on one would refuse a module the other spelling loads
+  // fine.
+  const d = ns.default as Record<string, unknown> | undefined;
+  const interop =
+    !!d &&
+    (d as { __esModule?: boolean }).__esModule === true &&
+    "default" in d;
+  return interop ? d!.default : d;
+}
+
+/**
  * Load + normalize + validate a chain module from an absolute `chain.ts`
  * path. Throws on a missing file, a compile/syntax error, or a module that is
  * not the factory shape: a default export that is not a function, or a
@@ -416,15 +476,21 @@ function isCjsContextLoadFailure(err: unknown): err is Error {
  * What a second load *does* answer is this function's fact, so it is stated
  * here and pointed at from the callers that lean on it. Two legs refuse on
  * every call, so a live process sees a chain that stopped being loadable: the
- * absence probe below, and `tsImport` re-transforming chain.ts itself
- * (`.claude/rules/platform-facts.md`, *A plain `import()` is pinned;
- * `tsImport` re-reads*) — a deleted or no-longer-compiling chain.ts refuses
- * here rather than answering an earlier load. A chain.ts that still compiles
- * is the leg a live process does not see: measured on this tree under tsx
- * 4.21, a second load answers the evaluation the process already took, and a
- * break in a module chain.ts *imports* is not re-read at all. So no caller
- * treats a second load as a re-resolution — the factory below is re-applied
- * per call either way, which is what a caller counting resolutions reads.
+ * absence probe in {@link loadModuleDefault}, and `tsImport` re-transforming
+ * chain.ts itself (`.claude/rules/platform-facts.md`, *A plain `import()` is
+ * pinned; `tsImport` re-reads*) — a deleted or no-longer-compiling chain.ts
+ * refuses here rather than answering an earlier load. Whether a chain.ts that
+ * still compiles is *re-evaluated* follows the manifest the loader read it
+ * under, and the two answers are measured on this tree under tsx 4.21, under
+ * the CLI's registered loader and under plain node alike: beneath a
+ * `"type": "module"` manifest — the one shape the package supports
+ * ({@link CjsContextLoadError}) — a second load of the same path answers the
+ * file as it is on disk now, and beneath a CJS-context manifest it answers
+ * the evaluation the process already took, which no query on the URL busts.
+ * So no caller treats a second load as a re-resolution: the factory below is
+ * re-applied per call either way, which is what a caller counting
+ * resolutions reads, and a caller that needs the bytes a *commit* holds
+ * reads them at a path this process has not loaded.
  */
 export async function loadChainModule(
   paths: FlumePaths,
@@ -437,45 +503,11 @@ export async function loadChainModule(
   // shared with the sibling surface that names the same file:
   // `chainLoadGate`'s touched-path key.
   const path = chainModulePath(paths.configDir);
-  // win32 MAX_PATH: the single fix point for this check, because every path
-  // into an existing chain.ts runs this probe first. namespacedJoin
-  // (src/paths.ts) is the shared idiom.
-  // Absent is the only silent reading: `existsLoud` (src/fsProbe.ts) throws
-  // on any other stat failure rather than reporting absence, so a chain.ts
-  // that is present but unreachable — a symlink loop, a permission-denied
-  // configDir — names that failure instead of telling the operator to create
-  // a file they are looking at.
-  if (!existsLoud(namespacedJoin(path))) {
-    throw new Error(
-      `chain config not found at ${path}; create .flume/chain.ts that ` +
-        `default-exports a chain factory: (api) => ({ chain }).`,
-    );
-  }
-  let ns: Record<string, unknown>;
-  try {
-    ns = (await tsImport(
-      pathToFileURL(path).href,
-      import.meta.url,
-    )) as Record<string, unknown>;
-  } catch (err) {
-    if (isCjsContextLoadFailure(err)) {
-      throw new CjsContextLoadError(path, err);
-    }
-    throw err;
-  }
-
-  // `tsImport` hands the module back in either shape — `__esModule` set with
-  // the factory under a second `default`, or the factory as `ns.default`
-  // directly — and which one is not read off the module in hand
-  // (`.claude/rules/platform-facts.md`, *tsx decides a module's interop shape
-  // from the nearest `package.json` `type`*). Both are normalized here because keying on
-  // one would refuse a chain the other spelling loads fine.
-  const d = ns.default as Record<string, unknown> | undefined;
-  const interop =
-    !!d &&
-    (d as { __esModule?: boolean }).__esModule === true &&
-    "default" in d;
-  const factory = (interop ? d!.default : d) as ChainFactory | undefined;
+  const factory = (await loadModuleDefault(
+    path,
+    `chain config not found at ${path}; create .flume/chain.ts that ` +
+      `default-exports a chain factory: (api) => ({ chain }).`,
+  )) as ChainFactory | undefined;
 
   // A non-function default export is refused, never accepted as the older
   // `Chain` object the factory replaced. A silent fallback would readmit the

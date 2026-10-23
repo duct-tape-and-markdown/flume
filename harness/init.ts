@@ -49,7 +49,12 @@ import { installPlan } from "../src/setupWorktree.js";
 import { detailOf } from "./exec.js";
 import { resolvesInTree, tipOf } from "./gitRange.js";
 import { consumerIgnores } from "./ignores.js";
-import { planStatePath, PROTOCOL_REL, queueDir } from "./layout.js";
+import {
+  DECLARATION_REL,
+  planStatePath,
+  PROTOCOL_REL,
+  queueDir,
+} from "./layout.js";
 import { seedPlanState } from "./planState.js";
 
 /** The directory holding this module, in whichever layout it is running from. */
@@ -71,9 +76,6 @@ const HERE = dirname(fileURLToPath(import.meta.url));
  * where its state lives.
  */
 export const DEFAULT_STATE_ROOT = STATE_ROOT_DIRNAME;
-
-/** Where the declaration sits under a state root (`spec/harness.md`). */
-const DECLARATION_REL = "declaration.ts";
 
 /**
  * Where the chain the engine loads sits — `<configDir>/chain.ts` and nowhere

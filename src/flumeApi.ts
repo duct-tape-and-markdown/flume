@@ -28,7 +28,7 @@ import {
   writablePathsGate,
   pendingGate,
 } from "./builtinGates.js";
-import { CjsContextLoadError } from "./chainLoad.js";
+import { CjsContextLoadError, loadModuleDefault } from "./chainLoad.js";
 import { isDirectoryOrAbsent, isDirectoryOrAbsentUnder } from "./fsProbe.js";
 import { PendingParseFailure } from "./PendingSchema.js";
 import { readGatedQueue } from "./pendingLedger.js";
@@ -446,6 +446,27 @@ export interface FlumeApi {
      */
     checkoutAt: typeof checkoutAt;
   };
+  /**
+   * The loader the engine reads a chain through, handed out: a TypeScript
+   * module at an absolute path, evaluated in-process, answering its default
+   * export.
+   *
+   * A chain whose own discipline reads a *committed* module of its own — a
+   * declaration a gate holds a commit to, a policy file a phase consumes —
+   * needs exactly the three things only the engine holds: the `tsx` the
+   * runtime already resolved, the interop fold over tsx's two shapes, and
+   * {@link CjsContextLoadError} for a host whose manifest cannot load a
+   * module at all. Each rebuilt chain-side is the same load with a different
+   * answer on one host (`.claude/rules/engineering.md`, *A fact the engine
+   * holds is reported, never rediscovered*).
+   *
+   * Reported as a **value, never a verdict**: what the module must contain is
+   * the chain's to say, so the engine validates nothing here and the chain's
+   * own schema refuses what it reads (`.claude/rules/engine-boundary.md`).
+   * The engine's own chain-shaped reader over it (`loadChainModule`) is a
+   * caller of this, not a second loader beside it.
+   */
+  loadModuleDefault: typeof loadModuleDefault;
   /** The error classes chains branch on with `instanceof`, no value import. */
   CjsContextLoadError: typeof CjsContextLoadError;
   PendingParseFailure: typeof PendingParseFailure;
@@ -563,6 +584,7 @@ export function buildFlumeApi(paths: FlumePaths): FlumeApi {
       readWorktreeRegistry,
       checkoutAt,
     },
+    loadModuleDefault,
     CjsContextLoadError,
     PendingParseFailure,
     RenderRefusal,

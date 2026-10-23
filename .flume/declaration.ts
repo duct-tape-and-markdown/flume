@@ -144,3 +144,10 @@ export const declaration: DeclarationInput = {
     },
   },
 };
+
+// The package reads a committed declaration through its default export, the
+// shape `flume-harness init` writes (spec/harness.md, *What a consumer
+// declares*): the rails gate loads this file as the commit left it and holds
+// the tick to the fence, gates and agents it ran under. The named export is
+// what chain.ts beside it imports.
+export default declaration;

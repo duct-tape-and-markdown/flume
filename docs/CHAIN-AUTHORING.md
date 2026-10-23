@@ -65,7 +65,7 @@ the first of them is what this page documents:
   and reports a `laneTests[]` line owed to the CI lane that runs it,
   the discipline gates that run ahead of whatever a consumer declared
   (`records`, `clean-tree`, `pending-gate`, `per cites resolve`,
-  `goal rank`, `new blocker resolves`, `slice-state`), the records
+  `goal rank`, `new blocker resolves`, `slice-state`, `rails`), the records
   conventions, and the plan state
   as typed state rather than prose a cursor is regexed out of.
 
@@ -1176,6 +1176,21 @@ const factory: ChainFactory = (flume) => {
   (`{ ...chainLoadGate, when: "afterMerge" }`). Declares `batches: true`
   ([*Reading a batched merge*](#reading-a-batched-merge)), so that spread
   holds no batching phase to a span per merge.
+
+  A phase whose own discipline has to read some *other* committed module —
+  a declaration a gate holds a commit to, a policy file a phase consumes —
+  reaches `api.loadModuleDefault(path, absent)` for it: the same in-process
+  TypeScript load, answering that module's default export, raising
+  `api.CjsContextLoadError` for a host whose manifest cannot load a module at
+  all, and throwing your own `absent` message for a path that is not there.
+  It validates nothing — what the module must hold is your schema's to say.
+  It reads the file at the path you hand it, so a gate judging a commit
+  points it at `ctx.configDir`, which the dispatcher has already rebased onto
+  the tree the gate runs in. Beneath a `"type": "module"` manifest a second
+  load of one path answers the file as it is on disk now; beneath a
+  CJS-context manifest it answers the evaluation the process already took, so
+  a gate that must see a commit's bytes reads them at a path this process has
+  not loaded — which the rebase onto the gate's own tree already gives it.
 - `writablePathsGate` — attached automatically by the dispatcher from each
   phase's `writablePaths`. Don't list manually.
 - `pendingGate` — `pendingGate({ targetFence, extension?, fenceWhen?,

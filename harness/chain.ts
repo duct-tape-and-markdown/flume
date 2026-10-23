@@ -189,6 +189,7 @@ export function harnessChain(options: HarnessChainOptions): Chain {
       isAncestor: api.git.isAncestor,
       statusRecords: api.git.statusRecords,
     },
+    loadModuleDefault: api.loadModuleDefault,
   };
 
   const windows = planSliceWindows({

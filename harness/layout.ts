@@ -98,6 +98,18 @@ export const QUESTION_EXT = ".md";
  */
 export const PROTOCOL_REL = "PROTOCOL.md";
 
+/**
+ * Where the consumer's declaration sits beside the chain the engine loads —
+ * `declaration.ts`, and nowhere else (`spec/harness.md`, *What a consumer
+ * declares*).
+ *
+ * Two callers, so one home: adoption writes the skeleton at this name
+ * (`init.ts`) and the rails gate loads the file the commit holds at it
+ * (`gates.ts`). A verb writing one name while a gate reads another is a
+ * refusal that never fires, over a file that is right there.
+ */
+export const DECLARATION_REL = "declaration.ts";
+
 /** Where a build tick's observation to plan sits under a state root. */
 const NOTES_REL = "plan/notes";
 

@@ -749,3 +749,73 @@ export type DeclarationInput = z.input<typeof DeclarationSchema>;
 export function parseDeclaration(value: unknown): Declaration {
   return parseOrThrow(DeclarationSchema, value, "harness declaration");
 }
+
+/**
+ * The declaration fields a build tick may not move: the paths a phase may
+ * write, the gates its commit is judged by, and the agent it runs as
+ * (`spec/harness.md`, *What a consumer declares*, the `fence` row).
+ *
+ * Build's fence may name the declaration itself, so a schema change lands
+ * with the consumer's own edit in one commit — which is the whole reason this
+ * set exists. The environment the declaration states is build's to edit; the
+ * rails it is judged by are a human's to land, because a tick that can widen
+ * its own fence, drop its own gate or pick its own model is a tick whose
+ * every later verdict was taken under rails it chose.
+ *
+ * Three names rather than a predicate over the schema: every other field is
+ * environment by default, so a field added to the schema joins the editable
+ * side and this list is where a new rail is declared one.
+ */
+export const RAILS = ["fence", "gates", "agents"] as const;
+
+/** One rail, by the name a consumer typed. */
+export type Rail = (typeof RAILS)[number];
+
+/**
+ * A rail's value as a comparison can read it — keys ordered, absent fields
+ * dropped, and the two kinds of declared *behavior* reduced to their source.
+ *
+ * A declared gate may carry a reader (`GateReaderValue`), and what that
+ * function returns *is* the gate's verdict, so a rewritten reader moves the
+ * gates as surely as a new entry in the list does: comparing the functions by
+ * identity would pass every one of them (two loads never share a closure),
+ * and dropping them would pass a reader rewritten to answer green. The source
+ * text is what both sides were authored as, and both sides reach this through
+ * one loader, so the transform is the same on each.
+ */
+const canonicalRail = (value: unknown): unknown => {
+  if (typeof value === "function") return `function ${value.toString()}`;
+  if (value instanceof RegExp) return `pattern /${value.source}/${value.flags}`;
+  if (Array.isArray(value)) return value.map(canonicalRail);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([, held]) => held !== undefined)
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+        .map(([key, held]) => [key, canonicalRail(held)]),
+    );
+  }
+  return value;
+};
+
+/**
+ * Which of {@link RAILS} read differently between two declarations, in the
+ * order the list declares them.
+ *
+ * Both sides are parsed declarations rather than module sources, so a rail
+ * re-spelled without being moved — a glob list reordered by the formatter, a
+ * field written in another place — is not a move, and a rail moved through a
+ * renamed field still is. What the comparison cannot see is a change the
+ * schema itself drops, which is why it reads the parse's output: a key the
+ * schema does not hold is refused at the parse, before this is reached.
+ */
+export function movedRails(
+  before: Declaration,
+  after: Declaration,
+): Rail[] {
+  return RAILS.filter(
+    (rail) =>
+      JSON.stringify(canonicalRail(before[rail])) !==
+      JSON.stringify(canonicalRail(after[rail])),
+  );
+}

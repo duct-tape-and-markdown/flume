@@ -3,11 +3,13 @@
  * discipline needs*) — the `per` gate, the records gate, the clean-tree gate,
  * the engine's pending gate wired to the consumer's fence, the goal-rank gate
  * over the ranks a plan commit places and moves, the new-blocker gate over
- * the `blockedBy` edges a plan commit adds, and the `slice-state` gate,
+ * the `blockedBy` edges a plan commit adds, the `slice-state` gate,
  * which reads a touched slice's whole state file at two refs and judges the
  * move against that slice's own rules rather than every cursor the queue
- * holds — as one ordered set per phase, always ahead of whatever gates the
- * consumer declared.
+ * holds, and the `rails` gate, which holds a commit that rewrote the
+ * declaration to the fence, the gates and the agents the tick ran under — as
+ * one ordered set per phase, always ahead of whatever gates the consumer
+ * declared.
  *
  * **Always first is mechanism here, not a promise.** {@link harnessGates}
  * returns the package's own and then the consumer's, so a declaration
@@ -16,7 +18,8 @@
  * `afterCommit` set is the same for every phase the package ships: each of
  * those is a claim about *any* commit the package's chain produces, and the
  * ones whose subject a given phase never writes cost a handful of at-ref
- * reads to say so.
+ * reads — or, for the rails gate, one membership test against the touched
+ * span — to say so.
  *
  * The members that are not uniform are not a table of where a gate
  * applies — each is the same reasoning read the other way, that build's fence
@@ -58,9 +61,10 @@
  * touched record was written or drained is read by asking for its bytes at
  * the commit — absent is deleted — what the worktree still holds uncommitted
  * is read off the engine's own status decode, and whether one sha reaches
- * another comes off the engine's own ancestry probe. **This module spawns no
- * process:** every fact they judge on either rides the context or comes
- * off `GateEngine`.
+ * another comes off the engine's own ancestry probe, and the declaration a
+ * commit holds is evaluated by the loader every chain load already goes
+ * through. **This module spawns no process:** every fact they judge on either
+ * rides the context or comes off `GateEngine`.
  *
  * This module is the package's own set alone. Which phases exist and what
  * fence each carries belong to the chain factory that calls this
@@ -69,10 +73,12 @@
  * the sentence above holds here.
  */
 
+import { relative, resolve } from "node:path";
+
 import type { PendingGateOptions } from "../src/builtinGates.js";
 import type { Gate, GateContext, GateResult } from "../src/Gate.js";
 import type { GitStatusRecord } from "../src/git.js";
-import { matchesAny } from "../src/paths.js";
+import { gitPath, matchesAny } from "../src/paths.js";
 import type { GatedQueue, GatedQueueContext } from "../src/pendingLedger.js";
 import { isGoal } from "../src/PendingSchema.js";
 import type {
@@ -82,13 +88,18 @@ import type {
   QueueFile,
 } from "../src/PendingSchema.js";
 import type { Phase } from "../src/Phase.js";
+import { thrownMessage } from "../src/thrown.js";
 
 import { resolveCite, type AtRefReader, type CiteLocus } from "./citeResolver.js";
 import {
   BUILD_PHASE,
   INBOX_PHASE,
+  movedRails,
+  parseDeclaration,
   PLAN_SLICES,
+  RAILS,
   type Declaration,
+  type Rail,
 } from "./declaration.js";
 import {
   entryExtension,
@@ -97,6 +108,7 @@ import {
 } from "./entryExtension.js";
 import {
   continuingNotePath,
+  DECLARATION_REL,
   notePaths,
   planStatePath,
   recordOrNoteGlobs,
@@ -180,6 +192,23 @@ export interface GateEngine {
      */
     readonly statusRecords: (cwd: string) => Promise<GitStatusRecord[]>;
   };
+  /**
+   * The engine's own module loader (`FlumeApi.loadModuleDefault`) — a
+   * TypeScript module at an absolute path, evaluated, answering its default
+   * export, with the engine's refusal for a host that cannot load one.
+   *
+   * The rails gate's, and the one fact on this shape that is not a read: a
+   * declaration states values with behavior, so the file a commit holds has
+   * to be run before anything can be said about the rails it declares. Taken
+   * off the engine rather than resolved here, because a second `tsx` and a
+   * second interop fold beside this package would answer differently from the
+   * load every tick already goes through (`.claude/rules/engineering.md`, *A
+   * fact the engine holds is reported, never rediscovered*).
+   */
+  readonly loadModuleDefault: (
+    path: string,
+    absent: string,
+  ) => Promise<unknown>;
 }
 
 /**
@@ -1125,6 +1154,106 @@ function sliceStateGate(engine: GateEngine): Gate {
 }
 
 /**
+ * The declaration a commit holds states the same **rails** the tick ran
+ * under: the fence a phase writes within, the gates its commit is judged by,
+ * and the agent it runs as (`spec/harness.md`, *What a consumer declares*,
+ * the `fence` row).
+ *
+ * Build's fence may name the declaration file, so that a schema change lands
+ * with the consumer's own edit in one commit — and the moment it does, a tick
+ * can reach the rails it is about to be judged by. Everything else in the
+ * file is environment and stays build's to edit; the three rails are a
+ * human's to land ({@link RAILS}).
+ *
+ * **The commit is read by being evaluated, at a path this process has not
+ * loaded.** A declaration is a TypeScript module whose fields include values
+ * with behavior, so its bytes at a ref say nothing a comparison can read, and
+ * the package ships no TypeScript parser to make them say it. The loader the
+ * engine reads every chain through is the one that can
+ * (`engine.loadModuleDefault`), and the file it is pointed at is the one the
+ * commit left in the gate's own tree: `ctx.configDir` is rebased onto the
+ * tree the gate runs in — a tick's worktree at `afterCommit`, never the
+ * primary checkout whose declaration this process already evaluated
+ * (`spec/chain.md`, *What a gate receives*) — so the load reads the committed
+ * file rather than answering out of the module cache
+ * (`loadChainModule`, `src/chainLoad.ts`, on what a second load answers).
+ *
+ * The other side of the comparison is the declaration this factory was built
+ * with, which is the tick's own rails by construction: it is the parse the
+ * dispatcher's chain load produced, and every fence, gate and agent this tick
+ * ran under came out of it. Reading the base commit's file instead would
+ * compare a tree against a tree and leave the rails the tick was actually
+ * judged by unread.
+ *
+ * **Skipped on the path, loud on everything else.** A commit that did not
+ * touch the declaration moved no rail, which is the overwhelming majority of
+ * ticks and the only green this gate declares unearned. A declaration the
+ * commit deleted, left unparseable, or left unloadable is a refusal and not a
+ * skip: each is a rail move whose own next tick could not even resolve
+ * (`.claude/rules/engineering.md`, *Loud or nothing*). A config dir relocated
+ * outside the repository needs no branch of its own: the declaration's path
+ * climbs out of the repo root, so no commit's path list can name it and the
+ * untouched-path skip is already the right answer.
+ */
+function railsGate(declaration: Declaration, engine: GateEngine): Gate {
+  return {
+    name: "rails",
+    when: "afterCommit",
+    async run(ctx) {
+      const path = resolve(ctx.configDir, DECLARATION_REL);
+      // The touched-path key is the file the load below resolves from this
+      // same `configDir`, made repo-relative and folded into git's alphabet
+      // to match the commit's own list — `chainLoadGate`'s idiom
+      // (`src/builtinGates.ts`) over the sibling file, and for its reason: a
+      // key spelled any other way could name a path the loader never reads,
+      // and this gate's divergence is the silent one, a `skipped` over the
+      // very commit that moved a rail.
+      const rel = gitPath(relative(ctx.repoRoot, path));
+      if (!ctx.touchedPaths.includes(rel)) {
+        return {
+          ok: true,
+          message: "rails skipped",
+          skipped: `${rel} untouched by this commit`,
+        };
+      }
+
+      let committed: Declaration;
+      try {
+        committed = parseDeclaration(
+          await engine.loadModuleDefault(
+            path,
+            `${rel} is in ${short(ctx.commitSha)} and absent from the tree it ` +
+              `left: a commit that removes the declaration leaves the next ` +
+              `tick with no rails to run under.`,
+          ),
+        );
+      } catch (err) {
+        return refuse(
+          `the declaration ${short(ctx.commitSha)} holds does not load as one, so the rails it states cannot be read`,
+          [thrownMessage(err)],
+        );
+      }
+
+      const moved: Rail[] = movedRails(declaration, committed);
+      if (moved.length > 0) {
+        return refuse(
+          `${rel} moves the ${moved.join(", ")} this tick was judged by; build may change the environment the declaration states, and a change to its rails is a human's to land`,
+          moved.map(
+            (rail) =>
+              `${rail}: ${JSON.stringify(declaration[rail] ?? null)} -> ${JSON.stringify(committed[rail] ?? null)}`,
+          ),
+        );
+      }
+
+      return {
+        ok: true,
+        message: `${rel} states the ${RAILS.join(", ")} this tick ran under`,
+      };
+    },
+  };
+}
+
+/**
  * The fence every queued entry's declared `files` is pre-checked against:
  * build's, as the consumer declared it.
  *
@@ -1167,9 +1296,11 @@ function isQueueProducer(name: string): boolean {
  * and the clean tree are facts about the commit itself; the pending gate
  * proves the queue parses and every entry's declared files survive build's
  * fence; the `per` gate then reads cites out of a queue already known to
- * parse. The slice-state gate trails them because its probe spawns git where
- * the others read. The dispatcher stops at the first refusal, so that order is
- * what decides which message a tick is handed back.
+ * parse. The slice-state gate follows them because its probe spawns git where
+ * the others read, and the rails gate trails every one of them because the
+ * commit it judges has to be *evaluated*. The dispatcher stops at the first
+ * refusal, so that order is what decides which message a tick is handed
+ * back.
  *
  * The merged-tree pending gate, the `per` gate, the goal-rank gate and the
  * new-blocker gate are the members the set does not carry for every phase,
@@ -1233,6 +1364,7 @@ export function harnessGates(options: HarnessGatesOptions): Gate[] {
         ]
       : []),
     sliceStateGate(engine),
+    railsGate(declaration, engine),
     ...(producer
       ? [engine.pendingGate({ ...queue, when: "afterMerge" as const })]
       : []),
