@@ -10043,7 +10043,7 @@ describe("Dispatcher — trunk moves only by fast-forward to a judged candidate"
 describe("Dispatcher fanout — afterMerge gate failure reverts only the offending entry", () => {
   it("ships the N−1 clean siblings, reverts only the offending entry, keeps it pending with the prior-attempt block; per-entry agent fanout stays parallel", async () => {
     // ISO-PASS and ISO-FAIL fan out concurrently (disjoint declared files →
-    // same batch). The afterMerge gate vetoes any merged trunk carrying
+    // same batch). The afterMerge gate vetoes any candidate carrying
     // ISO-FAIL's file, so it fails for ISO-FAIL's commit and passes for
     // ISO-PASS's — independent of cherry-pick order.
     const entries = [
@@ -10509,7 +10509,7 @@ describe("Dispatcher — a gate that throws is a gate that failed", () => {
     expect(prompts[1]).toMatch(/\n\s+at /);
   });
 
-  it("a singleton phase's afterMerge gate that throws reverts the merged commit off trunk", async () => {
+  it("a singleton phase's afterMerge gate that throws reverts the span and leaves trunk at the tip it read", async () => {
     const preHead = await head(fx.repo);
     new Baton(join(fx.repo, ".flume")).wake("plan");
 
@@ -10560,7 +10560,7 @@ describe("Dispatcher — an afterMerge revert on the primary checkout preserves 
   // landed cleanly, simulating an operator staging something mid-tick —
   // which is exactly the window the revert (not the cherry-pick) has to
   // respect.
-  it("fanout: an afterMerge revert on the trunk leaves an operator's unrelated staged/unstaged edit intact", async () => {
+  it("fanout: an afterMerge revert leaves an operator's unrelated staged/unstaged edit on the primary checkout intact", async () => {
     await writePending(fx.repo, [makeEntry("REVERT-ME", ["src/thing.ts"])]);
     new Baton(join(fx.repo, ".flume")).wake("build");
 
@@ -10634,7 +10634,7 @@ describe("Dispatcher — an afterMerge revert on the primary checkout preserves 
     expect(status).toContain("operator-unstaged.txt");
   });
 
-  it("singleton: an afterMerge revert on the trunk leaves an operator's unrelated staged/unstaged edit intact", async () => {
+  it("singleton: an afterMerge revert leaves an operator's unrelated staged/unstaged edit on the primary checkout intact", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
 
     const alwaysVeto: Gate = {
@@ -21945,7 +21945,7 @@ describe("Dispatcher — flumeDir exposed to gates & promptArgs", () => {
 });
 
 describe("Dispatcher — GateContext.repoRoot", () => {
-  it("singleton tick: afterCommit gate's repoRoot is the worktree root; afterMerge gate's repoRoot is the trunk (spec/worktrees.md 'Singleton runs in a worktree')", async () => {
+  it("singleton tick: afterCommit gate's repoRoot is the worktree root; afterMerge gate's repoRoot is the merge's candidate (spec/worktrees.md 'Singleton runs in a worktree')", async () => {
     new Baton(join(fx.repo, ".flume")).wake("plan");
 
     let commitRepoRoot: string | undefined;
@@ -29905,10 +29905,10 @@ it("a singleton tick whose span merged reports the gated tip it left", async () 
   const verdict = outcome.verdict;
   expect(verdict).toBeDefined();
 
-  // Non-vacuity: the span really was picked onto trunk and really was judged
-  // there — one afterMerge run over one merged sha, every gate green — so the
-  // field asserted below is reported off a fate this tick reached rather than
-  // off a merge stage that never carried anything.
+  // Non-vacuity: the span really was picked onto a candidate and really was
+  // judged there — one afterMerge run over one merged sha, every gate green
+  // — so the field asserted below is reported off a fate this tick reached
+  // rather than off a merge stage that never carried anything.
   expect(verdict?.committed).toBe(true);
   expect(verdict?.mergeOutcomes.map((m) => m.outcome)).toEqual(["merged"]);
   expect(judged).toHaveLength(1);
@@ -30146,8 +30146,8 @@ it("a singleton whose span trunk already held reports its gated tip with no comm
 
   // Non-vacuity, and the shape the claim needs: the pick really emptied, so
   // the merge row bounds nothing and this tick added no commit — while the
-  // span was still merged, judged on trunk by an `afterMerge` gate that ran
-  // over the absorbing tip.
+  // span was still merged, judged by an `afterMerge` gate over a candidate
+  // cut at the absorbing tip.
   expect(landedFirst).toEqual(expect.stringMatching(/^[0-9a-f]{40}$/));
   expect(verdict?.mergeOutcomes).toEqual([
     { outcome: "merged", baseSha: landedFirst, headSha: landedFirst },

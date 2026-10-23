@@ -970,8 +970,9 @@ Exit codes:
   exclusive: `Usage: flume exclusive -- <command> [args...]
 
 Run <command> with the ship lock held — the guard a tick holds across its
-whole merge span: every cherry-pick onto the trunk, the afterMerge gates over
-the merged tree, and the ledger commit that ships the span. A tick already
+whole merge span: every cherry-pick onto a candidate, the afterMerge gates over
+that candidate, the ledger commit that ships the span, and the fast-forward
+that carries both onto the trunk. A tick already
 merging is waited for, and says so on stderr; a tick that finishes while the
 command runs waits in turn. Agents keep working throughout — the lock
 serializes merges, not ticks.

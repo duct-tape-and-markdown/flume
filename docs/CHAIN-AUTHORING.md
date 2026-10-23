@@ -1001,11 +1001,13 @@ says so below.
 
 - `cwd` — the working tree the gate runs in: the tick's ephemeral worktree
   under `afterCommit` (both concurrencies alike — a singleton tick works in
-  its own worktree too), the primary checkout under `afterMerge`.
+  its own worktree too), the merge's candidate under `afterMerge` — one span's
+  own, or the one a batch shares (*Reading a batched merge* below). Never the
+  primary checkout, which no stage writes.
 - `repoRoot` — the same value as `cwd`, spelled for the composition that
   wants a root rather than a working directory. No field reaches the primary
-  checkout from inside a worktree, so a gate that needs the trunk belongs at
-  `afterMerge`.
+  checkout, so a gate that needs the trunk as the span found it reads
+  `landedOnSha` at `afterMerge` rather than a path.
 - `flumeDir` — the absolute, resolved state root: how a gate reaches
   state-relative paths (`join(ctx.flumeDir, "prior-attempts")`) without
   hardcoding `.flume/` or reading `process.env`. It is the **primary

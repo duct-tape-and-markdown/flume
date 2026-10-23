@@ -1303,9 +1303,10 @@ async function acquireCommonDirLock(
 
 /**
  * Take the ship lock — the guard a tick holds across its whole merge span:
- * every cherry-pick onto the trunk, the `afterMerge` gates over each merged
- * tree, and the ledger commit that ships the span (spec/loop.md, *The ship
- * lock and the worktree lock — sibling ticks take turns at git*). The two
+ * every cherry-pick onto a candidate, the `afterMerge` gates over that
+ * candidate, the ledger commit that ships the span, and the fast-forward that
+ * carries both onto the trunk (spec/loop.md, *The ship lock and the worktree
+ * lock — sibling ticks take turns at git*). The two
  * legs that have a merge span take it (`src/waveMerge.ts`,
  * `src/singletonTick.ts`), and `flume exclusive` takes it for the operator's
  * own command (`exclusiveVerb`, `src/cliExclusive.ts`); nothing else does.

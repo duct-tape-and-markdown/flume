@@ -11,10 +11,10 @@ import type { PendingEntry } from "./PendingSchema.js";
 
 /**
  * When in the tick lifecycle a gate runs. `afterCommit` is the common case
- * (validate the agent's commit on its worktree branch); `afterMerge` runs
- * on the trunk once the tick's span has been cherry-picked onto it. Both
- * placements are open to both concurrencies — see each member below for
- * what a failure costs.
+ * (validate the agent's commit on its worktree branch); `afterMerge` runs on
+ * the candidate the tick's span has been cherry-picked onto, the tree trunk
+ * fast-forwards to once every gate there is green. Both placements are open
+ * to both concurrencies — see each member below for what a failure costs.
  */
 export type GatePhase =
   /**
@@ -180,7 +180,7 @@ export interface GateBatchSpan {
    * narrower than the one the engine fenced.
    */
   assignment?: GateAssignment;
-  /** The span's own tip once it was picked onto trunk. */
+  /** The span's own tip once it was picked onto the batch's candidate. */
   commitSha: string;
   /** The sha this span started from — {@link GateContext.baseSha}, per span. */
   baseSha: string;

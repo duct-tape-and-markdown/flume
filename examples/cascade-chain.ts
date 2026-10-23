@@ -204,7 +204,7 @@ export function judgedByEntryTests(
       if (unpinned.length > 0) {
         return {
           ok: false,
-          message: `${unpinned.length} of ${named.length} named behavior(s) have no passing test — entry reverted from the trunk`,
+          message: `${unpinned.length} of ${named.length} named behavior(s) have no passing test — entry's candidate discarded`,
           details: [
             "Title a passing test with each line verbatim, in the file the entry names:",
             ...unpinned.map((t) => `- ${t.path}: ${t.asserts}`),
@@ -422,10 +422,11 @@ const factory: ChainFactory = (api) => {
   // ---------- project-specific gates ----------
 
   /**
-   * The test suite, at `afterMerge` — the merged trunk is the only tree
-   * anything validates as a whole, and this is the gate that says it is
-   * still correct — judged twice: the suite is green, and every behavior the
-   * entry's `tests[]` names has a passing test (`judgedByEntryTests` above).
+   * The test suite, at `afterMerge` — the merge's candidate is the only
+   * tree anything validates as a whole, and this is the gate that says the
+   * tree trunk is about to become is still correct — judged twice: the suite
+   * is green, and every behavior the entry's `tests[]` names has a passing
+   * test (`judgedByEntryTests` above).
    *
    * Why `shellGate` and not `vitestGate({ when: "afterMerge" })`: placement
    * alone the builtin now takes, but the second claim needs the suite's
@@ -434,13 +435,13 @@ const factory: ChainFactory = (api) => {
    * suite relocated says `vitestGate({ when: "afterMerge" })` and stops
    * there.
    */
-  const vitestOnTrunk: Gate = judgedByEntryTests(
+  const vitestOnCandidate: Gate = judgedByEntryTests(
     shellGate({
       name: "vitest",
       when: "afterMerge",
       cmd: "pnpm",
       args: ["vitest", "run", "--reporter=json"],
-      failHint: "Tests failed — entry reverted from the trunk",
+      failHint: "Tests failed — entry's candidate discarded",
     }),
     api.gitPath,
   );
@@ -463,22 +464,21 @@ const factory: ChainFactory = (api) => {
    * Fanout: the dispatcher picks N entries that don't touch the same files and
    * runs N agent invocations in parallel worktrees. Each tick handles one
    * `assignedEntry`. Worktree branches merge serially after their afterCommit
-   * gates pass; the afterMerge gates then run per entry on the trunk, after
-   * that entry's cherry-pick, and a failure there reverts only that entry —
-   * the rest of the wave stays shipped.
+   * gates pass; the afterMerge gates then run per entry on a candidate of its
+   * own, after that entry's cherry-pick, and a failure there discards only
+   * that entry's candidate — the rest of the wave stays shipped.
    *
    * Gates split by cost. Cheap structural checks stay `afterCommit`, inside
    * the worktree, so a type or lint error never reaches the trunk at all:
    * `tscGate` first, then `eslintGate`, then the entry's own file
    * declaration against the span it produced (`declaredFilesMatchSpan`);
    * failure reverts the worktree commit and the entry stays pickable for the
-   * next tick. The suite runs
-   * `afterMerge` (`vitestOnTrunk` above), because the merged tree is the one
-   * no afterCommit gate ever saw — the trunk may have moved under the wave,
-   * and two siblings that each passed in isolation can compose into a tree
-   * neither worktree held. Running it N-wide in parallel worktrees would
-   * also buy nothing but host contention, where a timeout reverts a clean
-   * commit.
+   * next tick. The suite runs `afterMerge` (`vitestOnCandidate` above),
+   * because the merged tree is the one no afterCommit gate ever saw — the
+   * trunk may have moved under the wave, and two siblings that each passed in
+   * isolation can compose into a tree neither worktree held. Running it
+   * N-wide in parallel worktrees would also buy nothing but host contention,
+   * where a timeout reverts a clean commit.
    *
    * Hands the baton back to the plan ladder rather than to a phase named
    * outright, so the queue reconciles against the new trunk state — see
@@ -508,7 +508,7 @@ const factory: ChainFactory = (api) => {
       // a separate commit post-merge that `git rm`s the shipped entries' files.
       // One file per entry is what lets N fanout worktrees merge at all.
     ],
-    gates: [tscGate, eslintGate, declaredFilesMatchSpan, vitestOnTrunk],
+    gates: [tscGate, eslintGate, declaredFilesMatchSpan, vitestOnCandidate],
     promptArgs(ctx: TickContext) {
       if (!ctx.assignedEntry) {
         throw new Error("build phase requires an assignedEntry in TickContext");

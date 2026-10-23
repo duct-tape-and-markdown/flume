@@ -21,6 +21,7 @@ import {
 import {
   docCommentBefore,
   docCommentFor,
+  docProse,
   srcPath,
   srcText,
 } from "./helpers/docComments.ts";
@@ -134,10 +135,71 @@ itNamesNoChainVocabulary({
 });
 
 /**
+ * The same block, read for what it says about the tree a span is judged in.
+ * Both modes spend the same mechanism: the span is cherry-picked onto a
+ * **candidate** and gated there, and trunk only ever fast-forwards to a
+ * candidate every gate ruled green (`spec/worktrees.md`, "Per-entry
+ * `afterMerge` revert isolation"). A member bullet that picks a span onto the
+ * trunk and gates it there tells the author a red merge gate rewinds
+ * published history — the one thing the mechanism exists to make impossible.
+ *
+ * Read per member bullet rather than over the block whole, so each claim
+ * turns on the mode it is about rather than on whatever else the block
+ * quotes (`.claude/rules/posture-sweep.md`, *A negative assertion over a
+ * whole rendered artifact*). The two members are named one per call for the
+ * reason the anchors above are: a list a rename could empty asserts nothing.
+ */
+it("the `Concurrency` lead-in names the candidate a span is picked onto and gated in", () => {
+  const prose = docProse(
+    docCommentBefore(
+      srcText("Phase.ts"),
+      String.raw`export type Concurrency\s*=`,
+      "`Concurrency`",
+    ),
+  );
+  const bullets = prose.split(/(?=- ")/).filter((part) => part.startsWith('- "'));
+  const member = (name: string): string => {
+    const hits = bullets.filter((b) => b.startsWith(`- "${name}":`));
+    expect(
+      hits,
+      `the \`Concurrency\` lead-in no longer states \`"${name}"\` as a member bullet`,
+    ).toHaveLength(1);
+    return hits[0] as string;
+  };
+
+  for (const mode of [member("singleton"), member("fanout")]) {
+    expect(mode).toContain("cherry-picked onto a candidate");
+    expect(mode).toContain("gated there");
+    expect(mode).not.toContain("onto the trunk");
+  }
+});
+
+/**
+ * `ShipContext` ships from `src/index.ts`, so `repoRoot`'s block is the hover
+ * text a `shipped` predicate reads before it opens the tree the merge left
+ * behind. A batch's spans are cherry-picked in order onto **one candidate**
+ * (`spec/worktrees.md`, "Batched merges"), so a block offering the primary
+ * checkout as the batched alternative sends the predicate at the tree an
+ * operator has work in — a tree no stage of the merge writes.
+ */
+it("`ShipContext.repoRoot`'s doc names a batched merge's shared candidate rather than the primary checkout", () => {
+  const doc = docProse(docCommentFor(srcText("Phase.ts"), "repoRoot"));
+
+  // Vacuity: this is `ShipContext`'s block rather than the other `repoRoot`
+  // the module declares, judged by what only this one states.
+  expect(doc, "`ShipContext.repoRoot`'s doc no longer names `mergedSha`").toContain(
+    "{@link mergedSha} landed in",
+  );
+
+  expect(doc).toContain("the candidate a batch shares");
+  expect(doc).toContain("never the primary checkout");
+});
+
+/**
  * `GatePhase` ships from `src/index.ts`, so its lead-in block is the first
  * hover text a chain author reads about gate placement — one rung above
  * `docs/CHAIN-AUTHORING.md`, which states the same thing. A singleton tick
- * cherry-picks its span onto the trunk and runs `afterMerge` there like a
+ * cherry-picks its span onto a candidate and runs `afterMerge` there like a
  * wave of one (`spec/worktrees.md`, "Singleton runs in a worktree"), so a
  * lead-in scoping the placement to fanout denies a placement the engine
  * offers, and the author declines it before reaching the page.

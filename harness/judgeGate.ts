@@ -158,8 +158,9 @@ export function namedLinesGate(
           spans.push(unjudged);
           continue;
         }
-        // `afterMerge`, so the tree that holds the span's commit is the trunk
-        // it landed on — the same root the judge runs the suite in below.
+        // `afterMerge`, so the tree that holds the span's commit is the
+        // candidate it was picked onto — the same root the judge runs the
+        // suite in below.
         const kind = putDown(entry, {
           touched: span.touchedPaths,
           tree: ctx.repoRoot,

@@ -36,14 +36,15 @@ import type { NoCommitMode, PriorAttempt } from "./Prompt.js";
  *   pending entry, so nothing partitions it and nothing bounds what it may
  *   rewrite beyond its own fence — the model a phase declares when two of its
  *   ticks would be editing the same artifact. The tick still runs in a
- *   worktree, and its span is cherry-picked onto the trunk and gated there
+ *   worktree, and its span is cherry-picked onto a candidate and gated there
  *   like a wave of one (spec/worktrees.md, "Singleton runs in a worktree").
  *
  * - "fanout": the dispatcher picks N pending entries no two of which declare
  *   an overlapping file and runs N tick invocations in parallel worktrees, one
- *   entry each. Each entry's commit is cherry-picked onto the trunk and gated
- *   individually; an afterMerge gate failure reverts only that entry's commit,
- *   and the rest of the wave stays shipped.
+ *   entry each. Each entry's commit is cherry-picked onto a candidate of its
+ *   own and gated there individually; an afterMerge gate failure discards that
+ *   entry's candidate, and the rest of the wave — the siblings trunk already
+ *   fast-forwarded to — stays shipped.
  */
 export type Concurrency = "singleton" | "fanout";
 
@@ -78,7 +79,7 @@ export interface ShipContext {
    * (`declaredPaths`, `src/PendingSchema.ts`).
    */
   steps: readonly PendingEntry[];
-  /** Sha of this entry's commit as cherry-picked onto trunk. */
+  /** Sha of this entry's commit as cherry-picked onto the candidate. */
   mergedSha: string;
   /**
    * The sha this entry's span branched from — its worktree's tip when this
@@ -108,9 +109,11 @@ export interface ShipContext {
    * predicate reading the merged result opens: the merge's **candidate**,
    * which trunk fast-forwards to once this predicate and the ledger commit
    * behind it have landed on it (`spec/worktrees.md`, "Per-entry `afterMerge`
-   * revert isolation"), or the primary checkout for a batched merge, which
-   * picks onto trunk. Either way it is a checkout of this repository holding
-   * tracked files at the layout `touchedPaths` names them in.
+   * revert isolation"), and the candidate a batch shares where the merge
+   * carried several spans (`spec/worktrees.md`, "Batched merges") — never the
+   * primary checkout, which no merge writes. Either way it is a checkout of
+   * this repository holding tracked files at the layout `touchedPaths` names
+   * them in.
    */
   repoRoot: string;
 }

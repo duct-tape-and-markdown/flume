@@ -33,5 +33,5 @@
   "sysexits.h": "the BSD header flume's exit codes are taken from",
   "tsImport": "`tsx/esm/api`'s loader entry — the dependency the chain loads through, not a name the package hands out",
   "util.promisify.custom": "`node:util`, under a namespace this tree never imports",
-  "vitestOnTrunk": "a declaration of `examples/cascade-chain.ts`"
+  "vitestOnCandidate": "a declaration of `examples/cascade-chain.ts`"
 }

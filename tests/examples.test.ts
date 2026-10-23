@@ -1715,7 +1715,7 @@ describe("cascade-chain.ts — the plan ladder over a real tick", () => {
  * which the same section's carve-out allows: a real vitest run cannot be made
  * to emit "a named behavior with no passing test" on demand.
  */
-describe("cascade-chain.ts — the entry's tests[] is judged on the trunk", () => {
+describe("cascade-chain.ts — the entry's tests[] is judged on the merge candidate", () => {
   /** vitest's `--reporter=json` shape, trimmed to the keys the judge reads. */
   const report = (file: string, fullName: string, status: string) =>
     JSON.stringify({
@@ -1734,7 +1734,7 @@ describe("cascade-chain.ts — the entry's tests[] is judged on the trunk", () =
    * green with the report the caller supplies, standing in for the `pnpm
    * vitest` process. Everything the chain composes on top (which wrapper,
    * which placement, which command) comes from the factory, so unwrapping
-   * `vitestOnTrunk` there fails every case below.
+   * `vitestOnCandidate` there fails every case below.
    */
   const shippedVitestGate = (details: string): Gate => {
     const api = buildFlumeApi(EXAMPLE_PATHS);

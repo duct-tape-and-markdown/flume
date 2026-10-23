@@ -1117,7 +1117,7 @@ type SpanPicked =
       fate: "cherry-pick-conflict";
       /** The conflict's own stage failure, unblamed ({@link StageFacts}). */
       failure: StageFacts;
-      /** What the span would have added, captured off its own two commits before the abort. */
+      /** What the span would have added, read off its own base and head before the candidate goes. */
       footprint?: string[];
     }
   | ({ fate: "picked" } & SpanLanded);
