@@ -603,8 +603,9 @@ export function startTiming(): () => number {
  *                            trunk-scoped throw, the one that still walls the
  *                            wave. The facts are on
  *                            {@link TickVerdict.mergeFailures} under this
- *                            entry's tag, and the `baseSha`/`headSha` pair is
- *                            the span the retry re-picks.
+ *                            entry's tag, and the `baseSha`/`headSha` pair
+ *                            bounds the span for an operator carrying it by
+ *                            hand; no retry re-picks it.
  *  - `wave-walled`           the span passed its afterCommit gates in its own
  *                            worktree and the wave was already walled when it
  *                            settled: an earlier pick's merge stage threw, so
@@ -626,8 +627,10 @@ export function startTiming(): () => number {
  *                            refused anything — and the `baseSha`/`headSha`
  *                            pair is the whole of its point: the wall
  *                            leaves the worktree branch standing, the next
- *                            start's teardown does not, and the span is
- *                            re-cherry-pickable from this row alone.
+ *                            start's teardown does not, and this row is the
+ *                            only place the span's shas outlive it — an
+ *                            operator's to carry by hand, never a pick the
+ *                            loop makes again.
  */
 export type MergeOutcome =
   | "merged"
@@ -669,9 +672,9 @@ export interface TickVerdictMergeOutcome {
    * `afterMerge-reverted`, `not-shipped`), else
    * the tip the agent's worktree branched from (`tip-moved`, `dropped-work`,
    * `afterCommit-reverted`, `cherry-pick-conflict`, `merge-walled`,
-   * `wave-walled`). Recovery
-   * needs both: a span may hold several commits (spec/loop.md "The check is
-   * ancestry, and N commits are completion"), and `headSha` alone re-picks
+   * `wave-walled`). Carrying one by
+   * hand needs both: a span may hold several commits (spec/loop.md "The check
+   * is ancestry, and N commits are completion"), and `headSha` alone names
    * only the last of them. Absent only when the span never reached a commit
    * at all.
    */
@@ -681,13 +684,13 @@ export interface TickVerdictMergeOutcome {
    * exists (`merged`, `afterMerge-reverted`, `not-shipped`), else the
    * worktree-branch commit sha the entry never got past (`tip-moved`,
    * `dropped-work`, `afterCommit-reverted`, `merge-walled`, `wave-walled`).
-   * Recovery, not
-   * decoration: a span parked or refused after its gates passed must be
-   * re-cherry-pickable from the verdict alone, never re-run at full agent
-   * price — worktree teardown deletes the branch, but the commit object
-   * survives in the shared store until gc, and this is the only place its sha
-   * outlives the branch. Absent only when the entry never reached a commit at
-   * all.
+   * An operator's fact, not a
+   * recovery the loop performs: a span parked, refused or walled after its
+   * gates passed is cherry-pickable by hand from the verdict alone — worktree
+   * teardown deletes the branch, but the commit object survives in the shared
+   * store until gc, and this is the only place its sha outlives the branch. No
+   * actor re-picks it: the entry stays pending and re-runs its agent. Absent
+   * only when the entry never reached a commit at all.
    */
   headSha?: string;
   /**

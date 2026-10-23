@@ -358,8 +358,9 @@ export async function runSingleton(
     // The span the revert just dropped — recorded here because
     // `dropLastCommit` has already moved the branch off it and
     // teardown deletes the branch entirely. The objects survive in
-    // the shared store until gc, so these two shas are what makes
-    // the work re-cherry-pickable without paying the agent again.
+    // the shared store until gc, so these two shas are what lets an
+    // operator carry the work by hand — the entry itself stays pending
+    // and re-runs its agent.
     mergeOutcomes.push({
       outcome: "afterCommit-reverted",
       ...(attempt.footprint && attempt.footprint.length > 0

@@ -13015,9 +13015,9 @@ describe("Dispatcher fanout — a corrupt entry file refuses instead of reading 
       "CARRY-D:wave-walled",
     ]);
 
-    // And the pair is recovery, not decoration: the range it names is exactly
-    // the span the wall left standing, re-cherry-pickable from the verdict
-    // alone.
+    // And the pair is the operator's fact, not decoration: the range it names
+    // is exactly the span the wall left standing, carryable by hand from the
+    // verdict alone.
     const walled = rows.find((m) => m.entryTag === "CARRY-D");
     expect(walled?.baseSha).toMatch(/^[0-9a-f]{40}$/);
     expect(walled?.headSha).toMatch(/^[0-9a-f]{40}$/);
@@ -13895,7 +13895,7 @@ describe("Dispatcher fanout — a merge-stage throw outside the ledger rewrite c
     // The claim: the wall cost SPAN-A its candidate and nothing else. The
     // sibling behind it is on the trunk and retired from the queue, the walled
     // entry is rowed as a failed merge under its own tag, and the pair that row
-    // names is the span a retry re-picks.
+    // names bounds the span an operator could carry by hand.
     const subjects = await trunkSubjects();
     expect(subjects).toContain("build(GOES-ON-B): ship");
     expect(subjects).not.toContain("build(SPAN-A): walled");
@@ -17026,8 +17026,8 @@ describe("Dispatcher — tip verify: commit only onto the tick's starting tip", 
       // agent's file never landed.
       expect(await head(fx.repo)).toBe(preHead);
       expect(existsSync(join(fx.repo, "src", "plan-output.ts"))).toBe(false);
-      // And the span the row names is still re-pickable: teardown deleted the
-      // worktree branch, the commit object outlives it.
+      // And the span the row names is still there to carry by hand: teardown
+      // deleted the worktree branch, the commit object outlives it.
       await exec("git", ["cat-file", "-e", `${spanHead}^{commit}`], {
         cwd: fx.repo,
       });
@@ -25623,14 +25623,16 @@ describe("not-shipped PriorAttempt — the chain's empty `shipped` list on the c
 });
 
 /**
- * spec/loop.md "The tick verdict — one facts artifact": a span row is
- * recovery, not decoration — "re-cherry-pickable from the verdict alone,
- * never re-run at full agent price". `headSha` alone cannot do that: a span
+ * spec/loop.md "The tick verdict — one facts artifact": a span row's two shas
+ * are the operator's facts — a span parked, refused or walled after its gates
+ * passed is carryable by hand from the verdict alone, while the entry stays
+ * pending and re-runs its agent. `headSha` alone cannot carry it: a span
  * may hold several commits (spec/loop.md "The check is ancestry, and N
  * commits are completion"), so picking its head re-applies the last commit
- * and loses the rest. Both tests below therefore prove recovery by actually
- * replaying `baseSha..headSha` onto trunk after the tick tore the worktree
- * down, and both drive a two-commit span so the replay is load-bearing.
+ * and loses the rest. Both tests below therefore prove the by-hand carry by
+ * actually replaying `baseSha..headSha` onto trunk after the tick tore the
+ * worktree down, and both drive a two-commit span so the replay is
+ * load-bearing.
  */
 describe("TickVerdict span rows — base beside head", () => {
   /** `git rev-list --count base..head` in `repo`. */
@@ -28707,8 +28709,9 @@ it("the verdict a wave writes after a slot leg throws names every span it landed
   expect(verdict?.tags).toContain("SHIP-A");
   expect(verdict?.shippedTags).toEqual(["SHIP-A"]);
   expect(verdict?.committed).toBe(true);
-  // The recovery handle the spec calls the point of the record: the landed
-  // span's base and head, so it is re-cherry-pickable from the verdict alone.
+  // The operator's fact the spec calls the point of the record: the landed
+  // span's base and head, so it is cherry-pickable by hand from the verdict
+  // alone.
   expect(verdict?.mergeOutcomes).toEqual([
     {
       entryTag: "SHIP-A",
