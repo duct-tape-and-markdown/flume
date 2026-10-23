@@ -11,6 +11,135 @@ Pre-1.0: minor versions may introduce breaking changes to the public API surface
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-10-23
+
+The field-report release. A downstream consumer running flume in anger
+reported nine defects, and this release fixes the classes behind them rather
+than the instances. Trunk now moves only by fast-forward to a tree its gates
+already judged, so nothing that copied trunk is ever left holding history
+trunk later dropped, and one entry's failed merge ends that entry alone
+instead of throwing its passing siblings away. Every child the engine runs on
+a gate's behalf gets a closed stdin and a deadline, so a gate can no longer
+hang a tick. The test scope is the consumer's: the vitest runner takes it as a
+declared `scope`, asks vitest what each lane covers instead of being told, and
+reads the JSON report from a file it names instead of out of stdout. Every
+tree the harness judges in is provisioned, build worktrees included. A
+declared `shell` or `script` gate can read its own output into a verdict,
+failing files and blame. Operator verbs name the standing stop flag and the
+word they refused. `docs/MIGRATING-0.23.md` walks the ten breaks; **run
+`flume check` after upgrading and before the first run** (section 1).
+
+### Breaking
+
+- **The queue read refuses two more `blockedBy` shapes.** An edge into the
+  declarer's own containment is refused for every entry kind, not only
+  `work`, and a cycle closing through a gate an entry inherits from an
+  ancestor is refused like a declared one. Either refuses the queue (exit 69),
+  naming the file ([`docs/MIGRATING-0.23.md`](docs/MIGRATING-0.23.md),
+  section 1).
+- **Harness package: `Lane.excludes` is gone, and a `Runner` answers
+  `coverage(cwd)`.** What a lane leaves out is asked of the test tool
+  (`LaneCoverage`), never declared. The vitest runner collects each idle lane
+  under `--mode <lane name>` (section 2).
+- **Harness package: the vitest runner's `invoke` reaches the binary and
+  nothing else.** Its `args` stop before the subcommand, which the runner now
+  appends (`run`, or `list` for coverage); a scoping flag moves to the new
+  `scope` option. The report is read from a file the runner names with
+  `--outputFile`, not from stdout (section 3).
+- **Harness package: a repository with no `setup` declared and no lockfile
+  the installer reads is refused at chain load.** With `setup` undeclared,
+  every tree the package provisions now gets the engine's lockfile-aware
+  install — build worktrees and plan slices' included — so a tree it cannot
+  install is refused up front, naming both fixes (section 4).
+- **`GateContext.entry` and `GateContext.steps` are one value,
+  `GateContext.assignment`** (`GateAssignment`, `{ entry, steps }`), set and
+  withheld together; a batch's per-span records carry it the same way
+  (section 5).
+- **`afterMerge` gates judge a candidate, not the trunk.** Each span is
+  cherry-picked onto a fresh tree at the trunk tip; `cwd`, `repoRoot` and
+  `configDir` name that tree, as does `ShipContext.repoRoot`, and
+  `setupWorktree`/`teardownWorktree` run over it. Trunk fast-forwards on green
+  and is never reset. `MergeOutcome` loses `afterMerge-revert-refused` and
+  gains `uncommitted-work` and `merge-walled`; the verdict's
+  `bystanderCheckpointSha` is gone (section 6).
+- **The interrupted-merge marker is retired.** Nothing writes
+  `<state root>/merging/`, and `flume loop` no longer refuses to start
+  (exit 78) over one (section 7).
+- **A gate's child has a deadline and a closed stdin.** The engine's new
+  `supervisorPolicy.gateTimeoutMs` has no default; the harness package
+  declares 90 minutes (`supervisor.gateTimeoutMs` overrides it). A child that
+  runs past it is signalled and the gate fails. Every captured child's stdin
+  is ended at spawn (section 8).
+- **The CLI's narration goes to stderr at every level.** stdout carries only
+  what a verb produced; a script that read a tick's dispatch or summary lines
+  from stdout reads them from stderr (section 9).
+- **A fanout width that opens no slot is refused.** `supervisorPolicy.maxParallel`
+  of zero, a negative or a fraction is refused at chain load, and
+  `DispatcherOptions.maxParallel` the same at construction (section 10).
+
+### Added
+
+- **Harness package: a declared `shell` or `script` gate takes a `read`** — a
+  function over the command's stdout, stderr, exit status and tree, answering
+  the gate's whole result (verdict, failing files, `skipped`, `blamesSpan`).
+  `shellGate` takes the same reader (`ShellGateReader`, `ShellGateRun`).
+- **Harness package: `vitestRunner({ scope })`**, the consumer's own
+  statement of what its suite is, passed to every spawn. A base run whose
+  report covers a file none of the judge's lines named is refused, naming the
+  file and the scope.
+- **`supervisorPolicy.gateTimeoutMs`**, the per-child deadline on every
+  process the engine runs on a gate's behalf.
+- **Harness package: the `rails` gate.** A build commit that changes the
+  fence, the gates or the agents its declaration states is refused, naming
+  the rail, so a fence that names the declaration file lets build land a
+  schema change with the consumer's own edit while the rails stay a human's.
+- **Harness package: the `new blocker resolves` gate** refuses a plan commit
+  whose new `blockedBy` tag names no entry, and `TickResult.unresolvedBlockers`
+  reports a blocker tag the queue does not carry.
+- **Harness package: `maxEntryDepth`** in the declaration, handed to
+  `Chain.maxEntryDepth`.
+- **`TickVerdict.tickId`** names the tick invocation that wrote a verdict.
+- **A refused fast-forward says which refusal it was**: a writer that landed
+  under the candidate is absorbed once by carrying the span again onto the new
+  tip, and uncommitted work in the checkout rows as `uncommitted-work` with
+  both writers' work left in place.
+- **`flume-harness init` names `setup`** when the repository holds no lockfile
+  the installer reads.
+
+### Changed
+
+- **One span's merge failure ends that span alone.** A candidate that would
+  not provision, a pick that would not read or a record the store refused is
+  rowed `merge-walled` for its entry while the wave's other spans carry on;
+  only a trunk-scoped failure (the tip read, the claim, the fast-forward)
+  stops the wave. A batch is picked onto one candidate and gated there.
+- **A span row's base and head shas are the operator's facts.** Nothing in
+  the loop re-picks a walled or refused span; its entry stays pending and
+  re-runs, and the shas survive for a hand `git cherry-pick` until gc.
+- **An ancestor's gate and forks hold its whole subtree.** A `blockedBy`, a
+  park or a `dependsOnForks` declared on a group now holds every entry under
+  it at pickability.
+- **Operator verbs name what decides their outcome.** `flume wake` names a
+  standing stop flag beside the phase it woke, and `wake`, `sleep` and `hold`
+  quote the stray positional they refuse.
+- **A child that exits non-zero without writing a verdict is its own failure
+  stage**, so the consecutive-identical-failure backstop sees it.
+- **`chainLoadGate` and `pendingGate` declare `batches: true`**, so hanging
+  either at `afterMerge` no longer holds a phase to one span per merge.
+- **A declared gate's span whose touched path holds a newline is refused**:
+  `FLUME_TOUCHED_PATHS` cannot spell it.
+
+### Fixed
+
+- **A shell gate no longer hangs on an open stdin.** `execFile` gives its
+  child a stdin pipe whatever the call's `stdio` says; every capturing spawn
+  now ends it.
+- **A `Phase.shipped` list that orphans a substep is refused**, not only one
+  that drops the entry's direct steps.
+- **`gatedTip` is reported on a singleton's merged span**, and cleared when a
+  foreign tip claim stops the last ship's rewrite.
+- **A runner's refusal names what its child wrote to stderr.**
+
 ## [0.22.0] - 2026-10-07
 
 The queue release. The queue is now a forest: every entry says what it is —

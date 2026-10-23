@@ -476,6 +476,11 @@ follows enough usage signal to commit under semver.
   who owns what, how each is extended from outside, where a finding goes.
 - [`docs/INTENT.md`](docs/INTENT.md) — design rationale: the spine, what
   stays prose, what becomes JSON, non-goals.
+- [`docs/MIGRATING-0.23.md`](docs/MIGRATING-0.23.md) — upgrade note for a
+  chain on `0.22.x`: trunk moving only by fast-forward to a judged
+  candidate, the consumer owning its test scope (`Lane.excludes` gone),
+  `GateContext.assignment`, every tree provisioned, gate-child deadlines,
+  and five smaller breaks.
 - [`docs/MIGRATING-0.22.md`](docs/MIGRATING-0.22.md) — upgrade note for a
   chain on `0.21.x`: `priority` off the entry core (strip it before
   upgrading), the queue as a forest with a computed order, ticks loading
