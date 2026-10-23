@@ -53,6 +53,10 @@ export const declaration: DeclarationInput = {
       "AUTHORS.md",
 
       ".github/**",
+
+      // The declaration itself, so a schema cut lands with this consumer's
+      // own edit in one commit (spec/harness.md, the `fence` row).
+      ".flume/declaration.ts",
     ],
   },
 

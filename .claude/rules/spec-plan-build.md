@@ -8,7 +8,7 @@ The writing pipeline flows forward. Each layer has one author and one artifact h
 | plan  | `.flume/plan/{pending/,state/,questions/}`; drains `.flume/inbox/`, `.flume/plan/notes/` | plan tick | `plan:` | `plan:` |
 | inbox | `.flume/inbox/<date>-<slug>.md` — transient findings queue, one file each | external reviewers (humans; future review skills) | (any session) | (any) |
 | notes | `.flume/plan/notes/<TAG>.md` — one file per entry, build's only cross-tick channel | build tick | `build:` | `build:` |
-| code  | `src/`, `harness/`, `tests/`, `bin/`, `examples/`, `docs/`, `vitest.config.ts`, `.env.example`, `.gitignore`, `package.json`, `pnpm-lock.yaml`, `tsconfig.json`, `README.md`, `LICENSE`, `CHANGELOG.md`, `.github/**` | build tick | `build:` | `build:` |
+| code  | `src/`, `harness/`, `tests/`, `bin/`, `examples/`, `docs/`, `vitest.config.ts`, `.env.example`, `.gitignore`, `package.json`, `pnpm-lock.yaml`, `tsconfig.json`, `README.md`, `LICENSE`, `CHANGELOG.md`, `.github/**`, `.flume/declaration.ts` | build tick | `build:` | `build:` |
 
 Harness commits use `chore(flume):`.
 
