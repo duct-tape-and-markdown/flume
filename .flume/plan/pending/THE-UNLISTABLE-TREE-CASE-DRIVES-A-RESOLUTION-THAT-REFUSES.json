@@ -1,0 +1,27 @@
+{
+  "tag": "THE-UNLISTABLE-TREE-CASE-DRIVES-A-RESOLUTION-THAT-REFUSES",
+  "gate": {
+    "kind": "open"
+  },
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "tests/harnessRunner.test.ts",
+        "description": "the red unlistable-tree case, whose bare tmp root resolves vitest anyway, and the seam the answer it asserts is produced at"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "the unlistable-tree case reds under `pnpm test`: the shim's `NODE_PATH` resolves vitest from any tree, so the fixture never produces the tree its title names",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A green verdict is proven non-vacuous"
+  },
+  "acceptance": "`pnpm test` — the command both declared CI lanes run — is green on this host, and the case asserting that an unlistable tree leaves coverage `unknown` rather than an empty set reaches that answer over a resolution that refuses whatever `NODE_PATH` the invoking shim exported, never over a temp root the hoisted store answers from",
+  "tests": [],
+  "pins": [],
+  "laneTests": [],
+  "notes": "Measured on this tip: red under `pnpm test`, green under `node <vitest.mjs> run`. Cause: pnpm's `node_modules/.bin/vitest` shim exports `NODE_PATH` holding `node_modules/.pnpm/node_modules`, the hoisted store, so `createRequire(<tmp>/package.json).resolve('vitest/package.json')` answers from a tree with no dependencies. `resolveVitest` is correct; the fixture is the defect, and `options.invoke` is the declared door. No `tests[]`: a test-only diff rebuilds at the base."
+}
