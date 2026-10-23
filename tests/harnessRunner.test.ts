@@ -775,6 +775,70 @@ describe("the vitest runner", () => {
     }
   });
 
+  /**
+   * The subcommands the two operations name — a run reaches vitest under
+   * `run` and a coverage read under `list` (`harness/vitestRunner.ts`). Both
+   * are positionals, which is the whole property below.
+   */
+  const SUBCOMMANDS = ["run", "list"];
+
+  it("every spawn the vitest runner makes leads its appended reading flags with a subcommand positional", async () => {
+    const runs = await recordingVitest("subcommand-first", fixture);
+    const project = await twoLaneProject("subcommand-first-lanes");
+    const listings = await recordingVitest("subcommand-first-list", project);
+    try {
+      const declared = vitestRunner({ invoke: runs.invoke })(ctx);
+      const merged = await declared.run(["carries the merged widget"], fixture);
+      const base = await inGateScope(() =>
+        declared.runAtBase(
+          ["runs wherever it is laid down"],
+          ["tests/widget.test.ts"],
+          baseSha,
+          fixture,
+        ),
+      );
+      // The read that spawns more than once: a declared scope to lift, and an
+      // idle lane to ask about, so the listings below are three rather than
+      // the one a bare read takes.
+      const coverage = vitestRunner({
+        invoke: listings.invoke,
+        lanes: [
+          { name: "fast", runs: true },
+          { name: "slow", runs: false },
+        ],
+        scope: ["--exclude", "**/*.extra.test.ts"],
+      })(ctx).coverage(project);
+
+      // Vacuity, on all three operations: each reached a real vitest through
+      // its stand-in and got an answer back, so the argument lists below are
+      // spawns the tool accepted rather than ones it refused on an option.
+      expect(merged.names[0]!.carried).toBe(true);
+      expect(base.passed + base.failed).toBeGreaterThan(0);
+      if (coverage.kind !== "known")
+        throw new Error(`the listing did not answer: ${coverage.reason}`);
+      expect(coverage.uncovered.length).toBeGreaterThan(0);
+
+      // Every spawn the runner made: the two runs, and the three listings.
+      const spawns = [
+        ...(await runs.spawns()).map((args) => args.slice(runs.reaching.length)),
+        ...(await listings.spawns()).map((args) => args.slice(listings.reaching.length)),
+      ];
+      expect(spawns).toHaveLength(5);
+      for (const appended of spawns) {
+        // The subcommand leads and the flags reading the spawn needs follow
+        // it, so a declared invocation whose binary stops parsing options at
+        // its first positional hands them to the tool rather than reading
+        // them itself.
+        expect(SUBCOMMANDS).toContain(appended[0]);
+        expect(appended.findIndex((a) => a.startsWith("-"))).toBeGreaterThan(0);
+      }
+    } finally {
+      await rm(runs.dir, { recursive: true, force: true });
+      await rm(listings.dir, { recursive: true, force: true });
+      await rm(project, { recursive: true, force: true });
+    }
+  });
+
   it("the judge proves a named line over the real vitest runner's merged-tree and base reports", async () => {
     const test = "carries the merged widget";
     const pin = "runs wherever it is laid down";
@@ -1182,13 +1246,12 @@ describe("the vitest runner", () => {
     const explaining = vitestRunner({
       invoke: () => ({
         command: process.execPath,
-        // `--` so the two arguments the runner appends for its own reading
-        // reach the child as argv rather than as node options it refuses
-        // before the script runs.
+        // No `--`: the first argument every operation appends is its own
+        // subcommand, so node stops reading options at it and the reading
+        // flags behind it reach the script as argv — pinned above.
         args: [
           "-e",
           "process.stderr.write('No test files found, exiting with code 1'); process.exit(1)",
-          "--",
         ],
       }),
     })(ctx);
