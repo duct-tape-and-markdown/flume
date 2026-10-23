@@ -405,8 +405,8 @@ npx --package @dtmd/flume flume-harness init
 #   wrote     .flume/plan/state/plan-derive.json
 #   wrote     .flume/plan/state/plan-sweep.json
 #   cursors   plan state starts at 9f2c1ab… — nothing before this adoption enters a plan window
-#   ignores   .gitignore +10 line(s) under .flume/
-#   depends   @dtmd/flume@^0.15.0 added to package.json
+#   ignores   .gitignore +12 line(s) under .flume/
+#   depends   @dtmd/flume@^<version> added to package.json
 #   provision pnpm-lock.yaml here — every tree the package provisions takes
 #             the engine's install at its root, so the declaration owes no `setup`
 #

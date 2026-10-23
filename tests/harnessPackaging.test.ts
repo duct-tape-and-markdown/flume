@@ -35,7 +35,7 @@ import {
 import { planStatePath } from "../harness/layout.ts";
 import { PROMPT_NAMES, promptPath } from "../harness/prompts.ts";
 import { resolvePackageJson } from "../src/selfPackage.ts";
-import { sectionOf } from "./helpers/docSections.ts";
+import { fencedBlocks, sectionOf } from "./helpers/docSections.ts";
 import { mkTempDir } from "./helpers/fixtureRoot.ts";
 import { hermeticEnv } from "./helpers/gitEnv.ts";
 import { markdownLinks } from "./helpers/pageAnchors.ts";
@@ -64,6 +64,7 @@ const PACK_ASSETS = fileURLToPath(
 const PACK_ASSETS_REL = "scripts/pack-harness-assets.mjs";
 
 interface Manifest {
+  readonly name: string;
   readonly version: string;
   readonly main?: unknown;
   readonly types?: unknown;
@@ -119,6 +120,55 @@ function leadPassage(section: string): string {
 /** The heading `docs/CLI.md` gives one verb of the harness bin. */
 function harnessVerbHeading(verb: string): string {
   return `## \`flume-harness ${verb}\``;
+}
+
+/**
+ * The transcript `docs/CLI.md` shows for one verb of the harness bin: the
+ * first fenced block of that verb's section, with each line's shell comment
+ * prefix dropped so the quoted report reads as the report it is quoting.
+ *
+ * The prefix comes off rather than being matched around, because the claims
+ * below read the sample with the same reader they read the real output with
+ * ({@link reportLabels}) — a page that moved its report to another indent is
+ * a page no longer showing what the verb prints.
+ */
+async function harnessVerbSample(verb: string): Promise<string> {
+  const page = await readFile(join(REPO_ROOT, "docs", "CLI.md"), "utf8");
+  const [sample] = fencedBlocks(sectionOf(page, harnessVerbHeading(verb)));
+  return (sample ?? "")
+    .split(/\r?\n/)
+    .map((line) => (line.startsWith("#") ? line.slice(1).replace(/^ /, "") : line))
+    .join("\n");
+}
+
+/**
+ * Every label a `flume-harness` report renders, in report order and deduped —
+ * the first token of a line at the report's own label column, which is where
+ * `harness/cli.ts` puts one and nowhere else. A wrapped continuation sits
+ * past that column and carries no label; the heading and the closing line sit
+ * at none.
+ *
+ * The single reader both sides of the claim go through: the label set the bin
+ * prints and the label set the page shows come from one parse, so neither can
+ * be read under a rule of its own.
+ */
+function reportLabels(report: string): string[] {
+  const labels: string[] = [];
+  for (const line of report.split(/\r?\n/)) {
+    const label = /^ {2}(\S+) +\S/.exec(line)?.[1];
+    if (label !== undefined && !labels.includes(label)) labels.push(label);
+  }
+  return labels;
+}
+
+/**
+ * The `+N line(s)` count a report's `ignores` line states, or `undefined`
+ * where it states none — read off the label the line is addressed by, so the
+ * page and the bin are compared on the number rather than on the sentence
+ * around it.
+ */
+function ignoreLineCount(report: string): string | undefined {
+  return /^ {2}ignores\s+\S*\.gitignore \+(\d+) line\(s\)/m.exec(report)?.[1];
 }
 
 /**
@@ -292,6 +342,20 @@ let packAssets: { stdout: string; stderr: string; code: number };
  * verdict is proven non-vacuous*).
  */
 let adoption: HarnessInitResult;
+/**
+ * What the shipped bin printed adopting the repository `docs/CLI.md`'s
+ * sample transcript describes, run once for the file.
+ *
+ * Every arm of the report is reached on purpose: the repository carries a
+ * commit, so the `cursors` line seeds rather than reporting none; a manifest,
+ * so the `depends` line adds a range rather than naming an absent one; and a
+ * lockfile the engine's installer reads, so the `provision` line takes its
+ * installer arm. An adoption into a bare directory renders the same labels
+ * from the other arms and the sample would read as agreed over a report half
+ * the page is showing (`.claude/rules/engineering.md`, *A seam gate reads
+ * what the real writer wrote*).
+ */
+let initRun: { stdout: string; stderr: string; code: number };
 
 async function filesUnder(dir: string, prefix: string): Promise<string[]> {
   const out: string[] = [];
@@ -368,6 +432,20 @@ beforeAll(async () => {
   await mkdir(adopted, { recursive: true });
   await commitInto(adopted, { "README.md": "seed\n" });
   adoption = await harnessInit({ repoRoot: adopted });
+
+  // The transcript cases' writer: the shipped bin over the published emit,
+  // in a repository shaped to reach every line of the report (see `initRun`).
+  const sampled = join(scratch, "sample-adoption");
+  await mkdir(sampled, { recursive: true });
+  await commitInto(sampled, {
+    "package.json": `${JSON.stringify({ name: "sampled-adoption" })}\n`,
+    "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
+  });
+  initRun = await runNodeStreams(
+    sampled,
+    [join(pkgDir, "bin", "flume-harness.js"), "init"],
+    hermeticEnv(),
+  );
 }, SPAWN_BUDGET_MS);
 
 afterAll(async () => {
@@ -1014,6 +1092,99 @@ it("docs/CLI.md names every verb the flume-harness bin dispatches", async () => 
       },
     }).toEqual({ verb, names: { success: true, usageRefusal: true } });
   }
+}, SPAWN_BUDGET_MS);
+
+
+/**
+ * The `init` section's sample transcript, against the report the bin
+ * actually prints. `docs/CLI.md` is the per-verb contract page the README
+ * sends a reader to, and this block is the only place a consumer sees the
+ * adoption report before they run it — so each label it shows is the handle
+ * they will look for in their own output.
+ *
+ * An agreement gate (`.claude/rules/engineering.md`, *A seam gate reads what
+ * the real writer wrote*): the writer is the shipped bin over the build's own
+ * emit, the reader is the page, and both go through one label parse
+ * ({@link reportLabels}). A line added to `harness/cli.ts`'s report, or a
+ * label renamed in it, reds here rather than leaving the contract page
+ * showing a transcript the verb no longer produces.
+ *
+ * One direction only, and deliberately: what the page should *say* beside
+ * each label — which arm to illustrate, how much of a long line to wrap — is
+ * the human's. What is pinned is that no label goes unshown.
+ */
+it("docs/CLI.md's init sample names every label the init report renders", async () => {
+  expect({ code: initRun.code, stderr: initRun.stderr }).toEqual({ code: 0, stderr: "" });
+
+  const rendered = reportLabels(initRun.stdout);
+  // Non-vacuity, and the fixture reaching the whole report the claim is over:
+  // each arm `initRun`'s repository was shaped to take is in the output being
+  // read, so a label this page owes cannot be missing from the set it is
+  // judged against (`.claude/rules/engineering.md`, *A green verdict is
+  // proven non-vacuous*).
+  expect(rendered.length).toBeGreaterThan(0);
+  expect(initRun.stdout).toContain("plan state starts at");
+  expect(initRun.stdout).toContain("line(s) under");
+  expect(initRun.stdout).toContain("added to package.json");
+  expect(initRun.stdout).toContain("the declaration owes no `setup`");
+
+  const sampled = reportLabels(await harnessVerbSample("init"));
+  // The parse's own detection, before the verdict: a label neither side
+  // renders is in neither set, so a reader that matched every token — the
+  // block quotes two command lines and a closing paragraph — cannot pass for
+  // agreement.
+  expect(rendered).not.toContain("conjures");
+  expect(sampled).not.toContain("conjures");
+
+  expect({ rendered, unshown: rendered.filter((label) => !sampled.includes(label)) }).toEqual({
+    rendered,
+    unshown: [],
+  });
+}, SPAWN_BUDGET_MS);
+
+/**
+ * The same block, read for what it must *not* carry. The `depends` line
+ * states the range init declares, and that range is derived from this
+ * package's own manifest — so a literal version in the sample is wrong the
+ * moment a release cut moves it, in the direction that still reads as
+ * current (`.claude/rules/engineering.md`, *Derived state is computed, never
+ * restated beside its source*). The page's prose already spells the
+ * placeholder the sample shows.
+ *
+ * Non-vacuity runs the other way here, since the claim is an absence: the
+ * report the sample quotes does carry the version, and the sample does carry
+ * the dependency line — so neither a bin that stopped reporting a range nor
+ * a block that lost the line can pass this as "no version".
+ */
+it("docs/CLI.md's init sample carries no package version of its own", async () => {
+  expect({ code: initRun.code, stderr: initRun.stderr }).toEqual({ code: 0, stderr: "" });
+  expect(initRun.stdout).toContain(`${manifest.name}@^${manifest.version}`);
+
+  const sample = await harnessVerbSample("init");
+  expect(sample).toContain(manifest.name);
+  expect(sample.match(/\d+\.\d+\.\d+/g) ?? []).toEqual([]);
+}, SPAWN_BUDGET_MS);
+
+/**
+ * The one number the sample does state. `ignores` reports how many runtime
+ * lines the adoption merged into `.gitignore`, and for a repository that had
+ * none that is the whole derived set (`consumerIgnores`, `harness/ignores.ts`)
+ * — the repository the sample describes. A line added to the runtime set
+ * moves the count, and nothing but this pin re-reads the page.
+ *
+ * Both sides through one reader ({@link ignoreLineCount}), so the comparison
+ * is the number rather than the sentence around it: what the page says about
+ * the line stays the human's.
+ */
+it("docs/CLI.md's init sample states the ignore-line count a fresh adoption merges", async () => {
+  expect({ code: initRun.code, stderr: initRun.stderr }).toEqual({ code: 0, stderr: "" });
+
+  // Non-vacuity: a report whose `ignores` line stopped stating a count, or
+  // stated zero, would leave the comparison below judging nothing.
+  const merged = ignoreLineCount(initRun.stdout);
+  expect(merged).toMatch(/^[1-9]\d*$/);
+
+  expect(ignoreLineCount(await harnessVerbSample("init"))).toBe(merged);
 }, SPAWN_BUDGET_MS);
 
 /**
