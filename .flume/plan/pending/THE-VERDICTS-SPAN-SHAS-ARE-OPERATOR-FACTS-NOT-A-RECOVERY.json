@@ -9,7 +9,7 @@
     "edit": [
       {
         "path": "src/tickVerdict.ts",
-        "description": "`headSha`'s promise and the `merge-walled` row's, both on exported hover text"
+        "description": "`headSha`'s promise and every walled row's re-pick clause, all on exported hover text"
       },
       {
         "path": "src/singletonTick.ts",
@@ -17,7 +17,7 @@
       },
       {
         "path": "tests/Dispatcher.test.ts",
-        "description": "the two case comments restating the retired promise"
+        "description": "the case comments restating the retired promise"
       }
     ],
     "retire": []
@@ -27,8 +27,8 @@
     "path": "spec/loop.md",
     "section": "The tick verdict — one facts artifact"
   },
-  "acceptance": "each of the three src sites and the two case comments states the shas as facts the operator may carry by hand, and none claims a re-pick that no actor performs",
+  "acceptance": "every site in the named files that still states the shas as a recovery the loop performs states them as facts the operator may carry by hand, and none claims a re-pick that no actor performs",
   "pins": [],
   "laneTests": [],
-  "notes": "The section retired the promise. Still asserting it: `headSha`'s doc comment (\"must be re-cherry-pickable from the verdict alone, never re-run at full agent price\"), the `merge-walled` row's last clause, `singletonTick`'s gate-revert note, and two Dispatcher comments (\"recovery, not decoration\"). Exported hover text, so the retired half reads as current (`engineering.md`, *Narration is the ladder's bottom rung*)."
+  "notes": "The section retired the promise. Still asserting it: `headSha`'s doc comment (\"never re-run at full agent price\"), the `wave-walled` row's last clause, the `merge-walled` row's \"the span the retry re-picks\", `singletonTick`'s gate-revert note, and the Dispatcher case comments quoting the retired sentence. Exported hover text, so the retired half reads as current (`engineering.md`, *Narration is the ladder's bottom rung*)."
 }

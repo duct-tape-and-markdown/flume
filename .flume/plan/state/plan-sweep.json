@@ -1,5 +1,28 @@
 {
   "sweptThrough": "73d74c4b581a091dab38e2da355a70a7571b05d4",
-  "rotation": { "kind": "closed" },
-  "retiredThrough": "73d74c4b581a091dab38e2da355a70a7571b05d4"
+  "rotation": {
+    "kind": "open",
+    "covered": [
+      "harness/cli.ts",
+      "harness/dirListing.ts",
+      "harness/exec.ts",
+      "harness/index.ts",
+      "harness/init.ts",
+      "src/Gate.ts",
+      "src/cliLoop.ts",
+      "src/cliTick.ts",
+      "src/counted.ts",
+      "src/entryClaims.ts",
+      "src/friction.ts",
+      "src/mergeSpan.ts",
+      "src/partition.ts",
+      "src/queueFlow.ts",
+      "src/runtimeIgnores.ts",
+      "src/tickLeg.ts",
+      "src/tipVerify.ts",
+      "src/waveMerge.ts",
+      "src/waveTick.ts"
+    ]
+  },
+  "retiredThrough": "56657060865ed542accd9d3427c53337f556aac1"
 }
