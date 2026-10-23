@@ -3,11 +3,28 @@
   "rotation": {
     "kind": "open",
     "covered": [
+      "bin/execEntry.js",
+      "bin/flume",
+      "bin/flume-harness.js",
+      "bin/flume.js",
+      "examples/backlog-groomer-chain.ts",
+      "examples/cascade-chain.ts",
+      "examples/minimal-chain.ts",
+      "examples/prompts/backlog-groomer.md",
+      "examples/prompts/build.md",
+      "examples/prompts/plan.md",
       "harness/cli.ts",
+      "harness/declaredGates.ts",
       "harness/dirListing.ts",
+      "harness/entryExtension.ts",
       "harness/exec.ts",
       "harness/index.ts",
       "harness/init.ts",
+      "harness/runner.ts",
+      "harness/scriptRunner.ts",
+      "harness/toolRun.ts",
+      "harness/vitestRunner.ts",
+      "scripts/directInvocation.mjs",
       "src/Gate.ts",
       "src/cliLoop.ts",
       "src/cliTick.ts",
@@ -24,5 +41,5 @@
       "src/waveTick.ts"
     ]
   },
-  "retiredThrough": "56657060865ed542accd9d3427c53337f556aac1"
+  "retiredThrough": "b95e21d13b3abf513864c7a50bca5aa7af99d57a"
 }

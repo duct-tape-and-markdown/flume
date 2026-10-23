@@ -1,0 +1,33 @@
+{
+  "tag": "THE-SHIPPED-FACTORYS-DOC-REACHES-THE-EXPORT-IT-DESCRIBES",
+  "gate": {
+    "kind": "open"
+  },
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "harness/scriptRunner.ts",
+        "description": "the factory's own block, stranded above `NO_COVERAGE`'s, and so attached to nothing the package emits"
+      },
+      {
+        "path": "tests/docComments.test.ts",
+        "description": "the shipped-block scan, which reads a fused opener and passes over a stacked pair"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "`scriptRunner` ships with no hover text: the block describing it sits above `NO_COVERAGE`'s, and the shipped-block scan reads only a fused opener",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "Narration is the ladder's bottom rung"
+  },
+  "acceptance": "the block that describes `scriptRunner` is the one the declaration emit attaches to it, and the shipped-block scan reds on any `src/` or `harness/` declaration carrying a doc block above its own — the module header at a file's first statement excepted, which is how `src/Agent.ts` and `src/exitCodes.ts` are written",
+  "tests": [
+    "no declaration the package ships carries a doc comment block stranded above its own"
+  ],
+  "pins": [],
+  "laneTests": [],
+  "notes": "`scriptRunner` is exported from harness/index.ts, so its block is hover text a chain author reads. harness/scriptRunner.ts:301-:310 terminates before NO_COVERAGE's at :311-:322, so the emit carries only the latter and `export function scriptRunner` (:331) carries none. The existing scan (tests/docComments.test.ts:626) reads a fused `/** /**` opener only — the class the ladder's carve-out admits and the suite does not resolve, with the drift now measured."
+}

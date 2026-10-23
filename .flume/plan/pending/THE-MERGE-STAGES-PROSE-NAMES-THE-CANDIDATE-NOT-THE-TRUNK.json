@@ -13,7 +13,7 @@
       },
       {
         "path": "src/Gate.ts",
-        "description": "a batch span's `commitSha` line"
+        "description": "a batch span's `commitSha` line, and the lead-in placing an afterMerge gate on the trunk"
       },
       {
         "path": "src/cliHelp.ts",
@@ -36,12 +36,24 @@
         "description": "the gate-context rows for `cwd` and `repoRoot` under afterMerge"
       },
       {
+        "path": "examples/cascade-chain.ts",
+        "description": "the suite gate's name and failHint, the entry-tests message, and the build phase's own lead-in — the example teaches the retired premise"
+      },
+      {
+        "path": "examples/prompts/build.md",
+        "description": "the line telling the agent its `tests[]` is judged on the trunk"
+      },
+      {
         "path": "tests/docComments.test.ts",
         "description": "the anchors the two hover-text blocks gain, and the comment claiming a singleton picks onto trunk"
       },
       {
         "path": "tests/Dispatcher.test.ts",
-        "description": "the merge-repoRoot title claiming the trunk its own body refutes"
+        "description": "the merge-repoRoot title, and the two bystander titles naming a trunk revert their own bodies refute"
+      },
+      {
+        "path": "tests/examples.test.ts",
+        "description": "the cascade describe title carrying the same trunk claim"
       }
     ],
     "retire": []
@@ -51,12 +63,12 @@
     "path": "spec/worktrees.md",
     "section": "Per-entry `afterMerge` revert isolation"
   },
-  "acceptance": "no surface in the named files says an `afterMerge` gate runs on the trunk, that a span is gated there, or that a batched merge picks onto the primary checkout; and the merge-repoRoot title states the candidate its body asserts",
+  "acceptance": "no surface in the named files says an `afterMerge` gate runs on the trunk, that a span is gated or reverted there, or that a batched merge picks onto the primary checkout; every test title naming one of those states the candidate its body asserts; and no identifier in the example chain names the trunk as the tree an `afterMerge` gate runs in",
   "tests": [
     "`ShipContext.repoRoot`'s doc names a batched merge's shared candidate rather than the primary checkout",
     "the `Concurrency` lead-in names the candidate a span is picked onto and gated in"
   ],
   "pins": [],
   "laneTests": [],
-  "notes": "The pre-candidate premise, whose spec half ad5687da just retired. Refuted by the code and by `consultShipped`'s own param doc, which states both widths right. Sites: `ShipContext.repoRoot` (\"the primary checkout for a batched merge\"), the `Concurrency` block (\"gated there\", \"reverts only that entry's commit\" — nothing is rewound), the `exclusive` help, the ship-lock comment, \"before the abort\", the judge's comment, the two gate-context rows, a title asserting `candidate-`."
+  "notes": "The pre-candidate premise, whose spec half ad5687da retired. Refuted by the code: a red afterMerge gate discards the candidate and trunk never named the span (src/mergeSpan.ts:722). Sites past the first cut: examples/cascade-chain.ts:207, :425, :443, :466 and `vitestOnTrunk`; examples/prompts/build.md:30; the two `it` titles at tests/Dispatcher.test.ts:10413 and :10487, whose describe was already corrected; tests/examples.test.ts:1718."
 }
