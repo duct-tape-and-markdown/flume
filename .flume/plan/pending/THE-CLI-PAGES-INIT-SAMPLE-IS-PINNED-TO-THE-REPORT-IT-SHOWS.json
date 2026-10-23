@@ -1,0 +1,34 @@
+{
+  "tag": "THE-CLI-PAGES-INIT-SAMPLE-IS-PINNED-TO-THE-REPORT-IT-SHOWS",
+  "gate": {
+    "kind": "open"
+  },
+  "kind": "work",
+  "files": {
+    "new": [],
+    "edit": [
+      {
+        "path": "docs/CLI.md",
+        "description": "the init sample block — the labels it names and the version it carries"
+      },
+      {
+        "path": "tests/harnessPackaging.test.ts",
+        "description": "the adoption fixture that already drives the real init for the README's write-set pins"
+      }
+    ],
+    "retire": []
+  },
+  "summary": "docs/CLI.md's `flume-harness init` sample is pinned against the real verb's report: every label named, and no version of its own to go stale",
+  "per": {
+    "path": ".claude/rules/engineering.md",
+    "section": "A seam gate reads what the real writer wrote"
+  },
+  "acceptance": "every label the real `flume-harness init` renders is named in the page's sample block, judged over the real verb's result through the real renderer, and the block carries no package version a release cut could leave stale",
+  "tests": [],
+  "pins": [
+    "docs/CLI.md's init sample names every label the init report renders",
+    "docs/CLI.md's init sample carries no package version of its own"
+  ],
+  "laneTests": [],
+  "notes": "`tests/harnessPackaging.test.ts` already drives the real `harnessInit` over a real repo for the README's write-set pins. CLI.md is the copy CHAIN-AUTHORING points at for this verb, and its labels (`wrote`, `cursors`, `ignores`, `depends`, `provision`) are pinned nowhere — the sample names `^0.15.0` against 0.22.0. The range is derived, so a literal re-stales at every cut. One direction only: what the page says about a label stays the human's."
+}
